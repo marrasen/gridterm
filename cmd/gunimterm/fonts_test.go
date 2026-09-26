@@ -1,6 +1,7 @@
 package main
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/marrasen/gunim/text"
 
 	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/vt"
 )
 
@@ -123,5 +125,55 @@ func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
 	}
 	if cols, rows := win.terms["p1"].cells.Fit(); cols != openCols || rows != openRows {
 		t.Fatalf("the window opens on a terminal of %d by %d", cols, rows)
+	}
+}
+
+// Picking another theme lets its face win again over one picked by
+// hand; taking the same theme again leaves the hand's pick.
+func TestAnotherThemesFaceWinsOverOnePickedBefore(t *testing.T) {
+	a := fontApp(t)
+	dos, plain := "", ""
+	for _, th := range a.themes {
+		if th.source.Font == dosFamily {
+			dos = th.name
+		} else if plain == "" {
+			plain = th.name
+		}
+	}
+	a.pickTheme(plain)
+	a.handle(PickFont{Name: bundledFamily})
+	a.pickTheme(plain)
+	if a.st.Font.Name != "" {
+		t.Fatalf("the same theme again moved the face to %q", a.st.Font.Name)
+	}
+	a.pickTheme(dos)
+	if a.st.Font.Name != dosFamily {
+		t.Fatalf("another theme naming a face left it at %q", a.st.Font.Name)
+	}
+	a.handle(PickTheme{Name: "No Such Theme"})
+	if got, _ := a.settings.Theme(); got == "No Such Theme" {
+		t.Fatal("a theme not in the list was kept")
+	}
+}
+
+func TestAThemesFileThatCannotBeReadIsSaid(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir, err := settings.Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(themes.Path(dir), []byte("{ not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	all, err := loadThemesSaying()
+	if err == nil {
+		t.Fatal("a broken themes file said nothing")
+	}
+	if len(all) != len(themes.Built()) {
+		t.Fatalf("with the file broken, %d themes are left, want the %d built in", len(all), len(themes.Built()))
 	}
 }

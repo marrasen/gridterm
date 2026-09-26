@@ -96,7 +96,7 @@ func run() error {
 		c := w.Client()
 		sh := &shells{m: map[string]*shell{}}
 		keys := shortcuts()
-		all := loadThemes()
+		all, trouble := loadThemesSaying()
 		registerThemes(w, all)
 		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys, all) },
 			func(win *window, st State, u *gunim.UI) { win.update(st, u) })
@@ -109,6 +109,7 @@ func run() error {
 		prog := newApp(c, sh)
 		prog.opts = opts
 		prog.themes = all
+		prog.themeTrouble = trouble
 		prog.registerThemes = func(all []themed) { registerThemes(w, all) }
 		defer closeToaster()
 		return errors.Join(prog.run(ctx), prog.shotErr)

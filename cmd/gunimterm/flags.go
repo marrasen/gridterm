@@ -150,9 +150,9 @@ func (a *app) applyOptions() error {
 		a.st.Font = Font{Name: "-font", Faces: faces}
 		// A face named on the command line is an instruction, and a
 		// theme does not overrule it.
-		a.fontPicked = true
+		a.fontPicked, a.fontFixed = true, true
 	case o.fontFamily != "":
-		a.fontPicked = true
+		a.fontPicked, a.fontFixed = true, true
 		a.fixedFont = o.fontFamily
 		if _, compiled := compiledIn(o.fontFamily); compiled {
 			if err := a.setFont(o.fontFamily); err != nil {

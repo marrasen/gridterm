@@ -63,11 +63,6 @@ Help, themes and shortcuts:
   shows on the bottom row.
 - A short confirmation stays on the status line for 4 seconds;
   gunimterm uses a toast.
-- A themes file that cannot be read says so; gunimterm drops it, and
-  any theme in it that fails, without a word.
-- A remembered theme gone from the list is logged.
-- Picking another theme lets its font win over one picked before.
-- The theme is saved only once it has been put on.
 - About opens on OK, and a second update check while one runs is
   ignored.
 - A development build newer than the last release says so, rather
@@ -78,6 +73,37 @@ Help, themes and shortcuts:
   own lists.
 - Reload Shortcuts says it worked only once the file is taken.
 - Command ids renamed in `keys.Renamed` are followed.
+
+Agent sharing:
+
+- An agent's Restart reconnects a pane whose machine has gone;
+  gridterm refuses, as opening connections is the user's. Restart's
+  own errors: "has been asked to start it again", "could not start it
+  again".
+- Open refuses a pane opened to run one command.
+- Share Pane with Agent opens the permissions, and opens them again for
+  a pane already shared.
+- The share dialog lists the shared panes, each with its permissions.
+- An "Agent Share" chip in the menu bar while sharing.
+- An unknown path to the program: a warning on copying the prompt, and
+  the skill refused. The skill's blank line after its front matter;
+  a relative `CLAUDE_CONFIG_DIR` taken from home.
+- The share's listener closed as the window closes.
+
+Jobs and tunnels:
+
+- Stop in the overwrite question says "It was stopped", not a failure.
+- A cancelled job that could not remove a half-written file says so.
+- A running job says how long it has been going.
+- Repeat pressed again while its machine reconnects does nothing more.
+- Repeat finds its machines by saved-server id, and refuses one removed
+  or connected elsewhere; a saved tunnel whose server was removed is
+  refused too.
+- A finished job keeps its sidebar row until cleared.
+- Disconnecting on purpose takes its tunnels' rows away.
+- Trouble closing tunnels after a drop is said.
+- A tunnel that could not be saved or forgotten says so.
+- Opening a saved tunnel leaves the saved list's order alone.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

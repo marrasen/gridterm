@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"fmt"
 	"image/color"
 	"math"
 
@@ -73,19 +75,48 @@ func standout(bg color.NRGBA, cs ...color.NRGBA) color.NRGBA {
 // user's, from the themes file gridterm reads, or gridterm's own alone
 // when there is no file to read.
 func loadThemes() []themed {
+	all, _ := loadThemesSaying()
+	return all
+}
+
+// loadThemesSaying is loadThemes, with what went wrong on the way: a
+// themes file that could not be found or read, which leaves the ones
+// built in, and each theme in it that would not draw, which is left
+// out. Said rather than dropped, as gridterm says it: the reason is
+// what tells the user to go and fix the file.
+func loadThemesSaying() ([]themed, error) {
 	all := themes.Built()
-	if dir, err := settings.Dir(); err == nil {
-		if read, err := themes.Load(themes.Path(dir)); err == nil && len(read) > 0 {
+	var trouble []error
+	dir, err := settings.Dir()
+	if err != nil {
+		trouble = append(trouble, fmt.Errorf("could not find the themes: %w", err))
+	} else {
+		read, err := themes.Load(themes.Path(dir))
+		switch {
+		case err != nil:
+			trouble = append(trouble, fmt.Errorf("could not read the themes: %w", err))
+		case len(read) > 0:
 			all = read
 		}
 	}
 	var out []themed
 	for _, t := range all {
-		if th, err := themeOf(t); err == nil {
-			out = append(out, th)
+		th, err := themeOf(t)
+		if err != nil {
+			trouble = append(trouble, fmt.Errorf("the theme %q: %w", t.Name, err))
+			continue
+		}
+		out = append(out, th)
+	}
+	if len(out) == 0 {
+		// Nothing drew: the built-in ones, which always do.
+		for _, t := range themes.Built() {
+			if th, err := themeOf(t); err == nil {
+				out = append(out, th)
+			}
 		}
 	}
-	return out
+	return out, errors.Join(trouble...)
 }
 
 func nrgba(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }

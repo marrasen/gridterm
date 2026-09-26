@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log"
 	"maps"
 	"sync/atomic"
 	"time"
@@ -430,6 +431,12 @@ type app struct {
 	families   []glyph.Family
 	wantFont   string
 	fontPicked bool
+	// fontFixed says the command line named the face, which no theme
+	// overrules.
+	fontFixed bool
+	// themeTrouble is what went wrong reading the themes as the window
+	// opened, said once it is up.
+	themeTrouble error
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// argvs are what each local pane runs, to start it again and to
@@ -556,8 +563,15 @@ func (a *app) run(ctx context.Context) error {
 	if len(a.themes) > 0 {
 		name := a.themes[0].name
 		if a.settings != nil {
-			if picked, ok := a.settings.Theme(); ok && slices.ContainsFunc(a.themes, func(t themed) bool { return t.name == picked }) {
-				name = picked
+			if picked, ok := a.settings.Theme(); ok {
+				if slices.ContainsFunc(a.themes, func(t themed) bool { return t.name == picked }) {
+					name = picked
+				} else {
+					// Said rather than swapped quietly, as gridterm says
+					// it: a window in another theme with no word reads as
+					// one that forgot.
+					log.Printf("the theme %q is not in the list any more, so this window is %q", picked, name)
+				}
 			}
 		}
 		a.pickTheme(name)
@@ -582,6 +596,9 @@ func (a *app) run(ctx context.Context) error {
 			a.st.Saved = b.Hosts()
 			a.giveSavedIDs()
 		}
+	}
+	if a.themeTrouble != nil {
+		a.notify("Couldn't read all the themes", a.themeTrouble.Error(), "")
 	}
 	if err := a.applyOptions(); err != nil {
 		return err
@@ -722,7 +739,12 @@ func (a *app) handle(in gunim.Intent) {
 			}
 		}
 	case PickTheme:
-		a.pickTheme(in.Name)
+		// Written down once it is on: a theme not in the list is not
+		// one to come back to.
+		if !a.pickTheme(in.Name) {
+			err = fmt.Errorf("there is no theme called %q", in.Name)
+			break
+		}
 		if a.settings != nil {
 			if err := a.settings.PutTheme(in.Name); err != nil {
 				a.notify("Couldn't keep the theme for next time", err.Error(), "")
@@ -1310,10 +1332,15 @@ func itoa(n int) string { return strconv.Itoa(n) }
 // pickTheme draws the window in the theme named: gunim fades its
 // colours across, and each terminal takes the new palette, what is on
 // its screen included.
-func (a *app) pickTheme(name string) {
+func (a *app) pickTheme(name string) bool {
 	for _, t := range a.themes {
 		if t.name != name {
 			continue
+		}
+		if name != a.st.Theme {
+			// Another theme: its wish for a typeface stands again, over
+			// one picked by hand for the theme before, as in gridterm.
+			a.fontPicked = a.fontFixed
 		}
 		a.st.Theme = name
 		a.palette = t.palette
@@ -1324,5 +1351,7 @@ func (a *app) pickTheme(name string) {
 			sh.setPalette(t.palette)
 		}
 		_ = a.c.SetTheme(name)
+		return true
 	}
+	return false
 }

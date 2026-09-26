@@ -99,7 +99,11 @@ func (a *app) writeThemeFile() error {
 // reloadThemes reads the themes again, and draws the window in the one
 // it is drawn in when it is still there.
 func (a *app) reloadThemes() {
-	a.themes = loadThemes()
+	all, err := loadThemesSaying()
+	if err != nil {
+		a.notify("Couldn't read all the themes", err.Error(), "")
+	}
+	a.themes = all
 	if a.registerThemes != nil {
 		a.registerThemes(a.themes)
 	}
@@ -114,7 +118,6 @@ func (a *app) reloadThemes() {
 	if !slices.Contains(a.st.Themes, name) && len(a.themes) > 0 {
 		name = a.themes[0].name
 	}
-	a.st.Theme = ""
 	a.pickTheme(name)
 	a.notify("Themes read again", strings.Join(a.st.Themes, ", "), "")
 }

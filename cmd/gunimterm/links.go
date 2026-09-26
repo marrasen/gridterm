@@ -14,7 +14,6 @@ import (
 	"sync"
 
 	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/vfs"
 )
 
 // Links in a terminal, as gridterm follows them: Ctrl and a click on
@@ -279,9 +278,5 @@ func (a *app) openPath(machine, at string, isDir bool, line int) error {
 		a.readOn(machine, f, at, false, line, placement{})
 		return nil
 	}
-	a.next++
-	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: vfs.Base(f, at), Machine: machine, Kind: kindFiles}, nil, placement{})
-	a.browse(Browse{Pane: id, Path: at})
-	return nil
+	return a.openFilesOn(machine, f, at)
 }

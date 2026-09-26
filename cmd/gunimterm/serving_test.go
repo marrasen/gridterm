@@ -4,8 +4,10 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"io"
+	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +19,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 )
 
@@ -285,4 +288,29 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	a.handle(DisconnectClients{})
 	pumpBoth(t, a, b, "the second window to let go", func() bool { return len(b.windows) == 0 })
 	pumpBoth(t, a, b, "its terminals to end", func() bool { return b.st.Panes[0].Ended && b.st.Panes[1].Ended })
+}
+
+func TestASavedWindowIsConnectedToAsOne(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	b, keyFile := clientOf(t, a)
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	host, port, _ := net.SplitHostPort(a.st.Serving.Addr)
+	p, _ := strconv.Atoi(port)
+	if err := book.Put(remote.Host{Name: "desk", Address: host, Port: p, Window: true, Identities: []string{keyFile}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	b.book = book
+	b.st.Saved = book.Hosts()
+	b.handle(ConnectTo{Saved: "desk"})
+	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
+	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return len(b.st.Panes) == 1 })
+	if b.st.Panes[0].Machine != "desk" || b.windows["desk"] == nil {
+		t.Fatalf("connected, the pane is on %q and the windows are %v", b.st.Panes[0].Machine, b.windows)
+	}
 }

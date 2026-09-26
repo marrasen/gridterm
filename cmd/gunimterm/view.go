@@ -77,7 +77,9 @@ type window struct {
 	shellChoices []ShellChoice
 	chosenShell  string
 	// termProgram is what new shells are told the terminal is called.
-	termProgram  string
+	termProgram string
+	// connected are the servers connected to, as last published.
+	connected    []string
 	bells        uint64
 	titles       bool
 	captions     map[string]*captioned
@@ -330,6 +332,24 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		u.Send(w, ShowLog{Machine: m})
 		return true
 	}
+	if m, ok := strings.CutPrefix(id, "on.terminal:"); ok {
+		u.Send(w, OpenOn{Machine: m})
+		return true
+	}
+	if m, ok := strings.CutPrefix(id, "on.files:"); ok {
+		u.Send(w, FilesOn{Machine: m})
+		return true
+	}
+	if rest, ok := strings.CutPrefix(id, "on.folder:"); ok {
+		at, m, _ := strings.Cut(rest, ":")
+		i, _ := strconv.Atoi(at)
+		for _, h := range w.saved {
+			if h.Name == m && i < len(h.Folders) {
+				u.Send(w, FilesOn{Machine: m, Path: h.Folders[i]})
+			}
+		}
+		return true
+	}
 	if s, ok := strings.CutPrefix(id, "shell.open."); ok {
 		u.Send(w, OpenShellNamed{ID: s})
 		return true
@@ -549,6 +569,25 @@ func (w *window) servers(saved []remote.Host) {
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
 		w.paletteIDs = append(w.paletteIDs, "conn.log:"+m)
 	}
+	// Every machine by name: a terminal there, its files, and each
+	// folder saved for it.
+	for _, m := range w.machines() {
+		where := m
+		if m == "" {
+			where = "This Computer"
+		}
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where}, widget.PaletteItem{Title: "Browse Files on " + where})
+		w.paletteIDs = append(w.paletteIDs, "on.terminal:"+m, "on.files:"+m)
+		for _, h := range w.saved {
+			if h.Name != m {
+				continue
+			}
+			for i, f := range h.Folders {
+				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where})
+				w.paletteIDs = append(w.paletteIDs, "on.folder:"+strconv.Itoa(i)+":"+m)
+			}
+		}
+	}
 	// With more than one shell here, a terminal with any of them, and
 	// which new terminals start.
 	if len(w.shellChoices) > 1 {
@@ -591,6 +630,12 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	}
 	via := widget.NewDropdown(through...)
 	via.Label = "Through"
+	kind := widget.NewDropdown("Server", "gridterm window")
+	kind.Label = "Type"
+	folders := widget.NewTextField()
+	folders.Placeholder = "optional: paths to open files at, with commas"
+	setup := widget.NewCheckbox("Teach its shell to say what it is doing")
+	forward := widget.NewCheckbox("Forward this machine's SSH agent to it")
 	title, under := "Add a server", ""
 	if old != nil {
 		title, under = "Edit "+old.Name, old.Name
@@ -603,6 +648,11 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 		if len(old.Identities) > 0 {
 			key.SetText(old.Identities[0])
 		}
+		if old.Window {
+			kind.Selected = 1
+		}
+		folders.SetText(old.FoldersJoined())
+		setup.On, forward.On = old.Setup, old.ForwardAgent
 		for i, id := range ids {
 			if id != "" && id == old.Via {
 				via.Selected = i
@@ -627,13 +677,17 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 			h.Identities = []string{k}
 		}
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
+		h.Window = kind.Selected == 1
+		h.Folders = remote.FoldersFrom(folders.Text())
+		h.Setup, h.ForwardAgent = setup.On, forward.On
 		if err := h.Validate(); err != nil {
 			return h, upperFirst(err.Error()) + "."
 		}
 		return h, ""
 	}
 	d := widget.NewDialog(title)
-	d.Body = widget.NewForm().Add("Name", name).Add("Address", addr).Add("Port", port).Add("User", user).Add("Through", via).Add("Key file", key)
+	d.Body = widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Port", port).Add("User", user).
+		Add("Through", via).Add("Key file", key).Add("Folders", folders).Add("", setup).Add("", forward)
 	d.SetButtons("Save", "Cancel")
 	d.Check = func() string {
 		_, problem := host()
@@ -772,8 +826,16 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
-	w.remoteWindows = st.Windows
 	w.termProgram = st.TermProgram
+	renamed := len(st.Windows) != len(w.remoteWindows)
+	for i := 0; !renamed && i < len(st.Windows); i++ {
+		renamed = st.Windows[i].Name != w.remoteWindows[i].Name
+	}
+	w.remoteWindows = st.Windows
+	if renamed || !slices.Equal(st.Connected, w.connected) {
+		w.connected = st.Connected
+		w.servers(w.saved)
+	}
 	w.setSavedCommands(st.SavedCommands)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell {
 		w.shellChoices, w.chosenShell = st.Shells, st.ChosenShell
@@ -1483,4 +1545,15 @@ func (w *window) focusSidebar(u *gunim.UI) {
 		return
 	}
 	w.focusRow("", 1, u)
+}
+
+// machines are the machines panes can open on: this computer, the
+// servers connected to, and the windows connected to.
+func (w *window) machines() []string {
+	out := []string{""}
+	out = append(out, w.connected...)
+	for _, rw := range w.remoteWindows {
+		out = append(out, rw.Name)
+	}
+	return out
 }

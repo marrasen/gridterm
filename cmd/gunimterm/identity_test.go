@@ -12,7 +12,9 @@ import (
 func echoed(t *testing.T, a *app, id, cmd, want string) {
 	t.Helper()
 	waitFor(t, a, "the prompt", func() bool { return strings.Contains(a.terminal(id).Text(), "$") })
-	a.terminal(id).Paste(cmd + "\r")
+	// Typed rather than pasted: bash takes a pasted return as part of
+	// the line rather than as Enter.
+	a.terminal(id).Send([]byte(cmd + "\r"))
 	waitFor(t, a, want, func() bool { return strings.Contains(a.terminal(id).Text(), "\n"+want) })
 }
 
@@ -40,7 +42,7 @@ func TestANewTerminalStartsInTheFolderOfThePaneInFront(t *testing.T) {
 	a.handle(NewTerminal{})
 	taught := a.st.Panes[1].ID
 	dir := t.TempDir()
-	a.terminal(taught).Paste("cd " + dir + "\r")
+	a.terminal(taught).Send([]byte("cd " + dir + "\r"))
 	waitFor(t, a, "the shell to say where it is", func() bool {
 		got, _ := a.terminal(taught).Dir()
 		return got == dir

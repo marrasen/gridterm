@@ -38,7 +38,7 @@ type (
 	// ConnectWindow connects to a window served at Addr, which is
 	// host, or host:port, with the key in KeyFile, or the usual keys
 	// when it is empty.
-	ConnectWindow struct{ Addr, KeyFile string }
+	ConnectWindow struct{ Addr, KeyFile, Name string }
 	// DisconnectWindow lets go of a window, closing the panes on it.
 	DisconnectWindow struct{ Name string }
 	// AttachWindow works in something a window has open, in a pane
@@ -81,6 +81,9 @@ func (a *app) connectWindow(in ConnectWindow) error {
 		return errors.New("type the address of the window to connect to")
 	}
 	name := addr
+	if in.Name != "" {
+		name = in.Name
+	}
 	if _, ok := a.windows[name]; ok || a.dialing[name] {
 		return fmt.Errorf("this window is already connected to %s", name)
 	}
@@ -291,7 +294,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 }
 
 // windowFiles opens a window's files, over its connection.
-func (a *app) windowFiles(name string) {
+func (a *app) windowFiles(name, path string) {
 	w := a.windows[name]
 	a.st.Status = "Opening the files on " + name + "…"
 	go func() {
@@ -308,7 +311,7 @@ func (a *app) windowFiles(name string) {
 			}
 			f := vfs.NewSFTP(name, w, client, func() error { return errors.Join(client.Close(), files.Close()) })
 			a.remoteFS[name] = f
-			if err := a.openFilesOn(name, f); err != nil {
+			if err := a.openFilesOn(name, f, path); err != nil {
 				a.notify("Couldn't open the files on "+name, err.Error(), "")
 			}
 		}

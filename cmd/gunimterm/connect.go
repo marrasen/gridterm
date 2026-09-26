@@ -54,6 +54,14 @@ func (a *app) connect(in ConnectTo) error {
 		if err != nil {
 			return err
 		}
+		// A saved gridterm window is connected to as one.
+		if last := hosts[len(hosts)-1]; last.Window {
+			key := ""
+			if len(last.Identities) > 0 {
+				key = last.Identities[0]
+			}
+			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, Name: last.Name})
+		}
 		for _, h := range hosts {
 			hops = append(hops, h.Config())
 		}

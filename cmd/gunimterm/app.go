@@ -79,6 +79,8 @@ type State struct {
 	SavedCommands []settings.SavedCommand
 	// Shells are the shells found on this machine, and ChosenShell the
 	// one new terminals start, "" for the user's own.
+	// Connected are the servers connected to, by name.
+	Connected   []string
 	Shells      []ShellChoice
 	ChosenShell string
 	// ShellSetup says new shells here are taught to say what they are
@@ -250,6 +252,11 @@ type (
 	TogglePaneTitles struct{}
 	// RunSavedCommand runs a command kept from before.
 	RunSavedCommand struct{ Saved settings.SavedCommand }
+	// OpenOn opens a terminal on Machine, "" for this computer.
+	OpenOn struct{ Machine string }
+	// FilesOn opens a file pane on Machine, at Path, or at home when
+	// Path is empty.
+	FilesOn struct{ Machine, Path string }
 	// ShowScrollback opens what a terminal pane has kept, scrollback
 	// and screen, in a reader beside it, to search and copy from.
 	ShowScrollback struct{ Pane string }
@@ -516,6 +523,7 @@ func (a *app) publish() {
 	st.Windows = slices.Clone(a.st.Windows)
 	st.SavedCommands = slices.Clone(a.st.SavedCommands)
 	st.Shells = slices.Clone(a.st.Shells)
+	st.Connected = slices.Sorted(maps.Keys(a.conns))
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -719,6 +727,10 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case PickShell:
 		err = a.pickShell(in.ID)
+	case OpenOn:
+		err = a.open(in.Machine, placement{})
+	case FilesOn:
+		err = a.filesOn(in.Machine, in.Path)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:

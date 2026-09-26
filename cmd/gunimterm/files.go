@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"errors"
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -149,21 +150,23 @@ func (a *app) fsFor(machine string) vfs.FS {
 	return a.remoteFS[machine]
 }
 
-// openFiles opens a file pane at home on the focused pane's machine. A
-// server's files open over its connection first, with SFTP, once for
-// all its file panes.
-func (a *app) openFiles() error {
-	machine := a.machineOf(a.st.Focus)
+// openFiles opens a file pane at home on the focused pane's machine.
+func (a *app) openFiles() error { return a.filesOn(a.machineOf(a.st.Focus), "") }
+
+// filesOn opens a file pane on machine, at path, or at home when path
+// is empty. A server's files open over its connection first, with
+// SFTP, once for all its file panes.
+func (a *app) filesOn(machine, path string) error {
 	if f := a.fsFor(machine); f != nil {
-		return a.openFilesOn(machine, f)
+		return a.openFilesOn(machine, f, path)
 	}
 	if _, ok := a.windows[machine]; ok {
-		a.windowFiles(machine)
+		a.windowFiles(machine, path)
 		return nil
 	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		return a.openFilesOn("", a.fsFor(""))
+		return fmt.Errorf("this window is not connected to %s", machine)
 	}
 	a.st.Status = "Opening the files on " + machine + "…"
 	go func() {
@@ -176,7 +179,7 @@ func (a *app) openFiles() error {
 			}
 			f := vfs.NewSFTP(machine, conn, files.Client(), files.Close)
 			a.remoteFS[machine] = f
-			if err := a.openFilesOn(machine, f); err != nil {
+			if err := a.openFilesOn(machine, f, path); err != nil {
 				a.notify("Couldn't open the files on "+machine, err.Error(), "")
 			}
 		}
@@ -184,17 +187,20 @@ func (a *app) openFiles() error {
 	return nil
 }
 
-// openFilesOn opens a file pane at home on a machine whose files are
-// open.
-func (a *app) openFilesOn(machine string, f vfs.FS) error {
-	home, err := f.Home()
-	if err != nil {
-		return err
+// openFilesOn opens a file pane on a machine whose files are open, at
+// path, or at home when path is empty.
+func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
+	if path == "" {
+		home, err := f.Home()
+		if err != nil {
+			return err
+		}
+		path = home
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: vfs.Base(f, home), Machine: machine, Kind: kindFiles}, nil, placement{})
-	a.browse(Browse{Pane: id, Path: home})
+	a.addPane(Pane{ID: id, Title: vfs.Base(f, path), Machine: machine, Kind: kindFiles}, nil, placement{})
+	a.browse(Browse{Pane: id, Path: path})
 	return nil
 }
 

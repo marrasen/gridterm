@@ -118,7 +118,7 @@ type running struct {
 // folderOf returns a file pane's filesystem and folder.
 func (a *app) folderOf(pane string) (vfs.FS, string, bool) {
 	b, ok := a.st.Browsers[pane]
-	f := a.fsFor(a.filesKey(pane))
+	f := a.filesOf(pane)
 	return f, b.Path, ok && f != nil
 }
 
@@ -179,7 +179,7 @@ func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
 	job := a.jobs.Start(a.ctx, op, jobs.Options{Ask: overwriteAsker{a}})
 	var panes []string
 	for id, b := range a.st.Browsers {
-		f := a.fsFor(a.filesKey(id))
+		f := a.filesOf(id)
 		if f == nil {
 			continue
 		}

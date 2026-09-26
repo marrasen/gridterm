@@ -396,6 +396,8 @@ type app struct {
 	opts      options
 	fixedFont string
 	shotErr   error
+	// paneFiles is each file pane's view of its machine's files.
+	paneFiles map[string]wrappedFiles
 	// dialCancel gives up each connection being made, and dialWaiters
 	// are what is to happen once each has come back.
 	dialCancel  map[string]context.CancelFunc
@@ -497,6 +499,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		commands:    map[string]command{},
 		noticed:     map[string]uint64{},
 		reached:     map[string]string{},
+		paneFiles:   map[string]wrappedFiles{},
 		dialCancel:  map[string]context.CancelFunc{},
 		dialWaiters: map[string][]func(error){},
 		paneAt:      map[string]string{},
@@ -1205,6 +1208,7 @@ func (a *app) remove(id string) {
 	delete(a.argvs, id)
 	delete(a.noticed, id)
 	delete(a.paneAt, id)
+	delete(a.paneFiles, id)
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)

@@ -29,8 +29,10 @@ type Browser struct {
 	Land string
 	// Err says why the folder could not be read.
 	Err string
-	// Seq counts the listings, so the window knows a new one.
+	// Seq counts the listings, so the window knows a new one, and Top
+	// says Path is the top of its filesystem.
 	Seq int
+	Top bool
 }
 
 // Reader is what a reader pane shows: a file's lines.
@@ -103,7 +105,7 @@ type (
 // viewFile reads a file of a file pane's folder.
 func (a *app) viewFile(in ViewFile) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.filesKey(in.Pane))
+	f := a.filesOf(in.Pane)
 	if !ok || f == nil {
 		return
 	}
@@ -112,7 +114,7 @@ func (a *app) viewFile(in ViewFile) {
 
 // goTo shows the folder typed.
 func (a *app) goTo(in GoTo) {
-	f := a.fsFor(a.filesKey(in.Pane))
+	f := a.filesOf(in.Pane)
 	if f == nil {
 		return
 	}
@@ -131,13 +133,13 @@ func (a *app) goTo(in GoTo) {
 // enter goes into the folder named name, or reads the file.
 func (a *app) enter(in EnterEntry) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.filesKey(in.Pane))
+	f := a.filesOf(in.Pane)
 	if !ok || f == nil {
 		return
 	}
 	path := vfs.Join(f, b.Path, in.Name)
 	for _, e := range b.Entries {
-		if e.Name == in.Name && !e.IsDir() {
+		if e.Name == in.Name && !e.IsDir() && !vfs.IsArchive(e.Name) {
 			a.readFile(ReadFile{Pane: in.Pane, Path: path})
 			return
 		}
@@ -148,7 +150,7 @@ func (a *app) enter(in EnterEntry) {
 // goUp shows the folder above a file pane's.
 func (a *app) goUp(in GoUp) {
 	b, ok := a.st.Browsers[in.Pane]
-	f := a.fsFor(a.filesKey(in.Pane))
+	f := a.filesOf(in.Pane)
 	if !ok || f == nil || vfs.IsTop(f, b.Path) {
 		return
 	}
@@ -173,6 +175,26 @@ func (a *app) fsFor(machine string) vfs.FS {
 	}
 	return a.remoteFS[machine]
 }
+
+// filesOf is what a file pane reads: its machine's files, with the
+// archives on them opened as folders, as gridterm reads them. One
+// wrapper for each pane, since each holds the archive it is in, and two
+// panes in two archives would take turns throwing each other's out.
+func (a *app) filesOf(pane string) vfs.FS {
+	under := a.fsFor(a.filesKey(pane))
+	if under == nil {
+		return nil
+	}
+	if w, ok := a.paneFiles[pane]; ok && w.under == under {
+		return w.over
+	}
+	w := wrappedFiles{under: under, over: vfs.WithArchives(under)}
+	a.paneFiles[pane] = w
+	return w.over
+}
+
+// wrappedFiles is a pane's view of its machine's files.
+type wrappedFiles struct{ under, over vfs.FS }
 
 // openFiles opens a file pane at home on the focused pane's machine.
 func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
@@ -329,7 +351,7 @@ func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
 
 // browse lists a folder for a file pane, in the background.
 func (a *app) browse(in Browse) {
-	f := a.fsFor(a.filesKey(in.Pane))
+	f := a.filesOf(in.Pane)
 	if f == nil {
 		return
 	}
@@ -343,7 +365,7 @@ func (a *app) browse(in Browse) {
 				return
 			}
 			order(entries)
-			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1})
+			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path)})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()
@@ -364,7 +386,8 @@ func (a *app) setBrowser(id string, b Browser) {
 // follow it, reads it again each time it changes.
 func (a *app) readFile(in ReadFile) {
 	machine := a.filesKey(in.Pane)
-	f := a.fsFor(machine)
+	// The pane's view, which reads inside an archive too.
+	f := a.filesOf(in.Pane)
 	if f == nil {
 		return
 	}

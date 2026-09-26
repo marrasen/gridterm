@@ -78,11 +78,10 @@ Sidebar:
 
 Files:
 
-- Archives open as folders (`vfs.WithArchives`).
 - Go To offers Windows drives, and completes paths.
 - The bar of F-keys, clickable, dimmed where they do nothing.
 - A read error as a row to click, and a "reading…" row.
-- WSL folders in the Files menu; ".." hidden at a filesystem's top.
+- WSL folders in the Files menu.
 
 Secrets, serving and agents:
 

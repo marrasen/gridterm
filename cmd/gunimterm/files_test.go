@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/zip"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -80,4 +82,32 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 	if a.conns[machine] == nil {
 		t.Fatal("the folder was read with no connection")
 	}
+}
+
+func TestAnArchiveOpensAsAFolder(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	f, err := os.Create(filepath.Join(dir, "bundle.zip"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	z := zip.NewWriter(f)
+	w, err := z.Create("inside.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("from the zip"))
+	if err := errors.Join(z.Close(), f.Close()); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.filesOn("", dir); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return len(a.st.Browsers[pane].Entries) == 1 })
+	a.handle(EnterEntry{Pane: pane, Name: "bundle.zip"})
+	waitFor(t, a, "the archive's insides", func() bool {
+		es := a.st.Browsers[pane].Entries
+		return len(es) == 1 && es[0].Name == "inside.txt"
+	})
 }

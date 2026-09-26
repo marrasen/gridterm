@@ -49,3 +49,13 @@ func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 		t.Fatalf("Ctrl+D sent %#v", in)
 	}
 }
+
+func TestTheTopOfAFilesystemHasNothingAboveIt(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/", Entries: []vfs.Entry{{Name: "etc", Mode: fs.ModeDir}}, Seq: 1, Top: true}}}
+	publish(st)
+	if k, _ := win.browsers["p1"].table.Cursor(); k != "etc" {
+		t.Fatalf("at the top, the list starts at %q", k)
+	}
+}

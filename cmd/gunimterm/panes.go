@@ -274,7 +274,11 @@ func (b *browser) list(u *gunim.UI) {
 		}
 		return n
 	})
-	keys := []widget.Key{up}
+	var keys []widget.Key
+	if !b.st.Top {
+		// Nowhere above the top of a filesystem, as in gridterm.
+		keys = append(keys, up)
+	}
 	clear(b.byName)
 	for _, e := range entries {
 		k := widget.Key(e.Name)

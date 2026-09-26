@@ -63,14 +63,7 @@ Panes and terminals:
 
 Sidebar and connections:
 
-- Clear Finished for rows that ended (`conn.clearFinished`).
 - Run Command in a pane of its own (`conn.command`).
-- Edit This Server and Remove This Server for the focused pane's
-  server, and Reload Server List. The palette edits and removes saved
-  servers by name.
-- Focus Sidebar and Close Selected Row, for the sidebar by keyboard.
-- The dialog for a new tunnel offers the tunnels saved for that server
-  as it is typed; gunimterm offers them in the palette only.
 
 Files:
 

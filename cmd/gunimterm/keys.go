@@ -36,6 +36,8 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
 		{Key: input.KeyF10}: "menu.open",
 		{Key: input.KeyF11}: "view.fullScreen",
+		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "sidebar.focus",
+		{Key: input.KeyPlus, Mods: input.ModCtrl}:                    "font.increase",
 		{Key: input.KeyG, Mods: input.ModCtrl | input.ModShift}:      "files.goTo",
 		{Key: input.KeyN, Mods: input.ModCtrl | input.ModShift}:      "server.connect",
 		{Key: input.KeyEquals, Mods: input.ModCtrl}:                  "font.increase",
@@ -79,6 +81,12 @@ var commands = []struct{ id, title string }{
 	{"conn.disconnect", "Disconnect"},
 	{"pane.titles", "Show Pane Titles"},
 	{"view.fullScreen", "Full Screen"},
+	{"sidebar.focus", "Focus Sidebar"},
+	{"sidebar.closeRow", "Close Selected Row"},
+	{"conn.clearFinished", "Clear Finished"},
+	{"server.editThis", "Edit This Server"},
+	{"server.forget", "Remove This Server"},
+	{"server.reload", "Reload Server List"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -123,6 +131,7 @@ var menus = []struct {
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
 		{id: "pane.switch", title: "All Panes…"},
 		{id: "pane.rename", title: "Rename…", group: true},
+		{id: "conn.clearFinished", title: "Clear Finished"},
 		{title: "Agent", caption: true},
 		{id: "agent.share", title: "Share with an Agent…"}, {id: "agent.permissions", title: "Agent Permissions…"},
 	}},
@@ -131,6 +140,7 @@ var menus = []struct {
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
 		{id: "conn.log", title: "Connection Log"},
 		{id: "conn.disconnect", title: "Disconnect"},
+		{id: "server.editThis", title: "Edit This Server…"}, {id: "server.forget", title: "Remove This Server…"},
 		{title: "Files", caption: true},
 		{id: "files.goTo", title: "Go to Directory…"},
 		{title: "Tunnels", caption: true},
@@ -191,6 +201,10 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return OpenFiles{}, true
 	case "view.jobs":
 		return ShowJobs{}, true
+	case "server.reload":
+		return ReloadServers{}, true
+	case "conn.clearFinished":
+		return ClearFinished{}, true
 	case "secrets.show":
 		return ShowSecrets{}, true
 	case "secrets.lock":

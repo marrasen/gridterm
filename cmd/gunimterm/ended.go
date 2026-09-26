@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"os/exec"
+	"slices"
 	"strconv"
 
 	"golang.org/x/crypto/ssh"
@@ -151,4 +152,35 @@ func exitStatus(why error, over bool) (int, bool) {
 		return here.ExitCode(), true
 	}
 	return 0, false
+}
+
+// clearFinished closes the panes whose programs have ended and clears
+// the tunnels that stopped.
+func (a *app) clearFinished() {
+	for _, p := range slices.Clone(a.st.Panes) {
+		if p.Ended {
+			a.closePane(p.ID)
+		}
+	}
+	for _, t := range slices.Clone(a.st.Tunnels) {
+		if !t.Live {
+			_ = a.closeTunnel(t.ID)
+		}
+	}
+}
+
+// reloadServers reads the saved servers again.
+func (a *app) reloadServers() error {
+	path, err := remote.BookPath()
+	if err != nil {
+		return err
+	}
+	b, err := remote.LoadBook(path)
+	if err != nil {
+		return err
+	}
+	a.book = b
+	a.st.Saved = b.Hosts()
+	a.notify("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
+	return nil
 }

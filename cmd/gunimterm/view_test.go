@@ -7,15 +7,21 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/gridterm/logs"
+	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/vt"
 )
 
 // lastWindow is the offscreen window windowStage made last, for a test
 // that asks what the window's frame was told.
 var lastWindow *gunim.Window
+
+// lastUI is the window's UI as its last update had it, for a test that
+// opens a dialog between frames.
+var lastUI *gunim.UI
 
 // windowStage mounts the window in an offscreen gunim window, and
 // returns it with a way to publish a state and draw a few frames.
@@ -27,7 +33,10 @@ func windowStage(t *testing.T) (win *window, sh *shells, publish func(State)) {
 	gunim.RegisterView(w, "window", func(State) *window {
 		win = newWindow(sh, shortcuts(), nil)
 		return win
-	}, func(win *window, st State, u *gunim.UI) { win.update(st, u) })
+	}, func(win *window, st State, u *gunim.UI) {
+		lastUI = u
+		win.update(st, u)
+	})
 	c := w.Client()
 	if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
 		t.Fatal(err)
@@ -166,5 +175,105 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 			}
 		}
 		s.mu.Unlock()
+	}
+}
+
+// nextIntent is the next intent the window sends, or fails.
+func nextIntent(t *testing.T) gunim.Intent {
+	t.Helper()
+	select {
+	case env := <-lastWindow.Client().Intents():
+		return env.Intent
+	case <-time.After(time.Second):
+		t.Fatal("the window sent nothing")
+		return nil
+	}
+}
+
+func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(twoPanes("p2", nil))
+	// Drained: focusing a pane says so.
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	press := func(k gi.Key) {
+		lastWindow.Input(gi.KeyPress{Key: k})
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyL, Mods: gi.ModControl | gi.ModShift})
+	lastWindow.Frame(time.Second / 60)
+	focused := func() string {
+		for _, k := range win.list.Keys() {
+			if row, ok := widget.RowOf[*sideRow](win.list, k); ok && row.ring.Target() == 1 {
+				return string(k)
+			}
+		}
+		return ""
+	}
+	if got := focused(); got != "p2" {
+		t.Fatalf("focusing the sidebar lit %q, want the focused pane's row", got)
+	}
+	press(gi.KeyUp)
+	if got := focused(); got != "p1" {
+		t.Fatalf("up went to %q", got)
+	}
+	press(gi.KeyEnter)
+	if in, ok := nextIntent(t).(FocusPane); !ok || in.Pane != "p1" {
+		t.Fatalf("Enter sent %#v", in)
+	}
+	press(gi.KeyDelete)
+	if in, ok := nextIntent(t).(ClosePane); !ok || in.Pane != "p1" {
+		t.Fatalf("Delete sent %#v", in)
+	}
+}
+
+func TestClearFinishedClosesEndedPanes(t *testing.T) {
+	a, _ := agentApp(t)
+	if err := a.open("", placement{}); err != nil {
+		t.Fatal(err)
+	}
+	ended := a.st.Panes[0].ID
+	shellEnds(t, a, ended, "0")
+	a.handle(ClearFinished{})
+	waitFor(t, a, "the ended pane to close", func() bool { return !a.has(ended) })
+	if len(a.st.Panes) != 1 {
+		t.Fatalf("cleared, the panes are %+v", a.st.Panes)
+	}
+}
+
+func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	s := &typed{done: make(chan struct{})}
+	sh.set("p1", openShell(s, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	publish(State{
+		Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		SavedTunnels: []settings.SavedTunnel{
+			{Host: "srv", Kind: "remote", Listen: ":8080", Target: "127.0.0.1:80"},
+			{Host: "other", Kind: "local", Listen: ":9000", Target: "db:5432"},
+		},
+	})
+	win.tunnelDialog(false, lastUI)
+	for range 3 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	fields := win.dialog.Body.(*widget.Form).Focusables()
+	if len(fields) != 5 {
+		t.Fatalf("the dialog has %d fields, want listen, target, direction, saved and the box", len(fields))
+	}
+	pick := fields[3].(*widget.Dropdown)
+	if len(pick.Items) != 2 || pick.Items[1] != "remote :8080 → 127.0.0.1:80" {
+		t.Fatalf("Saved offers %q, want the one tunnel kept for srv", pick.Items)
+	}
+	lastUI.Focus(pick)
+	for _, k := range []gi.Key{gi.KeyDown, gi.KeyDown, gi.KeyEnter} {
+		lastWindow.Input(gi.KeyPress{Key: k})
+		lastWindow.Frame(time.Second / 60)
+	}
+	listen, target := fields[0].(*widget.TextField), fields[1].(*widget.TextField)
+	if listen.Text() != ":8080" || target.Text() != "127.0.0.1:80" || fields[2].(*widget.Dropdown).Selected != 1 {
+		t.Fatalf("picked, the form reads %q, %q, direction %d", listen.Text(), target.Text(), fields[2].(*widget.Dropdown).Selected)
 	}
 }

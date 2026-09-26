@@ -66,6 +66,8 @@ type window struct {
 	serving Serving
 	// bells is the bells as last published, titles whether panes show
 	// their titles, and captions the line over each pane that does.
+	// sidebarShown is whether the sidebar shows, as last published.
+	sidebarShown bool
 	bells        uint64
 	titles       bool
 	captions     map[string]*captioned
@@ -208,6 +210,28 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			return true
 		}
 		u.Send(w, ShowLog{Machine: machine})
+		return true
+	case "sidebar.focus":
+		w.focusSidebar(u)
+		return true
+	case "sidebar.closeRow":
+		if row, ok := u.Focused().(*sideRow); ok && row.closes != nil {
+			u.Send(row, row.closes)
+		}
+		return true
+	case "server.editThis", "server.forget":
+		m := w.machineOf(w.focused)
+		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return h.Name == m })
+		if i < 0 {
+			w.toasts.Show(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Servers menu."}, u)
+			return true
+		}
+		if id == "server.editThis" {
+			h := w.saved[i]
+			w.serverForm(&h, u)
+		} else {
+			w.confirmRemove(m, u)
+		}
 		return true
 	case "view.fullScreen":
 		u.SetFullScreen(!u.FullScreen())
@@ -451,11 +475,11 @@ func (w *window) servers(saved []remote.Host) {
 		return ""
 	}
 	m := widget.BarMenu{Title: "Servers",
-		Items: []string{"Connect to Server…", "Add Server…"},
-		Hints: []string{hint("server.connect"), ""}}
-	w.serverIDs = []string{"server.connect", "server.add"}
+		Items: []string{"Connect to Server…", "Add Server…", "Reload Server List"},
+		Hints: []string{hint("server.connect"), "", ""}}
+	w.serverIDs = []string{"server.connect", "server.add", "server.reload"}
 	if len(saved) > 0 {
-		m.Breaks, m.Captions = []int{2}, []int{2}
+		m.Breaks, m.Captions = []int{3}, []int{3}
 		m.Items, m.Hints = append(m.Items, "Saved"), append(m.Hints, "")
 		w.serverIDs = append(w.serverIDs, "")
 		for _, h := range saved {
@@ -682,7 +706,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
-		func(r sideItem) *sideRow { return newSideRow(r) },
+		func(r sideItem) *sideRow { return w.newSideRow(r) },
 		func(row *sideRow, r sideItem, u *gunim.UI) { row.set(r) })
 	for _, r := range rows {
 		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(r.key)); ok && !r.heading {
@@ -691,6 +715,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
+	w.sidebarShown = st.Sidebar
 	if st.Bells > w.bells {
 		w.bells = st.Bells
 		u.RequestAttention()
@@ -1065,6 +1090,9 @@ type sideItem struct {
 	key, text, note string
 	pane            string
 	click           gunim.Intent
+	// closes is what closing the row asks the program, when it can be
+	// closed from the sidebar.
+	closes gunim.Intent
 	// local is what a click does in the window, for a row whose click
 	// asks the program nothing.
 	local        func(*gunim.UI)
@@ -1117,7 +1145,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 				case p.Rang:
 					note = "bell"
 				}
-				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, dim: p.Ended})
+				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, closes: ClosePane{Pane: p.ID}, dim: p.Ended})
 			}
 		}
 		for _, w := range windows {
@@ -1135,7 +1163,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		}
 		for _, t := range tunnels {
 			if t.Machine == m {
-				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: ShowTunnel{ID: t.ID}, dim: !t.Live})
+				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: ShowTunnel{ID: t.ID}, closes: CloseTunnel{ID: t.ID}, dim: !t.Live})
 			}
 		}
 	}
@@ -1147,25 +1175,31 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 // forward. A machine's heading is small and dim.
 type sideRow struct {
 	anim.Group
+	w       *window
+	key     string
 	heading bool
 	click   gunim.Intent
+	closes  gunim.Intent
 	local   func(*gunim.UI)
-	title   *widget.Label
-	note    *widget.Label
-	active  *anim.Float
-	hover   *anim.Float
-	on      bool
+	// ring grows while the row has the keyboard.
+	ring   *anim.Float
+	title  *widget.Label
+	note   *widget.Label
+	active *anim.Float
+	hover  *anim.Float
+	on     bool
 }
 
-func newSideRow(it sideItem) *sideRow {
-	r := &sideRow{heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
+func (w *window) newSideRow(it sideItem) *sideRow {
+	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
 	r.title.MaxLines, r.note.MaxLines = 1, 1
 	r.note.Size, r.note.Color = smallText, faint
 	if it.heading {
 		r.title.Size, r.title.Color = smallText, faint
 	}
 	r.set(it)
-	r.Add(r.active, r.hover)
+	r.ring = anim.NewFloat(0)
+	r.Add(r.active, r.hover, r.ring)
 	return r
 }
 
@@ -1173,7 +1207,7 @@ func newSideRow(it sideItem) *sideRow {
 func (r *sideRow) set(it sideItem) {
 	r.title.SetText(it.text)
 	r.note.SetText(it.note)
-	r.click, r.local = it.click, it.local
+	r.click, r.local, r.closes, r.key = it.click, it.local, it.closes, it.key
 	if !it.heading {
 		r.title.Color = widget.Ink
 		if it.dim {
@@ -1227,8 +1261,26 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 		c.A = uint8(float32(c.A) * min(t, 1))
 		p.RRect(inset, 6, paint.Solid(c))
 	}
+	if t := r.ring.Value(); t > 0.01 {
+		c := widget.Accent.Get(f.Theme)
+		c.A = uint8(float32(c.A) * min(t, 1))
+		p.RRectStroke(inset, 6, paint.Fill{}, paint.Stroke{Width: 1.5, Color: c})
+	}
 	kids.At(0).Paint(p)
 	kids.At(1).Paint(p)
+}
+
+// Focusable implements [gunim.Focusable]: every row but a heading, for
+// working the sidebar from the keyboard.
+func (r *sideRow) Focusable() bool { return !r.heading }
+
+// activate does what a click on the row does.
+func (r *sideRow) activate(u *gunim.UI) {
+	if r.local != nil {
+		r.local(u)
+	} else if r.click != nil {
+		u.Send(r, r.click)
+	}
 }
 
 // Handle implements [gunim.Handler].
@@ -1243,14 +1295,34 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
-			if r.local != nil {
-				r.local(u)
-			} else if r.click != nil {
-				u.Send(r, r.click)
-			}
+			r.activate(u)
 			return true
 		}
 		return false
+	case input.FocusGained:
+		r.ring.Animate(1, widget.Quick.Get(u.Theme()))
+	case input.FocusLost:
+		r.ring.Animate(0, widget.Settle.Get(u.Theme()))
+	case input.KeyPress:
+		switch {
+		case e.Key == input.KeyUp, e.Key == input.KeyDown:
+			step := 1
+			if e.Key == input.KeyUp {
+				step = -1
+			}
+			r.w.focusRow(r.key, step, u)
+		case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter:
+			r.activate(u)
+		case e.Key == input.KeyDelete && r.closes != nil:
+			u.Send(r, r.closes)
+		case e.Key == input.KeyEscape:
+			// Back to the pane the keyboard came from.
+			if n := r.w.focusNode(r.w.focused); n != nil {
+				u.Focus(n)
+			}
+		default:
+			return false
+		}
 	default:
 		return false
 	}
@@ -1306,4 +1378,33 @@ func (s *statusLine) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids 
 	}
 	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
 	kids.At(0).Paint(p)
+}
+
+// focusRow gives the keyboard to the row step rows from the one keyed
+// from, passing over headings, or to the first row when from is "".
+func (w *window) focusRow(from string, step int, u *gunim.UI) {
+	keys := w.list.Keys()
+	at := slices.Index(keys, widget.Key(from))
+	if at < 0 {
+		at, step = -1, 1
+	}
+	for i := at + step; i >= 0 && i < len(keys); i += step {
+		if row, ok := widget.RowOf[*sideRow](w.list, keys[i]); ok && !row.heading {
+			u.Focus(row)
+			return
+		}
+	}
+}
+
+// focusSidebar gives the keyboard to the sidebar's row for the focused
+// pane, or to its first row, showing the sidebar first.
+func (w *window) focusSidebar(u *gunim.UI) {
+	if !w.sidebarShown {
+		u.Send(w, ToggleSidebar{})
+	}
+	if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(w.focused)); ok {
+		u.Focus(row)
+		return
+	}
+	w.focusRow("", 1, u)
 }

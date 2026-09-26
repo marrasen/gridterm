@@ -232,6 +232,12 @@ type (
 	DialogClosed struct{}
 	// TogglePaneTitles shows or hides the line naming each pane.
 	TogglePaneTitles struct{}
+	// ReloadServers reads the saved servers again, for a list changed
+	// by another window or by hand.
+	ReloadServers struct{}
+	// ClearFinished closes the panes whose programs have ended and
+	// clears the tunnels that stopped.
+	ClearFinished struct{}
 	// FontSize makes the terminals' text a point larger, or smaller,
 	// or, with no Step, the size it started at.
 	FontSize struct{ Step int }
@@ -651,6 +657,10 @@ func (a *app) handle(in gunim.Intent) {
 	case ClearJobs:
 		a.clearJobs(true)
 		a.showJobs()
+	case ReloadServers:
+		err = a.reloadServers()
+	case ClearFinished:
+		a.clearFinished()
 	case TogglePaneTitles:
 		a.st.PaneTitles = !a.st.PaneTitles
 		if a.settings != nil {

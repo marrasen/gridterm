@@ -41,6 +41,39 @@ func (w *window) tunnelDialog(socks bool, u *gunim.UI) {
 	} else {
 		form.Add("Listen on", listen).Add("Forward to", target).Add("Direction", way)
 	}
+	// The tunnels kept for this server, so one is a pick away rather
+	// than two addresses to remember.
+	var kept []settings.SavedTunnel
+	for _, t := range w.savedTunnels {
+		if w.savedTunnelOn(t) == machine && (t.Kind == remote.DynamicForward.String()) == socks {
+			kept = append(kept, t)
+		}
+	}
+	if len(kept) > 0 {
+		names := []string{"A new one"}
+		for _, t := range kept {
+			if tu, err := asTunnel(t); err == nil {
+				names = append(names, tu.String())
+			}
+		}
+		pick := widget.NewDropdown(names...)
+		pick.Label = "Saved"
+		pick.OnPick(func(i int, u *gunim.UI) {
+			if i == 0 || i > len(kept) {
+				return
+			}
+			t := kept[i-1]
+			listen.SetText(t.Listen)
+			target.SetText(t.Target)
+			way.Selected = 0
+			if t.Kind == remote.RemoteForward.String() {
+				way.Selected = 1
+			}
+			keep.SetOn(true, u)
+			u.Invalidate()
+		})
+		form.Add("Saved", pick)
+	}
 	form.Add("", keep)
 	tunnel := func() remote.Tunnel {
 		t := remote.Tunnel{Kind: remote.LocalForward, Listen: strings.TrimSpace(listen.Text()), Target: strings.TrimSpace(target.Text())}
@@ -68,6 +101,18 @@ func (w *window) tunnelDialog(socks bool, u *gunim.UI) {
 	d.OnAccept = func() gunim.Intent { return OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.On} }
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)
+}
+
+// savedTunnelOn is the machine a saved tunnel runs over: the saved
+// server it was kept for, under its name now, or the name it was kept
+// under.
+func (w *window) savedTunnelOn(t settings.SavedTunnel) string {
+	for _, h := range w.saved {
+		if t.HostID != "" && h.ID == t.HostID {
+			return h.Name
+		}
+	}
+	return t.Host
 }
 
 // machineOf returns the server pane id is on, "" for this computer.

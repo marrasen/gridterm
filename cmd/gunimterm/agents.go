@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/input"
@@ -733,22 +732,9 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 
 // secretLine is what the pane says when an agent asks for a secret.
 func secretLine(what string) string {
-	var out strings.Builder
-	for i, r := range what {
-		if i >= 240 {
-			break
-		}
-		switch {
-		case r == '\n' || r == '\t' || r == '\r':
-			out.WriteByte(' ')
-		case r < ' ' || r == 0x7f || unicode.Is(unicode.Cf, r):
-		case r == '"':
-			out.WriteByte('\'')
-		default:
-			out.WriteRune(r)
-		}
-	}
-	asked := strings.TrimSpace(out.String())
+	// Cleaned as gridterm cleans it: one plain line, cut short, with
+	// nothing in it that could draw or pass itself off as the window.
+	asked := strings.TrimSpace(agent.CleanSecretAsk(what))
 	if asked == "" {
 		asked = "something it says it cannot see"
 	}

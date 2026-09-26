@@ -336,3 +336,14 @@ func TestASecretIsTakenOffTheClipboardAtExit(t *testing.T) {
 		t.Fatalf("what was copied since became %q", board)
 	}
 }
+
+// An open secrets pane shows what changed behind its back, such as a
+// secret another window kept.
+func TestTheSecretsPaneReadsTheVaultAgain(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	if _, err := a.secrets.Put(secrets.Item{Name: "from elsewhere", Kind: secrets.Password}, "x"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the secret to show", func() bool { return len(a.st.Secrets.Items) == 1 })
+}

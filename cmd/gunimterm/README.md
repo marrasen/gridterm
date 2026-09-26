@@ -73,9 +73,6 @@ Sidebar:
 
 Secrets, serving and agents:
 
-- The secrets pane read again every second.
-- An agent's secret request cut to 60 characters, invisible and
-  private-use characters taken out.
 - Removing several secrets at once.
 - Disconnecting one served window from its row; "Don't Ask Again" on
   "Serve this window again?".

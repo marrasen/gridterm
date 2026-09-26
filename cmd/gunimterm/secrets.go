@@ -375,6 +375,52 @@ func joinLines(lines []string) string {
 }
 
 // showVault publishes what the vault holds, the names alone.
+// watchVault reads the vault again each second while the secrets pane
+// is open, as gridterm's pane does: much of what changes it happens in
+// another window, or another program altogether.
+func (a *app) watchVault() {
+	if a.watchingVault {
+		return
+	}
+	a.watchingVault = true
+	go func() {
+		for {
+			select {
+			case <-a.ctx.Done():
+				return
+			case <-time.After(vaultSettles):
+			}
+			done := make(chan bool, 1)
+			a.events <- func() {
+				open := slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Kind == kindSecrets })
+				if !open {
+					a.watchingVault = false
+					done <- true
+					return
+				}
+				was := a.st.Secrets
+				a.showVault()
+				if secretsSame(was, a.st.Secrets) {
+					a.quiet = true
+				}
+				done <- false
+			}
+			if <-done {
+				return
+			}
+		}
+	}()
+}
+
+// vaultSettles is how often an open secrets pane reads the vault again.
+const vaultSettles = time.Second
+
+// secretsSame reports whether two readings of the vault show the same.
+func secretsSame(x, y Secrets) bool {
+	return x.Exists == y.Exists && x.Open == y.Open && x.Passphrase == y.Passphrase &&
+		slices.Equal(x.Items, y.Items) && slices.Equal(x.Keys, y.Keys)
+}
+
 func (a *app) showVault() {
 	v := a.secrets
 	if v == nil {
@@ -423,6 +469,7 @@ func (a *app) showSecretsPane() {
 		}
 		a.next++
 		a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Secrets", Kind: kindSecrets}, nil, placement{})
+		a.watchVault()
 		return nil
 	})
 }

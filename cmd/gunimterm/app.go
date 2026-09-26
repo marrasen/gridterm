@@ -389,8 +389,10 @@ type app struct {
 	serving serving
 	// windows are the windows connected to, by name.
 	windows map[string]*remoteWin
-	// leaving is set while the window asks whether to close.
-	leaving bool
+	// leaving is set while the window asks whether to close, and
+	// watchingVault while an open secrets pane reads the vault again.
+	leaving       bool
+	watchingVault bool
 	// copied is the last secret put on the clipboard, and copiedAt when.
 	copied   string
 	copiedAt time.Time

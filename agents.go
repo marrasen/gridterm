@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/conns"
@@ -1232,7 +1231,7 @@ type secretAsk struct {
 // typed does not go back to it, because a line asking for a password is
 // exactly the line somebody should be suspicious of.
 func secretLine(what string) string {
-	if what = strings.TrimSpace(cleanSecretAsk(what)); what == "" {
+	if what = strings.TrimSpace(agent.CleanSecretAsk(what)); what == "" {
 		what = "something it says it cannot see"
 	}
 	// gridterm's own words first and the agent's last, in quotes: the
@@ -1244,43 +1243,6 @@ func secretLine(what string) string {
 		` It asked for: "` + what + `" --`
 }
 
-// cleanSecretAsk cuts an agent's own words down to one plain line.
-//
-// It is the agent's text on the user's screen, so it carries nothing
-// that could draw somewhere else or pretend to be the window talking.
-func cleanSecretAsk(what string) string {
-	var out strings.Builder
-	shown := 0
-	for _, r := range what {
-		switch {
-		case r == '\n' || r == '\t' || r == '\r':
-			out.WriteByte(' ')
-		case r < ' ' || r == 0x7f:
-			// Dropped: an escape sequence in it would draw.
-		case r == '"':
-			// The quotes around it are gridterm's, and a quote inside
-			// would look like the end of them.
-			out.WriteByte('\'')
-		case unicode.Is(unicode.Cf, r) || unicode.Is(unicode.Cs, r) || unicode.Is(unicode.Co, r):
-			// Zero-width marks, direction overrides and the like: they
-			// take no room and change how the rest reads.
-		case r == '-' && strings.HasSuffix(out.String(), "-"):
-			// Two dashes are how one of this window's own remarks opens
-			// and closes, and the agent's words are not one.
-		default:
-			out.WriteRune(r)
-		}
-		if shown++; shown >= mostSecretWords {
-			break
-		}
-	}
-	return out.String()
-}
-
-// mostSecretWords is how many characters of an agent's asking go on the
-// screen. Enough to name what is wanted, short enough that the line it
-// sits in is still read.
-const mostSecretWords = 60
 
 // connectedAlready says whether the window already holds a connection to
 // a machine, so that opening another pane there opens nothing.

@@ -58,10 +58,6 @@ The window:
 
 Panes:
 
-- A program's OSC 9 message and OSC 9;4 progress, on the pane's
-  sidebar row. A message also goes to the log, and to a desktop
-  pop-up, at most one every 2 seconds.
-- Desktop pop-ups (`gridterm/notify`) for notices.
 - The slow glow around a pane shared with an agent or watched from
   another window.
 - A held screen bigger than its pane, drawn scaled to fit, with its

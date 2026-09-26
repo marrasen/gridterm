@@ -95,7 +95,7 @@ func (a *app) copyDropped(machine string, paths []string, dir string) error {
 			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, dir), "", machine))
 		}
 		if len(already) > 0 {
-			a.notify(arrived(already, dir, machine), "Already there.", "")
+			a.tell(arrived(already, dir, machine), "Already there.")
 		}
 		if len(started) > 0 {
 			a.sayWhenArrived(started, paths, dir, machine)
@@ -134,7 +134,7 @@ func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir, machine s
 			if failed > 0 {
 				body = strconv.Itoa(failed) + " failed. The Jobs pane says why."
 			}
-			a.notify(arrived(names, dir, machine), body, "")
+			a.tell(arrived(names, dir, machine), body)
 		}
 	}()
 }

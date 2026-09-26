@@ -149,6 +149,9 @@ type Pane struct {
 	Ended bool
 	// Rang says its program rang the bell since the user last looked.
 	Rang bool
+	// Note is what the program in the pane says about itself: how far
+	// along it is, and its last message.
+	Note string
 	// Command says the pane runs one command rather than a shell, and
 	// offers to run it again when it finishes.
 	Command bool
@@ -379,6 +382,10 @@ type app struct {
 	windows map[string]*remoteWin
 	// leaving is set while the window asks whether to close.
 	leaving bool
+	// noticed is the number of the last message each pane's program
+	// sent, and lastToast when the last pop-up went up.
+	noticed   map[string]uint64
+	lastToast time.Time
 	// families are the monospaced families found here; wantFont is the
 	// one the theme names, taken unless fontPicked says the user chose
 	// from the Font menu.
@@ -465,6 +472,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		agents:   agents{by: map[string]*handover{}},
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
+		noticed:  map[string]uint64{},
 		argvs:    map[string][]string{},
 		farHost:  map[string]string{},
 		typed:    map[string]*typedLog{},
@@ -544,6 +552,7 @@ func (a *app) run(ctx context.Context) error {
 			a.handle(env.Intent)
 		case <-a.wake:
 			a.st.Output++
+			a.notePrograms()
 		case f := <-a.events:
 			f()
 		}
@@ -1124,6 +1133,7 @@ func (a *app) remove(id string) {
 	a.tunnelPaneGone(id)
 	delete(a.commands, id)
 	delete(a.argvs, id)
+	delete(a.noticed, id)
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)

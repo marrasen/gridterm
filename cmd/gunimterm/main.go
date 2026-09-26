@@ -91,6 +91,7 @@ func run() error {
 		prog := newApp(c, sh)
 		prog.themes = all
 		prog.registerThemes = func(all []themed) { registerThemes(w, all) }
+		defer closeToaster()
 		return prog.run(ctx)
 	})
 	if errors.Is(err, driver.ErrNoDriver) {

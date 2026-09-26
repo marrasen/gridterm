@@ -1582,6 +1582,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 					note = "ended"
 				case p.Rang:
 					note = "bell"
+				case note == "" && p.Note != "":
+					note = p.Note
 				case note == "" && p.On != "":
 					note = "on " + p.On
 				}

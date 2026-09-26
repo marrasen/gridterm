@@ -55,6 +55,11 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
+Found trying it on Windows on 2026-09-26:
+
+- The "Split with" choice lacks gridterm's "Command on <machine>…"
+  lines, which run a command in the new half.
+
 Decided against:
 
 - gridterm's short confirmations stay on the status line for 4

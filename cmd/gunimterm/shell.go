@@ -32,6 +32,7 @@ type shellHooks struct {
 	title     func(string)
 	exit      func()
 	clipboard func(string)
+	bell      func()
 }
 
 // shellCols and shellRows are a new shell's size, until its pane lays
@@ -60,6 +61,7 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		OnExit:      hooks.exit,
 		OnOutput:    hooks.output,
 		OnClipboard: hooks.clipboard,
+		OnBell:      hooks.bell,
 	})
 	if err != nil {
 		// Only a missing session fails, and every caller has one.

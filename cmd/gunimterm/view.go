@@ -63,7 +63,12 @@ type window struct {
 	// user just asked for one, so its dialog opens once it has a code.
 	share Share
 	// serving is the serving as last published.
-	serving      Serving
+	serving Serving
+	// bells is the bells as last published, titles whether panes show
+	// their titles, and captions the line over each pane that does.
+	bells        uint64
+	titles       bool
+	captions     map[string]*captioned
 	sharing      bool
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
@@ -115,6 +120,7 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 		readers:     map[string]*reader{},
 		tunnelPanes: map[string]*tunnelPane{},
 		splits:      map[string]*widget.Split{},
+		captions:    map[string]*captioned{},
 	}
 	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
@@ -202,6 +208,12 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			return true
 		}
 		u.Send(w, ShowLog{Machine: machine})
+		return true
+	case "view.fullScreen":
+		u.SetFullScreen(!u.FullScreen())
+		return true
+	case "pane.titles":
+		u.Send(w, TogglePaneTitles{})
 		return true
 	case "serve.attach":
 		w.connectWindowDialog(u)
@@ -679,6 +691,15 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
+	if st.Bells > w.bells {
+		w.bells = st.Bells
+		u.RequestAttention()
+	}
+	if st.PaneTitles != w.titles {
+		w.titles = st.PaneTitles
+		// Every pane is built again, with its line or without.
+		clear(w.splits)
+	}
 	w.serving = st.Serving
 	if w.sharing && st.Share.Code != "" {
 		w.sharing = false
@@ -814,8 +835,13 @@ func (w *window) update(st State, u *gunim.UI) {
 	// The View menu ticks the sidebar while it shows.
 	for m := range menus {
 		for i, it := range menus[m].items {
-			if it.id == "sidebar.toggle" {
+			switch it.id {
+			case "sidebar.toggle":
 				w.bar.Menus[m].Checked[i] = st.Sidebar
+			case "pane.titles":
+				w.bar.Menus[m].Checked[i] = st.PaneTitles
+			case "view.fullScreen":
+				w.bar.Menus[m].Checked[i] = u.FullScreen()
 			}
 		}
 	}
@@ -869,8 +895,32 @@ func (w *window) kindOf(id string) string {
 	return kindTerminal
 }
 
-// paneNode returns the node that shows pane id, made on first use.
+// paneNode returns the node that shows pane id, made on first use,
+// under a line naming it while panes show their titles.
 func (w *window) paneNode(id string) gunim.Node {
+	n := w.bareNode(id)
+	if !w.titles {
+		return n
+	}
+	c, ok := w.captions[id]
+	if !ok || c.pane != n {
+		c = newCaptioned(n)
+		w.captions[id] = c
+	}
+	for _, p := range w.panes {
+		if p.ID == id {
+			where := p.Machine
+			if where == "" {
+				where = "This computer"
+			}
+			c.label.SetText(where + ": " + p.Title)
+		}
+	}
+	return c
+}
+
+// bareNode returns the node that shows pane id, made on first use.
+func (w *window) bareNode(id string) gunim.Node {
 	switch w.kindOf(id) {
 	case kindFiles:
 		b, ok := w.browsers[id]
@@ -1061,8 +1111,11 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		for _, p := range panes {
 			if p.Machine == m && !shown[p.Tunnel] {
 				note := notes[p.ID]
-				if p.Ended {
+				switch {
+				case p.Ended:
 					note = "ended"
+				case p.Rang:
+					note = "bell"
 				}
 				out = append(out, sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, dim: p.Ended})
 			}

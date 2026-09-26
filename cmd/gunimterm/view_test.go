@@ -1,6 +1,7 @@
 package main
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -12,11 +13,16 @@ import (
 	"github.com/marrasen/gridterm/vt"
 )
 
+// lastWindow is the offscreen window windowStage made last, for a test
+// that asks what the window's frame was told.
+var lastWindow *gunim.Window
+
 // windowStage mounts the window in an offscreen gunim window, and
 // returns it with a way to publish a state and draw a few frames.
 func windowStage(t *testing.T) (win *window, sh *shells, publish func(State)) {
 	t.Helper()
 	w := gunim.NewOffscreen(geom.Sz(900, 600), nil)
+	lastWindow = w
 	sh = &shells{m: map[string]*shell{}}
 	gunim.RegisterView(w, "window", func(State) *window {
 		win = newWindow(sh, shortcuts(), nil)
@@ -87,5 +93,78 @@ func TestATunnelChangingOffStageShowsWhenItsPaneComesBack(t *testing.T) {
 	bar := win.tunnelPanes["p1"].bar
 	if len(bar.bar.shown) != 1 || bar.bar.shown[0] != bar.close || bar.close.Label != "Clear" {
 		t.Fatalf("back on stage, the stopped tunnel's bar offers %d buttons, the last saying %q", len(bar.bar.shown), bar.close.Label)
+	}
+}
+
+func TestPaneTitlesComeAndGo(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := twoPanes("p2", nil)
+	st.PaneTitles = true
+	publish(st)
+	c, ok := win.stage.shown.(*captioned)
+	if !ok {
+		t.Fatalf("with titles, the stage shows %T", win.stage.shown)
+	}
+	if got := c.label.Text; got != "This computer: gthome" {
+		t.Fatalf("the title reads %q", got)
+	}
+	st.PaneTitles = false
+	publish(st)
+	if _, ok := win.stage.shown.(*browser); !ok {
+		t.Fatalf("without titles, the stage shows %T", win.stage.shown)
+	}
+}
+
+func TestABellAsksForAttention(t *testing.T) {
+	_, _, publish := windowStage(t)
+	st := twoPanes("p2", nil)
+	st.Bells = 1
+	st.Panes[0].Rang = true
+	publish(st)
+	if got := lastWindow.Offscreen().Attention(); got != 1 {
+		t.Fatalf("after a bell, attention was asked for %d times", got)
+	}
+}
+
+// sizes records the sizes a shell is given.
+type sizes struct {
+	typed
+	mu   sync.Mutex
+	seen [][2]int
+}
+
+func (s *sizes) Resize(cols, rows int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.seen = append(s.seen, [2]int{cols, rows})
+	return nil
+}
+
+func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	_ = win
+	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	var got []*sizes
+	for _, id := range []string{"p1", "p2"} {
+		s := &sizes{typed: typed{done: make(chan struct{})}}
+		got = append(got, s)
+		sh.set(id, openShell(s, vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.get(id).t.Close() })
+	}
+	panes := []Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "Terminal 2"}}
+	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	// The second slides in beside the first, frame by frame.
+	publish(State{Panes: panes, Focus: "p2", Stage: &Box{ID: "s1", Share: 0.5, Opening: true, A: &Box{Pane: "p1"}, B: &Box{Pane: "p2"}}})
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	for i, s := range got {
+		s.mu.Lock()
+		for _, size := range s.seen {
+			if size[0] < leastCols || size[1] < leastRows {
+				t.Errorf("shell %d was given %dx%d on the way", i+1, size[0], size[1])
+			}
+		}
+		s.mu.Unlock()
 	}
 }

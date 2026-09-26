@@ -85,3 +85,43 @@ func (b *buttonBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids g
 		k.Paint(p)
 	}
 }
+
+// captioned is a pane under a line naming it, for a window that shows
+// pane titles.
+type captioned struct {
+	pane  gunim.Node
+	label *widget.Label
+}
+
+func newCaptioned(pane gunim.Node) *captioned {
+	l := widget.NewLabel("")
+	l.Size, l.Color, l.MaxLines = smallText, faint, 1
+	return &captioned{pane: pane, label: l}
+}
+
+// captionHeight is the height of the line over a pane.
+const captionHeight = 22
+
+// Children implements [gunim.Composite].
+func (c *captioned) Children() []gunim.Node { return []gunim.Node{c.label, c.pane} }
+
+// Layout implements [gunim.Node]: the line along the top, and the pane
+// in the rest.
+func (c *captioned) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	const padX = 10
+	l := kids.At(0)
+	s := l.Layout(gunim.Constraints{Max: geom.Sz(max(0, cs.Max.W-2*padX), captionHeight)})
+	l.Place(geom.Pt(padX, (captionHeight-s.H)/2))
+	p := kids.At(1)
+	p.Layout(gunim.Tight(geom.Sz(cs.Max.W, max(0, cs.Max.H-captionHeight))))
+	p.Place(geom.Pt(0, captionHeight))
+	return cs.Max
+}
+
+// Paint implements [gunim.Node].
+func (c *captioned) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	p.RRect(geom.Rect{Max: geom.Pt(box.W, captionHeight)}, 0, paint.Solid(widget.MenuFill.Get(f.Theme)))
+	for k := range kids.All {
+		k.Paint(p)
+	}
+}

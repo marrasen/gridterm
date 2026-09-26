@@ -549,7 +549,11 @@ func (a *app) offerToServeAgain() {
 	if s.Anywhere {
 		where = "every network"
 	}
-	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: fmt.Sprintf("It was served when it last closed: on port %d, listening on %s.", s.Port, where), Yes: "Serve", No: "Not Now"})
+	port := "on port " + strconv.Itoa(s.Port)
+	if s.Port == 0 {
+		port = "on whichever port was free"
+	}
+	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: "It was served when it last closed: " + port + ", listening on " + where + ".", Yes: "Serve", No: "Not Now"})
 	if err != nil || !ans.Yes {
 		return
 	}

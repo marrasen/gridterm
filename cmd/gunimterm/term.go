@@ -37,6 +37,9 @@ type term struct {
 	wantBlink, blinking, blinkOff bool
 }
 
+// leastCols and leastRows are the smallest screen a shell is given.
+const leastCols, leastRows = 20, 3
+
 // blinkHalf is each half of a cursor's blink, as xterm times it.
 const blinkHalf = 530 * time.Millisecond
 
@@ -81,7 +84,11 @@ func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) g
 	k := kids.At(0)
 	size := k.Layout(c)
 	k.Place(geom.Point{})
-	if cols, rows := t.cells.Fit(); t.sh.resize(cols, rows) {
+	// A pane sliding in or folding away passes through every width on
+	// the way. A shell told each of them would print its prompt a few
+	// columns wide, so it keeps its size until the pane holds a usable
+	// screen.
+	if cols, rows := t.cells.Fit(); cols >= leastCols && rows >= leastRows && t.sh.resize(cols, rows) {
 		t.sync()
 	}
 	return size

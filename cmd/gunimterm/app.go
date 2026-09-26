@@ -68,7 +68,12 @@ type State struct {
 	// Serving is this window served to others.
 	Serving Serving
 	// Windows are the windows this one is connected to.
-	Windows      []RemoteWindow
+	Windows []RemoteWindow
+	// PaneTitles says each pane shows a line naming it, and Bells
+	// counts the bells rung in panes, for the window to ask for the
+	// user's attention.
+	PaneTitles   bool
+	Bells        uint64
 	SavedTunnels []settings.SavedTunnel
 	Status       string
 	// Notices are the latest notices, oldest first, for the window to
@@ -108,6 +113,8 @@ type Pane struct {
 	// Ended says the program in a terminal pane has ended; the pane
 	// stays, asking whether to start it again.
 	Ended bool
+	// Rang says its program rang the bell since the user last looked.
+	Rang bool
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -223,6 +230,8 @@ type (
 	// DialogClosed says a dialog closed without a change, so the window
 	// gives the keyboard back.
 	DialogClosed struct{}
+	// TogglePaneTitles shows or hides the line naming each pane.
+	TogglePaneTitles struct{}
 	// FontSize makes the terminals' text a point larger, or smaller,
 	// or, with no Step, the size it started at.
 	FontSize struct{ Step int }
@@ -387,6 +396,7 @@ func (a *app) run(ctx context.Context) error {
 		if s, err := settings.Load(path); err == nil {
 			a.settings = s
 			a.st.SavedTunnels = s.Tunnels()
+			a.st.PaneTitles = s.PaneTitles()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -443,6 +453,7 @@ func (a *app) run(ctx context.Context) error {
 		if a.kindOfPane(a.st.Focus) == kindTerminal {
 			a.lastTerminal = a.st.Focus
 		}
+		a.setPane(a.st.Focus, func(p *Pane) { p.Rang = false })
 		a.publish()
 	}
 }
@@ -640,6 +651,13 @@ func (a *app) handle(in gunim.Intent) {
 	case ClearJobs:
 		a.clearJobs(true)
 		a.showJobs()
+	case TogglePaneTitles:
+		a.st.PaneTitles = !a.st.PaneTitles
+		if a.settings != nil {
+			if err := a.settings.PutPaneTitles(a.st.PaneTitles); err != nil {
+				a.notify("Couldn't keep the pane titles for next time", err.Error(), "")
+			}
+		}
 	case DialogClosed:
 	}
 	if err != nil {
@@ -700,6 +718,14 @@ func (a *app) hooks(id string) shellHooks {
 		},
 		title: func(t string) { a.events <- func() { a.retitle(id, t) } },
 		exit:  func() { a.events <- func() { a.paneEnded(id) } },
+		bell: func() {
+			a.events <- func() {
+				a.st.Bells++
+				if a.st.Focus != id {
+					a.setPane(id, func(p *Pane) { p.Rang = true })
+				}
+			}
+		},
 		clipboard: func(s string) {
 			a.events <- func() {
 				a.notify("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)

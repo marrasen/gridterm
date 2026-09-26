@@ -54,9 +54,7 @@ Panes and terminals:
 
 - Links: Ctrl+click on a URL, and on a file path, which opens it.
 - Pictures in a terminal (OSC 1337 and 1338).
-- The bell.
 - Find in Scrollback (`pane.scrollback`).
-- Show Pane Titles (`pane.titles`) and Full Screen (`view.fullScreen`).
 - Paste Image as File (`edit.pasteImage`).
 - Choosing the shell for a new terminal: the default, bash as a login
   shell, and on Windows cmd, Windows PowerShell and PowerShell.

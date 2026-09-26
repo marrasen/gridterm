@@ -61,10 +61,6 @@ Panes and terminals:
 - Shell Setup (`shell.setup`) and Terminal Identity (`shell.termProgram`).
 - Typing History (`agent.typed`), which shows what agents typed.
 
-Sidebar and connections:
-
-- Run Command in a pane of its own (`conn.command`).
-
 Files:
 
 - The hex view, the JSON-log view, pictures in the reader, and the

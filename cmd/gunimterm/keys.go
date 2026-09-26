@@ -81,6 +81,7 @@ var commands = []struct{ id, title string }{
 	{"conn.disconnect", "Disconnect"},
 	{"pane.titles", "Show Pane Titles"},
 	{"view.fullScreen", "Full Screen"},
+	{"conn.command", "Run Command"},
 	{"sidebar.focus", "Focus Sidebar"},
 	{"sidebar.closeRow", "Close Selected Row"},
 	{"conn.clearFinished", "Clear Finished"},
@@ -138,6 +139,7 @@ var menus = []struct {
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
+		{id: "conn.command", title: "Command…"},
 		{id: "conn.log", title: "Connection Log"},
 		{id: "conn.disconnect", title: "Disconnect"},
 		{id: "server.editThis", title: "Edit This Server…"}, {id: "server.forget", title: "Remove This Server…"},

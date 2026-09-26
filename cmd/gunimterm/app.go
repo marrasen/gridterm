@@ -72,10 +72,12 @@ type State struct {
 	// PaneTitles says each pane shows a line naming it, and Bells
 	// counts the bells rung in panes, for the window to ask for the
 	// user's attention.
-	PaneTitles   bool
-	Bells        uint64
-	SavedTunnels []settings.SavedTunnel
-	Status       string
+	PaneTitles bool
+	// SavedCommands are the commands kept, newest first.
+	SavedCommands []settings.SavedCommand
+	Bells         uint64
+	SavedTunnels  []settings.SavedTunnel
+	Status        string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -115,6 +117,9 @@ type Pane struct {
 	Ended bool
 	// Rang says its program rang the bell since the user last looked.
 	Rang bool
+	// Command says the pane runs one command rather than a shell, and
+	// offers to run it again when it finishes.
+	Command bool
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -232,6 +237,8 @@ type (
 	DialogClosed struct{}
 	// TogglePaneTitles shows or hides the line naming each pane.
 	TogglePaneTitles struct{}
+	// RunSavedCommand runs a command kept from before.
+	RunSavedCommand struct{ Saved settings.SavedCommand }
 	// ReloadServers reads the saved servers again, for a list changed
 	// by another window or by hand.
 	ReloadServers struct{}
@@ -326,7 +333,9 @@ type app struct {
 	// serving serves this window to others.
 	serving serving
 	// windows are the windows connected to, by name.
-	windows   map[string]*remoteWin
+	windows map[string]*remoteWin
+	// commands are what each command pane runs, to run it again.
+	commands  map[string]command
 	tunnelSeq int
 	ticking   bool
 	quiet     bool
@@ -385,6 +394,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		tunnels:  map[string]*tunnel{},
 		agents:   agents{by: map[string]*handover{}},
 		windows:  map[string]*remoteWin{},
+		commands: map[string]command{},
 		accounts: map[string]*logs.Lines{},
 		wake:     make(chan struct{}, 1),
 		events:   make(chan func(), 64),
@@ -403,6 +413,7 @@ func (a *app) run(ctx context.Context) error {
 			a.settings = s
 			a.st.SavedTunnels = s.Tunnels()
 			a.st.PaneTitles = s.PaneTitles()
+			a.st.SavedCommands = s.Commands()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -478,6 +489,7 @@ func (a *app) publish() {
 	st.Serving.Clients = slices.Clone(a.st.Serving.Clients)
 	st.Serving.Allowed = slices.Clone(a.st.Serving.Allowed)
 	st.Windows = slices.Clone(a.st.Windows)
+	st.SavedCommands = slices.Clone(a.st.SavedCommands)
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -657,6 +669,10 @@ func (a *app) handle(in gunim.Intent) {
 	case ClearJobs:
 		a.clearJobs(true)
 		a.showJobs()
+	case RunCommand:
+		err = a.runCommand(in)
+	case RunSavedCommand:
+		err = a.runSavedCommand(in.Saved)
 	case ReloadServers:
 		err = a.reloadServers()
 	case ClearFinished:
@@ -921,6 +937,7 @@ func (a *app) remove(id string) {
 		a.st.Readers = m
 	}
 	a.tunnelPaneGone(id)
+	delete(a.commands, id)
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}

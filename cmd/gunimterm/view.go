@@ -68,11 +68,15 @@ type window struct {
 	// their titles, and captions the line over each pane that does.
 	// sidebarShown is whether the sidebar shows, as last published.
 	sidebarShown bool
-	bells        uint64
-	titles       bool
-	captions     map[string]*captioned
-	sharing      bool
-	savedTunnels []settings.SavedTunnel
+	// savedCommands are the commands kept, and remoteWindows the
+	// windows connected to, as last published.
+	savedCommands []settings.SavedCommand
+	remoteWindows []RemoteWindow
+	bells         uint64
+	titles        bool
+	captions      map[string]*captioned
+	sharing       bool
+	savedTunnels  []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
 	accounts []string
@@ -211,6 +215,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		}
 		u.Send(w, ShowLog{Machine: machine})
 		return true
+	case "conn.command":
+		w.commandDialog(u)
+		return true
 	case "sidebar.focus":
 		w.focusSidebar(u)
 		return true
@@ -304,6 +311,10 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	}
 	if m, ok := strings.CutPrefix(id, "conn.log:"); ok {
 		u.Send(w, ShowLog{Machine: m})
+		return true
+	}
+	if at, ok := strings.CutPrefix(id, "command.saved:"); ok {
+		w.runSavedCommand(at, u)
 		return true
 	}
 	if at, ok := strings.CutPrefix(id, "tunnel.saved:"); ok {
@@ -513,6 +524,10 @@ func (w *window) servers(saved []remote.Host) {
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
 		w.paletteIDs = append(w.paletteIDs, "conn.log:"+m)
 	}
+	for i, it := range w.savedCommandItems() {
+		w.palette.Items = append(w.palette.Items, it)
+		w.paletteIDs = append(w.paletteIDs, "command.saved:"+strconv.Itoa(i))
+	}
 	for i, it := range w.savedTunnelItems() {
 		w.palette.Items = append(w.palette.Items, it)
 		w.paletteIDs = append(w.paletteIDs, "tunnel.saved:"+strconv.Itoa(i))
@@ -716,6 +731,8 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
+	w.remoteWindows = st.Windows
+	w.setSavedCommands(st.SavedCommands)
 	if st.Bells > w.bells {
 		w.bells = st.Bells
 		u.RequestAttention()

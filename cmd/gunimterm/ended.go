@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"slices"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/ssh"
 
@@ -40,8 +41,15 @@ func (a *app) paneEnded(id string) {
 	if a.machineOf(id) != "" {
 		start, question = "Reconnect", "Connection closed."
 	}
-	if status, known := exitStatus(t.Ending()); known && status != 0 {
+	status, known := exitStatus(t.Ending())
+	if known && status != 0 {
 		question += " Exit " + strconv.Itoa(status) + "."
+	}
+	if cmd, ok := a.commands[id]; ok {
+		start, question = "Run Again", strings.Join(cmd.argv, " ")+" has stopped. Run it again?"
+		if known {
+			question = strings.Join(cmd.argv, " ") + " finished. Exit " + strconv.Itoa(status) + ". Run it again?"
+		}
 	}
 	// Told twice: as the output ends, and again once the program's
 	// status is in. The second asks again only when it knows more.
@@ -76,6 +84,9 @@ func (a *app) startAgain(id string) error {
 	}
 	if !t.Exited() {
 		return nil
+	}
+	if cmd, ok := a.commands[id]; ok {
+		return a.runAgain(id, cmd)
 	}
 	machine := a.machineOf(id)
 	if machine == "" {

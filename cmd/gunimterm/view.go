@@ -83,6 +83,7 @@ type window struct {
 	// help is the list of commands, once opened, and shortcutsRead
 	// the shortcuts file's reads as last taken on.
 	help          *helpPane
+	copies        *copiesPane
 	shortcutsRead uint64
 	// secretsExist says there are secrets, to keep a new key's passphrase in.
 	secretsExist bool
@@ -948,6 +949,9 @@ func (w *window) update(st State, u *gunim.UI) {
 	if w.jobs != nil && u.Presence(w.jobs) != gunim.Exiting {
 		w.jobs.show(st.Jobs, u)
 	}
+	if w.copies != nil && u.Presence(w.copies) != gunim.Exiting {
+		w.copies.show(st.SavedCopies, u)
+	}
 	if w.help != nil && u.Presence(w.help) != gunim.Exiting {
 		w.help.show(w, u)
 	}
@@ -1126,6 +1130,11 @@ func (w *window) bareNode(id string) gunim.Node {
 			w.browsers[id] = b
 		}
 		return b
+	case kindCopies:
+		if w.copies == nil {
+			w.copies = newCopiesPane(w)
+		}
+		return w.copies
 	case kindHelp:
 		if w.help == nil {
 			w.help = newHelpPane(w)
@@ -1183,6 +1192,9 @@ func (w *window) focusNode(id string) gunim.Node {
 	}
 	if w.kindOf(id) == kindHelp && w.help != nil {
 		return w.help.table
+	}
+	if w.kindOf(id) == kindCopies && w.copies != nil {
+		return w.copies.table
 	}
 	return nil
 }

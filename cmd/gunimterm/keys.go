@@ -102,6 +102,7 @@ var commands = []struct{ id, title string }{
 	{"app.about", "About gridterm"},
 	{"sshkey.make", "New SSH Key"},
 	{"sshkey.lock", "Lock SSH Keys"},
+	{"files.copies", "Saved Copies"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -152,6 +153,7 @@ var menus = []struct {
 		{id: "conn.files", title: "Files"},
 		{id: "tunnel.open", title: "Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
 		{id: "files.goTo", title: "Go to Directory…", group: true},
+		{id: "files.copies", title: "Saved Copies…"},
 		{id: "conn.log", title: "Connection Log"},
 		{id: "shell.setup", title: "Shell Setup"},
 		{id: "conn.disconnect", title: "Disconnect", group: true},
@@ -239,6 +241,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return OpenFiles{}, true
 	case "view.jobs":
 		return ShowJobs{}, true
+	case "files.copies":
+		return ShowCopies{}, true
 	case "server.reload":
 		return ReloadServers{}, true
 	case "shell.setup":

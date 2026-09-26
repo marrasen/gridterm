@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pkg/sftp"
+
 	"github.com/marrasen/gridterm/ui/files"
 	"github.com/marrasen/gridterm/vfs"
 )
@@ -154,34 +156,64 @@ func (a *app) fsFor(machine string) vfs.FS {
 func (a *app) openFiles() error { return a.filesOn(a.machineOf(a.st.Focus), "") }
 
 // filesOn opens a file pane on machine, at path, or at home when path
-// is empty. A server's files open over its connection first, with
-// SFTP, once for all its file panes.
+// is empty.
 func (a *app) filesOn(machine, path string) error {
+	return a.withFiles(machine, func(f vfs.FS) {
+		if err := a.openFilesOn(machine, f, path); err != nil {
+			a.notify("Couldn't open the files on "+machine, err.Error(), "")
+		}
+	})
+}
+
+// withFiles runs then with machine's files, on the program's goroutine,
+// opening them first when they are not open: over a server's
+// connection, or a window's, with SFTP, once for all its file panes.
+func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 	if f := a.fsFor(machine); f != nil {
-		return a.openFilesOn(machine, f, path)
-	}
-	if _, ok := a.windows[machine]; ok {
-		a.windowFiles(machine, path)
+		then(f)
 		return nil
 	}
-	conn, ok := a.conns[machine]
-	if !ok {
-		return fmt.Errorf("this window is not connected to %s", machine)
+	open := func() (vfs.FS, error) { return nil, fmt.Errorf("this window is not connected to %s", machine) }
+	if w, ok := a.windows[machine]; ok {
+		open = func() (vfs.FS, error) {
+			files, err := w.win.Files()
+			if err != nil {
+				return nil, err
+			}
+			client, err := sftp.NewClientPipe(files, files)
+			if err != nil {
+				return nil, errors.Join(err, files.Close())
+			}
+			return vfs.NewSFTP(machine, w, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
+		}
+	} else if conn, ok := a.conns[machine]; ok {
+		open = func() (vfs.FS, error) {
+			files, err := conn.Files(a.ctx)
+			if err != nil {
+				return nil, err
+			}
+			return vfs.NewSFTP(machine, conn, files.Client(), files.Close), nil
+		}
+	} else {
+		_, err := open()
+		return err
 	}
 	a.st.Status = "Opening the files on " + machine + "…"
 	go func() {
-		files, err := conn.Files(a.ctx)
+		f, err := open()
 		a.events <- func() {
 			a.st.Status = ""
 			if err != nil {
 				a.notify("Couldn't open the files on "+machine, err.Error(), "")
 				return
 			}
-			f := vfs.NewSFTP(machine, conn, files.Client(), files.Close)
-			a.remoteFS[machine] = f
-			if err := a.openFilesOn(machine, f, path); err != nil {
-				a.notify("Couldn't open the files on "+machine, err.Error(), "")
+			if have := a.fsFor(machine); have != nil {
+				_ = f.Close()
+				f = have
+			} else {
+				a.remoteFS[machine] = f
 			}
+			then(f)
 		}
 	}()
 	return nil

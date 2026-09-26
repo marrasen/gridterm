@@ -59,10 +59,8 @@ Files:
 
 - The hex view, the JSON-log view, pictures in the reader, and the
   minimap.
-- Repeat, on a finished job.
 - Selecting and copying text in the reader, and saving what it shows
   to a file, as the scrollback's Save As does.
-- Saved Copies (`files.copies`).
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

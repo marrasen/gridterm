@@ -1,10 +1,17 @@
 package main
 
 import (
+	"fmt"
+	"slices"
+	"strings"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
+
+	"github.com/marrasen/gridterm/settings"
 )
 
 // jobsPane shows the file jobs as cards, newest at the bottom: each
@@ -76,52 +83,113 @@ func (p *jobsPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 	kids.At(3).Paint(pt)
 }
 
-// jobCard is one job: its title and Cancel, its progress, and what it
-// is on or how it ended.
+// jobCard is one job: its title and what can be done with it, its
+// progress, a graph of its speed, the names it works on with the ones
+// done ticked, and what it is doing or how it ended. Cancel shows while
+// it runs; a finished copy offers Repeat and Save this copy.
 type jobCard struct {
 	title  *widget.Label
 	detail *widget.Label
+	names  *widget.Label
 	bar    *widget.ProgressBar
+	graph  *speedGraph
 	cancel *widget.Button
-	// running is set while Cancel shows.
-	running bool
+	repeat *widget.Button
+	save   *widget.Checkbox
+	// acts are the controls showing now, along the title's row.
+	acts []gunim.Node
 }
 
 func newJobCard(j Job) *jobCard {
-	c := &jobCard{title: widget.NewLabel(""), detail: widget.NewLabel(""), bar: widget.NewProgressBar(), cancel: widget.NewButton("Cancel")}
+	c := &jobCard{
+		title: widget.NewLabel(""), detail: widget.NewLabel(""), names: widget.NewLabel(""),
+		bar: widget.NewProgressBar(), graph: &speedGraph{},
+		cancel: widget.NewButton("Cancel"), repeat: widget.NewButton("Repeat"), save: widget.NewCheckbox("Save this copy"),
+	}
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
 	c.detail.Size, c.detail.Color = smallText, faint
-	c.running = !j.Done
-	c.cancel.On = CancelJob{ID: j.ID}
+	c.names.Size = smallText
+	c.cancel.On, c.repeat.On = CancelJob{ID: j.ID}, RepeatJob{ID: j.ID}
+	id := j.ID
+	c.save.OnChange = func(on bool) gunim.Intent { return SaveCopy{ID: id, On: on} }
+	c.acts = c.want(j)
+	c.fill(j)
+	return c
+}
+
+// want are the controls a job's row offers.
+func (c *jobCard) want(j Job) []gunim.Node {
+	switch {
+	case !j.Done:
+		return []gunim.Node{c.cancel}
+	case j.Repeatable:
+		return []gunim.Node{c.save, c.repeat}
+	}
+	return nil
+}
+
+// fill says j on the card.
+func (c *jobCard) fill(j Job) {
 	c.title.SetText(j.Title)
 	c.detail.SetText(j.Detail)
-	return c
+	c.detail.Color = faint
+	if j.Failed {
+		c.detail.Color = widget.DialogProblem
+	}
+	c.graph.speeds = j.Speeds
+	c.save.On = j.Saved
+	c.names.SetText(namesLines(j))
+}
+
+// namesLines lists what a job works on, the one it is on marked and
+// the ones done ticked, and at most five of them.
+func namesLines(j Job) string {
+	if len(j.Names) < 2 && j.Current == "" {
+		return ""
+	}
+	const most = 5
+	var out []string
+	for i, n := range j.Names {
+		if i == most-1 && len(j.Names) > most {
+			out = append(out, fmt.Sprintf("   and %d more", len(j.Names)-i))
+			break
+		}
+		mark := "   "
+		switch {
+		case n == j.Current:
+			mark = "›  "
+		case j.Done && !j.Failed, i < j.Ticked:
+			mark = "✓  "
+		}
+		out = append(out, mark+n)
+	}
+	return strings.Join(out, "\n")
 }
 
 // show brings the card up to date with j.
 func (c *jobCard) show(j Job, u *gunim.UI) {
-	c.title.SetText(j.Title)
-	c.detail.SetText(j.Detail)
 	c.bar.Indeterminate = j.Share < 0 && !j.Done
 	if j.Share >= 0 {
 		c.bar.Set(j.Share, u)
 	}
-	if j.Failed {
-		c.detail.Color = widget.DialogProblem
+	c.fill(j)
+	want := c.want(j)
+	for _, n := range c.acts {
+		if !slices.Contains(want, n) {
+			u.Remove(n)
+		}
 	}
-	if j.Done && c.running {
-		c.running = false
-		u.Remove(c.cancel)
+	for _, n := range want {
+		if !slices.Contains(c.acts, n) {
+			u.Insert(c, n)
+		}
 	}
+	c.acts = want
 }
 
 // Children implements [gunim.Composite].
 func (c *jobCard) Children() []gunim.Node {
-	out := []gunim.Node{c.title, c.detail, c.bar}
-	if c.running {
-		out = append(out, c.cancel)
-	}
-	return out
+	return append([]gunim.Node{c.title, c.detail, c.bar, c.graph, c.names}, c.acts...)
 }
 
 // Layout implements [gunim.Node].
@@ -129,26 +197,51 @@ func (c *jobCard) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 	const pad, gap = 16, 10
 	w := cs.Max.W
 	right := w - pad
-	var bs geom.Size
-	if kids.Len() > 3 {
-		b := kids.At(3)
-		bs = b.Layout(gunim.Constraints{Max: geom.Sz(w, 40)})
-		right -= bs.W + gap
+	line := float32(0)
+	byNode := map[gunim.Node]gunim.Child{}
+	for i := 5; i < kids.Len(); i++ {
+		byNode[kids.At(i).Node()] = kids.At(i)
 	}
-	title, detail, bar := kids.At(0), kids.At(1), kids.At(2)
+	sizes := map[gunim.Node]geom.Size{}
+	for _, n := range c.acts {
+		if k, ok := byNode[n]; ok {
+			sizes[n] = k.Layout(gunim.Constraints{Max: geom.Sz(w, 40)})
+			line = max(line, sizes[n].H)
+		}
+	}
+	for i := len(c.acts) - 1; i >= 0; i-- {
+		n := c.acts[i]
+		k, ok := byNode[n]
+		if !ok {
+			continue
+		}
+		right -= sizes[n].W
+		k.Place(geom.Pt(right, pad+(line-sizes[n].H)/2))
+		right -= gap
+	}
+	title, detail, bar, graph, names := kids.At(0), kids.At(1), kids.At(2), kids.At(3), kids.At(4)
 	ts := title.Layout(gunim.Constraints{Max: geom.Sz(max(0, right-pad), 40)})
-	line := max(ts.H, bs.H)
+	line = max(line, ts.H)
 	title.Place(geom.Pt(pad, pad+(line-ts.H)/2))
-	if kids.Len() > 3 {
-		kids.At(3).Place(geom.Pt(w-pad-bs.W, pad+(line-bs.H)/2))
-	}
 	y := pad + line + gap
-	barSize := bar.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 20)})
+	bs := bar.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 20)})
 	bar.Place(geom.Pt(pad, y))
-	y += barSize.H + gap
+	y += bs.H + gap/2
+	gs := graph.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 40)})
+	graph.Place(geom.Pt(pad, y))
+	if gs.H > 0 {
+		y += gs.H + gap/2
+	}
 	ds := detail.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 40)})
 	detail.Place(geom.Pt(pad, y))
-	return cs.Constrain(geom.Sz(w, y+ds.H+pad))
+	y += ds.H
+	ns := names.Layout(gunim.Constraints{Max: geom.Sz(max(0, w-2*pad), 400)})
+	if c.names.Text != "" && ns.H > 0 {
+		y += gap
+		names.Place(geom.Pt(pad, y))
+		y += ns.H
+	}
+	return cs.Constrain(geom.Sz(w, y+pad))
 }
 
 // Paint implements [gunim.Node].
@@ -157,4 +250,111 @@ func (c *jobCard) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	for k := range kids.All {
 		k.Paint(p)
 	}
+}
+
+// speedGraph draws a job's speed over the last while, a thin bar a
+// sample, the fastest reaching the top.
+type speedGraph struct{ speeds []uint64 }
+
+// graphHeight is the graph's height, when there is something to draw.
+const graphHeight = 28
+
+// Layout implements [gunim.Node]: nothing until there are samples.
+func (g *speedGraph) Layout(c gunim.Constraints, _ gunim.Frame, _ gunim.Children) geom.Size {
+	if len(g.speeds) < 2 {
+		return geom.Size{}
+	}
+	return c.Constrain(geom.Sz(c.Max.W, graphHeight))
+}
+
+// Paint implements [gunim.Node].
+func (g *speedGraph) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
+	if box.H <= 0 || len(g.speeds) < 2 {
+		return
+	}
+	var most uint64
+	for _, s := range g.speeds {
+		most = max(most, s)
+	}
+	if most == 0 {
+		return
+	}
+	c := widget.Accent.Get(f.Theme)
+	c.A = 0x90
+	step := box.W / float32(mostSpeeds)
+	x := box.W - step*float32(len(g.speeds))
+	for _, s := range g.speeds {
+		h := max(1, box.H*float32(s)/float32(most))
+		p.RRect(geom.Rect{Min: geom.Pt(x+step*0.15, box.H-h), Max: geom.Pt(x+step*0.85, box.H)}, 1, paint.Solid(c))
+		x += step
+	}
+}
+
+// copiesPane lists the copies kept, to do again: Enter does the one
+// the cursor is on, and Delete forgets it.
+type copiesPane struct {
+	w     *window
+	bar   *buttonBar
+	table *widget.Table
+	col   *widget.Flex
+	kept  map[widget.Key]settings.SavedCopy
+}
+
+func newCopiesPane(w *window) *copiesPane {
+	p := &copiesPane{w: w, bar: newButtonBar(), kept: map[widget.Key]settings.SavedCopy{}}
+	p.table = widget.NewTable(widget.TableColumn{Title: "What"}, widget.TableColumn{Title: "From → To", Width: 380})
+	p.table.Row = func(k widget.Key) widget.TableRow {
+		c := p.kept[k]
+		return widget.TableRow{Cells: []string{copiedWhat(c), copiedWhere(c)}}
+	}
+	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, RunSavedCopy{Saved: p.kept[k]}) }
+	p.col = widget.Column(p.table, p.bar).Grow(p.table, 1)
+	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
+	return p
+}
+
+// show brings the list up to date.
+func (p *copiesPane) show(saved []settings.SavedCopy, u *gunim.UI) {
+	clear(p.kept)
+	keys := make([]widget.Key, 0, len(saved))
+	for i, c := range saved {
+		k := widget.Key(fmt.Sprintf("%03d", i))
+		p.kept[k] = c
+		keys = append(keys, k)
+	}
+	p.table.SetKeys(keys, u)
+	if len(saved) == 0 {
+		p.bar.set("None saved. A finished copy has a Save this copy box.", u)
+		return
+	}
+	p.bar.set(count(len(saved), "copy")+" saved · Enter does the one selected again, Delete forgets it", u)
+}
+
+// Children implements [gunim.Composite].
+func (p *copiesPane) Children() []gunim.Node { return []gunim.Node{p.col} }
+
+// Layout implements [gunim.Node].
+func (p *copiesPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	k := kids.At(0)
+	k.Layout(gunim.Tight(c.Max))
+	k.Place(geom.Point{})
+	return c.Max
+}
+
+// Paint implements [gunim.Node].
+func (p *copiesPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.Background.Get(f.Theme)))
+	kids.At(0).Paint(pt)
+}
+
+// Handle implements [gunim.Handler]: Delete forgets the copy the
+// cursor is on.
+func (p *copiesPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if k, ok := e.(gi.KeyPress); ok && k.Key == gi.KeyDelete && k.Mods == 0 {
+		if at, ok := p.table.Cursor(); ok {
+			u.Send(p.table, ForgetCopy{Saved: p.kept[at]})
+			return true
+		}
+	}
+	return false
 }

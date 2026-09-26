@@ -11,11 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/sftp"
-
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/vfs"
 )
 
 // Connecting to another window, as gridterm connects to one that is
@@ -291,31 +288,6 @@ func (a *app) attachWindow(in AttachWindow) error {
 		}
 	}()
 	return nil
-}
-
-// windowFiles opens a window's files, over its connection.
-func (a *app) windowFiles(name, path string) {
-	w := a.windows[name]
-	a.st.Status = "Opening the files on " + name + "…"
-	go func() {
-		files, err := w.win.Files()
-		var client *sftp.Client
-		if err == nil {
-			client, err = sftp.NewClientPipe(files, files)
-		}
-		a.events <- func() {
-			a.st.Status = ""
-			if err != nil {
-				a.notify("Couldn't open the files on "+name, err.Error(), "")
-				return
-			}
-			f := vfs.NewSFTP(name, w, client, func() error { return errors.Join(client.Close(), files.Close()) })
-			a.remoteFS[name] = f
-			if err := a.openFilesOn(name, f, path); err != nil {
-				a.notify("Couldn't open the files on "+name, err.Error(), "")
-			}
-		}
-	}()
 }
 
 // Disconnect closes the connection to a server or a window. Its panes

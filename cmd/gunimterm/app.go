@@ -92,6 +92,8 @@ type State struct {
 	// window's keys, and ShortcutsRead counts its reads. Contents are
 	// the themes' colours for the panes, when the themes were read
 	// again.
+	// SavedCopies are the copies kept, newest first.
+	SavedCopies   []settings.SavedCopy
 	Shortcuts     []keys.Change
 	ShortcutsRead uint64
 	Contents      map[string]theme.Theme
@@ -460,6 +462,7 @@ func (a *app) run(ctx context.Context) error {
 			a.st.ChosenShell, _ = s.Shell()
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
+			a.st.SavedCopies = s.Copies()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -545,6 +548,7 @@ func (a *app) publish() {
 	st.Windows = slices.Clone(a.st.Windows)
 	st.SavedCommands = slices.Clone(a.st.SavedCommands)
 	st.Shells = slices.Clone(a.st.Shells)
+	st.SavedCopies = slices.Clone(a.st.SavedCopies)
 	st.Connected = slices.Sorted(maps.Keys(a.conns))
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
@@ -774,6 +778,17 @@ func (a *app) handle(in gunim.Intent) {
 		a.lockKeys()
 	case ShowTyped:
 		err = a.showTyped(in.Pane)
+	case RepeatJob:
+		err = a.repeatJob(in.ID)
+	case SaveCopy:
+		err = a.saveCopy(in)
+		a.showJobs()
+	case RunSavedCopy:
+		err = a.runSavedCopy(in.Saved)
+	case ForgetCopy:
+		err = a.forgetCopy(in.Saved)
+	case ShowCopies:
+		a.showCopies()
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:

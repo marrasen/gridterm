@@ -58,6 +58,17 @@ type Job struct {
 	// Done is set once it has stopped, and Failed when that was for a
 	// reason other than finishing or being cancelled.
 	Done, Failed bool
+	// Names are what it works on, Current the one it is on, and Ticked
+	// how many of Names are done, when they are counted one by one.
+	Names   []string
+	Current string
+	Ticked  int
+	// Speeds are its speed over the last while, oldest first, for a
+	// graph.
+	Speeds []uint64
+	// Repeatable says a finished copy can be run again, and Saved that
+	// it is on the saved list.
+	Repeatable, Saved bool
 }
 
 // kindJobs is the jobs pane.
@@ -68,10 +79,11 @@ const mostFinishedJobs = 20
 
 // fileClip is what the file clipboard holds.
 type fileClip struct {
-	kind  jobs.Kind
-	from  vfs.FS
-	at    string
-	names []string
+	kind    jobs.Kind
+	from    vfs.FS
+	machine string
+	at      string
+	names   []string
 }
 
 // running is a job the program follows.
@@ -79,6 +91,14 @@ type running struct {
 	id    string
 	job   *jobs.Job
 	title string
+	// op is the work, and from and to the machines it is between, to
+	// do it again; speeds are its speed, sampled as it is looked at,
+	// from lastBytes at lastAt.
+	op        jobs.Op
+	from, to  string
+	speeds    []uint64
+	lastBytes int64
+	lastAt    time.Time
 	// ended is set once its end has been reported.
 	ended bool
 	// panes are the file panes to list again once it is done.
@@ -101,7 +121,7 @@ func (a *app) clipFiles(in ClipFiles) {
 	if in.Cut {
 		kind, verb = jobs.Move, "move"
 	}
-	a.clip = &fileClip{kind: kind, from: f, at: at, names: in.Names}
+	a.clip = &fileClip{kind: kind, from: f, machine: a.machineOf(in.Pane), at: at, names: in.Names}
 	a.st.Status = fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, count(len(in.Names), "item"))
 }
 
@@ -124,7 +144,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 	if c.kind == jobs.Move {
 		verb = "Moving"
 	}
-	a.follow(op, fmt.Sprintf("%s %s to %s", verb, count(len(c.names), "item"), vfs.Base(f, into)))
+	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.machineOf(in.Pane))
 	return nil
 }
 
@@ -133,12 +153,16 @@ func (a *app) deleteFiles(in DeleteFiles) {
 	if !ok || len(in.Names) == 0 {
 		return
 	}
-	a.follow(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+count(len(in.Names), "item"))
+	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+count(len(in.Names), "item"), a.machineOf(in.Pane), "")
 }
 
 // follow starts a job and follows it, listing again the file panes
 // showing either end once it is done.
-func (a *app) follow(op jobs.Op, title string) {
+func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
+
+// followOn is follow, for a job between the machines from and to, which
+// a repeat opens again.
+func (a *app) followOn(op jobs.Op, title, from, to string) {
 	if a.jobs == nil {
 		a.jobs = jobs.New(2)
 	}
@@ -155,7 +179,7 @@ func (a *app) follow(op jobs.Op, title string) {
 	}
 	a.clearJobs(false)
 	a.jobSeq++
-	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes})
+	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to})
 	if !a.watching {
 		a.watching = true
 		go a.watchJobs()
@@ -189,7 +213,9 @@ func (a *app) showJobs() bool {
 	live := false
 	for _, r := range a.running {
 		p := r.job.Progress()
+		r.sample(p)
 		row := jobRow(r, p)
+		row.Saved = a.isSaved(r)
 		rows = append(rows, row)
 		if !p.Done {
 			live = true
@@ -225,41 +251,58 @@ func (a *app) showJobs() bool {
 
 // jobRow is a job as the pane shows it.
 func jobRow(r *running, p jobs.Progress) Job {
-	row := Job{ID: r.id, Title: r.title, Share: -1, Done: p.Done}
+	row := Job{ID: r.id, Title: r.title, Share: -1, Done: p.Done, Names: r.op.Names, Current: p.Current,
+		Speeds: slices.Clone(r.speeds), Repeatable: p.Done && r.op.Kind == jobs.Copy}
+	if p.Files == len(r.op.Names) {
+		row.Ticked = p.FilesDone
+	}
 	switch {
 	case p.Bytes > 0:
 		row.Share = float32(p.BytesDone) / float32(p.Bytes)
 	case p.Files > 0:
 		row.Share = float32(p.FilesDone) / float32(p.Files)
 	}
+	var said []string
 	switch {
 	case p.Done && errors.Is(p.Err, context.Canceled):
-		row.Detail = "Cancelled after " + count(p.FilesDone, "file")
+		said = append(said, "Cancelled after "+count(p.FilesDone, "file"))
 	case p.Done && p.Err != nil:
-		row.Failed, row.Detail = true, p.Err.Error()
+		row.Failed = true
+		said = append(said, p.Err.Error())
 	case p.Done:
 		row.Share = 1
-		row.Detail = count(p.FilesDone, "file") + " done"
+		done := count(p.FilesDone, "file") + " done"
 		if p.Skipped > 0 {
-			row.Detail += fmt.Sprintf(", %d left as they were", p.Skipped)
+			done += fmt.Sprintf(", %d left as they were", p.Skipped)
 		}
-		if took := p.Ended.Sub(p.Started); took >= time.Second {
-			row.Detail += " in " + took.Round(time.Second).String()
+		said = append(said, done)
+		took := p.Ended.Sub(p.Started)
+		if took >= time.Second {
+			said = append(said, "in "+took.Round(time.Second).String())
+		}
+		if took > 0 && p.BytesDone > 0 {
+			said = append(said, humanSize(int64(float64(p.BytesDone)/took.Seconds()))+"/s on average")
 		}
 	case p.Files == 0:
-		row.Detail = "Counting…"
+		said = append(said, "Counting…")
 	default:
-		row.Detail = fmt.Sprintf("%d of %s", p.FilesDone, count(p.Files, "file"))
+		said = append(said, fmt.Sprintf("%d of %s", p.FilesDone, count(p.Files, "file")))
 		if p.Bytes > 0 {
-			row.Detail += fmt.Sprintf(" · %s of %s", humanSize(p.BytesDone), humanSize(p.Bytes))
-			if took := time.Since(p.Started).Seconds(); took > 0.5 {
-				row.Detail += " · " + humanSize(int64(float64(p.BytesDone)/took)) + "/s"
+			said = append(said, humanSize(p.BytesDone)+" of "+humanSize(p.Bytes))
+		}
+		if speed := r.speedNow(); speed > 0 {
+			said = append(said, humanSize(int64(speed))+"/s")
+			if p.Bytes > p.BytesDone {
+				left := time.Duration(float64(p.Bytes-p.BytesDone) / float64(speed) * float64(time.Second))
+				if left < time.Second {
+					said = append(said, "about a second left")
+				} else {
+					said = append(said, "about "+left.Round(time.Second).String()+" left")
+				}
 			}
 		}
-		if p.Current != "" {
-			row.Detail += " · " + p.Current
-		}
 	}
+	row.Detail = strings.Join(said, " · ")
 	return row
 }
 
@@ -414,4 +457,35 @@ func describe(e vfs.Entry) string {
 		return "a folder"
 	}
 	return humanSize(e.Size)
+}
+
+// mostSpeeds is how many speed samples a job keeps for its graph: a
+// quarter minute, four a second.
+const mostSpeeds = 60
+
+// sample writes down how fast the job went since it was last looked at.
+func (r *running) sample(p jobs.Progress) {
+	now := time.Now()
+	if !r.lastAt.IsZero() && !p.Done {
+		if dt := now.Sub(r.lastAt).Seconds(); dt > 0 {
+			r.speeds = append(r.speeds, uint64(max(0, float64(p.BytesDone-r.lastBytes)/dt)))
+			if len(r.speeds) > mostSpeeds {
+				r.speeds = r.speeds[len(r.speeds)-mostSpeeds:]
+			}
+		}
+	}
+	r.lastBytes, r.lastAt = p.BytesDone, now
+}
+
+// speedNow is the job's speed over its last second.
+func (r *running) speedNow() uint64 {
+	n := min(4, len(r.speeds))
+	if n == 0 {
+		return 0
+	}
+	var sum uint64
+	for _, s := range r.speeds[len(r.speeds)-n:] {
+		sum += s
+	}
+	return sum / uint64(n)
 }

@@ -89,6 +89,11 @@ func run() error {
 			Icons: appicon.Images(),
 			// The close button asks first, as Exit does.
 			AskToClose: Exit{},
+			// The title bar is the window's own: the menus, the title
+			// and the window's buttons in one row. It comes in as it
+			// opens, as it leaves as it quits.
+			Chromeless: true,
+			Arrive:     true,
 		})
 		if err != nil {
 			return fmt.Errorf("gunimterm: %w", err)

@@ -250,7 +250,7 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	}
 	w.toasts = &widget.Toasts{}
 	w.chips = newChipBar()
-	bar := widget.Row(w.bar, w.chips).Grow(w.bar, 1)
+	bar := widget.Row(w.bar, w.chips, widget.NewWindowControls()).Grow(w.bar, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
 	w.top = widget.Column(bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
@@ -556,6 +556,9 @@ func (w *window) showTitle(st State, u *gunim.UI) {
 	if title != w.title {
 		w.title = title
 		u.SetTitle(title)
+		// And on the window's own title bar, where it draws one.
+		w.bar.Title = title
+		u.Invalidate()
 	}
 }
 

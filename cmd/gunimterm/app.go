@@ -906,6 +906,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.saveLines(in)
 	case DropFileClip:
 		a.clip = nil
+	case ListFolders:
+		a.listFolders(in)
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImage:

@@ -33,6 +33,11 @@ type Browser struct {
 	// says Path is the top of its filesystem.
 	Seq int
 	Top bool
+	// Roots are where the filesystem starts, such as each drive, Sep its
+	// separator, and Listed the folders last listed for Go To.
+	Roots  []string
+	Sep    string
+	Listed Listed
 }
 
 // Reader is what a reader pane shows: a file's lines.
@@ -365,7 +370,8 @@ func (a *app) browse(in Browse) {
 				return
 			}
 			order(entries)
-			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path)})
+			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
+				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

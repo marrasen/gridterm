@@ -35,6 +35,10 @@ type browser struct {
 	byName     map[widget.Key]vfs.Entry
 	sortBy     int
 	descending bool
+	// goTo is Go To's field while it is open, and asked the folder whose
+	// names were last asked for, to complete from.
+	goTo  *widget.TextField
+	asked string
 }
 
 func newBrowser(w *window, id string) *browser {
@@ -193,8 +197,26 @@ func (b *browser) askRename(u *gunim.UI) {
 func (b *browser) askGoTo(u *gunim.UI) {
 	path := widget.NewTextField()
 	path.SetText(b.st.Path)
+	// The rest of a folder's name, suggested as it is typed, from the
+	// folder the text is in.
+	path.OnEdit = func(text string, u *gunim.UI) { b.complete(text, u) }
+	b.goTo = path
+	form := widget.NewForm()
+	if len(b.st.Roots) > 1 {
+		// Where this filesystem starts, such as each drive, one pick
+		// away rather than a letter to remember.
+		places := widget.NewDropdown(append([]string{b.st.Path}, b.st.Roots...)...)
+		places.OnPick(func(i int, u *gunim.UI) {
+			if i > 0 {
+				path.SetText(b.st.Roots[i-1])
+				u.Invalidate()
+			}
+		})
+		form.Add("Places", places)
+	}
+	form.Add("Folder", path)
 	d := widget.NewDialog("Go to a folder")
-	d.Body = widget.NewForm().Add("Folder", path)
+	d.Body = form
 	d.SetButtons("Go", "Cancel")
 	d.Check = func() string {
 		if strings.TrimSpace(path.Text()) == "" {
@@ -225,7 +247,11 @@ func (b *browser) askFolder(u *gunim.UI) {
 
 // show takes the program's state for the pane.
 func (b *browser) show(st Browser, u *gunim.UI) {
+	listed := st.Listed.Dir != b.st.Listed.Dir || !slices.Equal(st.Listed.Folders, b.st.Listed.Folders)
 	b.st = st
+	if listed && b.goTo != nil {
+		b.complete(b.goTo.Text(), u)
+	}
 	text := st.Path
 	if st.Err != "" {
 		text = st.Path + " — " + st.Err

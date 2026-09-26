@@ -59,3 +59,59 @@ func TestTheTopOfAFilesystemHasNothingAboveIt(t *testing.T) {
 		t.Fatalf("at the top, the list starts at %q", k)
 	}
 }
+
+func TestAPathIsCutWhereItsLastNameStarts(t *testing.T) {
+	for _, c := range []struct{ sep, text, dir, leaf string }{
+		{"/", "/home/rd", "/home", "rd"},
+		{"/", "/ho", "/", "ho"},
+		{`\`, `C:\Us`, `C:\`, "Us"},
+		{`\`, "C:/Users/ma", `C:\Users`, "ma"},
+	} {
+		dir, leaf, ok := splitLeaf(c.sep, c.text)
+		if !ok || dir != c.dir || leaf != c.leaf {
+			t.Errorf("%q cuts to %q and %q, want %q and %q", c.text, dir, leaf, c.dir, c.leaf)
+		}
+	}
+	if got := restOf(false, []string{"src", "srv", "sbin"}, "sr"); got != "" {
+		t.Errorf("src and srv share nothing after sr, and got %q", got)
+	}
+	if got := restOf(false, []string{"projects", "project-x"}, "pro"); got != "ject" {
+		t.Errorf("got %q, want the part both share", got)
+	}
+	if got := restOf(true, []string{"Users"}, "us"); got != "ers" {
+		t.Errorf("paying case no mind, got %q", got)
+	}
+}
+
+func TestGoToCompletesAFoldersName(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/", Seq: 1, Sep: "/", Roots: []string{"/"}}}}
+	publish(st)
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	b := win.browsers["p1"]
+	b.askGoTo(lastUI)
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	b.goTo.SetText("/home/")
+	lastWindow.Input(gi.TextInput{Text: "rd"})
+	lastWindow.Frame(time.Second / 60)
+	for {
+		if in, ok := nextIntent(t).(ListFolders); ok {
+			if in.Dir != "/home" {
+				t.Fatalf("asked for the folders in %q", in.Dir)
+			}
+			break
+		}
+	}
+	br := st.Browsers["p1"]
+	br.Listed = Listed{Dir: "/home", Folders: []string{"rdp"}}
+	st.Browsers = map[string]Browser{"p1": br}
+	publish(st)
+	if b.goTo.Ghost != "p" {
+		t.Fatalf("the suggestion is %q, want the rest of rdp", b.goTo.Ghost)
+	}
+}

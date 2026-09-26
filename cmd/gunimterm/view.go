@@ -118,7 +118,9 @@ type window struct {
 	walk     *paneWalk
 	walkList *walkList
 	keyMods  input.Mods
-	size     geom.Size
+	// glowing is set while a shared pane's ring keeps frames coming.
+	glowing bool
+	size    geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -1196,6 +1198,17 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.vault = st.Secrets
 	w.noteFocus(st.Focus)
+	shared := map[string]bool{}
+	for _, sp := range st.Share.Panes {
+		shared[sp.Pane] = true
+	}
+	for _, p := range st.Panes {
+		if t, ok := w.terms[p.ID]; ok {
+			t.agent = shared[p.ID] && !p.Ended
+			t.marks = st.Marks
+		}
+	}
+	w.glow(u)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)

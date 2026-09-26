@@ -41,6 +41,10 @@ type term struct {
 	// pics are the inline pictures on screen as the painter holds
 	// them, by the picture each was made from.
 	pics map[image.Image]*paint.Image
+	// agent says the pane is shared with an agent, and marks are the
+	// colours of the rings that say so.
+	agent bool
+	marks Marks
 }
 
 // leastCols and leastRows are the smallest screen a shell is given.
@@ -102,9 +106,10 @@ func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) g
 
 // Paint implements [gunim.Node]: the cells, and over them the
 // pictures programs put in the output.
-func (t *term) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	kids.At(0).Paint(p)
 	t.paintPictures(p)
+	t.paintRings(p, f, box)
 }
 
 // paintPictures draws the inline pictures on screen, each over the

@@ -49,6 +49,8 @@ type State struct {
 	// they are drawn in.
 	Fonts []string
 	Font  Font
+	// Marks are the colours of the rings round shared panes.
+	Marks Marks
 	// Theme names the theme the window is drawn in, and Themes those on
 	// offer.
 	Theme  string
@@ -1218,6 +1220,7 @@ func (a *app) pickTheme(name string) {
 		}
 		a.st.Theme = name
 		a.palette = t.palette
+		a.st.Marks = marksOf(t.palette)
 		a.wantFont = t.source.Font
 		a.useWantedFont()
 		for _, sh := range a.shells.all() {

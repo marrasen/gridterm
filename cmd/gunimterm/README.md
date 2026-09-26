@@ -58,11 +58,8 @@ The window:
 
 Panes:
 
-- The slow glow around a pane shared with an agent or watched from
-  another window.
 - A held screen bigger than its pane, drawn scaled to fit, with its
   sidebar row saying it is held.
-
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

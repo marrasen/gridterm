@@ -1473,6 +1473,7 @@ func (w *window) update(st State, u *gunim.UI) {
 			continue
 		}
 		t.sync()
+		t.lookAgain(u)
 		if id == st.Focus {
 			t.blink(u)
 		}

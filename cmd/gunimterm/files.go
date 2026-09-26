@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/pkg/sftp"
 
 	"github.com/marrasen/gridterm/ui/files"
+	uiterm "github.com/marrasen/gridterm/ui/term"
 	"github.com/marrasen/gridterm/vfs"
 )
 
@@ -59,8 +61,13 @@ type Reader struct {
 	Pic   *files.Pic
 	SoFar int64
 	// Find opens the reader with its find bar open, as the scrollback
-	// is opened, to be searched.
-	Find bool
+	// is opened, to be searched, and FindAgain counts the times it is
+	// asked to open it again after.
+	Find      bool
+	FindAgain int
+	// Of is the terminal pane whose scrollback the reader shows, which
+	// reading again reads again; SaveAs is where a save is offered.
+	Of, SaveAs string
 	// Saves counts the reader's saves that have finished, and SaveErr
 	// is why the last one failed, empty when it worked.
 	Saves   int
@@ -581,7 +588,18 @@ func (a *app) showScrollback(pane string) error {
 	if t == nil {
 		return errors.New("the pane in front is not a terminal, so it has no scrollback")
 	}
-	lines := strings.Split(strings.TrimRight(t.AllText(), "\n "), "\n")
+	// One viewer per pane, as in gridterm: a second would show the same
+	// text, and the first is where the user left it. Its find opens
+	// again, as the command asked for a search.
+	for id, r := range a.st.Readers {
+		if r.Of == pane && slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }) {
+			r.FindAgain++
+			a.setReader(id, r)
+			a.st.Focus = id
+			return nil
+		}
+	}
+	lines := scrollbackText(t)
 	a.next++
 	id := "p" + itoa(a.next)
 	title := "Scrollback of " + a.titleOf(pane)
@@ -590,7 +608,16 @@ func (a *app) showScrollback(pane string) error {
 	if m == nil {
 		m = map[string]Reader{}
 	}
-	m[id] = Reader{Path: title, Lines: lines, Seq: 1, Line: max(1, len(lines)), Find: true}
+	// Saved on this machine, where the user is looking, under a name
+	// every filesystem takes.
+	m[id] = Reader{Path: title, Lines: lines, Seq: 1, Line: max(1, len(lines)), Find: true,
+		Of: pane, SaveAs: filepath.Join("~", files.SafeName(a.titleOf(pane)+" scrollback")+".txt")}
 	a.st.Readers = m
 	return nil
+}
+
+// scrollbackText is a terminal's screen and what has scrolled off it,
+// as lines of plain text.
+func scrollbackText(t *uiterm.Terminal) []string {
+	return strings.Split(strings.TrimRight(t.AllText(), "\n "), "\n")
 }

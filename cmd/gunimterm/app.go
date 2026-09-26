@@ -118,12 +118,12 @@ type State struct {
 	ShortcutsRead uint64
 	// See Shortcuts.
 	ShortcutsAgain bool
-	Contents      map[string]theme.Theme
-	ShellSetup    bool
-	TermProgram   string
-	Bells         uint64
-	SavedTunnels  []settings.SavedTunnel
-	Status        string
+	Contents       map[string]theme.Theme
+	ShellSetup     bool
+	TermProgram    string
+	Bells          uint64
+	SavedTunnels   []settings.SavedTunnel
+	Status         string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -939,6 +939,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.writeThemeFile()
 	case CheckUpdates:
 		a.checkUpdates()
+	case NoTextToPaste:
+		a.noTextToPaste()
 	case MakePortable:
 		a.makePortable()
 	case ShowHelp:
@@ -964,8 +966,11 @@ func (a *app) handle(in gunim.Intent) {
 		if _, ok := a.reads[in.Pane]; ok {
 			a.readOnce(in.Pane)
 		} else if r, ok := a.st.Readers[in.Pane]; ok {
-			// Lines with no file behind them, as the scrollback's, are
-			// what they were.
+			// A scrollback is read off its pane again, as it stands now,
+			// while the pane is there to read.
+			if t := a.terminal(r.Of); t != nil {
+				r.Lines = scrollbackText(t)
+			}
 			r.Seq++
 			a.setReader(in.Pane, r)
 		}

@@ -326,7 +326,7 @@ func TestTheSuggestedSavePathIsUsable(t *testing.T) {
 	// taking filepath.Base would cut an unmapped name at the backslash
 	// it should never have kept, and pass against the very bug this is
 	// here for.
-	name := safeFileName(`Terminal PowerShell: C:\Users\x scrollback`)
+	name := files.SafeName(`Terminal PowerShell: C:\Users\x scrollback`)
 
 	if strings.ContainsAny(name, `<>:"/\|?*`) {
 		t.Errorf("the suggested name is %q, want nothing a filesystem refuses", name)
@@ -342,7 +342,7 @@ func TestTheSuggestedSavePathIsUsable(t *testing.T) {
 
 // A name with nothing usable in it still suggests something.
 func TestASuggestedNameIsNeverEmpty(t *testing.T) {
-	if got := safeFileName(`///`); got == "" {
+	if got := files.SafeName(`///`); got == "" {
 		t.Error("a name of nothing but separators suggested an empty file name")
 	}
 }

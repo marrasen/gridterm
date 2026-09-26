@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
@@ -15,29 +16,45 @@ import (
 	"github.com/marrasen/gridterm/grid"
 	"github.com/marrasen/gridterm/input"
 	"github.com/marrasen/gridterm/ui"
+	uiterm "github.com/marrasen/gridterm/ui/term"
 )
 
 // term is the terminal on screen: a CellGrid showing the shell's
 // screen, taking keys for it.
 type term struct {
+	anim.Group
 	id      string
 	keys    *ui.Keymap
 	sh      *shell
 	cells   *widget.CellGrid
 	row     []widget.Cell
 	focused bool
-	// wheel gathers the wheel's movement until it makes a whole line.
+	// wheel gathers the wheel's movement until it makes a whole notch.
 	wheel float32
 	// held is the button down in the pane, and at the cell the pointer
 	// was last heard of in.
 	held input.MouseButton
-	// hoverMods are the modifiers the pointer last moved with.
+	// hoverMods are the modifiers the pointer last moved with, or held
+	// since, and over says the pointer is over the pane.
 	hoverMods input.Mods
+	over      bool
 	at        grid.Point
 	// wantBlink says the program asked for a blinking cursor, blinking
 	// that a blink is running, and blinkOff that the cursor is in the
-	// off half of one.
+	// off half of one. blinkRun numbers the blink running, so one
+	// started again leaves the old one's steps to fall away.
 	wantBlink, blinking, blinkOff bool
+	blinkRun                      int
+	// cursorAt is where the cursor was drawn, and cursorShown whether
+	// it was; checking says a look at a cursor hidden is on its way.
+	cursorAt              grid.Point
+	cursorShown, checking bool
+	// small is a size too small to give the shell until the pane has
+	// held it a moment, since when, and settle keeps frames coming
+	// while it waits.
+	small      [2]int
+	smallSince time.Time
+	settle     *anim.Float
 	// pics are the inline pictures on screen as the painter holds
 	// them, by the picture each was made from.
 	pics map[image.Image]*paint.Image
@@ -51,11 +68,19 @@ type term struct {
 	offset geom.Point
 }
 
-// leastCols and leastRows are the smallest screen a shell is given.
-const leastCols, leastRows = 20, 3
+// leastCols and leastRows are the smallest screen a shell is given at
+// once. A smaller one is given once the pane has held it for
+// smallSettle: a pane sliding in or folding away passes through every
+// width on the way, and a shell told each of them would print its
+// prompt a few columns wide.
+const (
+	leastCols, leastRows = 20, 3
+	smallSettle          = 150 * time.Millisecond
+)
 
-// blinkHalf is each half of a cursor's blink, as xterm times it.
-const blinkHalf = 530 * time.Millisecond
+// blinkHalf is each half of a cursor's blink: once a second, as
+// gridterm blinks.
+const blinkHalf = 500 * time.Millisecond
 
 // blink starts the cursor blinking, while the pane has the keyboard and
 // its program asked for a blinking cursor.
@@ -64,25 +89,53 @@ func (t *term) blink(u *gunim.UI) {
 		return
 	}
 	t.blinking = true
-	u.After(blinkHalf, t.blinkStep)
+	run := t.blinkRun
+	u.After(blinkHalf, func(u *gunim.UI) { t.blinkStep(run, u) })
 }
 
-func (t *term) blinkStep(u *gunim.UI) {
+func (t *term) blinkStep(run int, u *gunim.UI) {
+	if run != t.blinkRun {
+		return
+	}
 	if !t.focused || !t.wantBlink {
 		t.blinking, t.blinkOff = false, false
 	} else {
 		t.blinkOff = !t.blinkOff
-		u.After(blinkHalf, t.blinkStep)
+		u.After(blinkHalf, func(u *gunim.UI) { t.blinkStep(run, u) })
 	}
 	t.sync()
 	u.Invalidate()
+}
+
+// blinkAgain starts the blink over, lit, as a key or a move of the
+// cursor does in gridterm: the cursor is on screen where the user is
+// looking. The next blink starts it again.
+func (t *term) blinkAgain() {
+	t.blinkRun++
+	t.blinking, t.blinkOff = false, false
+}
+
+// lookAgain looks at the cursor again once a hide would have landed:
+// the terminal keeps a hidden cursor on screen a moment, across a
+// program's repaint, and nothing else may draw the pane after it.
+func (t *term) lookAgain(u *gunim.UI) {
+	if t.checking || !t.cursorShown {
+		return
+	}
+	t.checking = true
+	u.After(uiterm.CursorHideGrace+10*time.Millisecond, func(u *gunim.UI) {
+		t.checking = false
+		t.sync()
+		u.Invalidate()
+	})
 }
 
 func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
 	g.Size = 15
 	g.Background = termBackground
-	t := &term{id: id, keys: keys, sh: sh, cells: g}
+	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
+	t.Add(t.settle)
 	t.sync()
 	return t
 }
@@ -94,15 +147,25 @@ func (t *term) Children() []gunim.Node { return []gunim.Node{t.cells} }
 func (t *term) Focusable() bool { return true }
 
 // Layout implements [gunim.Node]. The shell takes as many cells as fit.
-func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	k := kids.At(0)
 	size := k.Layout(c)
 	k.Place(geom.Point{})
-	// A pane sliding in or folding away passes through every width on
-	// the way. A shell told each of them would print its prompt a few
-	// columns wide, so it keeps its size until the pane holds a usable
-	// screen.
-	if cols, rows := t.cells.Fit(); cols >= leastCols && rows >= leastRows && t.sh.resize(cols, rows) {
+	cols, rows := t.cells.Fit()
+	give := false
+	switch {
+	case cols < 1 || rows < 1:
+	case cols >= leastCols && rows >= leastRows:
+		t.small, give = [2]int{}, true
+	case t.small != [2]int{cols, rows}:
+		// Too small to give at once: given if the pane stays so.
+		t.small, t.smallSince = [2]int{cols, rows}, f.Now
+		t.settle.Jump(0)
+		t.settle.Animate(1, anim.Tween{Duration: smallSettle + 50*time.Millisecond})
+	default:
+		give = f.Now.Sub(t.smallSince) >= smallSettle
+	}
+	if give && t.sh.resize(cols, rows) {
 		t.sync()
 	}
 	// A screen somebody watching has sized bigger than this pane is laid
@@ -110,7 +173,7 @@ func (t *term) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) g
 	// middle of the pane, as gridterm draws it.
 	t.scale, t.offset = 1, geom.Point{}
 	cell := t.cells.CellSize()
-	cols, rows := t.cells.GridSize()
+	cols, rows = t.cells.GridSize()
 	need := geom.Sz(float32(cols)*cell.W, float32(rows)*cell.H)
 	if t.sh.t.Held() && (need.W > size.W || need.H > size.H) && need.W > 0 && need.H > 0 {
 		t.scale = min(size.W/need.W, size.H/need.H)
@@ -199,13 +262,16 @@ func (t *term) sync() {
 		shape = widget.CursorUnderline
 	case grid.CursorBlock:
 	}
-	if !t.focused {
-		shape = widget.CursorOutline
-	}
 	t.wantBlink = cur.Blink
-	// A pane whose program has ended takes no typing, so it shows no
-	// cursor.
-	visible := cur.Visible && !sh.t.Exited()
+	// A pane whose program has ended takes no typing, and one without
+	// the keyboard takes none now, so neither shows a cursor, as in
+	// gridterm.
+	visible := cur.Visible && !sh.t.Exited() && t.focused
+	if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
+		t.cursorAt = at
+		t.blinkAgain()
+	}
+	t.cursorShown = visible
 	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: visible,
 		Blinked: t.blinkOff && t.wantBlink && t.focused})
 }
@@ -266,6 +332,7 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		u.Invalidate()
 		return true
 	case gi.KeyPress:
+		t.ctrlHeld(e.Key, e.Mods, true, u)
 		// A press that typed leaves it to the text, which follows.
 		if e.Typed {
 			return true
@@ -279,12 +346,20 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 			return t.command(id, u)
 		}
 		t.key(ev)
+		t.typed(u)
 		return true
+	case gi.KeyRelease:
+		t.ctrlHeld(e.Key, e.Mods, false, u)
+		return false
 	case gi.TextInput:
 		for _, r := range e.Text {
 			t.key(input.Event{Kind: input.Text, Rune: r, NormalText: true})
 		}
+		t.typed(u)
 		return true
+	case gi.PointerLeave:
+		t.over = false
+		return false
 	case gi.Scroll:
 		if e.Mods&gi.ModControl != 0 {
 			// Ctrl and the wheel size the font, which the window does.
@@ -300,6 +375,33 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		return t.release(e, u)
 	}
 	return false
+}
+
+// typed shows what a key did, with the cursor lit.
+func (t *term) typed(u *gunim.UI) {
+	t.sync()
+	t.blink(u)
+	u.Invalidate()
+}
+
+// ctrlHeld lights or unlights the link under a still pointer as Ctrl
+// goes down or comes up, as gridterm does, rather than at the pointer's
+// next move.
+func (t *term) ctrlHeld(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
+	if k != gi.KeyLeftControl && k != gi.KeyRightControl {
+		return
+	}
+	m := mouseMods(mods) &^ input.ModCtrl
+	if down {
+		m |= input.ModCtrl
+	}
+	if !t.over || t.held != input.MouseNone || m == t.hoverMods {
+		return
+	}
+	t.hoverMods = m
+	t.sh.t.SetHover(t.at.X, t.at.Y, m)
+	t.sync()
+	u.Invalidate()
 }
 
 // mouse hands a pointer event to the terminal, which reports it to a
@@ -352,8 +454,18 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
 	mods := mouseMods(e.Mods)
 	switch {
+	case e.Focusing && e.Button == gi.ButtonPrimary:
+		// The click that gives the pane the keyboard only does that, as
+		// in gridterm: it starts no selection, and a program with the
+		// mouse is not clicked at a place nobody aimed for.
+		return true
 	case e.Button == gi.ButtonMiddle && !t.sh.t.MouseTaken(mods):
-		t.pasteClipboard(u)
+		// Text alone, the X11 way: a picture is pasted with the key.
+		if s := u.Clipboard(); s != "" {
+			t.paste(s)
+		} else {
+			u.Send(t, NoTextToPaste{})
+		}
 		return true
 	case e.Button == gi.ButtonSecondary && !t.sh.t.MouseTaken(mods):
 		return false
@@ -365,6 +477,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 // drag extends the selection, or tells a program the pointer moved.
 func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 	at := t.cellAt(e.Pos)
+	t.over = true
 	// With Ctrl down, a link under the pointer is underlined, and a
 	// click follows it.
 	if t.held == input.MouseNone {
@@ -409,14 +522,12 @@ func (t *term) command(id string, u *gunim.UI) bool {
 	case "edit.paste":
 		t.pasteClipboard(u)
 	case "view.scrollUp", "view.scrollDown":
-		_, rows := t.cells.GridSize()
-		page := max(1, rows-1)
+		// Half a screen, as gridterm moves.
+		page := 1
 		if id == "view.scrollDown" {
-			page = -page
+			page = -1
 		}
-		if _, _, alt := t.sh.t.Cursor(); !alt {
-			t.sh.t.ScrollView(page)
-		}
+		t.sh.t.ScrollPages(page)
 		t.sync()
 		u.Invalidate()
 	default:
@@ -429,7 +540,7 @@ func (t *term) command(id string, u *gunim.UI) bool {
 // program, brings the view back to the live screen and clears the
 // selection, as typing does in gridterm.
 func (t *term) key(ev input.Event) {
-	t.blinkOff = false
+	t.blinkAgain()
 	_, _ = t.sh.t.HandleKey(ev)
 }
 
@@ -447,43 +558,29 @@ func (t *term) pasteClipboard(u *gunim.UI) {
 	u.Send(t, PastePicture{Pane: t.id})
 }
 
-// scroll moves by the wheel's movement, a line at a time: to a program
-// that has the mouse, as a wheel click per line; on the alternate
-// screen, which keeps no history, as the arrow keys; and otherwise
-// through history.
+// scroll hands the terminal a wheel notch at a time, which it takes as
+// gridterm does: a report to a program that has the mouse, arrows on
+// the alternate screen, and otherwise three lines of history.
 func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
-	h := t.cells.CellSize().H
-	if h <= 0 {
+	notches := e.Notches.Y
+	if notches == 0 {
+		// A wheel that does not count notches: the distance, at the
+		// 40 pixels a notch gunim's driver gives.
+		notches = e.Delta.Y / 40
+	}
+	t.wheel += notches
+	n := int(math.Trunc(float64(t.wheel)))
+	if n == 0 {
 		return
 	}
-	t.wheel += e.Delta.Y / h
-	lines := int(math.Trunc(float64(t.wheel)))
-	if lines == 0 {
-		return
+	t.wheel -= float32(n)
+	b := input.MouseWheelUp
+	if n < 0 {
+		b, n = input.MouseWheelDown, -n
 	}
-	t.wheel -= float32(lines)
-	mods := mouseMods(e.Mods)
-	_, _, alt := t.sh.t.Cursor()
-	switch {
-	case t.sh.t.MouseTaken(mods):
-		b := input.MouseWheelUp
-		if lines < 0 {
-			b, lines = input.MouseWheelDown, -lines
-		}
-		at := t.cellAt(e.Pos)
-		for range lines {
-			_, _ = t.sh.t.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mods})
-		}
-	case alt:
-		k := input.KeyUp
-		if lines < 0 {
-			k, lines = input.KeyDown, -lines
-		}
-		for range lines {
-			t.key(input.Event{Kind: input.KeyPress, Key: k})
-		}
-	default:
-		t.sh.t.ScrollView(lines)
+	at := t.cellAt(e.Pos)
+	for range n {
+		_, _ = t.sh.t.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
 	}
 	t.sync()
 	u.Invalidate()
@@ -493,6 +590,12 @@ func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 // encodes.
 func keyEvent(e gi.KeyPress) (input.Event, bool) {
 	k, ok := keyMap[e.Key]
+	// Punctuation is the key it types, as gridterm reads it: a Swedish
+	// keyboard puts + where a US one has -, and Ctrl and the key marked
+	// plus should make the font bigger.
+	if p, typed := punctuation[e.Char]; typed {
+		k, ok = p, true
+	}
 	if !ok {
 		return input.Event{}, false
 	}
@@ -509,6 +612,13 @@ func keyEvent(e gi.KeyPress) (input.Event, bool) {
 		}
 	}
 	return ev, true
+}
+
+// punctuation is the punctuation gridterm binds, by the character the
+// key types rather than where it sits.
+var punctuation = map[rune]input.Key{
+	'=': input.KeyEquals, '+': input.KeyPlus, '-': input.KeyMinus,
+	'[': input.KeyBracketLeft, ']': input.KeyBracketRight, '\\': input.KeyBackslash,
 }
 
 // keyMap holds the keys gridterm encodes. The keypad's keys, pressed
@@ -542,11 +652,11 @@ var keyMap = func() map[gi.Key]input.Key {
 }()
 
 // Cursor implements [gunim.CursorShaper]: a hand over a link that a
-// click would follow, and otherwise the text beam.
+// click would follow, and otherwise the arrow, as in gridterm.
 func (t *term) Cursor(p geom.Point) gi.Cursor {
 	at := t.cellAt(p)
 	if _, on := t.sh.t.CursorAt(at.X, at.Y, t.hoverMods); on {
 		return gi.CursorHand
 	}
-	return gi.CursorText
+	return gi.CursorArrow
 }

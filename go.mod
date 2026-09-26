@@ -7,7 +7,7 @@ require (
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/danielgatis/go-vte v1.0.11
 	github.com/hajimehoshi/ebiten/v2 v2.10.2
-	github.com/marrasen/gunim v0.0.0-20260926040317-7db1391d0895
+	github.com/marrasen/gunim v0.0.0-20260926043247-5a09cdc50461
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0

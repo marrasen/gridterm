@@ -28,6 +28,9 @@ type (
 	// PastePicture hands the picture on the clipboard to the program in
 	// a terminal pane, for a paste that found no text.
 	PastePicture struct{ Pane string }
+	// NoTextToPaste says a middle click found no text to paste, which
+	// is said when the clipboard holds a picture: that paste takes text.
+	NoTextToPaste struct{}
 )
 
 // readPicture reads the picture on the clipboard. It is read off the
@@ -180,4 +183,12 @@ func (a *app) distroOf(id string) string {
 		return ""
 	}
 	return sh.Distro
+}
+
+// noTextToPaste says why a middle click pasted nothing, when there is
+// something to say: an empty clipboard says nothing.
+func (a *app) noTextToPaste() {
+	if img, have, err := readPicture(); err == nil && have && img != nil {
+		a.notify("Could not paste", "The clipboard holds a picture rather than text, and this takes text.", "")
+	}
 }

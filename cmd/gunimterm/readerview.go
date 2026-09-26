@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"image"
 	"image/color"
@@ -48,6 +49,8 @@ type reader struct {
 	// saves.
 	thenSave func(error)
 	saves    int
+	// findAgain is the last ask to open the find bar again.
+	findAgain int
 	// send asks the program for something, from the update the reader
 	// was last brought up to date in.
 	send func(gunim.Intent)
@@ -82,6 +85,13 @@ func (rd *reader) show(st Reader, u *gunim.UI) {
 				err = errors.New(st.SaveErr)
 			}
 			then(err)
+			rd.sync()
+		}
+	}
+	if st.FindAgain != rd.findAgain {
+		rd.findAgain = st.FindAgain
+		if rd.r != nil {
+			rd.r.AskFind()
 			rd.sync()
 		}
 	}
@@ -145,7 +155,7 @@ func (rd *reader) make(st Reader) {
 		rd.thenSave = then
 		rd.send(SaveLines{Pane: rd.id, Path: at, Lines: lines})
 	}
-	r.SaveAs = filepath.Join("~", name)
+	r.SaveAs = cmp.Or(st.SaveAs, filepath.Join("~", name))
 	r.Scrolls = []string{"view.scrollUp", "view.scrollDown"}
 	rd.r = r
 	r.Follow(st.Follow)

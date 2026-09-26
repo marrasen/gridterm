@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -130,5 +131,22 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	text := strings.Join(r.Lines, "\n")
 	if !r.Find || !strings.Contains(text, "\n1\n2\n3\n") || !strings.Contains(text, "\n300\n") {
 		t.Fatalf("the reader holds %d lines, find %v, starting %q", len(r.Lines), r.Find, r.Lines[:5])
+	}
+	if strings.ContainsAny(filepath.Base(r.SaveAs), `/:`) || !strings.HasSuffix(r.SaveAs, " scrollback.txt") {
+		t.Fatalf("a save is offered at %q", r.SaveAs)
+	}
+	// Asked again, the same viewer comes forward with its find open
+	// again, and reading it again reads what the pane has said since.
+	reader := a.st.Panes[1].ID
+	a.st.Focus = id
+	a.terminal(id).Paste("echo later-line\r")
+	waitFor(t, a, "the echo", func() bool { return strings.Contains(a.terminal(id).AllText(), "\nlater-line\n") })
+	a.handle(ShowScrollback{Pane: id})
+	if r := a.st.Readers[reader]; len(a.st.Panes) != 2 || a.st.Focus != reader || r.FindAgain != 1 {
+		t.Fatalf("asked again, the panes are %+v, the focus on %s, the reader %+v", a.st.Panes, a.st.Focus, r.FindAgain)
+	}
+	a.handle(ReadAgain{Pane: reader})
+	if r := a.st.Readers[reader]; !slices.Contains(r.Lines, "later-line") {
+		t.Fatalf("read again, the reader ends %q", r.Lines[len(r.Lines)-3:])
 	}
 }

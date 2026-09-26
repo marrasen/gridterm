@@ -31,6 +31,8 @@ func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 	keep := widget.NewCheckbox("Save this command")
 	form := widget.NewForm().Add("Command", line).Add("Folder", dir)
 	var kept []settings.SavedCommand
+	// picked is the saved command picked, which unticking Keep forgets.
+	picked := ""
 	for _, c := range w.savedCommands {
 		if w.savedCommandOn(c) == machine {
 			kept = append(kept, c)
@@ -47,6 +49,7 @@ func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 			if i == 0 || i > len(kept) {
 				return
 			}
+			picked = kept[i-1].Line
 			line.SetText(kept[i-1].Line)
 			dir.SetText(kept[i-1].Dir)
 			keep.SetOn(true, u)
@@ -65,7 +68,11 @@ func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On}
+		forget := ""
+		if !keep.On && picked != "" && line.Text() == picked {
+			forget = picked
+		}
+		return RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget}
 	}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)

@@ -62,14 +62,7 @@ Panes:
   another window.
 - A held screen bigger than its pane, drawn scaled to fit, with its
   sidebar row saying it is held.
-- A session's errors, written to the window log (`OnError`).
-- The line in a pane's transcript saying a server's address changed.
 
-Settings:
-
-- Unticking Keep on a saved command forgets it.
-- Old saved commands, tunnels and copies given their server's ID
-  (`FillServerIDs`).
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"log"
 	"sync"
 
 	"github.com/marrasen/gridterm/grid"
@@ -61,6 +62,9 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		OnLink:      hooks.link,
 		FindPath:    hooks.findPath,
 		OnPath:      hooks.openPath,
+		// A session's failures have nowhere else to go; the window log
+		// keeps them, as gridterm's does.
+		OnError: func(err error) { log.Printf("a pane's session: %v", err) },
 	})
 	if err != nil {
 		// Only a missing session fails, and every caller has one.

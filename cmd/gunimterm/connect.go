@@ -43,7 +43,12 @@ var errDeclined = errors.New("gunimterm: declined")
 
 // connect connects to a server, through the jump hosts a saved one
 // names, and opens a shell there once it is connected.
-func (a *app) connect(in ConnectTo) error {
+func (a *app) connect(in ConnectTo) error { return a.connectThen(in, nil) }
+
+// connectThen connects to a server and then runs then, on the
+// program's goroutine, with why it could not connect or nil; or opens a
+// shell there when then is nil.
+func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	var hops []remote.Config
 	name := in.Saved
 	if in.Saved != "" {
@@ -74,6 +79,10 @@ func (a *app) connect(in ConnectTo) error {
 		name = cfg.Target()
 	}
 	if _, ok := a.conns[name]; ok {
+		if then != nil {
+			then(nil)
+			return nil
+		}
 		return a.open(name, placement{})
 	}
 	if a.dialing[name] {
@@ -106,9 +115,13 @@ func (a *app) connect(in ConnectTo) error {
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to "+name, err.Error(), "")
 				}
+				if then != nil {
+					then(err)
+				}
 				return
 			}
 			a.conns[name] = conn
+			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			go func() {
 				err := conn.Wait()
@@ -127,6 +140,10 @@ func (a *app) connect(in ConnectTo) error {
 					a.notify("Disconnected from "+name, "", "")
 				}
 			}()
+			if then != nil {
+				then(nil)
+				return
+			}
 			if err := a.open(name, placement{}); err != nil {
 				a.notify("Couldn't open a shell on "+name, err.Error(), "")
 			}

@@ -382,6 +382,11 @@ type app struct {
 	windows map[string]*remoteWin
 	// leaving is set while the window asks whether to close.
 	leaving bool
+	// reached is the address each server was reached at, and paneAt
+	// the address each pane on one was opened at, to say so when a
+	// pane is reconnected somewhere else.
+	reached map[string]string
+	paneAt  map[string]string
 	// noticed is the number of the last message each pane's program
 	// sent, and lastToast when the last pop-up went up.
 	noticed   map[string]uint64
@@ -473,6 +478,8 @@ func newApp(c gunim.Client, sh *shells) *app {
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
 		noticed:  map[string]uint64{},
+		reached:  map[string]string{},
+		paneAt:   map[string]string{},
 		argvs:    map[string][]string{},
 		farHost:  map[string]string{},
 		typed:    map[string]*typedLog{},
@@ -534,6 +541,7 @@ func (a *app) run(ctx context.Context) error {
 		if b, err := remote.LoadBook(path); err == nil {
 			a.book = b
 			a.st.Saved = b.Hosts()
+			a.giveSavedIDs()
 		}
 	}
 	if err := a.open("", placement{}); err != nil {
@@ -993,6 +1001,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				return
 			}
 			a.teachFar(machine, sess)
+			a.paneAt[id] = a.reached[machine]
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), machine)), at)
 			then(id, nil)
 		}
@@ -1134,6 +1143,7 @@ func (a *app) remove(id string) {
 	delete(a.commands, id)
 	delete(a.argvs, id)
 	delete(a.noticed, id)
+	delete(a.paneAt, id)
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)

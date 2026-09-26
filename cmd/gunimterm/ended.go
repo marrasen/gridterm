@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"log"
 	"os/exec"
 	"slices"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/serve"
 	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/gridterm/settings"
 	uiterm "github.com/marrasen/gridterm/ui/term"
 )
 
@@ -117,8 +119,28 @@ func (a *app) startAgain(id string) error {
 	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		return errors.New("this window is not connected to " + machine + " any more. Connect to it again, then start the pane again")
+		// The connection has gone: dial it again, as gridterm does, and
+		// start the pane once it is back.
+		in := ConnectTo{Target: machine}
+		if a.book != nil {
+			if h, saved := a.book.Lookup(machine); saved {
+				if h.Window {
+					return errors.New("the window " + machine + " has gone. Connect to it again, then start the pane again")
+				}
+				in = ConnectTo{Saved: machine}
+			}
+		}
+		return a.connectThen(in, func(err error) {
+			if err == nil {
+				err = a.startAgain(id)
+			}
+			if err != nil {
+				// The question goes back up, to be answered again.
+				a.paneEnded(id)
+			}
+		})
 	}
+	a.sayIfMoved(id, t, machine)
 	go func() {
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: size.Cols, Rows: size.Rows})
 		a.events <- func() {
@@ -131,6 +153,19 @@ func (a *app) startAgain(id string) error {
 		}
 	}()
 	return nil
+}
+
+// sayIfMoved writes a line into a pane whose server is at another
+// address than the pane was opened at, which a saved server edited
+// since leaves it. The new run goes under the old transcript, and the
+// two would otherwise read as one machine.
+func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine string) {
+	was, now := a.paneAt[id], a.reached[machine]
+	if was == "" || now == "" || was == now {
+		return
+	}
+	t.Say("-- gridterm: " + machine + " is " + now + " now. This pane was on " + was + " --")
+	a.paneAt[id] = now
 }
 
 // restarted puts a new session in a pane.
@@ -184,6 +219,25 @@ func (a *app) clearFinished() {
 	}
 }
 
+// giveSavedIDs gives the commands, tunnels and copies saved before
+// servers had ids the ids of the servers their names stand for now, as
+// gridterm does.
+func (a *app) giveSavedIDs() {
+	if a.settings == nil || a.book == nil {
+		return
+	}
+	err := a.settings.FillServerIDs(func(name string) string {
+		if h, saved := a.book.Lookup(name); saved {
+			return h.ID
+		}
+		return ""
+	})
+	// Settings that could not be written are asked for again next time.
+	if err != nil && !errors.Is(err, settings.ErrUnsaveable) {
+		log.Printf("giving saved things their servers' ids: %v", err)
+	}
+}
+
 // reloadServers reads the saved servers again.
 func (a *app) reloadServers() error {
 	path, err := remote.BookPath()
@@ -196,6 +250,7 @@ func (a *app) reloadServers() error {
 	}
 	a.book = b
 	a.st.Saved = b.Hosts()
+	a.giveSavedIDs()
 	a.notify("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
 	return nil
 }

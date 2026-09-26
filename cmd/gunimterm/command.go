@@ -21,6 +21,9 @@ import (
 type RunCommand struct {
 	Machine, Line, Dir string
 	Keep               bool
+	// Forget is a saved command picked and then unticked, which is how
+	// the user says to forget it.
+	Forget string
 }
 
 // mostSavedCommands is how many commands are kept, as gridterm keeps
@@ -41,6 +44,12 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	if _, ok := a.windows[in.Machine]; ok {
 		return fmt.Errorf("%s is a gunimterm window, which has no shell to run a command in: open a terminal on it instead", in.Machine)
+	}
+	if in.Forget != "" && !in.Keep && a.settings != nil {
+		if err := a.settings.DropCommand(in.Forget); err != nil {
+			a.notify("Couldn't forget the command", err.Error(), "")
+		}
+		a.st.SavedCommands = a.settings.Commands()
 	}
 	if in.Keep && a.settings != nil {
 		saved := settings.SavedCommand{Line: strings.Join(argv, " "), Dir: strings.TrimSpace(in.Dir), Host: in.Machine, HostID: a.serverID(in.Machine)}

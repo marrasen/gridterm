@@ -1,11 +1,17 @@
 package main
 
 import (
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/geom"
+
 	"github.com/marrasen/gridterm/agent"
 	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/gridterm/internal/sshtest"
 	"github.com/marrasen/gridterm/settings"
 )
 
@@ -83,4 +89,56 @@ func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, a, "the picked shell", func() bool { return strings.Contains(a.terminal(id).Text(), "the-picked-one") })
+}
+
+// A pane on a server whose connection has gone connects again when
+// started again, as gridterm's Reconnect does, and says so when the
+// server is at another address than the pane was opened at.
+func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("SSH_AUTH_SOCK", "")
+	s := sshtest.New(t)
+	host, port := s.Host()
+	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a.ctx = t.Context()
+	t.Cleanup(func() {
+		for len(a.st.Panes) > 0 {
+			a.remove(a.st.Panes[0].ID)
+		}
+		for _, c := range a.conns {
+			_ = c.Close()
+		}
+	})
+	// Answers whatever is asked: the host key, and the password.
+	answering := func() {
+		for _, q := range a.st.Asks {
+			ans := AskAnswered{ID: q.ID, Yes: true}
+			if len(q.Prompts) > 0 {
+				ans.Answers = []string{sshtest.Password}
+			}
+			a.handle(ans)
+		}
+	}
+	target := "tester@" + net.JoinHostPort(host, strconv.Itoa(port))
+	a.handle(ConnectTo{Target: target})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return len(a.st.Panes) == 1 })
+	id, name := a.st.Panes[0].ID, a.st.Panes[0].Machine
+	if a.paneAt[id] == "" {
+		t.Fatal("the pane's address was not written down")
+	}
+	// As if the saved server had moved since the pane opened.
+	a.paneAt[id] = "tester@elsewhere:22"
+
+	_ = a.conns[name].Close()
+	waitFor(t, a, "the pane to end", func() bool { return a.st.Panes[0].Ended && a.conns[name] == nil })
+	if err := a.startAgain(id); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the pane to run again", func() bool { answering(); return !a.st.Panes[0].Ended })
+	waitFor(t, a, "the line saying it moved", func() bool {
+		// The line wraps at the screen's edge.
+		said := strings.ReplaceAll(a.terminal(id).Text(), "\n", "")
+		return strings.Contains(said, "is "+name+" now. This pane was on tester@elsewhere:22")
+	})
 }

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/settings"
 	shellfind "github.com/marrasen/gridterm/shells"
 )
@@ -66,5 +68,44 @@ func TestAShellCanBeKeptForNewTerminals(t *testing.T) {
 	a.handle(PickShell{})
 	if _, ok := set.Shell(); ok {
 		t.Fatal("back to the default, a shell is still kept")
+	}
+}
+
+func TestASavedCommandPickedAndUntickedIsForgotten(t *testing.T) {
+	a, _ := agentApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.handle(RunCommand{Line: "echo kept", Keep: true})
+	a.handle(RunCommand{Line: "echo kept", Forget: "echo kept"})
+	if len(a.st.SavedCommands) != 0 {
+		t.Fatalf("unticked, the commands are %+v", a.st.SavedCommands)
+	}
+}
+
+func TestThingsSavedBeforeServersHadIDsAreGivenThem(t *testing.T) {
+	a, _ := agentApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	if err := set.KeepCommand(settings.SavedCommand{Line: "top", Host: "desk"}, mostSavedCommands); err != nil {
+		t.Fatal(err)
+	}
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Put(remote.Host{Name: "desk", Address: "desk.example"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.book = book
+	a.giveSavedIDs()
+	h, _ := book.Lookup("desk")
+	if got := set.Commands()[0].HostID; got == "" || got != h.ID {
+		t.Fatalf("the command is on server id %q, want %q", got, h.ID)
 	}
 }

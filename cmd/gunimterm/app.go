@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gridterm/vt"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"unicode/utf8"
 
@@ -78,8 +79,13 @@ type State struct {
 	SavedCommands []settings.SavedCommand
 	// Shells are the shells found on this machine, and ChosenShell the
 	// one new terminals start, "" for the user's own.
-	Shells       []ShellChoice
-	ChosenShell  string
+	Shells      []ShellChoice
+	ChosenShell string
+	// ShellSetup says new shells here are taught to say what they are
+	// doing, and TermProgram what they are told the terminal is called,
+	// "" for gridterm's own name.
+	ShellSetup   bool
+	TermProgram  string
 	Bells        uint64
 	SavedTunnels []settings.SavedTunnel
 	Status       string
@@ -430,6 +436,8 @@ func (a *app) run(ctx context.Context) error {
 			a.st.PaneTitles = s.PaneTitles()
 			a.st.SavedCommands = s.Commands()
 			a.st.ChosenShell, _ = s.Shell()
+			a.st.ShellSetup = s.ShellSetup()
+			a.st.TermProgram = s.TermProgram()
 		}
 	}
 	// The theme picked last time, as gridterm keeps it, or the first.
@@ -699,6 +707,16 @@ func (a *app) handle(in gunim.Intent) {
 		}
 		a.nextShell = argv
 		err = a.open("", placement{})
+	case ToggleShellSetup:
+		a.st.ShellSetup = !a.st.ShellSetup
+		if a.settings != nil {
+			err = a.settings.PutShellSetup(a.st.ShellSetup)
+		}
+	case SetTermProgram:
+		a.st.TermProgram = strings.TrimSpace(in.Called)
+		if a.settings != nil {
+			err = a.settings.PutTermProgram(a.st.TermProgram)
+		}
 	case PickShell:
 		err = a.pickShell(in.ID)
 	case ShowScrollback:
@@ -810,10 +828,11 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		if a.nextShell != nil {
 			argv, a.nextShell = a.nextShell, nil
 		}
-		sh, err := startLocal(argv, a.palette, a.withLinks(a.hooks(id), ""))
+		sess, err := a.startLocalSession(argv, a.dirHere(), shellCols, shellRows, true)
 		if err != nil {
-			return err
+			return fmt.Errorf("gunimterm: start the shell: %w", err)
 		}
+		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), ""))
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
 		return nil
@@ -833,6 +852,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				then("", err)
 				return
 			}
+			a.teachFar(machine, sess)
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), machine)), at)
 			then(id, nil)
 		}

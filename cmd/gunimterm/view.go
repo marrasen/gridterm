@@ -76,6 +76,8 @@ type window struct {
 	// as last published.
 	shellChoices []ShellChoice
 	chosenShell  string
+	// termProgram is what new shells are told the terminal is called.
+	termProgram  string
 	bells        uint64
 	titles       bool
 	captions     map[string]*captioned
@@ -164,13 +166,14 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	}
 	w.bar.Pick = func(m, i int, u *gunim.UI) {
 		switch {
-		case m < len(menus):
+		case m < len(menus) && menus[m].title == "Servers":
+			if i < len(w.serverIDs) {
+				w.run(w.serverIDs[i], u)
+			}
+		case m < len(menus) && i < len(menus[m].items):
 			w.run(menus[m].items[i].id, u)
-		case i < len(w.serverIDs):
-			w.run(w.serverIDs[i], u)
 		}
 	}
-	w.bar.Menus = append(w.bar.Menus, widget.BarMenu{Title: "Servers"})
 	w.toasts = &widget.Toasts{}
 	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
@@ -253,6 +256,9 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.fullScreen":
 		u.SetFullScreen(!u.FullScreen())
+		return true
+	case "shell.termProgram":
+		w.termProgramDialog(u)
 		return true
 	case "pane.titles":
 		u.Send(w, TogglePaneTitles{})
@@ -767,6 +773,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.share = st.Share
 	w.sidebarShown = st.Sidebar
 	w.remoteWindows = st.Windows
+	w.termProgram = st.TermProgram
 	w.setSavedCommands(st.SavedCommands)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell {
 		w.shellChoices, w.chosenShell = st.Shells, st.ChosenShell
@@ -930,6 +937,8 @@ func (w *window) update(st State, u *gunim.UI) {
 				w.bar.Menus[m].Checked[i] = st.PaneTitles
 			case "view.fullScreen":
 				w.bar.Menus[m].Checked[i] = u.FullScreen()
+			case "shell.setup":
+				w.bar.Menus[m].Checked[i] = st.ShellSetup
 			}
 		}
 	}

@@ -63,7 +63,7 @@ func (a *app) runCommand(in RunCommand) error {
 // the program's goroutine.
 func (a *app) startCommand(machine string, cmd command, then func(session.Session)) error {
 	if machine == "" {
-		sess, err := session.StartLocal(session.LocalConfig{Command: cmd.argv, Dir: cmd.dir, Cols: shellCols, Rows: shellRows})
+		sess, err := a.startLocalSession(cmd.argv, cmd.dir, shellCols, shellRows, false)
 		if err != nil {
 			return err
 		}

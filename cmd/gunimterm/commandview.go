@@ -110,3 +110,29 @@ func (w *window) runSavedCommand(at string, u *gunim.UI) {
 		u.Send(w, RunSavedCommand{Saved: w.savedCommands[i]})
 	}
 }
+
+// termProgramDialog asks what new shells here are told the terminal is
+// called.
+func (w *window) termProgramDialog(u *gunim.UI) {
+	called := widget.NewTextField()
+	called.SetText(w.termProgram)
+	called.Placeholder = "gridterm"
+	known := widget.NewDropdown(append([]string{"gridterm"}, knownTerminals...)...)
+	known.Label = "Known terminals"
+	known.OnPick(func(i int, u *gunim.UI) {
+		if i == 0 {
+			called.SetText("")
+		} else {
+			called.SetText(knownTerminals[i-1])
+		}
+		u.Invalidate()
+	})
+	d := widget.NewDialog("Terminal Identity")
+	d.Body = widget.NewForm().
+		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports gridterm. Another name can turn on features such as pictures, and can also bring sequences that show as text. It applies to new panes.")).
+		Add("TERM_PROGRAM", called).Add("Known", known)
+	d.SetButtons("Save", "Cancel")
+	d.OnAccept = func() gunim.Intent { return SetTermProgram{Called: called.Text()} }
+	d.Dismiss = DialogClosed{}
+	w.openDialog(d, u)
+}

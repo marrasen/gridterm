@@ -89,6 +89,8 @@ var commands = []struct{ id, title string }{
 	{"server.editThis", "Edit This Server"},
 	{"server.forget", "Remove This Server"},
 	{"server.reload", "Reload Server List"},
+	{"shell.setup", "Shell Setup"},
+	{"shell.termProgram", "Terminal Identity"},
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
@@ -108,52 +110,65 @@ var menus = []struct {
 	{"File", []menuItem{
 		{id: "conn.terminal", title: "New Terminal"},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
-		{title: "Other Windows", caption: true},
-		{id: "serve.window", title: "Serve This Window…"}, {id: "serve.attach", title: "Connect to Window…"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
-	{"Edit", []menuItem{{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"}, {id: "pane.scrollback", title: "Find in Scrollback…", group: true}}},
+	{"Edit", []menuItem{
+		{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
+		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
+	}},
 	{"View", []menuItem{
 		{id: "sidebar.toggle", title: "Sidebar"},
 		{id: "pane.titles", title: "Pane Titles"},
 		{id: "view.fullScreen", title: "Full Screen"},
-		{id: "theme.pick", title: "Theme…"},
 		{id: "view.jobs", title: "Jobs"},
-		{id: "view.log", title: "Window Log"},
 		{title: "Font", caption: true},
 		{id: "font.increase", title: "Larger"}, {id: "font.decrease", title: "Smaller"}, {id: "font.reset", title: "Reset"},
 		{title: "Scrollback", caption: true},
 		{id: "view.scrollUp", title: "Page Up"}, {id: "view.scrollDown", title: "Page Down"},
-		{id: "palette.open", title: "All Commands…", group: true},
 	}},
 	{"Pane", []menuItem{
 		{title: "Split", caption: true},
 		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{title: "Go To", caption: true},
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
-		{id: "pane.switch", title: "All Panes…"},
+		{id: "pane.switch", title: "All Panes…"}, {id: "sidebar.focus", title: "Sidebar"},
 		{id: "pane.rename", title: "Rename…", group: true},
 		{id: "conn.clearFinished", title: "Clear Finished"},
-		{title: "Agent", caption: true},
-		{id: "agent.share", title: "Share with an Agent…"}, {id: "agent.permissions", title: "Agent Permissions…"},
 	}},
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},
-		{id: "conn.terminal", title: "Terminal"}, {id: "conn.files", title: "Files"},
-		{id: "conn.command", title: "Command…"},
+		{id: "conn.terminal", title: "Terminal"}, {id: "conn.command", title: "Command…"},
+		{id: "conn.files", title: "Files"},
+		{id: "tunnel.open", title: "Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
+		{id: "files.goTo", title: "Go to Directory…", group: true},
 		{id: "conn.log", title: "Connection Log"},
-		{id: "conn.disconnect", title: "Disconnect"},
+		{id: "shell.setup", title: "Shell Setup"},
+		{id: "conn.disconnect", title: "Disconnect", group: true},
 		{id: "server.editThis", title: "Edit This Server…"}, {id: "server.forget", title: "Remove This Server…"},
-		{title: "Files", caption: true},
-		{id: "files.goTo", title: "Go to Directory…"},
-		{title: "Tunnels", caption: true},
-		{id: "tunnel.open", title: "Open Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
+	}},
+	// The Servers menu is made from the saved servers.
+	{"Servers", nil},
+	{"Share", []menuItem{
+		{title: "With an Agent", caption: true},
+		{id: "agent.share", title: "Share Panes…"}, {id: "agent.permissions", title: "Permissions…"},
+		{title: "With Another Window", caption: true},
+		{id: "serve.window", title: "Serve This Window…"}, {id: "serve.attach", title: "Connect to Window…"},
 	}},
 	{"Secrets", []menuItem{
 		{id: "secrets.show", title: "Show Secrets"},
 		{id: "secrets.add", title: "Add Secret…"}, {id: "secrets.addNote", title: "Add Note…"},
 		{id: "secrets.export", title: "Export…", group: true}, {id: "secrets.import", title: "Import…"},
 		{id: "secrets.lock", title: "Lock", group: true},
+	}},
+	{"Options", []menuItem{
+		{id: "theme.pick", title: "Theme…"},
+		{id: "shell.termProgram", title: "Terminal Identity…"},
+		{title: "Read Again", caption: true},
+		{id: "server.reload", title: "Server List"},
+	}},
+	{"Help", []menuItem{
+		{id: "palette.open", title: "All Commands…"},
+		{id: "view.log", title: "Window Log", group: true},
 	}},
 }
 
@@ -206,6 +221,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return ShowJobs{}, true
 	case "server.reload":
 		return ReloadServers{}, true
+	case "shell.setup":
+		return ToggleShellSetup{}, true
 	case "conn.clearFinished":
 		return ClearFinished{}, true
 	case "secrets.show":

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"sync"
 
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/internal/build"
 	"github.com/marrasen/gridterm/session"
 	"github.com/marrasen/gridterm/ui"
 	uiterm "github.com/marrasen/gridterm/ui/term"
@@ -44,16 +44,6 @@ type shellHooks struct {
 // out and tells it its own.
 const shellCols, shellRows = 80, 24
 
-// startLocal starts argv on this machine, or the user's shell when it
-// is nil, drawing with pal.
-func startLocal(argv []string, pal vt.Palette, hooks shellHooks) (*shell, error) {
-	sess, err := session.StartLocal(session.LocalConfig{Command: argv, Cols: shellCols, Rows: shellRows})
-	if err != nil {
-		return nil, fmt.Errorf("gunimterm: start the shell: %w", err)
-	}
-	return openShell(sess, pal, hooks), nil
-}
-
 // openShell puts a screen on a running session, local or remote,
 // drawing with pal.
 func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
@@ -61,7 +51,7 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		Session:     sess,
 		Size:        ui.Size{Cols: shellCols, Rows: shellRows},
 		Scrollback:  5000,
-		Program:     "gunimterm",
+		Program:     build.Name + " " + build.Version(),
 		Palette:     &pal,
 		OnTitle:     hooks.title,
 		OnExit:      hooks.exit,

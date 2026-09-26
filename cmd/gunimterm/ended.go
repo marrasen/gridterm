@@ -90,7 +90,7 @@ func (a *app) startAgain(id string) error {
 	}
 	machine := a.machineOf(id)
 	if machine == "" {
-		sess, err := session.StartLocal(session.LocalConfig{Cols: t.Size().Cols, Rows: t.Size().Rows})
+		sess, err := a.startLocalSession(a.localShell(), "", t.Size().Cols, t.Size().Rows, true)
 		if err != nil {
 			return err
 		}

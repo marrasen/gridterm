@@ -88,8 +88,10 @@ type State struct {
 	SavedCommands []settings.SavedCommand
 	// Shells are the shells found on this machine, and ChosenShell the
 	// one new terminals start, "" for the user's own.
-	// Connected are the servers connected to, by name.
+	// Connected are the servers connected to, by name, and Dialing the
+	// ones being connected to.
 	Connected   []string
+	Dialing     []string
 	Shells      []ShellChoice
 	ChosenShell string
 	// ShellSetup says new shells here are taught to say what they are
@@ -389,6 +391,10 @@ type app struct {
 	opts      options
 	fixedFont string
 	shotErr   error
+	// dialCancel gives up each connection being made, and dialWaiters
+	// are what is to happen once each has come back.
+	dialCancel  map[string]context.CancelFunc
+	dialWaiters map[string][]func(error)
 	// reached is the address each server was reached at, and paneAt
 	// the address each pane on one was opened at, to say so when a
 	// pane is reconnected somewhere else.
@@ -469,32 +475,34 @@ func (s *shells) set(id string, sh *shell) {
 
 func newApp(c gunim.Client, sh *shells) *app {
 	return &app{
-		c:        c,
-		shells:   sh,
-		st:       State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
-		groups:   map[int]*Box{},
-		groupOf:  map[string]int{},
-		conns:    map[string]*remote.Conn{},
-		dialing:  map[string]bool{},
-		ring:     remote.NewRing(),
-		replies:  map[uint64]chan AskAnswered{},
-		closing:  map[string]bool{},
-		remoteFS: map[string]vfs.FS{},
-		tunnels:  map[string]*tunnel{},
-		agents:   agents{by: map[string]*handover{}},
-		windows:  map[string]*remoteWin{},
-		commands: map[string]command{},
-		noticed:  map[string]uint64{},
-		reached:  map[string]string{},
-		paneAt:   map[string]string{},
-		argvs:    map[string][]string{},
-		farHost:  map[string]string{},
-		typed:    map[string]*typedLog{},
-		reads:    map[string]readSpec{},
-		far:      pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
-		accounts: map[string]*logs.Lines{},
-		wake:     make(chan struct{}, 1),
-		events:   make(chan func(), 64),
+		c:           c,
+		shells:      sh,
+		st:          State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
+		groups:      map[int]*Box{},
+		groupOf:     map[string]int{},
+		conns:       map[string]*remote.Conn{},
+		dialing:     map[string]bool{},
+		ring:        remote.NewRing(),
+		replies:     map[uint64]chan AskAnswered{},
+		closing:     map[string]bool{},
+		remoteFS:    map[string]vfs.FS{},
+		tunnels:     map[string]*tunnel{},
+		agents:      agents{by: map[string]*handover{}},
+		windows:     map[string]*remoteWin{},
+		commands:    map[string]command{},
+		noticed:     map[string]uint64{},
+		reached:     map[string]string{},
+		dialCancel:  map[string]context.CancelFunc{},
+		dialWaiters: map[string][]func(error){},
+		paneAt:      map[string]string{},
+		argvs:       map[string][]string{},
+		farHost:     map[string]string{},
+		typed:       map[string]*typedLog{},
+		reads:       map[string]readSpec{},
+		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
+		accounts:    map[string]*logs.Lines{},
+		wake:        make(chan struct{}, 1),
+		events:      make(chan func(), 64),
 	}
 }
 
@@ -620,6 +628,7 @@ func (a *app) publish() {
 	st.Shells = slices.Clone(a.st.Shells)
 	st.SavedCopies = slices.Clone(a.st.SavedCopies)
 	st.Connected = slices.Sorted(maps.Keys(a.conns))
+	st.Dialing = slices.Sorted(maps.Keys(a.dialing))
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -1146,6 +1155,11 @@ func (a *app) remove(id string) {
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 	if i < 0 {
 		return
+	}
+	if p := a.st.Panes[i]; p.Kind == kindLog && p.Machine != "" {
+		// Closing the log of a connection being made gives it up, as
+		// in gridterm: it is where the dial is watched from.
+		a.giveUp(p.Machine)
 	}
 	if sh := a.shells.get(id); sh != nil {
 		sh.close()

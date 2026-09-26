@@ -60,12 +60,6 @@ six are confirmed in the code; the rest are still to check.
 
 Connections and servers:
 
-- Removing a server leaves its connection, panes and dial open;
-  gridterm says what will close and closes it.
-- A dial cannot be given up; gridterm gives it up when its connection
-  log pane closes.
-- "Already connecting to X", with Wait, Retry and Cancel; gunimterm
-  ignores the second request.
 - The server form's details: Cancel first on a new host key, "Invalid
   password" on a retry, a key-file picker that remembers keys, Jump
   host and Forward agent off for a window, a Remove button in Edit.

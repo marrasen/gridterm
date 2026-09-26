@@ -105,6 +105,8 @@ type window struct {
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
+	// dialing are the servers being connected to.
+	dialing []string
 	// fonts are the families on the Font menu, and font the one the
 	// terminals are drawn in.
 	fonts []string
@@ -999,12 +1001,38 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 // confirmRemove asks before forgetting a saved server.
 func (w *window) confirmRemove(name string, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + name + "?")
-	d.Body = widget.NewLabel("Its panes stay open. Connecting to it again takes its address.")
+	if said := w.removeSays(name); said != "" {
+		d.Body = widget.NewLabel(said)
+	}
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.Accept = RemoveServer{Name: name}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)
+}
+
+// removeSays is what removing a server closes, as gridterm says it, and
+// nothing when it closes nothing.
+func (w *window) removeSays(name string) string {
+	switch {
+	case slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == name }):
+		return name + " is connected. Removing it closes the connection and its panes."
+	case slices.Contains(w.connected, name):
+		said := name + " is connected. Removing it closes the connection"
+		panes := 0
+		for _, p := range w.panes {
+			if p.Machine == name {
+				panes++
+			}
+		}
+		if panes > 0 {
+			said += " and everything through it: " + count(panes, "pane")
+		}
+		return said + "."
+	case slices.Contains(w.dialing, name):
+		return "Removing it cancels the connection in progress."
+	}
+	return ""
 }
 
 // upperFirst capitalises the first letter of s.
@@ -1164,6 +1192,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		renamed = st.Windows[i].Name != w.remoteWindows[i].Name
 	}
 	w.remoteWindows = st.Windows
+	w.dialing = st.Dialing
 	if renamed || !slices.Equal(st.Connected, w.connected) {
 		w.connected = st.Connected
 		w.servers(w.saved)

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -85,12 +86,14 @@ func (a *app) connectWindow(in ConnectWindow) error {
 		return fmt.Errorf("this window is already connected to %s", name)
 	}
 	a.dialing[name] = true
+	dctx, cancel := context.WithCancel(a.ctx)
+	a.dialCancel[name] = cancel
 	acct := a.account(name)
 	logLine(acct, "", "connecting to the window at "+addr)
 	began := time.Now()
 	a.st.Status = "Connecting to the window at " + addr + "…"
 	go func() {
-		win, err := remote.ReachWindow(a.ctx, remote.Reach{
+		win, err := remote.ReachWindow(dctx, remote.Reach{
 			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: asker{a},
 			Known:  knownWindows,
 			Saying: func(what string) { logLine(acct, "", what) },
@@ -98,10 +101,12 @@ func (a *app) connectWindow(in ConnectWindow) error {
 		})
 		a.events <- func() {
 			delete(a.dialing, name)
+			delete(a.dialCancel, name)
+			cancel()
 			a.st.Status = ""
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
-				if !errors.Is(err, errDeclined) {
+				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to the window at "+addr, err.Error(), "")
 				}
 				return
@@ -295,6 +300,17 @@ func (a *app) attachWindow(in AttachWindow) error {
 	return nil
 }
 
+// giveUp stops a connection being made to machine, and reports
+// whether there was one.
+func (a *app) giveUp(machine string) bool {
+	cancel, ok := a.dialCancel[machine]
+	if ok {
+		cancel()
+		logLine(a.account(machine), "", "given up")
+	}
+	return ok
+}
+
 // Disconnect closes the connection to a server or a window. Its panes
 // end, and say so, and can be started again once it is connected
 // again.
@@ -302,6 +318,9 @@ type Disconnect struct{ Machine string }
 
 // disconnect closes the connection to machine.
 func (a *app) disconnect(machine string) error {
+	if a.giveUp(machine) {
+		return nil
+	}
 	if _, ok := a.windows[machine]; ok {
 		return a.disconnectWindow(machine)
 	}

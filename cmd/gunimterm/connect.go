@@ -86,9 +86,12 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		return a.open(name, placement{})
 	}
 	if a.dialing[name] {
+		a.askAboutTheOneOnItsWay(in, name, then)
 		return nil
 	}
 	a.dialing[name] = true
+	dctx, cancel := context.WithCancel(a.ctx)
+	a.dialCancel[name] = cancel
 	acct := a.account(name)
 	logLine(acct, "", "connecting to "+name)
 	began := time.Now()
@@ -100,15 +103,26 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	}
 	a.st.Status = "Connecting to " + name + "…"
 	go func() {
-		conn, err := remote.Connect(a.ctx, hops[0])
+		conn, err := remote.Connect(dctx, hops[0])
 		for _, hop := range hops[1:] {
 			if err != nil {
 				break
 			}
-			conn, err = conn.Through(a.ctx, hop)
+			conn, err = conn.Through(dctx, hop)
 		}
 		a.events <- func() {
 			delete(a.dialing, name)
+			delete(a.dialCancel, name)
+			cancel()
+			// Whoever asked for it again waits on this one, and hears
+			// how it went once this request has had its turn.
+			waiting := a.dialWaiters[name]
+			delete(a.dialWaiters, name)
+			defer func() {
+				for _, w := range waiting {
+					w(err)
+				}
+			}()
 			a.st.Status = ""
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
@@ -150,6 +164,38 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		}
 	}()
 	return nil
+}
+
+// askAboutTheOneOnItsWay asks what to do about a server already being
+// connected to, as gridterm asks: wait for that one, which then does
+// what was asked; give it up and connect again; or drop what was asked.
+func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)) {
+	go func() {
+		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + name, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
+		if err != nil {
+			return
+		}
+		choice := ""
+		if len(ans.Answers) > 0 {
+			choice = ans.Answers[len(ans.Answers)-1]
+		}
+		a.events <- func() {
+			again := func(error) {
+				if err := a.connectThen(in, then); err != nil {
+					a.notify("Couldn't connect to "+name, err.Error(), "")
+				}
+			}
+			if !a.dialing[name] {
+				// It came back while the question was up.
+				again(nil)
+				return
+			}
+			if choice == "Retry" {
+				a.giveUp(name)
+			}
+			a.dialWaiters[name] = append(a.dialWaiters[name], again)
+		}
+	}()
 }
 
 // ask shows q and waits for the answer, or for ctx to end, which takes
@@ -290,6 +336,15 @@ func (a *app) removeServer(name string) error {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	// What the window holds under the name goes with it, as the
+	// question said: a dial on its way, a window, a connection.
+	switch {
+	case a.giveUp(name):
+	case a.windows[name] != nil:
+		return a.disconnectWindow(name)
+	case a.conns[name] != nil:
+		return a.conns[name].Close()
+	}
 	a.notify("Removed "+name, "", "")
 	return nil
 }

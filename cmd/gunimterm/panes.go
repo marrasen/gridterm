@@ -35,6 +35,8 @@ type browser struct {
 	byName     map[widget.Key]vfs.Entry
 	sortBy     int
 	descending bool
+	// keys is the bar of keys at the foot.
+	keys *keyBar
 	// goTo is Go To's field while it is open, and asked the folder whose
 	// names were last asked for, to complete from.
 	goTo  *widget.TextField
@@ -63,7 +65,8 @@ func newBrowser(w *window, id string) *browser {
 		b.list(u)
 	}
 	b.table.SetSorted(0, false)
-	b.col = widget.Column(widget.NewPad(b.path), b.table).Grow(b.table, 1)
+	b.keys = b.newKeys()
+	b.col = widget.Column(widget.NewPad(b.path), b.table, b.keys).Grow(b.table, 1)
 	b.col.Cross, b.col.Gap = widget.CrossStretch, noGap
 	return b
 }
@@ -134,6 +137,37 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	}
 	b.table.ClearMarks()
 	return true
+}
+
+// newKeys is the bar of the pane's keys, as gridterm's file manager
+// shows them, each lit while it does something here.
+func (b *browser) newKeys() *keyBar {
+	onRow := func() bool {
+		c, ok := b.table.Cursor()
+		return ok && c != up
+	}
+	onFile := func() bool {
+		c, ok := b.table.Cursor()
+		return ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink())
+	}
+	somePicked := func() bool { return len(b.picked()) > 0 }
+	waiting := func() bool { return len(b.w.fileClip.Names) > 0 }
+	fkey := func(k gi.Key) gi.KeyPress { return gi.KeyPress{Key: k} }
+	ctrl := func(k gi.Key) gi.KeyPress { return gi.KeyPress{Key: k, Mods: gi.ModControl} }
+	bar := newKeyBar(
+		barKey{"F2 Rename", fkey(gi.KeyF2), onRow},
+		barKey{"F3 View", fkey(gi.KeyF3), onFile},
+		barKey{"F4 Tail", fkey(gi.KeyF4), onFile},
+		barKey{"F5 Copy", fkey(gi.KeyF5), somePicked},
+		barKey{"F6 Cut", fkey(gi.KeyF6), somePicked},
+		barKey{"F7 Paste", fkey(gi.KeyF7), waiting},
+		barKey{"F8 Delete", fkey(gi.KeyF8), somePicked},
+		barKey{"F9 Folder", fkey(gi.KeyF9), nil},
+		barKey{"^G Go To", ctrl(gi.KeyG), nil},
+		barKey{"^D Close", ctrl(gi.KeyD), nil},
+	)
+	bar.pressed = func(k gi.KeyPress, u *gunim.UI) { b.Handle(k, u) }
+	return bar
 }
 
 // picked returns the marked names, or the one under the cursor.

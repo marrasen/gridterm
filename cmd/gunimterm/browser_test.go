@@ -115,3 +115,36 @@ func TestGoToCompletesAFoldersName(t *testing.T) {
 		t.Fatalf("the suggestion is %q, want the rest of rdp", b.goTo.Ghost)
 	}
 }
+
+func TestTheKeyBarPressesItsKeys(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}}, Seq: 1}}}
+	publish(st)
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	bar := win.browsers["p1"].keys
+	at, _ := lastUI.Bounds(bar)
+	click := func(name string) {
+		t.Helper()
+		for i, k := range bar.keys {
+			if k.name == name {
+				p := at.Min.Add(bar.boxes[i].Center())
+				lastWindow.Input(gi.PointerDown{Pos: p, Button: gi.ButtonPrimary, Clicks: 1})
+				lastWindow.Input(gi.PointerUp{Pos: p, Button: gi.ButtonPrimary})
+				lastWindow.Frame(time.Second / 60)
+				return
+			}
+		}
+		t.Fatalf("no key %s", name)
+	}
+	click("F7 Paste")
+	if n := len(lastWindow.Client().Intents()); n != 0 {
+		t.Fatalf("with nothing to paste, Paste sent %d intents", n)
+	}
+	click("^D Close")
+	if in, ok := nextIntent(t).(ClosePane); !ok || in.Pane != "p1" {
+		t.Fatalf("Close sent %#v", in)
+	}
+}

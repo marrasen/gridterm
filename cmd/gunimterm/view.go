@@ -210,6 +210,20 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 		}
 		w.bar.Menus = append(w.bar.Menus, bm)
 	}
+	w.bar.OnHighlight = func(m, i int, u *gunim.UI) {
+		id := ""
+		switch {
+		case m < 0 || i < 0:
+		case menus[m].title == "Servers":
+			if i < len(w.serverIDs) {
+				id = w.serverIDs[i]
+			}
+		case menus[m].title == "Font":
+		case i < len(menus[m].items):
+			id = menus[m].items[i].id
+		}
+		w.status.setHint(w.fullTitle(id, m, i), u)
+	}
 	w.bar.Pick = func(m, i int, u *gunim.UI) {
 		switch {
 		case m < len(menus) && menus[m].title == "Servers":
@@ -2093,19 +2107,38 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 
 // statusLine says what just happened, under the stage. Empty, it takes
 // no room; given something to say, it grows into place.
+//
+// While a menu is open it says instead the full title of the item
+// highlighted, as gridterm's bottom row does, over the bottom of the
+// stage when the line has no room of its own: the terminal keeps its
+// size while the pointer runs down a menu.
 type statusLine struct {
 	anim.Group
 	label  *widget.Label
 	height *anim.Float
 	text   string
+	hint   *widget.Label
+	hinted string
 }
 
 func newStatusLine() *statusLine {
 	l := widget.NewLabel("")
 	l.Size, l.Color, l.MaxLines = smallText, faint, 1
-	s := &statusLine{label: l, height: anim.NewFloat(0)}
+	h := widget.NewLabel("")
+	h.Size, h.MaxLines = smallText, 1
+	s := &statusLine{label: l, height: anim.NewFloat(0), hint: h}
 	s.Add(s.height)
 	return s
+}
+
+// setHint shows a menu item's full title, or with "" the status again.
+func (s *statusLine) setHint(text string, u *gunim.UI) {
+	if text == s.hinted {
+		return
+	}
+	s.hinted = text
+	s.hint.SetText(text)
+	u.Invalidate()
 }
 
 func (s *statusLine) set(text string, u *gunim.UI) {
@@ -2122,24 +2155,50 @@ func (s *statusLine) set(text string, u *gunim.UI) {
 }
 
 // Children implements [gunim.Composite].
-func (s *statusLine) Children() []gunim.Node { return []gunim.Node{s.label} }
+func (s *statusLine) Children() []gunim.Node { return []gunim.Node{s.label, s.hint} }
+
+// statusHeight is the line's height once grown.
+const statusHeight = 24
 
 // Layout implements [gunim.Node].
 func (s *statusLine) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	h := max(0, s.height.Value())
+	room := gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-24), statusHeight)}
 	k := kids.At(0)
-	size := k.Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-24), 24)})
-	k.Place(geom.Pt(12, (24-size.H)/2))
+	size := k.Layout(room)
+	k.Place(geom.Pt(12, (statusHeight-size.H)/2))
+	k = kids.At(1)
+	size = k.Layout(room)
+	k.Place(geom.Pt(12, h-statusHeight+(statusHeight-size.H)/2))
 	return c.Constrain(geom.Sz(c.Max.W, h))
 }
 
-// Paint implements [gunim.Node]: the line shows as far as it has grown.
-func (s *statusLine) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids gunim.Children) {
+// Paint implements [gunim.Node]: the line shows as far as it has grown,
+// and a menu's hint over it and the stage's bottom.
+func (s *statusLine) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	if s.hinted != "" {
+		p.RRect(geom.Rc(0, box.H-statusHeight, box.W, statusHeight), 0, paint.Solid(widget.MenubarFill.Get(f.Theme)))
+		kids.At(1).Paint(p)
+		return
+	}
 	if box.H < 1 {
 		return
 	}
 	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
 	kids.At(0).Paint(p)
+}
+
+// fullTitle is what a menu line does, in full: the palette's title for
+// its command, which says the half a heading over the line leaves out,
+// or else the line as the menu shows it. It is empty for no line.
+func (w *window) fullTitle(id string, menu, item int) string {
+	if menu < 0 || item < 0 || menu >= len(w.bar.Menus) || item >= len(w.bar.Menus[menu].Items) {
+		return ""
+	}
+	if at := slices.Index(w.paletteIDs, id); id != "" && at >= 0 {
+		return w.palette.Items[at].Title
+	}
+	return w.bar.Menus[menu].Items[item]
 }
 
 // focusRow gives the keyboard to the row step rows from the one keyed

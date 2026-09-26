@@ -59,8 +59,6 @@ Found by a third sweep on 2026-09-26, still to check one by one:
 
 Help, themes and shortcuts:
 
-- While a menu is open, the full title of the item under the pointer
-  shows on the bottom row.
 - A short confirmation stays on the status line for 4 seconds;
   gunimterm uses a toast.
 - About opens on OK, and a second update check while one runs is

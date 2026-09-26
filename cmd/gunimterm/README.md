@@ -76,11 +76,6 @@ Help, themes and shortcuts:
 
 Agent sharing:
 
-- An agent's Restart reconnects a pane whose machine has gone;
-  gridterm refuses, as opening connections is the user's. Restart's
-  own errors: "has been asked to start it again", "could not start it
-  again".
-- Open refuses a pane opened to run one command.
 - Share Pane with Agent opens the permissions, and opens them again for
   a pane already shared.
 - The share dialog lists the shared panes, each with its permissions.

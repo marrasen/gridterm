@@ -578,6 +578,7 @@ func (h *handover) promptIsBack(read uiterm.Reading) bool {
 // Restart implements [agent.Window]: it starts a pane's program again,
 // once it has ended, when the hand-over allows it.
 func (w agentWindow) Restart(id string) (agent.Pane, error) {
+	var h0 string
 	_, err := onApp(w.a, func() (struct{}, error) {
 		h, t, err := w.a.handedPane(id)
 		if err != nil {
@@ -590,7 +591,23 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		if !t.Exited() {
 			return struct{}{}, errors.New("the program in that pane is still running, so there is nothing to start again")
 		}
-		return struct{}{}, w.a.startAgain(h.pane)
+		// Starting it again on a machine the window has let go of means
+		// dialling it, and dialling is the user's, as in gridterm: what
+		// the box allows is a program started again on a connection the
+		// window already holds.
+		if machine := w.a.machineOf(h.pane); machine != "" && w.a.conns[machine] == nil && w.a.windows[machine] == nil {
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", machine)
+		}
+		// The question the pane asks goes: a restart on its way would
+		// otherwise read as one that failed, which asks it again.
+		h0 = h.pane
+		t.Ask("")
+		if err := w.a.startAgain(h.pane); err != nil {
+			// Not started: the question goes back up for the user.
+			w.a.paneEnded(h.pane)
+			return struct{}{}, err
+		}
+		return struct{}{}, nil
 	})
 	if err != nil {
 		return agent.Pane{}, err
@@ -608,6 +625,15 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		})
 		if err != nil || !p.Ended {
 			return p, err
+		}
+		// Ended still, and asking again: starting it failed, and the
+		// pane says why to the user, who can answer the question on it.
+		asking, _ := onApp(w.a, func() (bool, error) {
+			t := w.a.terminal(h0)
+			return t != nil && t.Asking() != "", nil
+		})
+		if asking {
+			return agent.Pane{}, errors.New("the window could not start it again; the pane says why, and the user can answer the question on it")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -627,6 +653,12 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		}
 		if !w.a.agents.allowed(h).OpenMore {
 			return struct{}{}, errors.New(`this hand-over does not let you open another pane. Ask the user to tick "` + agent.BoxOpenMore + `"`)
+		}
+		// Not from a pane opened to run one command, as in gridterm:
+		// "another pane there" would read as the command run again, and
+		// this opens a shell.
+		if _, ok := w.a.commands[h.pane]; ok {
+			return struct{}{}, errors.New("that pane was opened to run one command, and this does not run commands. Ask the user to open the pane you need")
 		}
 		n := 0
 		for _, other := range w.a.agents.by {

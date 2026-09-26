@@ -142,3 +142,29 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 		return strings.Contains(said, "is "+name+" now. This pane was on tester@elsewhere:22")
 	})
 }
+
+// An agent never makes the window dial: a pane whose machine has gone
+// is not started again for it, and a pane that runs one command opens
+// no shell beside it.
+func TestAnAgentMakesTheWindowDialNothing(t *testing.T) {
+	a, code := agentApp(t)
+	id := a.st.Panes[0].ID
+	c, sh := dial(t, a, code)
+	a.handle(SetAgentMay{Pane: id, May: settings.AgentMay{Restart: true, OpenMore: true}})
+	shellEnds(t, a, id, "0")
+	a.setPane(id, func(p *Pane) { p.Machine = "gone" })
+	var err error
+	asAgent(t, a, func() { _, err = c.Restart(sh.Panes[0].ID) })
+	if err == nil || !strings.Contains(err.Error(), "opening connections is the user's") {
+		t.Fatalf("restarting on a machine let go of said %v", err)
+	}
+	if a.terminal(id).Asking() == "" {
+		t.Fatal("refused, the pane's question went")
+	}
+	a.setPane(id, func(p *Pane) { p.Machine = "" })
+	a.commands[id] = command{argv: []string{"top"}}
+	asAgent(t, a, func() { _, err = c.Open(sh.Panes[0].ID) })
+	if err == nil || !strings.Contains(err.Error(), "run one command") {
+		t.Fatalf("opening beside a command said %v", err)
+	}
+}

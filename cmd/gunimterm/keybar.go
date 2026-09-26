@@ -14,8 +14,8 @@ import (
 type keyBar struct {
 	// pressed takes a key the bar was clicked on.
 	pressed func(gi.KeyPress, *gunim.UI)
-	keys   []barKey
-	labels []*widget.Label
+	keys    []barKey
+	labels  []*widget.Label
 	// boxes are where each key was laid out, and shown how many fit.
 	boxes []geom.Rect
 	shown int

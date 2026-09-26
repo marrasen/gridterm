@@ -31,7 +31,6 @@ import (
 	"github.com/marrasen/gridterm/vt"
 )
 
-
 // bundledFonts returns the Go Mono faces compiled into the binary.
 func bundledFonts() glyph.Fonts {
 	return glyph.Fonts{

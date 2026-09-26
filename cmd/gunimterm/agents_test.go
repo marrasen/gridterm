@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -260,5 +261,31 @@ func TestAnAgentsAskingIsCutToOnePlainLine(t *testing.T) {
 	}
 	if strings.Count(got, "x") > agent.MostSecretWords {
 		t.Errorf("the line runs to %d characters of asking", strings.Count(got, "x"))
+	}
+}
+
+// With the path to the program unknown, the skill is refused and a
+// copied prompt warns.
+func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
+	a, _ := agentApp(t)
+	was := exeKnown
+	exeKnown = func() (string, bool) { return "", false }
+	t.Cleanup(func() { exeKnown = was })
+	if err := a.writeSkill(WriteSkill{Host: hostClaudeCode}); err == nil {
+		t.Fatal("with no path, the skill was written")
+	}
+	a.copyAgentPrompt(hostClaudeCode)
+	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "gunimterm path not found" }) {
+		t.Fatalf("with no path, the prompt said %+v", a.st.Notices)
+	}
+}
+
+// A relative directory in an agent program's setting is read from home.
+func TestASkillDirectoryIsReadFromHome(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	got, err := fromHome("conf/claude")
+	if err != nil || got != filepath.Join(home, "conf", "claude") {
+		t.Fatalf("read %q, %v", got, err)
 	}
 }

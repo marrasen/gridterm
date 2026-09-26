@@ -304,6 +304,10 @@ func (a *app) copyAgentPrompt(name string) {
 		_ = a.settings.PutAgentHost(host.name)
 	}
 	a.notify("Prompt copied", "Paste it into "+host.called+". It carries the share's code.", handoverPrompt(host, sh.code, exePath()))
+	if _, ok := exeKnown(); !ok {
+		// Said, as gridterm says it: the user may never read the prompt.
+		a.notify("gunimterm path not found", `The prompt uses "gunimterm" as the command. It works when gunimterm is on the PATH.`, "")
+	}
 	a.showShare()
 }
 
@@ -903,10 +907,17 @@ func agentHostNames() []string {
 
 // exePath is this program's path, for the MCP server's command line.
 func exePath() string {
-	if exe, err := os.Executable(); err == nil && exe != "" {
+	if exe, ok := exeKnown(); ok {
 		return exe
 	}
 	return "gunimterm"
+}
+
+// exeKnown is where this program is, and false when the system will not
+// say: then only a bare name is left, which works only on the PATH.
+var exeKnown = func() (string, bool) {
+	exe, err := os.Executable()
+	return exe, err == nil && exe != ""
 }
 
 func quotedPath(path string) string {
@@ -981,50 +992,14 @@ type WriteSkill struct {
 const skillFile = "SKILL.md"
 
 // skillFor is the skill for an agent program.
-func skillFor(host agentHost, exe string) string {
-	return fmt.Sprintf(`---
-name: gridterm
-description: Work in the terminal panes the user shared with you in gridterm, through its MCP server
----
-# Working in gridterm panes
-
-gridterm is a terminal on the user's machine. The user puts panes into a share -- on whatever
-machines, as whatever user -- and gives you one code for the whole share. You work in those panes
-through gridterm's MCP server, and the user watches everything you do.
-
-## Reaching the server
-
-The server runs on the user's machine, on standard input and output (stdio), because the port
-inside a session code is on the loopback address. If you do not have gridterm's tools, it has not
-been added here yet.
-
-%s
-
-## Getting the panes
-
-The user starts a share in gridterm, adds panes to it, and gets one session code for the whole
-share. Ask the user for the code if you have not been given one. Call use_session_code with it
-before anything else. The answer lists the panes, and every other tool takes a pane's name.
-
-The share is not a fixed set. The user adds panes and takes them out while you work, so call
-list_panes when you want to know what you have now.
-
-## Working in a pane
-
-%s
-
-## Rules
-
-%s
-`, host.setupForAgent(exe), mcp.Workflow, mcp.Rules)
-}
+func skillFor(host agentHost, exe string) string { return mcp.Skill(host.setupForAgent(exe)) }
 
 // skillPathFor is where an agent program's skill goes: where it reads
 // skills from, or beside the settings for one that has no such place.
 func skillPathFor(host agentHost) (string, error) {
 	if len(host.skillIn) > 0 {
 		if dir := os.Getenv(host.skillEnv); host.skillEnv != "" && dir != "" {
-			dir, err := expandHome(dir)
+			dir, err := fromHome(dir)
 			if err != nil {
 				return "", err
 			}
@@ -1043,6 +1018,23 @@ func skillPathFor(host agentHost) (string, error) {
 	return filepath.Join(dir, "skills", "gridterm", skillFile), nil
 }
 
+// fromHome is a directory an agent program's own setting named, as an
+// absolute path: a leading ~, and a relative path, are read from home,
+// as the program reads its setting from its own home and not from
+// wherever this window was started, as gridterm reads it.
+func fromHome(dir string) (string, error) {
+	if filepath.IsAbs(dir) {
+		return dir, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	rest := strings.TrimPrefix(strings.TrimPrefix(dir, "~"), string(filepath.Separator))
+	rest = strings.TrimPrefix(rest, "/")
+	return filepath.Join(home, rest), nil
+}
+
 // writeSkill writes an agent program's skill, and asks before writing
 // over one edited since.
 func (a *app) writeSkill(in WriteSkill) error {
@@ -1051,7 +1043,18 @@ func (a *app) writeSkill(in WriteSkill) error {
 	if err != nil {
 		return err
 	}
+	// Refused rather than written with the bare name, as gridterm
+	// refuses it: a file goes on saying the wrong thing long after the
+	// failure is forgotten.
+	if _, ok := exeKnown(); !ok {
+		return errors.New("the path to gunimterm could not be found, so the skill would name no program to start")
+	}
 	body := skillFor(host, exePath())
+	if was, err := os.ReadFile(path); err == nil && string(was) == body {
+		// Already there as it would be written.
+		a.notify("Skill written", path+" is up to date.", "")
+		return nil
+	}
 	if !in.Over {
 		was, err := os.ReadFile(path)
 		switch {

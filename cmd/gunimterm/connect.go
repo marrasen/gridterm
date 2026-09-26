@@ -344,7 +344,6 @@ func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error)
 	return err == nil && ans.Yes, err
 }
 
-
 // saveServer saves a server in the book, and says so.
 func (a *app) saveServer(in SaveServer) error {
 	if a.book == nil {

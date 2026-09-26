@@ -76,10 +76,6 @@ Help, themes and shortcuts:
 
 Agent sharing:
 
-- An unknown path to the program: a warning on copying the prompt, and
-  the skill refused. The skill's blank line after its front matter;
-  a relative `CLAUDE_CONFIG_DIR` taken from home.
-- The share's listener closed as the window closes.
 
 Jobs and tunnels:
 

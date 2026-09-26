@@ -1243,7 +1243,6 @@ func secretLine(what string) string {
 		` It asked for: "` + what + `" --`
 }
 
-
 // connectedAlready says whether the window already holds a connection to
 // a machine, so that opening another pane there opens nothing.
 //

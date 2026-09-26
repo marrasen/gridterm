@@ -1,6 +1,8 @@
 package main
 
 import (
+	"log"
+	"os"
 	"strings"
 	"testing"
 
@@ -36,5 +38,18 @@ func TestEachLogHasOnePane(t *testing.T) {
 	a.handle(ShowLog{Machine: "srv"})
 	if len(a.st.Panes) != 2 || a.st.Focus != a.st.Panes[1].ID {
 		t.Fatalf("asked again, srv's log is %+v, focus on %q", a.st.Panes, a.st.Focus)
+	}
+}
+
+// What the window says in a notice is in the Window Log too.
+func TestANoticeIsInTheWindowLog(t *testing.T) {
+	a, _ := agentApp(t)
+	// The window's log is where the log package writes, as main sets.
+	var got strings.Builder
+	log.SetOutput(&got)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	a.notify("That didn't work", "start the shell: the directory name is invalid", "")
+	if !strings.Contains(got.String(), "That didn't work: start the shell: the directory name is invalid") {
+		t.Fatalf("the log says %q", got.String())
 	}
 }

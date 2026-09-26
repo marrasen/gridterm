@@ -1034,6 +1034,13 @@ func (a *app) handle(in gunim.Intent) {
 
 // notify tells the user something, once, in a toast.
 func (a *app) notify(title, body, clip string) {
+	// Into the Window Log too, where it stays once the toast has gone:
+	// a failure is read again there, or copied.
+	if body != "" {
+		log.Printf("%s: %s", title, body)
+	} else {
+		log.Print(title)
+	}
 	a.notices++
 	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Clipboard: clip})
 	// The window has shown all but the newest few by now.

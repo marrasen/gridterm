@@ -95,9 +95,9 @@ type jobCard struct {
 	graph  *widget.LiveGraph
 	// sampled is how many of the job's speed samples the graph has.
 	sampled int
-	cancel *widget.Button
-	repeat *widget.Button
-	save   *widget.Checkbox
+	cancel  *widget.Button
+	repeat  *widget.Button
+	save    *widget.Checkbox
 	// acts are the controls showing now, along the title's row.
 	acts []gunim.Node
 }

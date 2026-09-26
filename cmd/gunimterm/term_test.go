@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
@@ -183,5 +184,20 @@ func TestAClickOutsideTheThemePickerClosesIt(t *testing.T) {
 	frames(20)
 	if win.themePicker.IsOpen() || !tm.focused {
 		t.Fatalf("after a click on the terminal, the picker is open %v, the terminal has the keyboard %v", win.themePicker.IsOpen(), tm.focused)
+	}
+}
+
+// A folder a pane says it is in starts a new shell there only when it is
+// a folder on this computer; one from another system starts it where it
+// would have started, rather than stopping it starting.
+func TestANewShellStartsOnlyInAFolderThatIsHere(t *testing.T) {
+	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	dir := t.TempDir()
+	if got := a.localDir("p1", dir); got != dir {
+		t.Fatalf("a folder here gave %q", got)
+	}
+	if got := a.localDir("p1", "/mnt/d/no/such/folder"); got != "" {
+		t.Fatalf("a folder from elsewhere gave %q", got)
 	}
 }

@@ -368,6 +368,12 @@ type app struct {
 	windows map[string]*remoteWin
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
+	// argvs are what each local pane runs, to start it again and to
+	// know how to hand it a picture.
+	argvs map[string][]string
+	// farHost is the machine a pane attached from another window runs
+	// on, when that is a machine the window reached rather than its own.
+	farHost map[string]string
 	// far remembers which paths on servers are there, for links.
 	far pathsFar
 	// typed is what agents typed, by pane.
@@ -440,6 +446,8 @@ func newApp(c gunim.Client, sh *shells) *app {
 		agents:   agents{by: map[string]*handover{}},
 		windows:  map[string]*remoteWin{},
 		commands: map[string]command{},
+		argvs:    map[string][]string{},
+		farHost:  map[string]string{},
 		typed:    map[string]*typedLog{},
 		reads:    map[string]readSpec{},
 		far:      pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
@@ -803,6 +811,10 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case SaveLines:
 		a.saveLines(in)
+	case PasteImage:
+		err = a.pastePicture(in.Pane, true)
+	case PastePicture:
+		err = a.pastePicture(in.Pane, false)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:
@@ -917,6 +929,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 			return fmt.Errorf("gunimterm: start the shell: %w", err)
 		}
 		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), ""))
+		a.argvs[id] = argv
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
 		return nil
@@ -1076,6 +1089,8 @@ func (a *app) remove(id string) {
 	}
 	a.tunnelPaneGone(id)
 	delete(a.commands, id)
+	delete(a.argvs, id)
+	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)
 	if a.agents.by[id] != nil {

@@ -71,3 +71,16 @@ func TestAnAgentRestartsAPaneOnlyWhenAllowed(t *testing.T) {
 		t.Fatalf("restarting said %+v, %v", p, err)
 	}
 }
+
+// A pane opened on a shell picked by name starts that shell again, not
+// the usual one.
+func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	a.argvs[id] = []string{"/bin/sh", "-c", "echo the-picked-one; exec /bin/sh"}
+	shellEnds(t, a, id, "0")
+	if err := a.startAgain(id); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the picked shell", func() bool { return strings.Contains(a.terminal(id).Text(), "the-picked-one") })
+}

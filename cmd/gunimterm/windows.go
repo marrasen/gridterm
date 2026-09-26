@@ -283,6 +283,9 @@ func (a *app) attachWindow(in AttachWindow) error {
 				return
 			}
 			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Window)), placement{})
+			if open.Host != "" {
+				a.farHost[id] = open.Host
+			}
 			w.bound[in.ID] = id
 			a.showWindows()
 		}

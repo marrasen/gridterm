@@ -52,7 +52,12 @@ command gridterm registers, and against what was left out on the way.
 
 Panes and terminals:
 
-- Paste Image as File (`edit.pasteImage`).
+- A pane attached from another window, when it runs on a server that
+  window reached rather than on the window's own machine. Files opens
+  the window's own files for it, and a pasted picture is refused.
+- Files dropped on a terminal from another program. They are copied
+  into the folder the shell last said it was in. When it has said
+  none, their paths are typed, after an upload for a pane on a server.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

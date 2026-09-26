@@ -53,6 +53,9 @@ func (a *app) runCommand(in RunCommand) error {
 	id := "p" + strconv.Itoa(a.next)
 	cmd := command{argv: argv, dir: strings.TrimSpace(in.Dir)}
 	a.commands[id] = cmd
+	if in.Machine == "" {
+		a.argvs[id] = argv
+	}
 	title := strings.Join(argv, " ")
 	return a.startCommand(in.Machine, cmd, func(sess session.Session) {
 		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Machine)), placement{})

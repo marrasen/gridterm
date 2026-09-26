@@ -145,6 +145,7 @@ func (a *app) startServing(in StartServing) error {
 		Open:       a.openFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
+		Picture:    func(png []byte) error { return takePicture(png) },
 		OnJoin:     func(c *serve.Client) { post(func() { a.clientCame(c) }) },
 		OnGone: func(c *serve.Client, why error) {
 			post(func() { a.clientWent(c, why) })

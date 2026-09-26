@@ -331,7 +331,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "edit.paste":
 		if t, ok := w.terms[w.focused]; ok {
-			t.paste(u.Clipboard())
+			t.pasteClipboard(u)
 		}
 		return true
 	case "edit.copy":

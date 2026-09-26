@@ -312,7 +312,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 	mods := mouseMods(e.Mods)
 	switch {
 	case e.Button == gi.ButtonMiddle && !t.sh.t.MouseTaken(mods):
-		t.paste(u.Clipboard())
+		t.pasteClipboard(u)
 		return true
 	case e.Button == gi.ButtonSecondary && !t.sh.t.MouseTaken(mods):
 		return false
@@ -366,7 +366,7 @@ func (t *term) command(id string, u *gunim.UI) bool {
 	case "edit.copy":
 		t.copySelection(u)
 	case "edit.paste":
-		t.paste(u.Clipboard())
+		t.pasteClipboard(u)
 	case "view.scrollUp", "view.scrollDown":
 		_, rows := t.cells.GridSize()
 		page := max(1, rows-1)
@@ -393,6 +393,18 @@ func (t *term) key(ev input.Event) {
 }
 
 func (t *term) paste(s string) { t.sh.t.Paste(s) }
+
+// pasteClipboard pastes the text on the clipboard, and with no text
+// there, asks the program to hand over the picture that may be there
+// instead. A clipboard holding both is text: copying from a browser
+// leaves both, and the words are what was meant.
+func (t *term) pasteClipboard(u *gunim.UI) {
+	if s := u.Clipboard(); s != "" {
+		t.paste(s)
+		return
+	}
+	u.Send(t, PastePicture{Pane: t.id})
+}
 
 // scroll moves by the wheel's movement, a line at a time: to a program
 // that has the mouse, as a wheel click per line; on the alternate

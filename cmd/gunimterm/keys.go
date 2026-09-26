@@ -28,6 +28,7 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:   "conn.terminal",
 		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:   "sidebar.toggle",
 		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:   "edit.paste",
+		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}:     "edit.pasteImage",
 		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:   "edit.copy",
 		{Key: input.KeyInsert, Mods: input.ModCtrl}:               "edit.copy",
 		{Key: input.KeyInsert, Mods: input.ModShift}:              "edit.paste",
@@ -110,6 +111,7 @@ var commands = []struct{ id, title string }{
 	{"tunnel.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
+	{"edit.pasteImage", "Paste Image as File"},
 }
 
 // menus are the menubar's menus, in gridterm's order and words, with
@@ -126,6 +128,7 @@ var menus = []struct {
 	}},
 	{"Edit", []menuItem{
 		{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
+		{id: "edit.pasteImage", title: "Paste Image as File"},
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
 	}},
 	{"View", []menuItem{
@@ -227,6 +230,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return PopOut{}, true
 	case "pane.close":
 		return ClosePane{}, true
+	case "edit.pasteImage":
+		return PasteImage{}, true
 	case "pane.next", "pane.nextInSidebar":
 		return NextPane{}, true
 	case "pane.previous", "pane.previousInSidebar":

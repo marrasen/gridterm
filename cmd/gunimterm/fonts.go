@@ -57,7 +57,13 @@ func (a *app) scanFonts() {
 			if err != nil {
 				a.notify("Couldn't read some fonts", err.Error(), "")
 			}
-			// A theme that named a face on disk can only have it now.
+			// A family the command line named, or a theme's face on disk,
+			// can only be had now.
+			if a.fixedFont != "" {
+				if err := a.setFont(a.fixedFont); err != nil {
+					a.notify("Couldn't draw in -font-family "+a.fixedFont, err.Error(), "")
+				}
+			}
 			a.useWantedFont()
 		}
 	}()

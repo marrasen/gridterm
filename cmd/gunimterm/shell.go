@@ -45,13 +45,17 @@ type shellHooks struct {
 // out and tells it its own.
 const shellCols, shellRows = 80, 24
 
+// scrollbackLines is how many lines of history a pane keeps, which
+// -scrollback sets.
+var scrollbackLines = vt.DefaultScrollback
+
 // openShell puts a screen on a running session, local or remote,
 // drawing with pal.
 func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 	t, err := uiterm.New(uiterm.Config{
 		Session:     sess,
 		Size:        ui.Size{Cols: shellCols, Rows: shellRows},
-		Scrollback:  5000,
+		Scrollback:  scrollbackLines,
 		Program:     build.Name + " " + build.Version(),
 		Palette:     &pal,
 		OnTitle:     hooks.title,

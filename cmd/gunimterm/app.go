@@ -384,6 +384,11 @@ type app struct {
 	windows map[string]*remoteWin
 	// leaving is set while the window asks whether to close.
 	leaving bool
+	// opts are what the command line asked for; fixedFont is a family
+	// -font-family named, and shotErr why a -shot script gave up.
+	opts      options
+	fixedFont string
+	shotErr   error
 	// reached is the address each server was reached at, and paneAt
 	// the address each pane on one was opened at, to say so when a
 	// pane is reconnected somewhere else.
@@ -510,7 +515,7 @@ func (a *app) run(ctx context.Context) error {
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
-			if size, ok := s.FontSize(); ok {
+			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
 				a.st.FontSize = min(max(float32(size), 8), 40)
 			}
 		}
@@ -546,10 +551,20 @@ func (a *app) run(ctx context.Context) error {
 			a.giveSavedIDs()
 		}
 	}
-	if err := a.open("", placement{}); err != nil {
+	if err := a.applyOptions(); err != nil {
+		return err
+	}
+	if err := a.openFirst(); err != nil {
 		return err
 	}
 	a.publish()
+	if a.opts.shot != "" {
+		list, err := parseShot(a.opts.shot)
+		if err != nil {
+			return fmt.Errorf("-shot: %w", err)
+		}
+		go a.runShot(list)
+	}
 	intents := a.c.Intents()
 	for {
 		select {
@@ -565,7 +580,9 @@ func (a *app) run(ctx context.Context) error {
 		case f := <-a.events:
 			f()
 		}
-		if len(a.st.Panes) == 0 {
+		// Empty, and connecting to nothing that would open a pane: the
+		// window closes.
+		if len(a.st.Panes) == 0 && len(a.dialing) == 0 {
 			a.c.Close()
 			intents = a.c.Intents()
 			for range intents {

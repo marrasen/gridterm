@@ -19,8 +19,13 @@ On Linux:
 To work on gunim at the same time, clone it next to gridterm and run
 `go work init . ../gunim`. The `go.work` file stays out of git.
 
-- `GUNIMTERM_STATS=1` prints each second the frames drawn and the screen
-  updates merged into them.
+- It takes gridterm's flags; `-h` lists them. `-stats`, or
+  `GUNIMTERM_STATS=1`, prints each second the frames drawn and the
+  screen updates merged into them.
+- `-shot` drives the window through a script and writes PNGs, as in
+  gridterm, such as
+  `-shot 'until:$ wait:1500 type:make key:Enter until:done shot:built.png'`.
+  The wait lets shell setup finish before typing.
 - `GUNIMTERM_PROFILE=file` writes a CPU profile until the window closes.
 - Ctrl+Shift+V pastes. The wheel scrolls back through history.
 
@@ -49,12 +54,6 @@ Measured on the development machine: X11 over xrdp, software OpenGL
 What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
-
-The window:
-
-- The command-line flags: `-font-size`, `-e`, `-scrollback`, `-ssh`,
-  `-font`, `-font-family`, `-list-fonts`, `-mcp-skill`, `-stats` and
-  `-shot`.
 
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

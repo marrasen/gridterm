@@ -10,7 +10,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -34,10 +36,23 @@ func main() {
 func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	// gridterm's MCP server, for an agent program to start: it holds
-	// nothing and reaches nothing until the agent gives it a code.
-	if len(os.Args) > 1 && os.Args[1] == "-mcp" {
+	opts, err := parseOptions(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	switch {
+	case opts.asMCP:
+		// gridterm's MCP server, for an agent program to start: it holds
+		// nothing and reaches nothing until the agent gives it a code.
 		return mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
+	case opts.mcpSkill:
+		_, err := io.WriteString(os.Stdout, skillFor(hostNamed(hostClaudeCode), exePath()))
+		return err
+	case opts.listFonts:
+		return printFonts(os.Stdout)
 	}
 	if path := os.Getenv("GUNIMTERM_PROFILE"); path != "" {
 		f, err := os.Create(path)
@@ -55,6 +70,9 @@ func run() error {
 	// keptFontSize is the font size kept from last time, which the
 	// window opens to fit.
 	keptFontSize := func() float32 {
+		if opts.sizeSet {
+			return float32(opts.fontSize)
+		}
 		if path, err := settings.Path(); err == nil {
 			if s, err := settings.Load(path); err == nil {
 				if size, ok := s.FontSize(); ok {
@@ -64,7 +82,7 @@ func run() error {
 		}
 		return defaultFontSize
 	}
-	err := gunim.Main(ctx, func(a *gunim.App) error {
+	err = gunim.Main(ctx, func(a *gunim.App) error {
 		w, err := a.NewWindow(gunim.WindowOptions{
 			Title: programName,
 			Size:  firstSize(keptFontSize(), 220),
@@ -85,14 +103,15 @@ func run() error {
 		if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
 			return err
 		}
-		if os.Getenv("GUNIMTERM_STATS") == "1" {
+		if opts.stats {
 			go logStats(ctx, w)
 		}
 		prog := newApp(c, sh)
+		prog.opts = opts
 		prog.themes = all
 		prog.registerThemes = func(all []themed) { registerThemes(w, all) }
 		defer closeToaster()
-		return prog.run(ctx)
+		return errors.Join(prog.run(ctx), prog.shotErr)
 	})
 	if errors.Is(err, driver.ErrNoDriver) {
 		log.Print("gunim has no driver for this operating system")

@@ -107,7 +107,7 @@ func (ta *testApp) lastArgv(t *testing.T) []string {
 func shellLines(ids []string) []string {
 	var out []string
 	for _, id := range ids {
-		if strings.HasPrefix(id, shellCommandPrefix) {
+		if strings.HasPrefix(id, shells.CommandPrefix) {
 			out = append(out, id)
 		}
 	}
@@ -168,13 +168,13 @@ func lineTitle(t *testing.T, m *ui.Menu, id string) string {
 
 func TestShellCommandID(t *testing.T) {
 	for id, want := range map[string]string{
-		"cmd":                  shellCommandPrefix + "cmd",
-		"powershell":           shellCommandPrefix + "powershell",
-		"wsl:Ubuntu":           shellCommandPrefix + "wsl-ubuntu",
-		"wsl:Ubuntu 22.04 LTS": shellCommandPrefix + "wsl-ubuntu-22-04-lts",
+		"cmd":                  shells.CommandPrefix + "cmd",
+		"powershell":           shells.CommandPrefix + "powershell",
+		"wsl:Ubuntu":           shells.CommandPrefix + "wsl-ubuntu",
+		"wsl:Ubuntu 22.04 LTS": shells.CommandPrefix + "wsl-ubuntu-22-04-lts",
 	} {
-		if got := shellCommandID(id); got != want {
-			t.Errorf("shellCommandID(%q) = %q, want %q", id, got, want)
+		if got := shells.CommandID(id); got != want {
+			t.Errorf("shells.CommandID(%q) = %q, want %q", id, got, want)
 		}
 	}
 }
@@ -189,7 +189,7 @@ func TestChoosingAShellFromThePlusOpensAPaneOnIt(t *testing.T) {
 	scanShells(t, a)
 
 	menu := clickPlus(t, a, conns.Local)
-	chooseMenuItem(t, menu, shellCommandID("pwsh"))
+	chooseMenuItem(t, menu, shells.CommandID("pwsh"))
 
 	want := argvOf(t, "pwsh")
 	if got := a.lastArgv(t); !slices.Equal(got, want) {
@@ -211,7 +211,7 @@ func TestAShellPaneRowSaysTheShellsName(t *testing.T) {
 	scanShells(t, a)
 
 	menu := clickPlus(t, a, conns.Local)
-	chooseMenuItem(t, menu, shellCommandID("pwsh"))
+	chooseMenuItem(t, menu, shells.CommandID("pwsh"))
 	pane := a.focusedTerminal()
 	if pane == nil {
 		t.Fatal("the shell opened no pane")
@@ -307,7 +307,7 @@ func TestAWslPaneRowSaysWhichDistribution(t *testing.T) {
 	}))
 	scanShells(t, a)
 
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("wsl:Debian"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("wsl:Debian"))
 	pane := a.focusedTerminal()
 	if pane == nil {
 		t.Fatal("the shell opened no pane")
@@ -332,7 +332,7 @@ func TestChoosingAWslShellRunsTheDistributionItNames(t *testing.T) {
 	withPanel(t, a)
 	scanShells(t, a)
 
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("wsl:Ubuntu"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("wsl:Ubuntu"))
 
 	want := argvOf(t, "wsl:Ubuntu")
 	if got := a.lastArgv(t); !slices.Equal(got, want) {
@@ -370,7 +370,7 @@ func TestThePickedShellIsRememberedForTheNextTerminal(t *testing.T) {
 	withPanel(t, a)
 	scanShells(t, a)
 
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("pwsh"))
 
 	if id, saved := a.shellPick.remembered.Shell(); !saved || id != "pwsh" {
 		t.Errorf("the settings remember %q (saved %v), want pwsh", id, saved)
@@ -403,13 +403,13 @@ func TestAShellThatIsNotInstalledIsNotOffered(t *testing.T) {
 
 	ids := menuCommands(clickPlus(t, a, conns.Local))
 
-	if !slices.Contains(ids, shellCommandID("cmd")) {
+	if !slices.Contains(ids, shells.CommandID("cmd")) {
 		t.Errorf("the menu does not offer the shells that are here: %v", ids)
 	}
-	if slices.Contains(ids, shellCommandID("pwsh")) {
+	if slices.Contains(ids, shells.CommandID("pwsh")) {
 		t.Errorf("the menu offers pwsh, which is not installed: %v", ids)
 	}
-	if _, ok := a.root.Commands.Lookup(shellCommandID("pwsh")); ok {
+	if _, ok := a.root.Commands.Lookup(shells.CommandID("pwsh")); ok {
 		t.Error("a command was registered for a shell that is not installed")
 	}
 }
@@ -461,7 +461,7 @@ func TestTheFileMenuOffersTheSameShellsAsThePlus(t *testing.T) {
 	onFile := shellLines(fileMenuLines(t, a, bar))
 	onPlus := shellLines(menuCommands(clickPlus(t, a, conns.Local)))
 
-	want := []string{shellCommandID("cmd"), shellCommandID("pwsh"), shellCommandID("wsl:Ubuntu")}
+	want := []string{shells.CommandID("cmd"), shells.CommandID("pwsh"), shells.CommandID("wsl:Ubuntu")}
 	if !slices.Equal(onFile, want) {
 		t.Errorf("the File menu offers %v, want %v", onFile, want)
 	}
@@ -503,7 +503,7 @@ func TestAShellThatWillNotStartIsNotRemembered(t *testing.T) {
 		return nil, errors.New("pwsh.exe is not where it was")
 	}
 
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("pwsh"))
 
 	n := awaitModal[*ui.Notice](t, a, "a notice about the shell that would not start", nil)
 	if !strings.Contains(n.Message(), "pwsh.exe is not where it was") {
@@ -543,7 +543,7 @@ func TestTheShellScanReportsAFailureAndKeepsWhatItFound(t *testing.T) {
 	// On the menu rather than in the registry: a command nothing offers
 	// is a shell the user cannot open.
 	dismissNotice(t, a)
-	if got := shellLines(fileMenuLines(t, a, bar)); !slices.Contains(got, shellCommandID("pwsh")) {
+	if got := shellLines(fileMenuLines(t, a, bar)); !slices.Contains(got, shells.CommandID("pwsh")) {
 		t.Errorf("the File menu offers %v, with none of the shells that were found", got)
 	}
 }
@@ -557,7 +557,7 @@ func TestChoosingAShellFromTheFileMenuOpensAPaneOnIt(t *testing.T) {
 	bar := withMenubar(t, a)
 	scanShells(t, a)
 
-	chooseMenuItem(t, openFileMenu(t, a, bar), shellCommandID("pwsh"))
+	chooseMenuItem(t, openFileMenu(t, a, bar), shells.CommandID("pwsh"))
 
 	if len(a.panes) != 2 {
 		t.Fatalf("%d panes, want the one the window opened with and the new one", len(a.panes))
@@ -580,29 +580,29 @@ func TestTheLinesAndThePaletteSayWhichShell(t *testing.T) {
 	scanShells(t, a)
 
 	plus := clickPlus(t, a, conns.Local)
-	if got := lineTitle(t, plus, shellCommandID("pwsh")); got != "PowerShell" {
+	if got := lineTitle(t, plus, shells.CommandID("pwsh")); got != "PowerShell" {
 		t.Errorf("the line on the plus says %q, want the shell's own name", got)
 	}
 	dismiss(t, plus)
 	file := openFileMenu(t, a, bar)
-	if got := lineTitle(t, file, shellCommandID("pwsh")); got != "PowerShell" {
+	if got := lineTitle(t, file, shells.CommandID("pwsh")); got != "PowerShell" {
 		t.Errorf("the line on the File menu says %q, want the shell's own name", got)
 	}
 	// And the header that earns the shorter line. A row says less than
 	// its command only where the header above it says the rest.
-	if got := headerAbove(t, file, shellCommandID("pwsh")); got != newTerminalInHeader {
+	if got := headerAbove(t, file, shells.CommandID("pwsh")); got != newTerminalInHeader {
 		t.Errorf("the shells sit under %q, want %q", got, newTerminalInHeader)
 	}
 	bar.Close()
 
-	cmd, ok := a.root.Commands.Lookup(shellCommandID("pwsh"))
+	cmd, ok := a.root.Commands.Lookup(shells.CommandID("pwsh"))
 	if !ok {
 		t.Fatal("no command opens a pane on pwsh")
 	}
 	if want := "New Terminal: PowerShell"; cmd.Title != want {
 		t.Errorf("the command is called %q, want %q", cmd.Title, want)
 	}
-	runFromPalette(t, a, shellCommandID("pwsh"))
+	runFromPalette(t, a, shells.CommandID("pwsh"))
 
 	if len(a.panes) != 2 {
 		t.Fatalf("%d panes, want the one the window opened with and the new one", len(a.panes))
@@ -624,7 +624,7 @@ func TestThePickSurvivesARestart(t *testing.T) {
 		t.Fatalf("the first window's settings: %v", err)
 	}
 	scanShells(t, a)
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("pwsh"))
 
 	b := newTestApp(t, 80, 24)
 	withDialogs(t, b)
@@ -680,7 +680,7 @@ func TestASplitAfterAPickOpensOnThePickedShell(t *testing.T) {
 	withDialogs(t, a)
 	withPanel(t, a)
 	scanShells(t, a)
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("pwsh"))
 
 	if err := a.splitHere(ui.Columns); err != nil {
 		t.Fatalf("split the pane: %v", err)
@@ -742,7 +742,7 @@ func TestUnderSshAShellLineOpensAPaneHereAndTheFileMenuHasNone(t *testing.T) {
 		t.Fatalf("the plus on this machine's row offers no shells: %v", menuCommands(menu))
 	}
 
-	chooseMenuItem(t, menu, shellCommandID("pwsh"))
+	chooseMenuItem(t, menu, shells.CommandID("pwsh"))
 
 	if e := a.panes[newestPane(t, a)]; e == nil || e.Host != conns.Local {
 		t.Fatalf("the new pane's row is %+v, want one on this machine", e)
@@ -790,17 +790,17 @@ func TestTwoShellsWhoseIdsDifferOnlyInPunctuationBothGetALine(t *testing.T) {
 // TestShellCommandIDsDoNotCollide checks the naming: a readable id per
 // shell, and a number where two would come out the same.
 func TestShellCommandIDsDoNotCollide(t *testing.T) {
-	got := shellCommandIDs([]shells.Shell{
+	got := shells.CommandIDs([]shells.Shell{
 		{ID: "cmd"},
 		{ID: "wsl:Ubuntu-22.04"},
 		{ID: "wsl:Ubuntu 22 04"},
 		{ID: "wsl:ubuntu:22:04"},
 	})
 	want := []string{
-		shellCommandPrefix + "cmd",
-		shellCommandPrefix + "wsl-ubuntu-22-04",
-		shellCommandPrefix + "wsl-ubuntu-22-04-2",
-		shellCommandPrefix + "wsl-ubuntu-22-04-3",
+		shells.CommandPrefix + "cmd",
+		shells.CommandPrefix + "wsl-ubuntu-22-04",
+		shells.CommandPrefix + "wsl-ubuntu-22-04-2",
+		shells.CommandPrefix + "wsl-ubuntu-22-04-3",
 	}
 	if !slices.Equal(got, want) {
 		t.Errorf("the shells are named %v, want %v", got, want)
@@ -829,7 +829,7 @@ func TestASecondScanOffersTheShellsItFound(t *testing.T) {
 	})
 	scanShells(t, a)
 
-	want := []string{shellCommandID("cmd"), shellCommandID("wsl:Ubuntu")}
+	want := []string{shells.CommandID("cmd"), shells.CommandID("wsl:Ubuntu")}
 	if got := shellLines(fileMenuLines(t, a, bar)); !slices.Equal(got, want) {
 		t.Errorf("the File menu offers %v, want %v", got, want)
 	}
@@ -837,11 +837,11 @@ func TestASecondScanOffersTheShellsItFound(t *testing.T) {
 	if got := shellLines(menuCommands(menu)); !slices.Equal(got, want) {
 		t.Errorf("the plus offers %v, want %v", got, want)
 	}
-	if _, ok := a.root.Commands.Lookup(shellCommandID("pwsh")); ok {
+	if _, ok := a.root.Commands.Lookup(shells.CommandID("pwsh")); ok {
 		t.Error("a command still opens a pane on the shell that has gone")
 	}
 
-	chooseMenuItem(t, menu, shellCommandID("wsl:Ubuntu"))
+	chooseMenuItem(t, menu, shells.CommandID("wsl:Ubuntu"))
 
 	if got, want := a.lastArgv(t), argvOf(t, "wsl:Ubuntu"); !slices.Equal(got, want) {
 		t.Errorf("the pane started on %v, want %v", got, want)
@@ -915,7 +915,7 @@ func TestAShellThatGoesAfterAnotherPickIsSaidAgain(t *testing.T) {
 	dismissNotice(t, a)
 
 	// pwsh is picked, and then it goes too.
-	chooseMenuItem(t, clickPlus(t, a, conns.Local), shellCommandID("pwsh"))
+	chooseMenuItem(t, clickPlus(t, a, conns.Local), shells.CommandID("pwsh"))
 	onMachine(a, []shells.Shell{
 		{ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Path: wslPath,
 			Args: []string{"-d", "Ubuntu"}, Distro: "Ubuntu"},

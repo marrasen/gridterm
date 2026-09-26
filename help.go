@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/files"
 )
@@ -169,7 +170,7 @@ func (a *app) commandSections() []helpSection {
 func generatedCommand(id string) bool {
 	for _, prefix := range []string{
 		openPrefix, editPrefix, termPrefix, filesPrefix, fontCommandPrefix,
-		shellCommandPrefix,
+		shells.CommandPrefix,
 	} {
 		if strings.HasPrefix(id, prefix) {
 			return true

@@ -3,20 +3,13 @@ package main
 import (
 	"fmt"
 	"slices"
-	"strconv"
-	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/marrasen/gridterm/settings"
 	"github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 	"github.com/marrasen/gridterm/ui/term"
 )
-
-// shellCommandPrefix starts the id of every command that opens a pane
-// on a shell, which keeps those ids clear of every other command's.
-const shellCommandPrefix = "shell.open."
 
 // shellPick is the shells a pane on this machine can run, the commands
 // registered for them, and which one the user last chose.
@@ -387,7 +380,7 @@ func (a *app) registerShells(list []shells.Shell) {
 	}
 	a.shellPick.registered = nil
 
-	ids := shellCommandIDs(list)
+	ids := shells.CommandIDs(list)
 	found := make([]shells.Shell, 0, len(list))
 	cmds := make([]string, 0, len(list))
 	for i, sh := range list {
@@ -418,37 +411,4 @@ func (a *app) reportShellScan(err error) {
 	a.logError(fmt.Errorf("listing the WSL distributions: %w", err))
 	a.showNotice("WSL shells unavailable",
 		"Could not list the WSL distributions:\n\n"+err.Error(), true)
-}
-
-// shellCommandIDs names the command that opens a pane on each shell in
-// list, in the same order. Two ids that flatten to the same name are
-// told apart by a number, so neither shell is dropped.
-func shellCommandIDs(list []shells.Shell) []string {
-	taken := make(map[string]bool, len(list))
-	ids := make([]string, 0, len(list))
-	for _, sh := range list {
-		base := shellCommandID(sh.ID)
-		id := base
-		for n := 2; taken[id]; n++ {
-			id = base + "-" + strconv.Itoa(n)
-		}
-		taken[id] = true
-		ids = append(ids, id)
-	}
-	return ids
-}
-
-// shellCommandID names the command that opens a pane on a shell. A
-// shell's id holds a colon, spaces and stops; a command id has none of
-// them, so that a menu or a key binding naming one is readable.
-func shellCommandID(id string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(id) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-			continue
-		}
-		b.WriteByte('-')
-	}
-	return shellCommandPrefix + b.String()
 }

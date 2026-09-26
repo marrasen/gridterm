@@ -94,20 +94,29 @@ func TestAnEmptyClipboardPastesNothing(t *testing.T) {
 	}
 }
 
-func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
-	a, _ := agentApp(t)
+// connectedWindows is a served window, a, and a second, b, connected
+// to it, with a terminal on a open in b as its first pane.
+func connectedWindows(t *testing.T) (a, b *app) {
+	t.Helper()
+	a, _ = agentApp(t)
 	dir := t.TempDir()
 	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
-	// Taken on the goroutine serving the other window.
-	took := make(chan []byte, 1)
-	was := takePicture
-	takePicture = func(png []byte) error { took <- png; return nil }
-	t.Cleanup(func() { takePicture = was })
 	b, keyFile := clientOf(t, a)
 	b.handle(ConnectWindow{Addr: a.st.Serving.Addr, KeyFile: keyFile})
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
 	pumpBoth(t, a, b, "a terminal on the window", func() bool { return len(b.st.Panes) == 1 })
+	pumpBoth(t, a, b, "the pane on the first window", func() bool { return len(a.st.Panes) == 2 })
+	return a, b
+}
+
+func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
+	// Taken on the goroutine serving the other window.
+	took := make(chan []byte, 1)
+	was := takePicture
+	takePicture = func(png []byte) error { took <- png; return nil }
+	t.Cleanup(func() { takePicture = was })
+	a, b := connectedWindows(t)
 
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 5, 4)))
 	b.handle(PastePicture{Pane: b.st.Panes[0].ID})

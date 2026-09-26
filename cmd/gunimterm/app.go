@@ -811,6 +811,8 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case SaveLines:
 		a.saveLines(in)
+	case DropFiles:
+		err = a.dropFiles(in)
 	case PasteImage:
 		err = a.pastePicture(in.Pane, true)
 	case PastePicture:

@@ -797,6 +797,13 @@ func (w *window) closeSwitcher(back bool, u *gunim.UI) {
 // Handle implements [gunim.Handler]: the window's shortcuts, which the
 // focused pane passes on.
 func (w *window) Handle(e input.Event, u *gunim.UI) bool {
+	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
+		// Dropped somewhere that is no terminal: the sidebar, a file
+		// pane, the menu bar. The focused pane is what the user is
+		// working in, and is where the files are wanted.
+		u.Send(w, DropFiles{Paths: d.Paths})
+		return true
+	}
 	k, ok := e.(input.KeyPress)
 	if !ok {
 		return false

@@ -162,7 +162,7 @@ func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
 
 // followOn is follow, for a job between the machines from and to, which
 // a repeat opens again.
-func (a *app) followOn(op jobs.Op, title, from, to string) {
+func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
 	if a.jobs == nil {
 		a.jobs = jobs.New(2)
 	}
@@ -185,6 +185,7 @@ func (a *app) followOn(op jobs.Op, title, from, to string) {
 		go a.watchJobs()
 	}
 	a.showJobs()
+	return job
 }
 
 // watchJobs looks at the jobs four times a second while any runs.

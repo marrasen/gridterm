@@ -221,6 +221,12 @@ func cellOf(g *grid.Grid, x, y int) widget.Cell {
 // and the wheel scrolls back through what has scrolled off.
 func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
+	case gi.Drop:
+		if len(e.Paths) == 0 {
+			return false
+		}
+		u.Send(t, DropFiles{Pane: t.id, Paths: e.Paths})
+		return true
 	case gi.FocusGained, gi.FocusLost:
 		_, t.focused = e.(gi.FocusGained)
 		if t.focused {

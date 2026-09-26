@@ -164,10 +164,20 @@ func (a *app) localArgv(id string) []string {
 // pathForPane is the path the program in a local pane opens a file of
 // this machine's at: inside WSL, this machine's drives are under /mnt.
 func (a *app) pathForPane(id, path string) string {
-	if shellfind.IsWSL(a.localArgv(id)) {
+	if a.distroOf(id) != "" {
 		if unix := shellfind.UnixPath(path); unix != "" {
 			return unix
 		}
 	}
 	return path
+}
+
+// distroOf is the WSL distribution a local pane runs, and empty for a
+// pane running anything else.
+func (a *app) distroOf(id string) string {
+	sh, ok := shellfind.Running(a.found, a.localArgv(id))
+	if !ok {
+		return ""
+	}
+	return sh.Distro
 }

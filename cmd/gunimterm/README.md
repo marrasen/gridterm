@@ -50,5 +50,39 @@ What gridterm does that gunimterm does not, as of 2026-09-26. Each is to
 be done, or decided against, before the switch. Checked against every
 command gridterm registers, and against what was left out on the way.
 
+The window:
+
+- Closing it asks first while panes, tunnels or shares are open, and
+  lists them. gunimterm closes at once.
+- Its title follows the focused pane, as "gridterm — <title>".
+- Its icon, and a first size worked out from the font's cells.
+- The Font menu, which picks the font family (`font.use.<family>`),
+  and the font size kept between runs.
+- Ctrl and the wheel make the font larger or smaller.
+- Ctrl+Tab walks the panes in the order they were last used, with a
+  list shown while Ctrl is held.
+- The command-line flags: `-font-size`, `-e`, `-scrollback`, `-ssh`,
+  `-font`, `-font-family`, `-list-fonts`, `-mcp-skill`, `-stats` and
+  `-shot`.
+
+Panes:
+
+- A program's OSC 9 message and OSC 9;4 progress, on the pane's
+  sidebar row. A message also goes to the log, and to a desktop
+  pop-up, at most one every 2 seconds.
+- Desktop pop-ups (`gridterm/notify`) for notices.
+- The slow glow around a pane shared with an agent or watched from
+  another window.
+- A held screen bigger than its pane, drawn scaled to fit, with its
+  sidebar row saying it is held.
+- A session's errors, written to the window log (`OnError`).
+- The line in a pane's transcript saying a server's address changed.
+
+Settings:
+
+- Unticking Keep on a saved command forgets it.
+- Old saved commands, tunnels and copies given their server's ID
+  (`FillServerIDs`).
+
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

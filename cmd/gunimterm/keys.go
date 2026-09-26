@@ -6,6 +6,7 @@ import (
 	"github.com/marrasen/gunim"
 
 	"github.com/marrasen/gridterm/input"
+	shellfind "github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -46,7 +47,7 @@ func shortcuts() *ui.Keymap {
 		{Key: input.KeyEquals, Mods: input.ModCtrl | input.ModShift}: "font.increase",
 		{Key: input.KeyMinus, Mods: input.ModCtrl}:                   "font.decrease",
 		{Key: input.Key0, Mods: input.ModCtrl}:                       "font.reset",
-		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}:      "pane.switch",
+		{Key: input.KeyA, Mods: input.ModCtrl | input.ModShift}:      "view.switcher",
 	})
 	return keys
 }
@@ -54,29 +55,39 @@ func shortcuts() *ui.Keymap {
 // commands are what the palette offers, in gridterm's words.
 var commands = []struct{ id, title string }{
 	{"conn.terminal", "New Terminal"},
+	{"shell.default", "New Terminal, Default Shell"},
 	{"pane.splitRight", "Split Right"},
 	{"pane.splitDown", "Split Down"},
 	{"pane.popOut", "Pop Out Pane"},
 	{"pane.close", "Close Pane"},
 	{"pane.next", "Next Pane"},
 	{"pane.previous", "Previous Pane"},
-	{"pane.switch", "Switch Pane"},
+	{"view.switcher", "All Panes"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Show or Hide Sidebar"},
-	{"theme.pick", "Pick a Theme"},
+	{"view.theme", "Choose Theme"},
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
 	{"server.connect", "Connect to Server"},
+	{"server.add", "Add Server"},
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},
-	{"secrets.show", "Show Secrets"},
+	{"secrets.open", "Show Secrets"},
+	{"secrets.pane", "Manage Secrets"},
+	{"secrets.change", "Change Secret"},
+	{"secrets.forget", "Remove Secret"},
+	{"secrets.addKey", "Add Secrets Key"},
+	{"secrets.addPassphrase", "Add Secrets Passphrase"},
+	{"secrets.removeKey", "Remove Secrets Key"},
 	{"secrets.add", "Add Secret"},
 	{"secrets.addNote", "Add Note"},
 	{"secrets.lock", "Lock Secrets"},
 	{"secrets.export", "Export Secrets"},
 	{"secrets.import", "Import Secrets"},
 	{"agent.share", "Share with an Agent"},
+	{"agent.hand", "Share Pane with Agent"},
+	{"agent.take", "Stop Sharing Pane"},
 	{"agent.permissions", "Agent Permissions"},
 	{"agent.typed", "Typing History"},
 	{"serve.window", "Serve This Window"},
@@ -107,11 +118,38 @@ var commands = []struct{ id, title string }{
 	{"view.jobs", "Show Jobs"},
 	{"view.log", "Window Log"},
 	{"conn.log", "Connection Log"},
-	{"tunnel.open", "Open Tunnel"},
-	{"tunnel.socks", "Open SOCKS Proxy"},
+	{"conn.tunnel", "Open Tunnel"},
+	{"conn.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
 	{"edit.paste", "Paste"},
 	{"edit.pasteImage", "Paste Image as File"},
+}
+
+// itemPrefixes start the ids of commands on one thing of many: a saved
+// server, a machine, a folder, a shell, a saved command or tunnel. They
+// are gridterm's, so a shortcuts file written for gridterm works here.
+var itemPrefixes = []string{
+	"server.open.", "server.edit.", "server.remove.", "conn.log.",
+	"conn.terminal.", "conn.files.", "conn.saved.", "conn.savedtunnel.",
+	shellfind.CommandPrefix, "shell.pick.",
+}
+
+// isItem reports whether id names a command on one thing of many.
+func isItem(id string) bool {
+	for _, p := range itemPrefixes {
+		if strings.HasPrefix(id, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// aliases are gridterm's other names for commands, so a shortcuts file
+// written for gridterm runs here as it did there.
+var aliases = map[string]string{
+	// gridterm's New Terminal beside the focused pane, which here opens
+	// on the stage as New Terminal does.
+	"pane.open": "conn.terminal",
 }
 
 // menus are the menubar's menus, in gridterm's order and words, with
@@ -146,7 +184,7 @@ var menus = []struct {
 		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{title: "Go To", caption: true},
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
-		{id: "pane.switch", title: "All Panes…"}, {id: "sidebar.focus", title: "Sidebar"},
+		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Sidebar"},
 		{id: "pane.rename", title: "Rename…", group: true},
 		{id: "conn.clearFinished", title: "Clear Finished"},
 	}},
@@ -154,7 +192,7 @@ var menus = []struct {
 		{title: "Open Here", caption: true},
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.command", title: "Command…"},
 		{id: "conn.files", title: "Files"},
-		{id: "tunnel.open", title: "Tunnel…"}, {id: "tunnel.socks", title: "SOCKS Proxy…"},
+		{id: "conn.tunnel", title: "Tunnel…"}, {id: "conn.socks", title: "SOCKS Proxy…"},
 		{id: "files.goTo", title: "Go to Directory…", group: true},
 		{id: "files.copies", title: "Saved Copies…"},
 		{id: "conn.log", title: "Connection Log"},
@@ -172,7 +210,7 @@ var menus = []struct {
 		{id: "serve.window", title: "Serve This Window…"}, {id: "serve.attach", title: "Connect to Window…"},
 	}},
 	{"Secrets", []menuItem{
-		{id: "secrets.show", title: "Show Secrets"},
+		{id: "secrets.open", title: "Show Secrets"},
 		{id: "secrets.add", title: "Add Secret…"}, {id: "secrets.addNote", title: "Add Note…"},
 		{id: "secrets.export", title: "Export…", group: true}, {id: "secrets.import", title: "Import…"},
 		{id: "secrets.lock", title: "Lock", group: true},
@@ -180,7 +218,7 @@ var menus = []struct {
 		{id: "sshkey.make", title: "New SSH Key…"}, {id: "sshkey.lock", title: "Lock SSH Keys"},
 	}},
 	{"Options", []menuItem{
-		{id: "theme.pick", title: "Theme…"},
+		{id: "view.theme", title: "Theme…"},
 		{id: "shell.termProgram", title: "Terminal Identity…"},
 		{title: "Start a File", caption: true},
 		{id: "view.themesStart", title: "Themes"}, {id: "shortcuts.write", title: "Shortcuts"},
@@ -238,6 +276,12 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return NextPane{Back: true}, true
 	case "conn.terminal":
 		return NewTerminal{}, true
+	case "shell.default":
+		return OpenDefaultShell{}, true
+	case "secrets.pane":
+		return ShowSecrets{}, true
+	case "secrets.addKey":
+		return AddSecretsKey{}, true
 	case "sidebar.toggle":
 		return ToggleSidebar{}, true
 	case "app.exit":
@@ -262,7 +306,7 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return WriteThemeFile{}, true
 	case "conn.clearFinished":
 		return ClearFinished{}, true
-	case "secrets.show":
+	case "secrets.open":
 		return ShowSecrets{}, true
 	case "secrets.lock":
 		return LockSecrets{}, true

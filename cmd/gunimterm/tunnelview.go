@@ -159,13 +159,6 @@ func (w *window) setSavedTunnels(saved []settings.SavedTunnel) {
 	w.servers(w.saved)
 }
 
-// runSavedTunnel opens saved tunnel at, as the palette lists them.
-func (w *window) runSavedTunnel(at string, u *gunim.UI) {
-	if i, err := strconv.Atoi(at); err == nil && i >= 0 && i < len(w.savedTunnels) {
-		u.Send(w, OpenSavedTunnel{Saved: w.savedTunnels[i]})
-	}
-}
-
 // tunnelPane tells of a tunnel: its account in a terminal, over a bar
 // saying what it is doing, with its controls.
 type tunnelPane struct {

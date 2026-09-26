@@ -144,16 +144,23 @@ func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) {
 	for _, b := range shortcuts().Bindings() {
 		known[b.ID] = true
 	}
+	for alias := range aliases {
+		known[alias] = true
+	}
 	next := shortcuts()
 	var unknown []string
 	for _, c := range changes {
 		switch {
 		case c.Command == "":
 			next.Unbind(c.Chord)
-		case !known[c.Command]:
+		case !known[c.Command] && !isItem(c.Command):
 			unknown = append(unknown, c.Written+" runs "+c.Command)
 		default:
-			if err := next.Bind(c.Chord, c.Command); err != nil {
+			id := c.Command
+			if to, ok := aliases[id]; ok {
+				id = to
+			}
+			if err := next.Bind(c.Chord, id); err != nil {
 				unknown = append(unknown, c.Written+": "+err.Error())
 			}
 		}

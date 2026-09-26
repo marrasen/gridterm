@@ -18,6 +18,7 @@ import (
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/secrets"
 	"github.com/marrasen/gridterm/settings"
+	shellfind "github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/ui"
 )
 
@@ -97,7 +98,11 @@ type window struct {
 	splits   map[string]*widget.Split
 	focused  string
 	palette  *widget.Palette
-	size     geom.Size
+	// vault is the secrets as last published, and afterUnlock a command
+	// waiting for them to open.
+	vault       Secrets
+	afterUnlock string
+	size        geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -200,6 +205,10 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 // run carries out a command: the window's own here, and the program's
 // by asking it.
 func (w *window) run(id string, u *gunim.UI) bool {
+	if id != w.afterUnlock {
+		// Another command since: the one waiting is let go.
+		w.afterUnlock = ""
+	}
 	switch id {
 	case "palette.open":
 		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
@@ -207,7 +216,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "menu.open":
 		w.bar.Open(0, u)
 		return true
-	case "pane.switch":
+	case "view.switcher":
 		w.openSwitcher(u)
 		return true
 	case "pane.rename":
@@ -219,7 +228,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "server.add":
 		w.serverForm(nil, u)
 		return true
-	case "theme.pick":
+	case "view.theme":
 		w.pickTheme(u)
 		return true
 	case "conn.log":
@@ -308,6 +317,15 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "agent.permissions":
 		w.permissionsDialog(w.share, u)
 		return true
+	case "agent.hand":
+		u.Send(w, SharePane{Pane: w.focused})
+		return true
+	case "agent.take":
+		u.Send(w, UnsharePane{Pane: w.focused})
+		return true
+	case "secrets.change", "secrets.forget", "secrets.removeKey", "secrets.addPassphrase":
+		w.secretsCommand(id, u)
+		return true
 	case "secrets.export":
 		w.exportForm(u)
 		return true
@@ -321,8 +339,8 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		}
 		w.secretForm(kind, nil, u)
 		return true
-	case "tunnel.open", "tunnel.socks":
-		w.tunnelDialog(id == "tunnel.socks", u)
+	case "conn.tunnel", "conn.socks":
+		w.tunnelDialog(id == "conn.socks", u)
 		return true
 	case "files.goTo":
 		if b, ok := w.browsers[w.focused]; ok {
@@ -340,58 +358,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		}
 		return true
 	}
-	if name, ok := strings.CutPrefix(id, "server.open:"); ok {
-		u.Send(w, ConnectTo{Saved: name})
-		return true
-	}
-	if name, ok := strings.CutPrefix(id, "server.edit:"); ok {
-		for _, h := range w.saved {
-			if h.Name == name {
-				w.serverForm(&h, u)
-			}
-		}
-		return true
-	}
-	if m, ok := strings.CutPrefix(id, "conn.log:"); ok {
-		u.Send(w, ShowLog{Machine: m})
-		return true
-	}
-	if m, ok := strings.CutPrefix(id, "on.terminal:"); ok {
-		u.Send(w, OpenOn{Machine: m})
-		return true
-	}
-	if m, ok := strings.CutPrefix(id, "on.files:"); ok {
-		u.Send(w, FilesOn{Machine: m})
-		return true
-	}
-	if rest, ok := strings.CutPrefix(id, "on.folder:"); ok {
-		at, m, _ := strings.Cut(rest, ":")
-		i, _ := strconv.Atoi(at)
-		for _, h := range w.saved {
-			if h.Name == m && i < len(h.Folders) {
-				u.Send(w, FilesOn{Machine: m, Path: h.Folders[i]})
-			}
-		}
-		return true
-	}
-	if s, ok := strings.CutPrefix(id, "shell.open."); ok {
-		u.Send(w, OpenShellNamed{ID: s})
-		return true
-	}
-	if s, ok := strings.CutPrefix(id, "shell.pick."); ok {
-		u.Send(w, PickShell{ID: s})
-		return true
-	}
-	if at, ok := strings.CutPrefix(id, "command.saved:"); ok {
-		w.runSavedCommand(at, u)
-		return true
-	}
-	if at, ok := strings.CutPrefix(id, "tunnel.saved:"); ok {
-		w.runSavedTunnel(at, u)
-		return true
-	}
-	if name, ok := strings.CutPrefix(id, "server.remove:"); ok {
-		w.confirmRemove(name, u)
+	if w.runItem(id, u) {
 		return true
 	}
 	if in, ok := commandIntent(id); ok {
@@ -437,6 +404,61 @@ func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""
+}
+
+// secretsCommand carries out a command on the secrets that picks one
+// first, or takes a passphrase. A locked vault is unlocked first, and
+// the command carried on once it is open.
+func (w *window) secretsCommand(id string, u *gunim.UI) {
+	st := w.vault
+	if !st.Open {
+		w.afterUnlock = id
+		u.Send(w, UnlockSecrets{})
+		return
+	}
+	w.afterUnlock = ""
+	switch id {
+	case "secrets.change", "secrets.forget":
+		if len(st.Items) == 0 {
+			w.toasts.Show(widget.Toast{Title: "There are no secrets yet", Body: "Add Secret keeps the first one."}, u)
+			return
+		}
+		titles := make([]string, len(st.Items))
+		for i, it := range st.Items {
+			titles[i] = it.Name
+		}
+		items := st.Items
+		w.choose("Which secret?", titles, func(i int, u *gunim.UI) {
+			it := items[i]
+			if id == "secrets.change" {
+				w.secretForm(it.Kind, &it, u)
+				return
+			}
+			w.confirmRemoveSecret(it, u)
+		}, u)
+	case "secrets.removeKey":
+		titles := make([]string, len(st.Keys))
+		for i, k := range st.Keys {
+			titles[i] = k.Name
+		}
+		keys := st.Keys
+		w.choose("Which key?", titles, func(i int, u *gunim.UI) { w.confirmRemoveKey(st, keys[i], u) }, u)
+	case "secrets.addPassphrase":
+		if st.Passphrase {
+			w.toasts.Show(widget.Toast{Title: "The secrets already take a passphrase", Body: "Remove Secrets Key takes it away first."}, u)
+			return
+		}
+		w.passphraseForm(st, u)
+	}
+}
+
+// choose offers titles in a palette, and runs then with the one picked.
+func (w *window) choose(placeholder string, titles []string, then func(i int, u *gunim.UI), u *gunim.UI) {
+	p := &widget.Palette{Placeholder: placeholder, Pick: then}
+	for _, t := range titles {
+		p.Items = append(p.Items, widget.PaletteItem{Title: t})
+	}
+	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
 // pickTheme offers the themes in a palette, the one on marked.
@@ -564,7 +586,7 @@ func (w *window) servers(saved []remote.Host) {
 		w.serverIDs = append(w.serverIDs, "")
 		for _, h := range saved {
 			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, "")
-			w.serverIDs = append(w.serverIDs, "server.open:"+h.Name)
+			w.serverIDs = append(w.serverIDs, "server.open."+remote.CommandName(h.Name))
 		}
 	}
 	for i := range w.bar.Menus {
@@ -577,21 +599,20 @@ func (w *window) servers(saved []remote.Host) {
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Hint: hint(c.id)})
 		w.paletteIDs = append(w.paletteIDs, c.id)
 	}
-	w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Add Server"})
-	w.paletteIDs = append(w.paletteIDs, "server.add")
 	for _, h := range saved {
 		for _, c := range []struct{ title, id string }{
-			{"Connect to " + h.Name, "server.open:"},
-			{"Edit Server " + h.Name, "server.edit:"},
-			{"Remove Server " + h.Name, "server.remove:"},
+			{"Connect to " + h.Name, "server.open."},
+			{"Edit Server " + h.Name, "server.edit."},
+			{"Remove Server " + h.Name, "server.remove."},
 		} {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Also: []string{h.Address}})
-			w.paletteIDs = append(w.paletteIDs, c.id+h.Name)
+			id := c.id + remote.CommandName(h.Name)
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Also: []string{h.Address}, Hint: hint(id)})
+			w.paletteIDs = append(w.paletteIDs, id)
 		}
 	}
 	for _, m := range w.accounts {
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
-		w.paletteIDs = append(w.paletteIDs, "conn.log:"+m)
+		w.paletteIDs = append(w.paletteIDs, "conn.log."+remote.CommandName(m))
 	}
 	// Every machine by name: a terminal there, its files, and each
 	// folder saved for it.
@@ -601,23 +622,24 @@ func (w *window) servers(saved []remote.Host) {
 			where = "This Computer"
 		}
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where}, widget.PaletteItem{Title: "Browse Files on " + where})
-		w.paletteIDs = append(w.paletteIDs, "on.terminal:"+m, "on.files:"+m)
+		w.paletteIDs = append(w.paletteIDs, "conn.terminal."+remote.CommandName(m), "conn.files."+remote.CommandName(m))
 		for _, h := range w.saved {
 			if h.Name != m {
 				continue
 			}
 			for i, f := range h.Folders {
 				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where})
-				w.paletteIDs = append(w.paletteIDs, "on.folder:"+strconv.Itoa(i)+":"+m)
+				w.paletteIDs = append(w.paletteIDs, "conn.files."+remote.CommandName(m)+"."+strconv.Itoa(i+1))
 			}
 		}
 	}
 	// With more than one shell here, a terminal with any of them, and
 	// which new terminals start.
 	if len(w.shellChoices) > 1 {
-		for _, s := range w.shellChoices {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New " + s.Title})
-			w.paletteIDs = append(w.paletteIDs, "shell.open."+s.ID)
+		ids := w.shellIDs()
+		for i, s := range w.shellChoices {
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New " + s.Title, Hint: hint(ids[i])})
+			w.paletteIDs = append(w.paletteIDs, ids[i])
 			if s.ID != w.chosenShell {
 				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Start " + s.Title + " in New Terminals"})
 				w.paletteIDs = append(w.paletteIDs, "shell.pick."+s.ID)
@@ -630,12 +652,109 @@ func (w *window) servers(saved []remote.Host) {
 	}
 	for i, it := range w.savedCommandItems() {
 		w.palette.Items = append(w.palette.Items, it)
-		w.paletteIDs = append(w.paletteIDs, "command.saved:"+strconv.Itoa(i))
+		w.paletteIDs = append(w.paletteIDs, "conn.saved."+strconv.Itoa(i+1))
 	}
 	for i, it := range w.savedTunnelItems() {
 		w.palette.Items = append(w.palette.Items, it)
-		w.paletteIDs = append(w.paletteIDs, "tunnel.saved:"+strconv.Itoa(i))
+		w.paletteIDs = append(w.paletteIDs, "conn.savedtunnel."+strconv.Itoa(i+1))
 	}
+}
+
+// runItem carries out a command on one thing of many, by gridterm's
+// name for it: a saved server, a machine, a folder saved on one, a
+// shell, a saved command or tunnel. It reports false for any other id.
+func (w *window) runItem(id string, u *gunim.UI) bool {
+	savedNamed := func(cmd string) (remote.Host, bool) {
+		for _, h := range w.saved {
+			if remote.CommandName(h.Name) == cmd {
+				return h, true
+			}
+		}
+		return remote.Host{}, false
+	}
+	machineNamed := func(cmd string) (string, bool) {
+		for _, m := range append(w.machines(), w.accounts...) {
+			if remote.CommandName(m) == cmd {
+				return m, true
+			}
+		}
+		if h, ok := savedNamed(cmd); ok {
+			return h.Name, true
+		}
+		return "", false
+	}
+	nth := func(at string) (int, bool) {
+		n, err := strconv.Atoi(at)
+		return n - 1, err == nil && n > 0
+	}
+	switch {
+	case strings.HasPrefix(id, "server.open."):
+		if h, ok := savedNamed(strings.TrimPrefix(id, "server.open.")); ok {
+			u.Send(w, ConnectTo{Saved: h.Name})
+		}
+	case strings.HasPrefix(id, "server.edit."):
+		if h, ok := savedNamed(strings.TrimPrefix(id, "server.edit.")); ok {
+			w.serverForm(&h, u)
+		}
+	case strings.HasPrefix(id, "server.remove."):
+		if h, ok := savedNamed(strings.TrimPrefix(id, "server.remove.")); ok {
+			w.confirmRemove(h.Name, u)
+		}
+	case strings.HasPrefix(id, "conn.log."):
+		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.log.")); ok {
+			u.Send(w, ShowLog{Machine: m})
+		}
+	case strings.HasPrefix(id, "conn.terminal."):
+		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.terminal.")); ok {
+			u.Send(w, OpenOn{Machine: m})
+		}
+	case strings.HasPrefix(id, "conn.files."):
+		rest := strings.TrimPrefix(id, "conn.files.")
+		if m, ok := machineNamed(rest); ok {
+			u.Send(w, FilesOn{Machine: m})
+			break
+		}
+		// A folder saved on a machine: its number follows the
+		// machine's name, whose own name may hold stops.
+		cut := strings.LastIndex(rest, ".")
+		if cut < 0 {
+			break
+		}
+		h, ok := savedNamed(rest[:cut])
+		i, numbered := nth(rest[cut+1:])
+		if ok && numbered && i < len(h.Folders) {
+			u.Send(w, FilesOn{Machine: h.Name, Path: h.Folders[i]})
+		}
+	case strings.HasPrefix(id, shellfind.CommandPrefix):
+		for i, sid := range w.shellIDs() {
+			if sid == id {
+				u.Send(w, OpenShellNamed{ID: w.shellChoices[i].ID})
+			}
+		}
+	case strings.HasPrefix(id, "shell.pick."):
+		u.Send(w, PickShell{ID: strings.TrimPrefix(id, "shell.pick.")})
+	case strings.HasPrefix(id, "conn.saved."):
+		if i, ok := nth(strings.TrimPrefix(id, "conn.saved.")); ok && i < len(w.savedCommands) {
+			u.Send(w, RunSavedCommand{Saved: w.savedCommands[i]})
+		}
+	case strings.HasPrefix(id, "conn.savedtunnel."):
+		if i, ok := nth(strings.TrimPrefix(id, "conn.savedtunnel.")); ok && i < len(w.savedTunnels) {
+			u.Send(w, OpenSavedTunnel{Saved: w.savedTunnels[i]})
+		}
+	default:
+		return false
+	}
+	return true
+}
+
+// shellIDs are gridterm's names for the commands that open a terminal
+// with each of the shells here, in the order of shellChoices.
+func (w *window) shellIDs() []string {
+	list := make([]shellfind.Shell, len(w.shellChoices))
+	for i, s := range w.shellChoices {
+		list[i] = shellfind.Shell{ID: s.ID}
+	}
+	return shellfind.CommandIDs(list)
 }
 
 // serverForm asks for a server to save: a new one, or old edited.
@@ -949,6 +1068,10 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
+	}
+	w.vault = st.Secrets
+	if id := w.afterUnlock; id != "" && st.Secrets.Open {
+		w.run(id, u)
 	}
 	if w.kindOf(st.Focus) == kindTerminal {
 		w.lastTerm = st.Focus

@@ -2,7 +2,6 @@ package main
 
 import (
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/marrasen/gunim"
@@ -104,13 +103,6 @@ func (w *window) setSavedCommands(saved []settings.SavedCommand) {
 	}
 	w.savedCommands = saved
 	w.servers(w.saved)
-}
-
-// runSavedCommand runs saved command at, as the palette lists them.
-func (w *window) runSavedCommand(at string, u *gunim.UI) {
-	if i, err := strconv.Atoi(at); err == nil && i >= 0 && i < len(w.savedCommands) {
-		u.Send(w, RunSavedCommand{Saved: w.savedCommands[i]})
-	}
 }
 
 // termProgramDialog asks what new shells here are told the terminal is

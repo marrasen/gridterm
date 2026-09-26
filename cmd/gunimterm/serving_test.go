@@ -177,6 +177,9 @@ func TestAnotherWindowReadsTheFilesHere(t *testing.T) {
 
 func TestDisconnectingHangsUpOnTheOtherWindow(t *testing.T) {
 	a, win := servedApp(t)
+	// The reason goes down the other window's control channel, which is
+	// open once the first list has come down it.
+	waitFor(t, a, "the list of what is open", func() bool { return len(win.Opens()) == 1 })
 	a.handle(DisconnectClients{})
 	gone := make(chan struct{})
 	go func() { _ = win.Wait(); close(gone) }()

@@ -239,7 +239,9 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 		then(f)
 		return nil
 	}
-	open := func() (vfs.FS, error) { return nil, fmt.Errorf("this window is not connected to %s", placeName(machine)) }
+	open := func() (vfs.FS, error) {
+		return nil, fmt.Errorf("this window is not connected to %s", placeName(machine))
+	}
 	if window, host, far := strings.Cut(machine, farSep); far && a.windows[window] != nil {
 		w := a.windows[window]
 		open = func() (vfs.FS, error) {

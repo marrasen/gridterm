@@ -19,6 +19,9 @@ type ShellChoice struct{ ID, Title string }
 type (
 	// OpenShellNamed opens a terminal with the shell ID, once.
 	OpenShellNamed struct{ ID string }
+	// OpenDefaultShell opens a terminal with this machine's default
+	// shell, and goes back to it for new terminals.
+	OpenDefaultShell struct{}
 	// PickShell keeps the shell ID as the one new terminals start, or
 	// with ID empty, goes back to the default.
 	PickShell struct{ ID string }

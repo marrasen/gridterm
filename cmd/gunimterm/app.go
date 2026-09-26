@@ -770,6 +770,10 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case PickShell:
 		err = a.pickShell(in.ID)
+	case OpenDefaultShell:
+		if err = a.pickShell(""); err == nil {
+			err = a.open("", placement{})
+		}
 	case OpenOn:
 		err = a.open(in.Machine, placement{})
 	case FilesOn:

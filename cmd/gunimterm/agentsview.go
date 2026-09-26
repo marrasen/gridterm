@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
@@ -27,8 +28,10 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		return
 	}
 	shared := map[string]bool{}
+	mays := map[string]settings.AgentMay{}
 	for _, p := range st.Panes {
 		shared[p.Pane] = true
+		mays[p.Pane] = settings.AgentMay(p.May)
 	}
 	host := widget.NewDropdown(agentHostNames()...)
 	host.Label = "Agent"
@@ -46,6 +49,9 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		label := p.Title
 		if p.Machine != "" {
 			label += " on " + p.Machine
+		}
+		if shared[p.ID] {
+			label += mayWords(mays[p.ID])
 		}
 		box := widget.NewCheckbox(label)
 		box.On = shared[p.ID]
@@ -127,4 +133,26 @@ func (w *window) setupDialog(host agentHost, u *gunim.UI) {
 	d.AddAction(copyTitle, func(u *gunim.UI) { u.Send(w, CopyAgentSetup{Host: host.name}) })
 	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
 	w.openDialog(d, u)
+}
+
+// mayWords is what a shared pane lets the agent do beyond reading and
+// typing, as gridterm's share lists it, or nothing.
+func mayWords(may settings.AgentMay) string {
+	var adds []string
+	if may.ReadOnly {
+		adds = append(adds, "read only")
+	}
+	if may.Restart {
+		adds = append(adds, "restart")
+	}
+	if may.OpenMore {
+		adds = append(adds, "open panes")
+	}
+	if may.ReadBack {
+		adds = append(adds, "read above a clear")
+	}
+	if len(adds) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(adds, ", ") + ")"
 }

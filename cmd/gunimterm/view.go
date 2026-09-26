@@ -131,7 +131,11 @@ type window struct {
 	// and revealed is the pane whose row the sidebar last scrolled to.
 	glowing  bool
 	revealed string
-	size     geom.Size
+	// chips are what the menu bar says the window is doing for others.
+	chips *chipBar
+	// permsAfter is a pane whose permissions open once it is shared.
+	permsAfter string
+	size       geom.Size
 	// panes are the panes as last published, and sw the switcher while
 	// it is open.
 	panes []Pane
@@ -221,7 +225,10 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 		}
 	}
 	w.toasts = &widget.Toasts{}
-	w.top = widget.Column(w.bar, w.outer).Grow(w.outer, 1)
+	w.chips = newChipBar()
+	bar := widget.Row(w.bar, w.chips).Grow(w.bar, 1)
+	bar.Cross, bar.Gap = widget.CrossStretch, noGap
+	w.top = widget.Column(bar, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
 		if i < len(w.paletteIDs) {
@@ -363,7 +370,15 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.permissionsDialog(w.share, u)
 		return true
 	case "agent.hand":
+		// Shared, it opens its permissions, as gridterm's does: to open
+		// them again for a pane shared already, or to tick more once the
+		// share is made.
+		if slices.ContainsFunc(w.share.Panes, func(p SharedPane) bool { return p.Pane == w.focused }) {
+			w.permissionsDialog(w.share, u)
+			return true
+		}
 		u.Send(w, SharePane{Pane: w.focused})
+		w.permsAfter = w.focused
 		return true
 	case "agent.take":
 		u.Send(w, UnsharePane{Pane: w.focused})
@@ -1293,6 +1308,12 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
+	if id := w.permsAfter; id != "" && slices.ContainsFunc(st.Share.Panes, func(p SharedPane) bool { return p.Pane == id }) {
+		w.permsAfter = ""
+		if id == w.focused {
+			w.permissionsDialog(st.Share, u)
+		}
+	}
 	w.sidebarShown = st.Sidebar
 	w.termProgram = st.TermProgram
 	w.secretsExist = st.Secrets.Exists
@@ -1459,6 +1480,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.outer.SetShare(width, widget.Settle.Get(th))
 	}
 	w.status.set(st.Status, u)
+	w.showChips(st)
 	for _, n := range st.Notices {
 		if n.ID <= w.shown {
 			continue

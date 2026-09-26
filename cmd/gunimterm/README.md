@@ -76,10 +76,6 @@ Help, themes and shortcuts:
 
 Agent sharing:
 
-- Share Pane with Agent opens the permissions, and opens them again for
-  a pane already shared.
-- The share dialog lists the shared panes, each with its permissions.
-- An "Agent Share" chip in the menu bar while sharing.
 - An unknown path to the program: a warning on copying the prompt, and
   the skill refused. The skill's blank line after its front matter;
   a relative `CLAUDE_CONFIG_DIR` taken from home.

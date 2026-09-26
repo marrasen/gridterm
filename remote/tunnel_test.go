@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -647,5 +649,14 @@ func TestATunnelClosedOnPurposeSaysNothing(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 	if n := stopped.Load(); n != 0 {
 		t.Fatalf("closing the tunnel was reported %d times as it stopping on its own", n)
+	}
+}
+
+// A client that hangs up while the far end is still sending leaves a
+// broken pipe behind, which is a stream ending and not trouble.
+func TestABrokenPipeIsAStreamEnding(t *testing.T) {
+	err := fmt.Errorf("write: %w", &net.OpError{Op: "write", Net: "tcp", Err: os.NewSyscallError("write", syscall.EPIPE)})
+	if !ended(err) {
+		t.Fatalf("%v is taken for trouble", err)
 	}
 }

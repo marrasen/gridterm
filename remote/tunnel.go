@@ -494,9 +494,14 @@ func (f *Forwarder) carry(near net.Conn) {
 
 // ended reports whether an error is one of the ordinary ways a stream
 // finishes: one end closed, or the tunnel cut it.
+//
+// A broken pipe is one of them: the program at one end closed its
+// socket while the other end was still sending, which is how a client
+// that has read what it wanted hangs up.
 func ended(err error) bool {
 	return errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) ||
-		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED)
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.EPIPE)
 }
 
 // wrap counts what is written to one side of a stream.

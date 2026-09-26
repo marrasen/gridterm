@@ -141,7 +141,17 @@ func TestATunnelCarriesBytesAndItsRowSaysSo(t *testing.T) {
 		return strings.HasPrefix(a.st.Tunnels[0].Note, "1 stream · ")
 	})
 	_ = c.Close()
-	waitFor(t, a, "the row to go idle", func() bool { return strings.HasPrefix(a.st.Tunnels[0].Note, "idle · ") })
+	deadline := time.Now().Add(5 * time.Second)
+	for !strings.HasPrefix(a.st.Tunnels[0].Note, "idle · ") {
+		if time.Now().After(deadline) {
+			t.Fatalf("five seconds after the stream closed, the row says %q and the tunnel counts %d streams; notices %+v", a.st.Tunnels[0].Note, a.tunnels[row.ID].f.Streams(), a.st.Notices)
+		}
+		select {
+		case f := <-a.events:
+			f()
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 
 	addr := a.tunnels[row.ID].f.Addr()
 	a.handle(CloseTunnel{ID: row.ID})
@@ -223,7 +233,7 @@ func TestATunnelsPaneIsLitOnTheTunnelsRow(t *testing.T) {
 	panes := []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}, {ID: "p2", Title: "Tunnel :80 → x:80", Machine: "srv", Kind: kindTunnel, Tunnel: "t1"}}
 	tunnels := []Tunnel{{ID: "t1", Machine: "srv", Label: ":80 → x:80", Note: "idle", Live: true, Pane: "p2"}}
 	var keys []string
-	for _, r := range sidebarRows(panes, tunnels, Share{}) {
+	for _, r := range sidebarRows(panes, tunnels, Share{}, nil) {
 		keys = append(keys, r.key+"="+r.pane)
 	}
 	want := "machine:=,machine:srv=,p1=p1,tunnel:t1=p2"

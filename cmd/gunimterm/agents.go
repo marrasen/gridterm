@@ -3,7 +3,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -848,10 +850,16 @@ const (
 // agentHost is an agent program: cmd adds an MCP server from the
 // command line, and configAt is where one without a command keeps its
 // servers.
-type agentHost struct{ name, called, cmd, configAt string }
+type agentHost struct {
+	name, called, cmd, configAt string
+	// skillIn is where under home it reads skills from, and skillEnv
+	// the setting that moves that.
+	skillIn  []string
+	skillEnv string
+}
 
 var agentHosts = []agentHost{
-	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude"},
+	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude", skillIn: []string{".claude", "skills", "gridterm"}, skillEnv: "CLAUDE_CONFIG_DIR"},
 	{name: hostCodex, called: hostCodex, cmd: "codex"},
 	{name: hostCursor, called: hostCursor, configAt: "~/.cursor/mcp.json"},
 	{name: hostOther, called: "the host"},
@@ -941,4 +949,121 @@ every other tool takes a pane's name.
 
 The server's own instructions say how the tools work, and say this again.
 `, host.setupForAgent(exe), code, mcp.Short)
+}
+
+// WriteSkill writes the skill for an agent program, which tells it how
+// to work in the panes; Over writes over one edited since.
+type WriteSkill struct {
+	Host string
+	Over bool
+}
+
+// skillFile is what a skill's file is called.
+const skillFile = "SKILL.md"
+
+// skillFor is the skill for an agent program.
+func skillFor(host agentHost, exe string) string {
+	return fmt.Sprintf(`---
+name: gridterm
+description: Work in the terminal panes the user shared with you in gridterm, through its MCP server
+---
+# Working in gridterm panes
+
+gridterm is a terminal on the user's machine. The user puts panes into a share -- on whatever
+machines, as whatever user -- and gives you one code for the whole share. You work in those panes
+through gridterm's MCP server, and the user watches everything you do.
+
+## Reaching the server
+
+The server runs on the user's machine, on standard input and output (stdio), because the port
+inside a session code is on the loopback address. If you do not have gridterm's tools, it has not
+been added here yet.
+
+%s
+
+## Getting the panes
+
+The user starts a share in gridterm, adds panes to it, and gets one session code for the whole
+share. Ask the user for the code if you have not been given one. Call use_session_code with it
+before anything else. The answer lists the panes, and every other tool takes a pane's name.
+
+The share is not a fixed set. The user adds panes and takes them out while you work, so call
+list_panes when you want to know what you have now.
+
+## Working in a pane
+
+%s
+
+## Rules
+
+%s
+`, host.setupForAgent(exe), mcp.Workflow, mcp.Rules)
+}
+
+// skillPathFor is where an agent program's skill goes: where it reads
+// skills from, or beside the settings for one that has no such place.
+func skillPathFor(host agentHost) (string, error) {
+	if len(host.skillIn) > 0 {
+		if dir := os.Getenv(host.skillEnv); host.skillEnv != "" && dir != "" {
+			dir, err := expandHome(dir)
+			if err != nil {
+				return "", err
+			}
+			return filepath.Join(append(append([]string{dir}, host.skillIn[1:]...), skillFile)...), nil
+		}
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(append(append([]string{home}, host.skillIn...), skillFile)...), nil
+	}
+	dir, err := settings.Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "skills", "gridterm", skillFile), nil
+}
+
+// writeSkill writes an agent program's skill, and asks before writing
+// over one edited since.
+func (a *app) writeSkill(in WriteSkill) error {
+	host := hostNamed(in.Host)
+	path, err := skillPathFor(host)
+	if err != nil {
+		return err
+	}
+	body := skillFor(host, exePath())
+	if !in.Over {
+		was, err := os.ReadFile(path)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+		case err != nil:
+			return err
+		case string(was) != body:
+			go func() {
+				ans, err := a.ask(a.ctx, Ask{Title: "Replace the skill?", Text: path + " has been edited, and replacing it discards the edits.", Yes: "Replace", Danger: true})
+				if err == nil && ans.Yes {
+					in.Over = true
+					a.events <- func() {
+						if err := a.writeSkill(in); err != nil {
+							a.notify("Couldn't write the skill", err.Error(), "")
+						}
+					}
+				}
+			}()
+			return nil
+		}
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		return err
+	}
+	how := "Restart " + host.name + " to load it."
+	if len(host.skillIn) == 0 {
+		how = "Copy it to where " + host.called + " reads skills from."
+	}
+	a.notify("Skill written", path+". "+how, "")
+	return nil
 }

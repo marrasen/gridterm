@@ -698,6 +698,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.setAgentMay(in)
 	case CopyAgentPrompt:
 		a.copyAgentPrompt(in.Host)
+	case WriteSkill:
+		err = a.writeSkill(in)
 	case CopyAgentSetup:
 		a.copyAgentSetup(in.Host)
 	case StartServing:

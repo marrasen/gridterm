@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -201,4 +203,28 @@ func TestAnAgentOpensAPaneBesideOneItWasGiven(t *testing.T) {
 	if len(a.st.Share.Panes) != 0 {
 		t.Fatalf("taken back, the share still holds %+v", a.st.Share.Panes)
 	}
+}
+
+func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
+	a, _ := agentApp(t)
+	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	a.handle(WriteSkill{Host: hostClaudeCode})
+	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "gridterm", "SKILL.md")
+	body, err := os.ReadFile(path)
+	if err != nil || !strings.Contains(string(body), "use_session_code") {
+		t.Fatalf("the skill reads %q, %v", body, err)
+	}
+	if err := os.WriteFile(path, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(WriteSkill{Host: hostClaudeCode})
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	if q := a.st.Asks[0]; q.Title != "Replace the skill?" || !q.Danger {
+		t.Fatalf("the question is %+v", q)
+	}
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
+	waitFor(t, a, "the skill replaced", func() bool {
+		body, _ := os.ReadFile(path)
+		return strings.Contains(string(body), "use_session_code")
+	})
 }

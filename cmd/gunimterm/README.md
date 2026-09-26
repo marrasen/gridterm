@@ -65,10 +65,5 @@ Files:
   to a file, as the scrollback's Save As does.
 - Saved Copies (`files.copies`).
 
-Agents:
-
-- Writing the skill file for an agent program, and the setup dialog
-  that shows the lines. gunimterm copies the prompt and the setup line.
-
 Checks on Windows, waiting until the Windows runs resume: the screen
 reader recheck (#10) and this spike on Windows (#11).

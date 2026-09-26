@@ -63,7 +63,8 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 	d.Body = form
 	d.SetButtons("Done", "")
 	d.AddAction("Copy Prompt", func(u *gunim.UI) { u.Send(w, CopyAgentPrompt{Host: hostName()}) })
-	d.AddAction("Copy Setup", func(u *gunim.UI) { u.Send(w, CopyAgentSetup{Host: hostName()}) })
+	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(hostNamed(hostName()), u) })
+	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, WriteSkill{Host: hostName()}) })
 	d.AddButton("Stop Sharing", func() gunim.Intent { return StopSharing{} })
 	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
 	w.openDialog(d, u)
@@ -102,6 +103,28 @@ func (w *window) permissionsDialog(st Share, u *gunim.UI) {
 	d.Body = form
 	d.SetButtons("Done", "")
 	d.AddButton("Take Back", func() gunim.Intent { return UnsharePane{Pane: id} })
+	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// setupDialog shows how to add gridterm's MCP server to an agent
+// program, and copies it.
+func (w *window) setupDialog(host agentHost, u *gunim.UI) {
+	what := "Run this, as one command line, then start " + host.called + " again. It only writes the config."
+	copyTitle := "Copy Command"
+	if host.cmd == "" {
+		where := host.configAt
+		if where == "" {
+			where = "its MCP config"
+		}
+		what = "Put this in " + where + ", beside any servers already there. Then start " + host.called + " again."
+		copyTitle = "Copy Config"
+	}
+	line := host.setupToCopy(exePath())
+	d := widget.NewDialog("Set Up " + host.called)
+	d.Body = widget.NewForm().Add("", widget.NewLabel(what)).Add("", widget.NewLabel(line))
+	d.SetButtons("Close", "")
+	d.AddAction(copyTitle, func(u *gunim.UI) { u.Send(w, CopyAgentSetup{Host: host.name}) })
 	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
 	w.openDialog(d, u)
 }

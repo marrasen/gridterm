@@ -31,6 +31,10 @@ type browser struct {
 	col   *widget.Flex
 	st    Browser
 	shown int
+	// at is the folder the rows show, and scrolled how far each folder
+	// left was scrolled, to put it back going back to it.
+	at       string
+	scrolled map[string]float32
 	// byName finds an entry by its row's key; sortBy and descending are
 	// the order the user asked for.
 	byName     map[widget.Key]vfs.Entry
@@ -305,18 +309,31 @@ func (b *browser) show(st Browser, u *gunim.UI) {
 	}
 	moved = moved || b.shown == 0
 	b.shown = st.Seq
+	if moved && b.at != "" {
+		if b.scrolled == nil {
+			b.scrolled = map[string]float32{}
+		}
+		b.scrolled[b.at] = b.table.Offset()
+	}
+	b.at = st.Path
 	b.list(u)
 	// A new folder puts the cursor at the top, or on the name it came
 	// from, and shows its rows in place rather than gliding them in
 	// from where the last folder was scrolled to; the same folder
 	// listed again keeps the cursor where it was.
+	// A folder gone back to shows as it was left, scrolled as far.
+	land := widget.Key(st.Land)
+	if st.Land == "" {
+		land = up
+	}
+	off, been := b.scrolled[st.Path]
 	switch {
-	case st.Land != "" && moved:
-		b.table.JumpTo(widget.Key(st.Land), u)
-	case st.Land != "":
-		b.table.SetCursor(widget.Key(st.Land), u)
+	case moved && been:
+		b.table.ShowAt(land, off, u)
 	case moved:
-		b.table.JumpTo(up, u)
+		b.table.JumpTo(land, u)
+	case st.Land != "":
+		b.table.SetCursor(land, u)
 	}
 }
 

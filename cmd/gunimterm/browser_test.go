@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/fs"
 	"testing"
 	"time"
@@ -184,5 +185,44 @@ func TestAWSLDistributionsFilesAreOfferedHere(t *testing.T) {
 	}
 	if in := nextIntent(t); in != (FilesOn{Machine: "", Path: root}) {
 		t.Fatalf("it sent %#v", in)
+	}
+}
+
+// Going back to a folder shows it as it was left: scrolled as far, with
+// the cursor on the folder come back from.
+func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
+	win, _, publish := windowStage(t)
+	var many []vfs.Entry
+	for i := range 300 {
+		many = append(many, vfs.Entry{Name: fmt.Sprintf("dir%03d", i), Mode: fs.ModeDir})
+	}
+	st := State{Panes: []Pane{{ID: "p1", Title: "/a", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]Browser{"p1": {Path: "/a", Entries: many, Seq: 1}}}
+	publish(st)
+	b := win.browsers["p1"]
+	b.table.SetCursor("dir250", lastUI)
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	left := b.table.Offset()
+	if left <= 0 {
+		t.Fatal("the long folder did not scroll")
+	}
+	st.Browsers = map[string]Browser{"p1": {Path: "/a/dir250", Entries: []vfs.Entry{{Name: "one"}}, Seq: 2}}
+	publish(st)
+	if off := b.table.Offset(); off != 0 {
+		t.Fatalf("in the short folder, the view is at %v", off)
+	}
+	// A moment there, as anyone takes.
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	st.Browsers = map[string]Browser{"p1": {Path: "/a", Entries: many, Land: "dir250", Seq: 3}}
+	publish(st)
+	if k, _ := b.table.Cursor(); k != "dir250" {
+		t.Fatalf("back, the cursor is on %q", k)
+	}
+	if off := b.table.Offset(); off < left-1 || off > left+1 {
+		t.Fatalf("back, the view is at %v, left at %v", off, left)
 	}
 }

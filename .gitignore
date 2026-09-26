@@ -8,3 +8,5 @@
 /go.work
 /go.work.sum
 /gunimterm
+/cmd/gunimterm/gunimterm
+/cmd/gunimterm/gunimterm.exe

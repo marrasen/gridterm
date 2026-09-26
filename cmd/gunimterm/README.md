@@ -29,6 +29,32 @@ To work on gunim at the same time, clone it next to gridterm and run
 - `GUNIMTERM_PROFILE=file` writes a CPU profile until the window closes.
 - Ctrl+Shift+V pastes. The wheel scrolls back through history.
 
+## The echo
+
+The window sends rings out past its edges, onto the desktop, when
+something happens that you may be looking away from:
+
+- Red: a connection fails, or drops by itself; a copy or other file job
+  stops with an error; a tunnel dies; a served window loses its client;
+  a shell or command fails to start; a pane out of sight ends with a
+  nonzero exit.
+- Green: a connection is made; a file job or upload finishes; a pane out
+  of sight ends with exit 0.
+- Amber: the bell rings in a pane out of sight, or while another program
+  has the keyboard.
+- Grey, faint and repeating: a connection is being made.
+
+A theme sets the colours and the strength in its `Echo` block, in the
+themes file. Each colour left out comes from the theme's palette: bright
+red, bright green, bright yellow, and the text colour dimmed for the
+waiting ring. `Strength` scales every ring: `0` turns the echo off, `2`
+draws it twice as strong.
+
+    "Echo": {"Problem": "#ff5f5f", "Wait": "#808890", "Strength": 0.6}
+
+The echo shows on a desktop that blends windows, and waits while the
+window is maximized or full screen.
+
 ## What it showed, on Linux (2026-09-25)
 
 Measured on the development machine: X11 over xrdp, software OpenGL

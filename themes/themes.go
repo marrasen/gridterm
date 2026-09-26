@@ -48,6 +48,27 @@ type Theme struct {
 	// A name this machine has no font for is not an error: the window
 	// keeps the typeface it was already drawn in.
 	Font string `json:"font,omitempty"`
+
+	// Echo is how the rings gunimterm sends past its window's edges look
+	// under this theme. Nil takes them from the palette.
+	Echo *Echo `json:",omitempty"`
+}
+
+// Echo is the look of the rings gunimterm sends out past its window's
+// edges: a colour for each tone, and how strong they are. An empty
+// colour is taken from the palette: Problem from bright red, Done from
+// bright green, Call from bright yellow, and Wait from the text, dimmed.
+type Echo struct {
+	// Problem is for a failure, such as a connection dropped. Done is
+	// for work finished, such as a copy. Call is for the bell rung in a
+	// pane out of sight. Wait is the faint ring while connecting.
+	Problem string `json:",omitempty"`
+	Done    string `json:",omitempty"`
+	Call    string `json:",omitempty"`
+	Wait    string `json:",omitempty"`
+	// Strength scales every ring: 0 turns the echo off, 1 draws it as
+	// it comes, and 2 twice as strong. Unset is 1.
+	Strength *float64 `json:",omitempty"`
 }
 
 // stored is the shape of the file.

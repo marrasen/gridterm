@@ -270,8 +270,10 @@ func (a *app) showJobs() bool {
 		switch {
 		case jobs.Trouble(p.Err) != nil:
 			a.notify(r.title+" stopped", jobs.Outcome(p), "")
+			a.problem()
 		case p.Err == nil:
 			a.notify(pastTense(r.title), row.Detail, "")
+			a.done()
 		}
 		for _, id := range r.panes {
 			if b, ok := a.st.Browsers[id]; ok {

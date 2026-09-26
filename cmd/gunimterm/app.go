@@ -122,8 +122,11 @@ type State struct {
 	ShellSetup     bool
 	TermProgram    string
 	Bells          uint64
-	SavedTunnels   []settings.SavedTunnel
-	Status         string
+	// Pings counts what the window sends an echo out for, past its
+	// edges.
+	Pings        Pings
+	SavedTunnels []settings.SavedTunnel
+	Status       string
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
@@ -131,6 +134,20 @@ type State struct {
 	// screens once a frame however often they write.
 	Output uint64
 }
+
+// Pings counts the echoes the window sends out past its edges, one
+// count for each tone: Problems for failures, such as a connection
+// dropped; Dones for work finished, such as a copy; and Calls for bells
+// rung in panes out of sight. The window sends one each time a count
+// goes up.
+type Pings struct {
+	Problems, Dones, Calls uint64
+}
+
+// problem and done have the window send an echo out for a failure, or
+// for work finished.
+func (a *app) problem() { a.st.Pings.Problems++ }
+func (a *app) done()    { a.st.Pings.Dones++ }
 
 // Notice is something to tell the user once, in a toast. Clipboard,
 // when set, goes on the clipboard as it shows.
@@ -1097,6 +1114,7 @@ func (a *app) hooks(id string) shellHooks {
 				a.st.Bells++
 				if a.st.Focus != id {
 					a.setPane(id, func(p *Pane) { p.Rang = true })
+					a.st.Pings.Calls++
 				}
 			}
 		},
@@ -1130,6 +1148,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 			}
 			if err := a.openThen(machine, at, then); err != nil {
 				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				a.problem()
 			}
 		})
 	}
@@ -1163,6 +1182,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		a.events <- func() {
 			if err != nil {
 				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				a.problem()
 				then("", err)
 				return
 			}

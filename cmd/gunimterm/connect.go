@@ -144,6 +144,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to "+name, err.Error(), "")
+					a.problem()
 				}
 				if then != nil {
 					then(err)
@@ -155,6 +156,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			delete(a.dropped, name)
 			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
+			a.done()
 			go func() {
 				err := conn.Wait()
 				a.events <- func() {
@@ -178,6 +180,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						// Gone by itself: its row stays, greyed, until it
 						// is cleared, as in gridterm.
 						a.dropped[name] = true
+						a.problem()
 					}
 					a.notify("Disconnected from "+name, "", "")
 				}
@@ -208,6 +211,7 @@ func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)
 			again := func(error) {
 				if err := a.connectThen(in, then); err != nil {
 					a.notify("Couldn't connect to "+name, err.Error(), "")
+					a.problem()
 				}
 			}
 			if !a.dialing[name] {

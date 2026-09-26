@@ -212,6 +212,7 @@ func (a *app) confirmTunnel(in OpenTunnel) {
 	a.events <- func() {
 		if err := a.openTunnel(in); err != nil {
 			a.notify("Couldn't open the tunnel", err.Error(), "")
+			a.problem()
 		}
 	}
 }
@@ -270,6 +271,7 @@ func (a *app) tunnelFailed(id string, err error) {
 	if !open.told {
 		open.told = true
 		a.notify("Trouble on the tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label, err.Error(), "")
+		a.problem()
 	}
 }
 
@@ -289,6 +291,7 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 	a.setTunnel(id, func(t *Tunnel) { t.Live, t.Watching, t.Note = false, false, "stopped" })
 	if err != nil {
 		a.notify("Tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label+" stopped", err.Error(), "")
+		a.problem()
 	}
 	return closeErr
 }

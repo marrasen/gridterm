@@ -90,6 +90,11 @@ type window struct {
 	// secretsExist says there are secrets, to keep a new key's passphrase in.
 	secretsExist bool
 	bells        uint64
+	// echo sends rings out past the window's edges, pings the counts
+	// last sent for, and away says another program has the keyboard.
+	echo         widget.Echo
+	pings        Pings
+	away         bool
 	titles       bool
 	captions     map[string]*captioned
 	sharing      bool
@@ -1276,7 +1281,10 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	// Ctrl lights the link under the pointer in whichever pane it is
 	// over, whatever has the keyboard, as in gridterm.
 	switch k := e.(type) {
+	case input.WindowFocusGained:
+		w.away = false
 	case input.WindowFocusLost:
+		w.away = true
 		// Another program took the keyboard, as a screenshot tool does,
 		// and no release of Ctrl will come: the walk ends where it is,
 		// and no link stays lit.
@@ -1412,6 +1420,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		w.shellChoices, w.chosenShell = st.Shells, st.ChosenShell
 		w.servers(w.saved)
 	}
+	w.echoFor(st, u)
 	if st.Bells > w.bells {
 		w.bells = st.Bells
 		u.RequestAttention()
@@ -2599,4 +2608,23 @@ func (w *window) madeNode(id string) gunim.Node {
 		}
 	}
 	return n
+}
+
+// echoFor sends an echo out past the window's edges for each count in
+// st.Pings that went up: a failure, work finished, or a bell out of
+// sight, which is any bell while another program has the keyboard. A
+// faint one goes out again and again while a connection is being made.
+func (w *window) echoFor(st State, u *gunim.UI) {
+	was := w.pings
+	w.pings = st.Pings
+	if st.Pings.Problems > was.Problems {
+		w.echo.Ping(u, widget.EchoProblem)
+	}
+	if st.Pings.Dones > was.Dones {
+		w.echo.Ping(u, widget.EchoDone)
+	}
+	if st.Pings.Calls > was.Calls || st.Bells > w.bells && w.away {
+		w.echo.Ping(u, widget.EchoCall)
+	}
+	w.echo.Wait(u, widget.EchoWait, len(st.Dialing) > 0)
 }

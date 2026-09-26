@@ -91,6 +91,7 @@ func (a *app) startCommand(machine string, cmd command, then func(session.Sessio
 		a.events <- func() {
 			if err != nil {
 				a.notify("Couldn't run "+strings.Join(cmd.argv, " ")+" on "+machine, err.Error(), "")
+				a.problem()
 				return
 			}
 			then(sess)

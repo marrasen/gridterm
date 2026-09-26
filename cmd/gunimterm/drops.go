@@ -161,6 +161,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 			a.events <- func() {
 				if err != nil {
 					a.notify("Couldn't copy the files to "+placeName(machine), err.Error(), "")
+					a.problem()
 					return
 				}
 				for _, path := range paths {
@@ -181,6 +182,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 								// its way; the notice's Copy is the way
 								// left to the path.
 								a.notify("File copied", at+" on "+placeName(machine)+".", at)
+								a.done()
 							}
 						}
 					}()

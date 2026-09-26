@@ -58,6 +58,14 @@ func (a *app) paneEnded(id string) {
 	if t.Asking() == question {
 		return
 	}
+	// Ended out of sight, with its status in: an echo says how it went.
+	if known && a.st.Focus != id {
+		if status == 0 {
+			a.done()
+		} else {
+			a.problem()
+		}
+	}
 	// The choices are made on the window's goroutine, where the pane
 	// takes its keys, and carried out on the program's.
 	post := func(f func()) { go func() { a.events <- f }() }

@@ -158,6 +158,7 @@ func (a *app) startServing(in StartServing) error {
 			post(func() {
 				a.serving.server, a.serving.clients = nil, nil
 				a.notify("This window is no longer served", err.Error(), "")
+				a.problem()
 				a.showServing()
 			})
 		},
@@ -236,6 +237,7 @@ func (a *app) clientWent(c *serve.Client, why error) {
 	a.serving.clients = slices.DeleteFunc(a.serving.clients, func(have *serve.Client) bool { return have == c })
 	if why != nil && !serve.Ended(why) {
 		a.notify("Connection to "+c.Name+" lost", why.Error(), "")
+		a.problem()
 	}
 	a.showServing()
 }

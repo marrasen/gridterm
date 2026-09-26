@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image/color"
 	"math"
+	"strings"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/theme"
@@ -129,6 +130,46 @@ func mix(a, b color.NRGBA, pct int) color.NRGBA {
 
 func alpha(c color.NRGBA, a uint8) color.NRGBA { c.A = a; return c }
 
+// echoOf is the echo's look under t: the colours its block names, the
+// rest from the palette, and its strength.
+func echoOf(t themes.Theme, pal vt.Palette) ([]theme.Entry, error) {
+	var e themes.Echo
+	if t.Echo != nil {
+		e = *t.Echo
+	}
+	fg, bg := nrgba(pal.FG), nrgba(pal.BG)
+	tones := []struct {
+		name  string
+		raw   string
+		def   color.NRGBA
+		token theme.Token[color.NRGBA]
+	}{
+		{"Problem", e.Problem, nrgba(pal.ANSI[9]), widget.EchoProblem},
+		{"Done", e.Done, nrgba(pal.ANSI[10]), widget.EchoDone},
+		{"Call", e.Call, nrgba(pal.ANSI[11]), widget.EchoCall},
+		{"Wait", e.Wait, mix(fg, bg, 35), widget.EchoWait},
+	}
+	out := make([]theme.Entry, 0, len(tones)+1)
+	for _, tone := range tones {
+		c := tone.def
+		if strings.TrimSpace(tone.raw) != "" {
+			read, err := themes.ParseColour(tone.raw)
+			if err != nil {
+				return nil, fmt.Errorf("%s: Echo: %s: %w", t.Name, tone.name, err)
+			}
+			c = nrgba(read)
+		}
+		out = append(out, theme.Set(tone.token, c))
+	}
+	if e.Strength != nil {
+		if *e.Strength < 0 {
+			return nil, fmt.Errorf("%s: Echo: Strength is %v, and it runs from 0, which turns the echo off, upwards", t.Name, *e.Strength)
+		}
+		out = append(out, theme.Set(widget.EchoStrength, float32(*e.Strength)))
+	}
+	return out, nil
+}
+
 // themeOf turns a gridterm theme into gunim's.
 func themeOf(t themes.Theme) (themed, error) {
 	pal, err := t.Palette()
@@ -156,7 +197,11 @@ func themeOf(t themes.Theme) (themed, error) {
 	surface := mix(frameBG, frameFG, 7)
 	rule := mix(frameBG, frameFG, 20)
 	dim := mix(frameFG, frameBG, 45)
-	th := theme.Make(t.Name,
+	echo, err := echoOf(t, pal)
+	if err != nil {
+		return themed{}, err
+	}
+	th := theme.Make(t.Name, append(echo,
 		theme.Set(widget.Background, bg),
 		theme.Set(widget.Ink, frameFG),
 		theme.Set(widget.Accent, accent),
@@ -191,7 +236,7 @@ func themeOf(t themes.Theme) (themed, error) {
 		theme.Set(rowHover, alpha(sideFG, 0x14)),
 		theme.Set(faint, mix(sideFG, sideBG, 45)),
 		theme.Set(termBackground, bg),
-	)
+	)...)
 	// On stage, the terminal's own colours, and an accent that reads on
 	// its ground.
 	strong := standout(bg, accent, nrgba(pal.ANSI[14]), nrgba(pal.ANSI[11]))

@@ -120,10 +120,12 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.notify("Couldn't connect to the window at "+addr, err.Error(), "")
+					a.problem()
 				}
 				return
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
+			a.done()
 			a.holdWindow(name, addr, in.KeyFile, win)
 			a.dialed(logPane, name, terminal)
 		}
@@ -213,6 +215,7 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 			text += "\n\n" + serve.Plain(why.Error())
 		}
 		logLine(a.accounts[name], "", "connection lost")
+		a.problem()
 		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, Name: name}
 		a.askThen(a.ctx, Ask{Title: "Connection lost", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
 			if !ans.Yes {
@@ -220,6 +223,7 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 			}
 			if err := a.reachWindow(again, false); err != nil {
 				a.notify("Couldn't reconnect to "+name, err.Error(), "")
+				a.problem()
 			}
 		})
 		a.showWindows()

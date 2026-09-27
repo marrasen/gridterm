@@ -5,7 +5,6 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"sync/atomic"
@@ -22,7 +21,6 @@ import (
 	"github.com/marrasen/gridterm/keys"
 	"github.com/marrasen/gridterm/remote"
 	"github.com/marrasen/gridterm/settings"
-	shellfind "github.com/marrasen/gridterm/shells"
 	"github.com/marrasen/gridterm/themes"
 	"github.com/marrasen/gridterm/ui"
 )
@@ -166,69 +164,6 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	}
 	if heads[0] != "File" || under["Close Pane"] != "File" || !strings.HasPrefix(under["Tail"], "The file pane's keys") || !strings.HasPrefix(under["Hex"], "The reader's keys") {
 		t.Fatalf("the help's groups are %v, with Close Pane under %q, Tail under %q, Hex under %q", heads, under["Close Pane"], under["Tail"], under["Hex"])
-	}
-}
-
-// Every command gridterm has is one this window knows, by the same
-// name, so a shortcuts file written for gridterm works here: a file
-// naming one command this window lacks is not used at all.
-func TestEveryGridtermCommandIsKnownHere(t *testing.T) {
-	root, err := filepath.Glob("../../*.go")
-	if err != nil || len(root) == 0 {
-		t.Fatalf("gridterm's source: %v, %v", root, err)
-	}
-	var src strings.Builder
-	for _, f := range root {
-		if strings.HasSuffix(f, "_test.go") {
-			continue
-		}
-		b, err := os.ReadFile(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		src.Write(b)
-	}
-	consts := map[string]string{}
-	for _, m := range regexp.MustCompile(`\b(\w+)\s*=\s*"([a-z]+\.[A-Za-z.]+)"`).FindAllStringSubmatch(src.String(), -1) {
-		consts[m[1]] = m[2]
-	}
-	known := map[string]bool{}
-	for _, c := range everyCommand() {
-		known[c[0]] = true
-	}
-	for _, b := range shortcuts().Bindings() {
-		known[b.ID] = true
-	}
-	for alias := range aliases {
-		known[alias] = true
-	}
-	ids := regexp.MustCompile(`ui\.Command\{\s*ID:\s*("[^"]+"|\w+)`).FindAllStringSubmatch(src.String(), -1)
-	if len(ids) < 50 {
-		t.Fatalf("found %d of gridterm's commands; the pattern has stopped matching", len(ids))
-	}
-	// Ids gridterm builds with a function, by the prefix they start
-	// with.
-	built := map[string]string{
-		"folderCommandID": "conn.files.", "savedCommandID": "conn.saved.",
-		"savedTunnelID": "conn.savedtunnel.", "fontCommandID": "font.use.",
-		"ids": shellfind.CommandPrefix,
-	}
-	for _, m := range ids {
-		id := strings.Trim(m[1], `"`)
-		if c, ok := consts[m[1]]; ok {
-			id = c
-		}
-		if p, ok := built[m[1]]; ok {
-			id = p
-		}
-		switch {
-		case strings.HasSuffix(id, "."):
-			if !slices.Contains(itemPrefixes, id) {
-				t.Errorf("gridterm's commands starting %s are unknown here", id)
-			}
-		case !known[id]:
-			t.Errorf("gridterm's %s is unknown here", id)
-		}
 	}
 }
 

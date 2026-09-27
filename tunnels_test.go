@@ -13,9 +13,9 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 )
 
 // passwordOnly answers the test server's password, and trusts it.

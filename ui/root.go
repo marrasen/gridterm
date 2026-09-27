@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // Root holds the widget tree and decides who sees a key.

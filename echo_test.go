@@ -9,7 +9,7 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/themes"
+	"github.com/marrasen/kakel/themes"
 )
 
 // A theme with no Echo block takes the echo's colours from its palette,

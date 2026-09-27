@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// CarryOwn makes the directory beside the copy of gridterm at exe and
+// CarryOwn makes the directory beside the copy of kakel at exe and
 // copies into it the files named from dir, then the file at key, so the
 // copy starts with what the user has rather than with nothing.
 //

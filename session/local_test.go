@@ -310,8 +310,8 @@ func TestWaitIsIdempotent(t *testing.T) {
 
 func TestEnvIsPassedThrough(t *testing.T) {
 	s, err := StartLocal(LocalConfig{
-		Command: []string{"/bin/sh", "-c", "echo v=$GRIDTERM_TEST"},
-		Env:     []string{"GRIDTERM_TEST=marker"},
+		Command: []string{"/bin/sh", "-c", "echo v=$KAKEL_TEST"},
+		Env:     []string{"KAKEL_TEST=marker"},
 		Cols:    80, Rows: 24,
 	})
 	if err != nil {

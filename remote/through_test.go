@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // One machine reached through another, with no local port opened for it.

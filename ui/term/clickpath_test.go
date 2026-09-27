@@ -3,7 +3,7 @@ package term
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // Ctrl and a click on a path a program printed opens it.

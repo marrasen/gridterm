@@ -3,7 +3,7 @@ package vt
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // screenOf is the escape sequences that would draw a terminal's live

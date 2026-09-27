@@ -16,8 +16,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/serve"
 )
 
 // A handshake through another machine can be given up on.
@@ -477,33 +477,33 @@ func TestLockingTheKeysForgetsTheAgentTrouble(t *testing.T) {
 	}
 }
 
-// A gridterm window refuses an ordinary SSH session, and the failure
+// A kakel window refuses an ordinary SSH session, and the failure
 // says what to do about it.
 //
 // The refusal that crosses the wire says only that a channel type is
 // unknown. A user who saved a window as a machine got that and nothing
 // else, with no hint that one field in the dialog was wrong.
-func TestASessionOnAGridtermWindowSaysWhatItIs(t *testing.T) {
+func TestASessionOnAKakelWindowSaysWhatItIs(t *testing.T) {
 	// The refusal a serving window sends, built the way x/crypto hands
 	// one to the client.
 	refusal := error(&ssh.OpenChannelError{
 		Reason:  ssh.UnknownChannelType,
-		Message: "this is gridterm, and it serves " + serve.SessionChannel,
+		Message: "this is kakel, and it serves " + serve.SessionChannel,
 	})
-	if !isGridterm(refusal) {
-		t.Fatal("it does not recognise a gridterm window")
+	if !isKakelWindow(refusal) {
+		t.Fatal("it does not recognise a kakel window")
 	}
 	prohibited := &ssh.OpenChannelError{
 		Reason: ssh.Prohibited, Message: "administratively prohibited",
 	}
-	if isGridterm(prohibited) {
-		t.Error("it calls an ordinary refusal a gridterm window")
+	if isKakelWindow(prohibited) {
+		t.Error("it calls an ordinary refusal a kakel window")
 	}
-	if isGridterm(errors.New("ssh: rejected: administratively prohibited")) {
-		t.Error("it calls a failure that is not a refusal a gridterm window")
+	if isKakelWindow(errors.New("ssh: rejected: administratively prohibited")) {
+		t.Error("it calls a failure that is not a refusal a kakel window")
 	}
-	if isGridterm(nil) {
-		t.Error("it calls no failure a gridterm window")
+	if isKakelWindow(nil) {
+		t.Error("it calls no failure a kakel window")
 	}
 
 	// And the message reads once. The refusal arrives already wrapped in

@@ -2,6 +2,6 @@
 // pictures as well where the system can carry them, which is Linux
 // and Windows.
 //
-// It is shared by gridterm's front ends, so both hand pictures to the
-// programs in their panes the same way.
+// It hands pictures to the programs in kakel's panes, and takes them
+// from the clipboard to paste.
 package clip

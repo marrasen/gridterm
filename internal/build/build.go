@@ -7,16 +7,16 @@ import (
 	"strings"
 )
 
-// Name is what gridterm calls itself to the programs it runs and to
+// Name is what kakel calls itself to the programs it runs and to
 // anything that asks what terminal this is.
-const Name = "gridterm"
+const Name = "kakel"
 
 // devVersion is what a build that was never tagged calls itself.
 const devVersion = "dev"
 
 // version is stamped in at link time by a release build:
 //
-//	go build -ldflags "-X github.com/marrasen/gridterm/internal/build.version=v0.1.0"
+//	go build -ldflags "-X github.com/marrasen/kakel/internal/build.version=v0.1.0"
 //
 // It is empty everywhere else, and the answer is then worked out from
 // what the toolchain recorded. See the release target in the Makefile.
@@ -67,7 +67,7 @@ func versionOf(built *debug.BuildInfo) string {
 	if revision == "" {
 		// Fetched by version rather than built from a checkout, so the
 		// module knows what it is: this is what
-		// `go install github.com/marrasen/gridterm@v0.1.0` gives.
+		// `go install github.com/marrasen/kakel@v0.1.0` gives.
 		// "(devel)" is the toolchain saying it has no idea.
 		if v := built.Main.Version; v != "" && v != "(devel)" {
 			return v

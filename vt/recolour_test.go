@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // paper is a light theme with nothing in common with the dark one, so a

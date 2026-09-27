@@ -106,7 +106,7 @@ func socksRequest(c net.Conn) (string, error) {
 	if head[1] != socksConnect {
 		// Both: why it was refused, and whether the client was told.
 		return "", errors.Join(
-			fmt.Errorf("socks: command %d is not one gridterm does", head[1]),
+			fmt.Errorf("socks: command %d is not one kakel does", head[1]),
 			socksAnswer(c, socksBadCommand))
 	}
 
@@ -144,7 +144,7 @@ func socksRequest(c net.Conn) (string, error) {
 		}
 	default:
 		return "", errors.Join(
-			fmt.Errorf("socks: address type %d is not one gridterm does", head[3]),
+			fmt.Errorf("socks: address type %d is not one kakel does", head[3]),
 			socksAnswer(c, socksBadAddressKind))
 	}
 

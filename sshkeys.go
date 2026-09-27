@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/serve"
 )
 
-// Making SSH keys, and locking them, as gridterm does. A new key is an
+// Making SSH keys, and locking them. A new key is an
 // ed25519 pair, with a passphrase typed or, when the secrets are there,
 // one made up and kept in them, which unlocks it from then on without
 // asking.
@@ -99,7 +99,7 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 	b.WriteString("To install it on a server, run ssh-copy-id -i " + key.Pub + " user@host, or add its public key line to ~/.ssh/authorized_keys there.\n\n")
 	b.WriteString(`For OpenSSH on Windows, add it to %USERPROFILE%\.ssh\authorized_keys, unless that account is an administrator, and then only to %ProgramData%\ssh\administrators_authorized_keys. Either file has to be readable by its owner alone, or sshd ignores it and says nothing about why.`)
 	if at, err := serve.AuthorizedKeysPath(); err == nil {
-		b.WriteString("\n\nFor a gridterm window serving from this machine, add it to " + at + ".")
+		b.WriteString("\n\nFor a kakel window serving from this machine, add it to " + at + ".")
 	}
 	line := key.Line
 	go func() {

@@ -259,7 +259,7 @@ func missedLine(lost int64) string {
 	if lost == 1 {
 		what = " older log line is "
 	}
-	return "-- gridterm: " + itoa(lost) + what + "no longer kept --\r\n"
+	return "-- kakel: " + itoa(lost) + what + "no longer kept --\r\n"
 }
 
 // itoa spells a count, so this package needs no formatting import for

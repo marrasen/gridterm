@@ -12,7 +12,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 func TestAReaderIsToldHowItsSaveWent(t *testing.T) {

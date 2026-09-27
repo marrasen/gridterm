@@ -1,4 +1,4 @@
-// Package remote is SSH: the machines gridterm can reach, and what runs
+// Package remote is SSH: the machines kakel can reach, and what runs
 // on them.
 //
 // One Conn is one connection to one machine, and more than one thing can
@@ -70,7 +70,7 @@ type Config struct {
 	ForwardAgent bool
 
 	// KeysOnly offers keys and nothing else, which is what taking over
-	// another gridterm window does: that end accepts no password and no
+	// another kakel window does: that end accepts no password and no
 	// keyboard-interactive.
 	KeysOnly bool
 

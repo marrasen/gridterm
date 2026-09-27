@@ -8,7 +8,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/secrets"
+	"github.com/marrasen/kakel/secrets"
 )
 
 func TestANewKeyIsWrittenAndSaysHowToInstallIt(t *testing.T) {

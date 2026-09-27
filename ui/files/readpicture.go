@@ -18,7 +18,7 @@ import (
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // MostPictureBytes is the largest picture file a reader will read, and

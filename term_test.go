@@ -8,9 +8,9 @@ import (
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vt"
 )
 
 // On a Swedish keyboard the key marked + sits where a US one has -.

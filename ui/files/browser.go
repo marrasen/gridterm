@@ -1,10 +1,10 @@
 package files
 
 import (
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Browser is a container of panes, and the tree takes it at its word:

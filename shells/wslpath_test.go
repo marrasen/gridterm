@@ -50,7 +50,7 @@ func TestTheTranslationGoesBothWays(t *testing.T) {
 func TestAMountedDriveComesBackAsTheDrive(t *testing.T) {
 	for _, tc := range []struct{ unix, want string }{
 		{"/mnt/c/Users/marcus", `C:\Users\marcus`},
-		{"/mnt/g/Workspace/gridterm", `G:\Workspace\gridterm`},
+		{"/mnt/g/Workspace/kakel", `G:\Workspace\kakel`},
 		{"/mnt/c/a b/c", `C:\a b\c`},
 		{"/mnt/c", `C:\`},
 		{"/mnt/c/", `C:\`},

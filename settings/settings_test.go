@@ -267,7 +267,7 @@ func TestAKeyWrittenTwiceIsNamed(t *testing.T) {
 	}
 }
 
-// Settings from a newer gridterm say so, even when that gridterm also
+// Settings from a newer kakel say so, even when that kakel also
 // added a field this build does not know.
 //
 // The strict decode used to run first, so the user was told "json:
@@ -283,10 +283,10 @@ func TestNewerSettingsSaySoRatherThanNamingTheirNewField(t *testing.T) {
 	_, err := Load(path)
 
 	if err == nil {
-		t.Fatal("settings from a newer gridterm loaded clean")
+		t.Fatal("settings from a newer kakel loaded clean")
 	}
-	if !strings.Contains(err.Error(), "newer gridterm") {
-		t.Errorf("it said %v, without saying the file is from a newer gridterm", err)
+	if !strings.Contains(err.Error(), "newer kakel") {
+		t.Errorf("it said %v, without saying the file is from a newer kakel", err)
 	}
 }
 

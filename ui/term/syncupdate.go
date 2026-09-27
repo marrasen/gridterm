@@ -17,7 +17,7 @@ import (
 // half a frame, whenever the screen is drawn, and anyone watching the
 // pane from elsewhere is handed the same whole frames. This is what
 // Alacritty does. The markers go through with the update: the emulator
-// ignores them, and a gridterm watching the pane holds the update back
+// ignores them, and a kakel watching the pane holds the update back
 // in its turn.
 //
 // An update that runs too long, or grows too large, is handed over as

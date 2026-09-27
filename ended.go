@@ -10,16 +10,16 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/settings"
-	uiterm "github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/settings"
+	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
 // A terminal pane whose program ends stays open, with what it printed,
 // and asks in the pane whether to start the program again or close the
-// pane, as gridterm does. Enter closes it, so typing exit and Enter
+// pane. Enter closes it, so typing exit and Enter
 // still leaves nothing behind.
 
 // paneEnded marks a terminal pane whose program has ended, and asks
@@ -127,7 +127,7 @@ func (a *app) startAgain(id string) error {
 	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		// The connection has gone: dial it again, as gridterm does, and
+		// The connection has gone: dial it again, and
 		// start the pane once it is back.
 		return a.dialAgain(machine, func(err error) {
 			if err == nil {
@@ -163,7 +163,7 @@ func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine string) {
 	if was == "" || now == "" || was == now {
 		return
 	}
-	t.Say("-- gridterm: " + machine + " is " + now + " now. This pane was on " + was + " --")
+	t.Say("-- kakel: " + machine + " is " + now + " now. This pane was on " + was + " --")
 	a.paneAt[id] = now
 }
 
@@ -222,8 +222,7 @@ func (a *app) clearFinished() {
 }
 
 // giveSavedIDs gives the commands, tunnels and copies saved before
-// servers had ids the ids of the servers their names stand for now, as
-// gridterm does.
+// servers had ids the ids of the servers their names stand for now.
 func (a *app) giveSavedIDs() {
 	if a.settings == nil || a.book == nil {
 		return

@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // aChooserWithActions is a chooser of three lines and three buttons,

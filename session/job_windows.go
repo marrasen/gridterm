@@ -15,14 +15,14 @@ import (
 const stillActive = 259
 
 // jobLimits are the limits a shell's job carries. Kill-on-close takes the
-// shell down with gridterm. Breakaway-ok lets a program that asks to
+// shell down with kakel. Breakaway-ok lets a program that asks to
 // leave the job leave it, which installers and launcher stubs do.
 const jobLimits = windows.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE |
 	windows.JOB_OBJECT_LIMIT_BREAKAWAY_OK
 
 // shellJob is the Windows job object a shell and everything it starts run
 // in. Windows kills the job's processes when the last handle to it
-// closes, and the kernel closes gridterm's handles however gridterm ends.
+// closes, and the kernel closes kakel's handles however kakel ends.
 type shellJob windows.Handle
 
 // jobFailed is a failure to hold a shell in a job object, worded for the
@@ -31,7 +31,7 @@ type shellJob windows.Handle
 func jobFailed(doing string, err error) error {
 	return fmt.Errorf(
 		"Windows would not put this shell in a job object."+
-			" That is what closes a shell, and everything it started, when gridterm"+
+			" That is what closes a shell, and everything it started, when kakel"+
 			" closes. %w (%s)", err, doing)
 }
 
@@ -85,7 +85,7 @@ func hold(pid int) (shellJob, string, error) {
 
 // letGo takes kill-on-close off the job and closes it, leaving the shell
 // and anything it started running. Close goes this way because the job is
-// there for a gridterm that never reaches Close.
+// there for a kakel that never reaches Close.
 //
 // The handle stays open when the limits cannot be changed: closing it
 // then would kill the tree this is sparing.

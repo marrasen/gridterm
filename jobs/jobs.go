@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Kind is what a job does.

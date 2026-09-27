@@ -5,12 +5,12 @@ import (
 
 	"github.com/marrasen/gunim"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // A file pane whose connection dropped stays, and opens its machine's
 // files again on the next thing asked of it, connecting again first
-// when the connection itself has gone, as gridterm's file panes do.
+// when the connection itself has gone.
 
 // filePaneOf is the file pane an intent works in, and empty for one
 // that works in none.

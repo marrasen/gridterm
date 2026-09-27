@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // scrollsWith is a command id standing for the window's own scroll,

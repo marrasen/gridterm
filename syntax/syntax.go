@@ -4,15 +4,15 @@
 // what they mean, and leaves turning them into colours to whatever
 // draws them, so a file reads in the window's own scheme.
 //
-// It comes from gridterm's reader, which draws with it, and so does
-// the reader of gunimterm.
+// It comes from gridterm's reader, which drew with it, and kakel's
+// reader draws with it too.
 package syntax
 
 import (
 	"path"
 	"strings"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Run is a stretch of one line drawn in one colour, ending at End bytes

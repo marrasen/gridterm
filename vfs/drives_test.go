@@ -11,7 +11,7 @@ import (
 	"github.com/pkg/sftp"
 )
 
-// windowsTop answers the way gridterm's SFTP server on Windows does at
+// windowsTop answers the way kakel's SFTP server on Windows does at
 // the top: listing "/" means listing the drives, and it fails outright
 // when one drive -- here e:, an empty card reader -- cannot be read.
 // Asked about one at a time, the drives that are there answer.
@@ -89,7 +89,7 @@ func aWindowsMachine(t *testing.T) *SFTP {
 
 // Listing the top of a Windows machine with a drive that is not ready
 // lists the drives that are, rather than failing for all of them.
-// Marcus went up from /C: on a gridterm connection and got "CreateFile
+// Marcus went up from /C: on a kakel connection and got "CreateFile
 // e:\: The device is not ready." for the whole listing.
 func TestADriveThatIsNotReadyLeavesTheOthersListed(t *testing.T) {
 	f := aWindowsMachine(t)

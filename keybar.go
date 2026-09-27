@@ -8,9 +8,9 @@ import (
 	"github.com/marrasen/gunim/widget"
 )
 
-// keyBar is the strip of keys along the foot of a file pane, as
-// gridterm's file manager has it: each key with what it does, a click
-// on one pressing it, and dimmed where it does nothing here.
+// keyBar is the strip of keys along the foot of a file pane: each key
+// with what it does, a click on one pressing it, and dimmed where it
+// does nothing here.
 type keyBar struct {
 	// pressed takes a key the bar was clicked on.
 	pressed func(gi.KeyPress, *gunim.UI)
@@ -117,8 +117,8 @@ func (b *keyBar) Handle(e gi.Event, u *gunim.UI) bool {
 }
 
 // errLine is the line under a file pane's path saying its folder could
-// not be read, as gridterm's has it: short, and a click shows the whole
-// reason, which a line trimmed to the pane would cut.
+// not be read: short, and a click shows the whole reason, which a line
+// trimmed to the pane would cut.
 type errLine struct {
 	b     *browser
 	label *widget.Label

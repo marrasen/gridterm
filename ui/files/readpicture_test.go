@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // pngOf writes a PNG of the given size and returns its path.

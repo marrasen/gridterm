@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // Dir is how a split divides its area.
@@ -286,7 +286,7 @@ func (s *Split) HandleMouse(ev input.MouseEvent) (bool, error) {
 
 	// A press that moves the keys to a pane which takes such a press as
 	// nothing else stops here. This is for a Split used as the root of a
-	// tree, which is what the tests in this package do. In gridterm the
+	// tree, which is what the tests in this package do. In kakel the
 	// dock above it catches every such press first.
 	if focusingPress(s, s.size.rect(), ev) {
 		return true, nil

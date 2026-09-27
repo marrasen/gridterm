@@ -1,4 +1,4 @@
-// Package settings keeps the choices gridterm remembers between runs.
+// Package settings keeps the choices kakel remembers between runs.
 package settings
 
 import (
@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/internal/jsoncheck"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/jsoncheck"
 )
 
 // fileVersion is written into the file so a later shape can be told from
@@ -23,7 +23,7 @@ import (
 const fileVersion = 1
 
 // File is what the settings are kept in, in the directory conf gives
-// gridterm.
+// kakel.
 const File = "settings.json"
 
 // How far a serving window may be reached from, as it is written down.
@@ -50,7 +50,7 @@ type stored struct {
 	ServePort *int `json:"servePort,omitempty"`
 
 	// ServeOn says a window was serving when it was last closed, so the
-	// next one can offer to serve again. A field left out is a gridterm
+	// next one can offer to serve again. A field left out is a kakel
 	// that has never served. There is one file per user rather than one
 	// per window, so this is the last window to say either way.
 	ServeOn *bool `json:"serveOn,omitempty"`
@@ -84,7 +84,7 @@ type stored struct {
 	ShellSetup *bool `json:"shellSetup,omitempty"`
 
 	// TermProgram is what the window calls itself in TERM_PROGRAM. A
-	// field left out is gridterm's own name, which is the true one.
+	// field left out is kakel's own name, which is the true one.
 	TermProgram *string `json:"termProgram,omitempty"`
 
 	// Tunnels are the tunnels the user asked to keep, newest first.
@@ -165,7 +165,7 @@ func (t SavedTunnel) Same(other SavedTunnel) bool {
 // not there at all until this one connects to it again.
 type SavedCopy struct {
 	// From and To name the machines the copy is between, as the sidebar
-	// names them. An empty one is the machine gridterm runs on.
+	// names them. An empty one is the machine kakel runs on.
 	From string `json:"from,omitempty"`
 	To   string `json:"to,omitempty"`
 
@@ -239,7 +239,7 @@ type AgentMay struct {
 	ReadBack bool `json:"readBack,omitempty"`
 }
 
-// Settings are the choices gridterm remembers between runs.
+// Settings are the choices kakel remembers between runs.
 //
 // Settings that could not be read refuse to save. A file nobody could
 // parse is somebody's settings, and replacing it with an empty one loses
@@ -261,7 +261,7 @@ type Settings struct {
 	loadErr error
 }
 
-// Dir returns the directory gridterm keeps its files in.
+// Dir returns the directory kakel keeps its files in.
 func Dir() (string, error) { return conf.Dir() }
 
 // Path returns where the settings live.
@@ -769,7 +769,7 @@ func (s *Settings) ShellSetup() bool {
 }
 
 // TermProgram is what the window calls itself in TERM_PROGRAM, and is
-// empty for gridterm's own name.
+// empty for kakel's own name.
 func (s *Settings) TermProgram() string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -780,7 +780,7 @@ func (s *Settings) TermProgram() string {
 }
 
 // PutTermProgram writes what the window calls itself, and saves. An
-// empty name goes back to gridterm's own.
+// empty name goes back to kakel's own.
 func (s *Settings) PutTermProgram(called string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -910,7 +910,7 @@ func read(path string) (stored, error) {
 	}
 
 	// The version before the rest, or settings written by a newer
-	// gridterm that also added a field are turned away for the field
+	// kakel that also added a field are turned away for the field
 	// instead, in the decoder's words rather than in words the user can
 	// act on.
 	var version struct {
@@ -922,7 +922,7 @@ func read(path string) (stored, error) {
 	switch {
 	case version.Version > fileVersion:
 		return stored{}, fmt.Errorf(
-			"settings: %s was written by a newer gridterm (version %d)", path, version.Version)
+			"settings: %s was written by a newer kakel (version %d)", path, version.Version)
 	case version.Version < 1:
 		// Covers a file of "null" or "{}" as well as one written with no
 		// version at all.

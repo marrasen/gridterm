@@ -7,7 +7,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
 
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vt"
 )
 
 func TestASharedPaneGlows(t *testing.T) {

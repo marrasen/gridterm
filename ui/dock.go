@@ -3,8 +3,8 @@ package ui
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // How wide a docked panel may be, and the least room the rest may keep.

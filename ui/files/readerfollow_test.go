@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/ui"
 )
 
 // A pane made shorter keeps a file that is being followed on its end.

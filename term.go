@@ -13,10 +13,10 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	uiterm "github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
 // term is the terminal on screen: a CellGrid showing the shell's
@@ -81,8 +81,7 @@ const (
 	smallSettle          = 150 * time.Millisecond
 )
 
-// blinkHalf is each half of a cursor's blink: once a second, as
-// gridterm blinks.
+// blinkHalf is each half of a cursor's blink: once a second.
 const blinkHalf = 500 * time.Millisecond
 
 // blink starts the cursor blinking, while the pane has the keyboard and
@@ -111,8 +110,8 @@ func (t *term) blinkStep(run int, u *gunim.UI) {
 }
 
 // blinkAgain starts the blink over, lit, as a key or a move of the
-// cursor does in gridterm: the cursor is on screen where the user is
-// looking. The next blink starts it again.
+// cursor does: the cursor is on screen where the user is looking. The
+// next blink starts it again.
 func (t *term) blinkAgain() {
 	t.blinkRun++
 	t.blinking, t.blinkOff = false, false
@@ -173,7 +172,7 @@ func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) g
 	}
 	// A screen somebody watching has sized bigger than this pane is laid
 	// out whole, and drawn shrunk to fit, keeping its shape, in the
-	// middle of the pane, as gridterm draws it.
+	// middle of the pane.
 	t.scale, t.offset = 1, geom.Point{}
 	cell := t.cells.CellSize()
 	cols, rows = t.cells.GridSize()
@@ -201,8 +200,7 @@ func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.
 }
 
 // paintPictures draws the inline pictures on screen, each over the
-// cells it was given, as gridterm draws them. A picture half scrolled
-// off is drawn in part.
+// cells it was given. A picture half scrolled off is drawn in part.
 func (t *term) paintPictures(p *paint.Painter) {
 	placed := t.sh.t.Pictures()
 	if len(placed) == 0 && len(t.pics) == 0 {
@@ -267,8 +265,7 @@ func (t *term) sync() {
 	}
 	t.wantBlink = cur.Blink
 	// A pane whose program has ended takes no typing, and one without
-	// the keyboard takes none now, so neither shows a cursor, as in
-	// gridterm.
+	// the keyboard takes none now, so neither shows a cursor.
 	visible := cur.Visible && !sh.t.Exited() && t.focused
 	if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
 		t.cursorAt = at
@@ -279,7 +276,7 @@ func (t *term) sync() {
 		Blinked: t.blinkOff && t.wantBlink && t.focused})
 }
 
-// cellOf turns one of gridterm's cells into gunim's, with its colours
+// cellOf turns one of kakel's cells into gunim's, with its colours
 // resolved.
 func cellOf(g *grid.Grid, x, y int) widget.Cell {
 	c := g.At(x, y)
@@ -398,7 +395,7 @@ func (t *term) ctrlChanged(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
 }
 
 // ctrlHeld lights or unlights the link under a still pointer as Ctrl
-// goes down or comes up, as gridterm does, rather than at the pointer's
+// goes down or comes up, rather than at the pointer's
 // next move.
 func (t *term) ctrlHeld(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
 	if k != gi.KeyLeftControl && k != gi.KeyRightControl {
@@ -471,9 +468,9 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		// A mouse's side buttons are the window's, not the program's.
 		return false
 	case e.Focusing && e.Button == gi.ButtonPrimary:
-		// The click that gives the pane the keyboard only does that, as
-		// in gridterm: it starts no selection, and a program with the
-		// mouse is not clicked at a place nobody aimed for.
+		// The click that gives the pane the keyboard only does that: it
+		// starts no selection, and a program with the mouse is not
+		// clicked at a place nobody aimed for.
 		return true
 	case e.Button == gi.ButtonMiddle && !t.sh.t.MouseTaken(mods):
 		// Text alone, the X11 way: a picture is pasted with the key.
@@ -538,7 +535,7 @@ func (t *term) command(id string, u *gunim.UI) bool {
 	case "edit.paste":
 		t.pasteClipboard(u)
 	case "view.scrollUp", "view.scrollDown":
-		// Half a screen, as gridterm moves.
+		// Half a screen.
 		page := 1
 		if id == "view.scrollDown" {
 			page = -1
@@ -554,7 +551,7 @@ func (t *term) command(id string, u *gunim.UI) bool {
 
 // key hands one event to the terminal, which encodes it for the
 // program, brings the view back to the live screen and clears the
-// selection, as typing does in gridterm.
+// selection.
 func (t *term) key(ev input.Event) {
 	t.blinkAgain()
 	_, _ = t.sh.t.HandleKey(ev)
@@ -575,8 +572,8 @@ func (t *term) pasteClipboard(u *gunim.UI) {
 }
 
 // scroll hands the terminal a wheel notch at a time, which it takes as
-// gridterm does: a report to a program that has the mouse, arrows on
-// the alternate screen, and otherwise three lines of history.
+// a report to a program that has the mouse, arrows on the alternate
+// screen, and otherwise three lines of history.
 func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 	notches := e.Notches.Y
 	if notches == 0 {
@@ -602,13 +599,13 @@ func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 	u.Invalidate()
 }
 
-// keyEvent turns a gunim key press into gridterm's, for a key gridterm
+// keyEvent turns a gunim key press into kakel's, for a key kakel
 // encodes.
 func keyEvent(e gi.KeyPress) (input.Event, bool) {
 	k, ok := keyMap[e.Key]
-	// Punctuation is the key it types, as gridterm reads it: a Swedish
-	// keyboard puts + where a US one has -, and Ctrl and the key marked
-	// plus should make the font bigger.
+	// Punctuation is the key it types: a Swedish keyboard puts + where a
+	// US one has -, and Ctrl and the key marked plus should make the
+	// font bigger.
 	if p, typed := punctuation[e.Char]; typed {
 		k, ok = p, true
 	}
@@ -630,14 +627,14 @@ func keyEvent(e gi.KeyPress) (input.Event, bool) {
 	return ev, true
 }
 
-// punctuation is the punctuation gridterm binds, by the character the
+// punctuation is the punctuation kakel binds, by the character the
 // key types rather than where it sits.
 var punctuation = map[rune]input.Key{
 	'=': input.KeyEquals, '+': input.KeyPlus, '-': input.KeyMinus,
 	'[': input.KeyBracketLeft, ']': input.KeyBracketRight, '\\': input.KeyBackslash,
 }
 
-// keyMap holds the keys gridterm encodes. The keypad's keys, pressed
+// keyMap holds the keys kakel encodes. The keypad's keys, pressed
 // without Num Lock, are the keys printed on them.
 var keyMap = func() map[gi.Key]input.Key {
 	m := map[gi.Key]input.Key{
@@ -668,7 +665,7 @@ var keyMap = func() map[gi.Key]input.Key {
 }()
 
 // Cursor implements [gunim.CursorShaper]: a hand over a link that a
-// click would follow, and otherwise the arrow, as in gridterm.
+// click would follow, and otherwise the arrow.
 func (t *term) Cursor(p geom.Point) gi.Cursor {
 	at := t.cellAt(p)
 	if _, on := t.sh.t.CursorAt(at.X, at.Y, t.hoverMods); on {

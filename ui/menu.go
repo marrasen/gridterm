@@ -3,8 +3,8 @@ package ui
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // How a menu is measured: a blank column each side of the text, a gap

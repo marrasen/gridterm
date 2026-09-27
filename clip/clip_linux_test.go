@@ -16,11 +16,11 @@ import (
 //
 // Run them with:
 //
-//	GRIDTERM_CLIPBOARD_TEST=1 go test -run Clipboard ./clip/
+//	KAKEL_CLIPBOARD_TEST=1 go test -run Clipboard ./clip/
 func needsClipboard(t *testing.T) {
 	t.Helper()
-	if os.Getenv("GRIDTERM_CLIPBOARD_TEST") == "" {
-		t.Skip("set GRIDTERM_CLIPBOARD_TEST=1 to let this take the clipboard")
+	if os.Getenv("KAKEL_CLIPBOARD_TEST") == "" {
+		t.Skip("set KAKEL_CLIPBOARD_TEST=1 to let this take the clipboard")
 	}
 	if err := ready(); err != nil {
 		t.Skipf("no clipboard here: %v", err)
@@ -32,7 +32,7 @@ func needsClipboard(t *testing.T) {
 func TestClipboardCarriesTextBothWays(t *testing.T) {
 	needsClipboard(t)
 
-	want := "gridterm on Linux: ÅÄÖ and a 🐧"
+	want := "kakel on Linux: ÅÄÖ and a 🐧"
 	if err := SetText(want); err != nil {
 		t.Fatalf("write the text: %v", err)
 	}

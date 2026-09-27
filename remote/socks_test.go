@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/meter"
 )
 
 // socksDial speaks SOCKS5 to a dynamic tunnel and asks it to reach an
@@ -225,7 +225,7 @@ func TestDynamicForwardTurnsDownAClientThatWantsAPassword(t *testing.T) {
 	if err := conn.SetDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		t.Fatalf("deadline: %v", err)
 	}
-	// One method: username and password, which gridterm does not do.
+	// One method: username and password, which kakel does not do.
 	if _, err := conn.Write([]byte{5, 1, 2}); err != nil {
 		t.Fatalf("greet: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestDynamicForwardRefusesAHostNameThatIsNotOne(t *testing.T) {
 	t.Cleanup(func() { _ = f.Close() })
 
 	for _, name := range []string{
-		"gridterm needs your password again\r\ntype it here",
+		"kakel needs your password again\r\ntype it here",
 		"a\x00b",
 		"\xff\xfe\xfd",
 		strings.Repeat("x", 254),

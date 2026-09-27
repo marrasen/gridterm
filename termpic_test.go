@@ -11,7 +11,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
 
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vt"
 )
 
 // printed is a session whose program prints once and then waits.
@@ -88,12 +88,12 @@ func TestTheWindowIsNamedAfterTheFocusedTerminal(t *testing.T) {
 	}
 	panes := []Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "files", Kind: kindFiles}}
 	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
-	if got := lastWindow.Offscreen().Title(); got != "gunimterm — vim notes.txt" {
+	if got := lastWindow.Offscreen().Title(); got != "kakel — vim notes.txt" {
 		t.Fatalf("the window is called %q", got)
 	}
 	// A pane that is no terminal leaves the window its own name.
 	publish(State{Panes: panes, Stage: &Box{Pane: "p2"}, Focus: "p2"})
-	if got := lastWindow.Offscreen().Title(); got != "gunimterm" {
+	if got := lastWindow.Offscreen().Title(); got != "kakel" {
 		t.Fatalf("on a file pane, the window is called %q", got)
 	}
 }

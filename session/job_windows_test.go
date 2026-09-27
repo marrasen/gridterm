@@ -72,7 +72,7 @@ func TestAShellThatExitsLeavesDetachedWorkRunning(t *testing.T) {
 }
 
 // The shell dies with its job. Closing the job handle is what the kernel
-// does for gridterm when gridterm ends any other way than through Close.
+// does for kakel when kakel ends any other way than through Close.
 func TestTheShellDiesWithItsJob(t *testing.T) {
 	s := shell(t, "cmd.exe")
 	l := s.(*local)
@@ -253,7 +253,7 @@ func TestAShellThatCannotBeHeldSaysSoInWords(t *testing.T) {
 	}
 	// What the job object is for, because the user has no other way to
 	// know what they have lost.
-	if !strings.Contains(got, "closes a shell, and everything it started, when gridterm closes") {
+	if !strings.Contains(got, "closes a shell, and everything it started, when kakel closes") {
 		t.Errorf("it does not say what a job object is for: %q", got)
 	}
 	// The reason before the step, which is for whoever reads the log.

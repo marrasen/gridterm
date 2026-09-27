@@ -1,8 +1,8 @@
 package ui
 
 import (
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // Deck shows one of its children at a time, the way a deck of cards

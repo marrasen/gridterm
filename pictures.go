@@ -5,19 +5,19 @@ import (
 	"image"
 	"time"
 
-	"github.com/marrasen/gridterm/clip"
-	"github.com/marrasen/gridterm/pasted"
-	"github.com/marrasen/gridterm/session"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/shellsetup"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/clip"
+	"github.com/marrasen/kakel/pasted"
+	"github.com/marrasen/kakel/session"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
+	"github.com/marrasen/kakel/vfs"
 )
 
-// A picture on the clipboard is handed to the program in a terminal as
-// gridterm hands it: by pressing paste, for a program here that reads
-// the clipboard itself; by putting it on the clipboard of a window this
-// one is connected to, and pressing paste there; or as a file, whose
-// path is typed, where there is no clipboard to hand it to.
+// A picture on the clipboard is handed to the program in a terminal: by
+// pressing paste, for a program here that reads the clipboard itself; by
+// putting it on the clipboard of a window this one is connected to, and
+// pressing paste there; or as a file, whose path is typed, where there
+// is no clipboard to hand it to.
 
 // Intents for pictures on the clipboard.
 type (
@@ -144,7 +144,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 //
 // readline reads Ctrl+V as quoted-insert, and the shell then shows the
 // next paste's markers as text. So a shell at its prompt is handed a
-// file instead, as in gridterm, and so is a shell that never says
+// file instead, and so is a shell that never says
 // whether a program is running.
 func (a *app) shellWouldQuoteIt(id string) bool {
 	t := a.terminal(id)

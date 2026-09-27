@@ -3,7 +3,7 @@ package ui
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // buffer draws a widget through a grid of its own, so every cell of the

@@ -3,8 +3,8 @@ package ui
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // opener is a widget that puts a dialog up on a press, the way a menu

@@ -14,7 +14,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/kakel/session"
 )
 
 // dialTimeout is how long reaching another window may take.
@@ -32,7 +32,7 @@ const dialTimeout = 15 * time.Second
 // leaves the window saying "opening" for ever.
 const handshakeTimeout = 20 * time.Second
 
-// Window is another machine's gridterm, taken over from this one.
+// Window is another machine's kakel, taken over from this one.
 //
 // Sessions opened on it are session.Session like any other, so a pane
 // drawing one cannot tell it from a shell on this machine. That is the
@@ -188,7 +188,7 @@ func Dial(ctx context.Context, cfg DialConfig) (*Window, error) {
 		// says when signing in starts: everything before it is this end
 		// and the network, everything after it is the other window.
 		client.Auth = []ssh.AuthMethod{ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-			cfg.say(fmt.Sprintf("signing in as gridterm, offering %d keys", len(cfg.Keys)))
+			cfg.say(fmt.Sprintf("signing in as kakel, offering %d keys", len(cfg.Keys)))
 			return cfg.Keys, nil
 		})}
 	}
@@ -440,7 +440,7 @@ func (w *Window) session(want openSession, named func(Attached)) (session.Sessio
 		// it. So the failure is put on the end of what it cut.
 		if _, err := io.Copy(&PlainWriter{To: errWriter{s}}, ch.Stderr()); err != nil {
 			_, _ = errWriter{s}.Write([]byte(
-				"\r\ngridterm: the rest of that was lost: " + err.Error() + "\r\n"))
+				"\r\nkakel: the rest of that was lost: " + err.Error() + "\r\n"))
 		}
 	}()
 	return s, nil

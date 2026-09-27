@@ -12,15 +12,14 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
 )
 
-// Connecting to another window, as gridterm connects to one that is
-// served: over SSH, with a key that window allows. The window is then a
-// machine in the sidebar, like a server: New Terminal opens a shell
-// there, Files its files, and what it has open is listed under it, to
-// work in from here.
+// Connecting to another window that is served: over SSH, with a key that
+// window allows. The window is then a machine in the sidebar, like a
+// server: New Terminal opens a shell there, Files its files, and what it
+// has open is listed under it, to work in from here.
 
 // RemoteWindow is a window this one is connected to, as the sidebar
 // shows it.
@@ -45,7 +44,7 @@ type (
 )
 
 // knownWindowsFile is where the host keys of the windows connected to
-// are kept, as gridterm keeps them.
+// are kept.
 const knownWindowsFile = "known_windows"
 
 // remoteWin is a window this one holds.
@@ -207,9 +206,8 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		}
 		a.dropped[name] = true
 		// The connection went, rather than the window saying so on
-		// purpose: offered to reach again, as gridterm offers it, the
-		// connection alone, with what it has open listed once it
-		// answers.
+		// purpose: offered to reach again, the connection alone, with
+		// what it has open listed once it answers.
 		text := name
 		if why != nil && !serve.Ended(why) {
 			text += "\n\n" + serve.Plain(why.Error())

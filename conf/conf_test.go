@@ -10,11 +10,11 @@ import (
 	"testing"
 )
 
-// aCopyAt is the path a copy of gridterm would sit at, in a directory
+// aCopyAt is the path a copy of kakel would sit at, in a directory
 // the test owns.
 func aCopyAt(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "gridterm.exe")
+	return filepath.Join(t.TempDir(), "kakel.exe")
 }
 
 // withConfigHome points os.UserConfigDir at a directory the test owns,
@@ -28,7 +28,7 @@ func withConfigHome(t *testing.T) string {
 }
 
 // asACopyAt makes Dir, Private and CarriesItsOwn answer for a copy of
-// gridterm at exe, and forgets the answer again afterwards.
+// kakel at exe, and forgets the answer again afterwards.
 func asACopyAt(t *testing.T, exe string) {
 	t.Helper()
 	forget := func() {
@@ -37,23 +37,23 @@ func asACopyAt(t *testing.T, exe string) {
 	forget()
 	findExe = func() (string, error) { return exe, nil }
 	t.Cleanup(func() {
-		findExe = whereGridtermIs
+		findExe = whereKakelIs
 		forget()
 	})
 }
 
-// The name gridterm's directory is under does not change: an existing
+// The name kakel's directory is under does not change: an existing
 // user's settings, servers and colour themes are already under it.
 func TestTheDirectoryKeepsTheNameItHasAlwaysHad(t *testing.T) {
-	if Name != "gridterm" {
-		t.Errorf("the directory is called %q, and everybody's files are under \"gridterm\"", Name)
+	if Name != "kakel" {
+		t.Errorf("the directory is called %q, and everybody's files are under \"kakel\"", Name)
 	}
 }
 
 // The one beside the executable is called something else, so a system
-// where the executable is called "gridterm" cannot have the name twice.
+// where the executable is called "kakel" cannot have the name twice.
 func TestTheDirectoryBesideACopyCannotBeTheCopy(t *testing.T) {
-	exe := filepath.Join(`C:\tools`, "gridterm")
+	exe := filepath.Join(`C:\tools`, "kakel")
 
 	if got := Beside(exe); got == exe {
 		t.Errorf("the directory beside it is %s, which is the executable", got)
@@ -71,7 +71,7 @@ func TestACopyWithNothingBesideItUsesTheSystemsDirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("where its files go: %v", err)
 	}
-	if want := filepath.Join(home, "gridterm"); got != want {
+	if want := filepath.Join(home, "kakel"); got != want {
 		t.Errorf("its files go in %s, want %s", got, want)
 	}
 }
@@ -115,7 +115,7 @@ func TestAFileOfThatNameBesideACopyIsNotADirectory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("where its files go: %v", err)
 	}
-	if want := filepath.Join(home, "gridterm"); got != want {
+	if want := filepath.Join(home, "kakel"); got != want {
 		t.Errorf("its files go in %s, want %s", got, want)
 	}
 }
@@ -126,7 +126,7 @@ func TestAFileOfThatNameBesideACopyIsNotADirectory(t *testing.T) {
 func TestAPathThatCannotBeLookedAtStopsTheAnswer(t *testing.T) {
 	// A name no filesystem takes, so the look fails for a reason that is
 	// not "it is not there".
-	exe := filepath.Join("bad\x00name", "gridterm.exe")
+	exe := filepath.Join("bad\x00name", "kakel.exe")
 
 	for _, c := range []struct {
 		what string
@@ -183,14 +183,14 @@ func TestPrivateFilesStayOffTheRoamingProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("where its private files go: %v", err)
 	}
-	if want := filepath.Join(local, "gridterm"); got != want {
+	if want := filepath.Join(local, "kakel"); got != want {
 		t.Errorf("they go in %s, want %s", got, want)
 	}
 }
 
-// Dir, Private and CarriesItsOwn answer for the copy of gridterm that is
+// Dir, Private and CarriesItsOwn answer for the copy of kakel that is
 // running.
-func TestGridtermAsksAboutItself(t *testing.T) {
+func TestKakelAsksAboutItself(t *testing.T) {
 	withConfigHome(t)
 	t.Setenv("LOCALAPPDATA", t.TempDir())
 	exe := aCopyAt(t)
@@ -218,10 +218,10 @@ func TestGridtermAsksAboutItself(t *testing.T) {
 	}
 }
 
-// The answer is worked out once. A directory made while gridterm is
+// The answer is worked out once. A directory made while kakel is
 // running would otherwise send the rest of the session's writes
 // somewhere else, leaving a window half in each place.
-func TestADirectoryMadeWhileGridtermIsRunningChangesNothing(t *testing.T) {
+func TestADirectoryMadeWhileKakelIsRunningChangesNothing(t *testing.T) {
 	home := withConfigHome(t)
 	t.Setenv("LOCALAPPDATA", home)
 	exe := aCopyAt(t)
@@ -266,7 +266,7 @@ func TestACopyThatCannotFindItselfSaysSo(t *testing.T) {
 	}
 }
 
-// aDirectoryBeside makes the directory a copy of gridterm at exe carries
+// aDirectoryBeside makes the directory a copy of kakel at exe carries
 // its files in, and returns it.
 func aDirectoryBeside(t *testing.T, exe string) string {
 	t.Helper()
@@ -275,4 +275,89 @@ func aDirectoryBeside(t *testing.T, exe string) string {
 		t.Fatalf("make it: %v", err)
 	}
 	return beside
+}
+
+// A machine that ran gridterm has its files under gridterm's names.
+// The first look for kakel's directory renames gridterm's, files and
+// all; after that it is kakel's, and gridterm's name is gone.
+func TestGridtermsFilesCarryOnUnderKakelsName(t *testing.T) {
+	home := withConfigHome(t)
+	asACopyAt(t, aCopyAt(t))
+	old := filepath.Join(home, "gridterm")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(old, "servers.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(home, "kakel"); dir != want {
+		t.Fatalf("the directory is %s, want %s", dir, want)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "servers.json")); err != nil {
+		t.Fatalf("gridterm's servers did not come along: %v", err)
+	}
+	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("gridterm's directory is still there: %v", err)
+	}
+}
+
+// With kakel's directory there already, gridterm's is left as it is:
+// nothing of kakel's is written over.
+func TestKakelsOwnDirectoryWins(t *testing.T) {
+	root := t.TempDir()
+	dir, old := filepath.Join(root, "kakel"), filepath.Join(root, "gridterm")
+	for _, d := range []string{dir, old} {
+		if err := os.MkdirAll(d, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := adopt(dir, old); got != dir {
+		t.Fatalf("adopt chose %s, want kakel's own %s", got, dir)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("gridterm's directory went: %v", err)
+	}
+	if got := adopt(filepath.Join(root, "none"), filepath.Join(root, "neither")); got != filepath.Join(root, "none") {
+		t.Fatalf("with neither there, adopt chose %s", got)
+	}
+}
+
+// Where the rename fails, gridterm's directory is used where it is, so
+// the user's files are there all the same.
+func TestAFailedRenameUsesGridtermsDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("a directory the test cannot write to is made with Unix permissions")
+	}
+	root := t.TempDir()
+	old := filepath.Join(root, "gridterm")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
+	if got := adopt(filepath.Join(root, "kakel"), old); got != old {
+		t.Fatalf("with the rename refused, adopt chose %s, want %s", got, old)
+	}
+}
+
+// A copy that carried gridterm's files beside it carries them on.
+func TestACopyCarriesGridtermsFilesOn(t *testing.T) {
+	exe := aCopyAt(t)
+	old := filepath.Join(filepath.Dir(exe), "gridterm-files")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	own, beside, err := CarriesItsOwnFor(exe)
+	if err != nil || !own {
+		t.Fatalf("the copy carries its own %v, %v", own, err)
+	}
+	if want := filepath.Join(filepath.Dir(exe), "kakel-files"); beside != want {
+		t.Fatalf("its files are at %s, want %s", beside, want)
+	}
 }

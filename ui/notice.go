@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"strings"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // How large a notice is allowed to get, and how much room it leaves

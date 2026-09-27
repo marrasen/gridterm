@@ -1,8 +1,8 @@
 package files
 
 import (
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/syntax"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/syntax"
 )
 
 // run is a stretch of one line drawn in one colour, ending at end bytes

@@ -6,12 +6,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/settings"
 )
 
-// Running one command in a pane of its own, as gridterm does: on this
+// Running one command in a pane of its own: on this
 // machine or on a server, in a folder or where the login lands. When it
 // finishes, the pane asks whether to run it again. A command can be
 // kept, to be run again from the palette.
@@ -26,8 +26,7 @@ type RunCommand struct {
 	Forget string
 }
 
-// mostSavedCommands is how many commands are kept, as gridterm keeps
-// them.
+// mostSavedCommands is how many commands are kept.
 const mostSavedCommands = 50
 
 // command is what a command pane runs, to run it again.
@@ -43,7 +42,7 @@ func (a *app) runCommand(in RunCommand) error {
 		return errors.New("there is no command to run")
 	}
 	if _, ok := a.windows[in.Machine]; ok {
-		return fmt.Errorf("%s is a gunimterm window, which has no shell to run a command in: open a terminal on it instead", in.Machine)
+		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", in.Machine)
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {

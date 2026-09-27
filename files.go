@@ -13,9 +13,9 @@ import (
 
 	"github.com/pkg/sftp"
 
-	"github.com/marrasen/gridterm/ui/files"
-	uiterm "github.com/marrasen/gridterm/ui/term"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/ui/files"
+	uiterm "github.com/marrasen/kakel/ui/term"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // File panes and readers, on the program's side: listing folders and
@@ -189,9 +189,9 @@ func (a *app) fsFor(machine string) vfs.FS {
 }
 
 // filesOf is what a file pane reads: its machine's files, with the
-// archives on them opened as folders, as gridterm reads them. One
-// wrapper for each pane, since each holds the archive it is in, and two
-// panes in two archives would take turns throwing each other's out.
+// archives on them opened as folders. One wrapper for each pane, since
+// each holds the archive it is in, and two panes in two archives would
+// take turns throwing each other's out.
 func (a *app) filesOf(pane string) vfs.FS {
 	under := a.fsFor(a.filesKey(pane))
 	if under == nil {
@@ -365,9 +365,8 @@ func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	// Beside the file pane in front, as gridterm's file manager adds a
-	// pane beside the one it has: two side by side is the way to copy
-	// between them.
+	// Beside the file pane in front: two side by side is the way to
+	// copy between them.
 	at := placement{}
 	if a.kindOfPane(a.st.Focus) == kindFiles {
 		at.beside = a.st.Focus
@@ -451,7 +450,7 @@ type readSpec struct {
 	seq    int
 }
 
-// mostPictureSide bounds a picture read, as gridterm bounds it.
+// mostPictureSide bounds a picture read.
 const mostPictureSide = 4096
 
 // readOnce reads a reader pane's file in the background, and publishes
@@ -513,7 +512,7 @@ func (a *app) setReader(id string, r Reader) {
 }
 
 // followFile reads a followed file again each time it changes, by its
-// size and its time, as gridterm does, until its pane closes.
+// size and its time, until its pane closes.
 func (a *app) followFile(id string, f vfs.FS, path string) {
 	var last vfs.Entry
 	for {
@@ -595,7 +594,7 @@ func (a *app) showScrollback(pane string) error {
 	if t == nil {
 		return errors.New("the pane in front is not a terminal, so it has no scrollback")
 	}
-	// One viewer per pane, as in gridterm: a second would show the same
+	// One viewer per pane: a second would show the same
 	// text, and the first is where the user left it. Its find opens
 	// again, as the command asked for a search.
 	for id, r := range a.st.Readers {

@@ -225,7 +225,7 @@ func (a *archives) open(at string) (*zip.Reader, error) {
 	defer a.mu.Unlock()
 	// The one held is answered only while the file is still the one it
 	// was read from. Anything can change it: a copy from another pane, a
-	// move, a program outside gridterm. A zip read before and shown after
+	// move, a program outside kakel. A zip read before and shown after
 	// would list what is no longer there. Asked at most once a
 	// archiveRecheck, because a copy out of a zip on a machine far away
 	// opens it once for every file, and each question is a round trip.

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // drawn runs text through an emulator and gives back its screen.

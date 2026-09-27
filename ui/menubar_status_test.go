@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // chipFG and chipGround are colours of their own, so a chip drawn in

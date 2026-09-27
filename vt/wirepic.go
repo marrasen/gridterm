@@ -15,7 +15,7 @@ import (
 // with a gap where they were.
 const WirePicBudget = 4 << 20
 
-// setWirePic takes OSC 1338, which is how one gridterm window hands a
+// setWirePic takes OSC 1338, which is how one kakel window hands a
 // picture to another along with the screen it is on.
 //
 // "clear" forgets the pictures the pane is holding.

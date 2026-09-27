@@ -130,7 +130,7 @@ func TestMakeKeyMakesTheDirectory(t *testing.T) {
 }
 
 // A key with nowhere to go, or somewhere relative, is refused rather
-// than written wherever gridterm happened to be started. On Windows
+// than written wherever kakel happened to be started. On Windows
 // where a key sits is the whole of what keeps it private.
 func TestAKeyWithoutAFullPathIsRefused(t *testing.T) {
 	// In a directory of the test's own, so a build that has lost the
@@ -198,9 +198,9 @@ func TestAKeyLeavesNothingHalfWritten(t *testing.T) {
 	}
 }
 
-// The default is a name of gridterm's own, so the first thing the dialog
+// The default is a name of kakel's own, so the first thing the dialog
 // offers is not the one path most likely to be taken already.
-func TestTheDefaultPathIsGridtermsOwn(t *testing.T) {
+func TestTheDefaultPathIsKakelsOwn(t *testing.T) {
 	at, err := DefaultKeyPath()
 	if err != nil {
 		t.Skipf("no home directory here: %v", err)

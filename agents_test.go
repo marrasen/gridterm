@@ -11,9 +11,9 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/settings"
 )
 
 // agentApp is the program side with one terminal pane, p1, running
@@ -210,7 +210,7 @@ func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
 	a, _ := agentApp(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
 	a.handle(WriteSkill{Host: hostClaudeCode})
-	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "gridterm", "SKILL.md")
+	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "kakel", "SKILL.md")
 	body, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(body), "use_session_code") {
 		t.Fatalf("the skill reads %q, %v", body, err)
@@ -249,7 +249,7 @@ func TestWhatAnAgentTypedIsKept(t *testing.T) {
 	}
 }
 
-// An agent's asking is cut to one plain line, as gridterm cuts it.
+// An agent's asking is cut to one plain line.
 func TestAnAgentsAskingIsCutToOnePlainLine(t *testing.T) {
 	got := secretLine("the \"db\" pass\u202eword\ue000 -- " + strings.Repeat("x", 200))
 	// Only the agent's words, between the window's quotes.
@@ -275,7 +275,7 @@ func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
 		t.Fatal("with no path, the skill was written")
 	}
 	a.copyAgentPrompt(hostClaudeCode)
-	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "gunimterm path not found" }) {
+	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "kakel path not found" }) {
 		t.Fatalf("with no path, the prompt said %+v", a.st.Notices)
 	}
 }

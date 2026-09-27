@@ -16,8 +16,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/internal/jsoncheck"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/jsoncheck"
 )
 
 // bookVersion is written into the file so a later shape can be told from
@@ -25,12 +25,12 @@ import (
 //
 // 2 added the id each server carries. A file of version 1 still loads,
 // and is given ids as it does; the version went up so that an older
-// gridterm meeting the new field says the list is from a newer one,
+// kakel meeting the new field says the list is from a newer one,
 // rather than calling it unreadable.
 const bookVersion = 2
 
 // BookFile is what the saved servers are kept in, in the directory conf
-// gives gridterm.
+// gives kakel.
 const BookFile = "servers.json"
 
 // ErrUnsaveable is returned when the book cannot be written because it
@@ -386,7 +386,7 @@ func readBook(path string) ([]Host, error) {
 		return nil, fmt.Errorf("remote: the server list %s: %w", path, err)
 	}
 
-	// The version before the rest, or a list written by a newer gridterm
+	// The version before the rest, or a list written by a newer kakel
 	// that also added a field is turned away for the field instead, in
 	// the decoder's words rather than in words the user can act on.
 	var version struct {
@@ -398,7 +398,7 @@ func readBook(path string) ([]Host, error) {
 	switch {
 	case version.Version > bookVersion:
 		return nil, fmt.Errorf(
-			"remote: the server list %s was written by a newer gridterm (version %d)",
+			"remote: the server list %s was written by a newer kakel (version %d)",
 			path, version.Version)
 	case version.Version < 1:
 		// Covers a file of "null" or "{}" as well as one written with no
@@ -547,7 +547,7 @@ func (b *Book) saveLocked() error {
 		return errors.New("remote: nowhere to save the server list")
 	}
 	// Nothing is written that cannot be read back. A list this refuses
-	// to load is a list the user cannot repair from inside gridterm:
+	// to load is a list the user cannot repair from inside kakel:
 	// every later change rereads the file first and fails on the same
 	// thing, so one bad write locks them out of their own servers for
 	// good.
@@ -610,7 +610,7 @@ func (b *Book) saveLocked() error {
 // readableBack reports why a list could not be loaded again, or nil.
 //
 // The same checks readBook makes, run before the file is written. They
-// are cheap, and the alternative is a file gridterm wrote and gridterm
+// are cheap, and the alternative is a file kakel wrote and kakel
 // will not read.
 func readableBack(hosts []Host) error {
 	for i, h := range hosts {
@@ -707,7 +707,7 @@ type Kind struct {
 	// case from the name asked about.
 	Name string
 
-	// Window says the machine is another gridterm, and Serve is where
+	// Window says the machine is another kakel, and Serve is where
 	// that one serves.
 	Window bool
 	Serve  string

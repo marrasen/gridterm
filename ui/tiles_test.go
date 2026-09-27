@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // aTiles is a grid of tiles laid out in a window of the given size.

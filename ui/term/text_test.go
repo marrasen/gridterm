@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Reading more lines than the screen holds reaches back into what has

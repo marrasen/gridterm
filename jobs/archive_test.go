@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // aZip is the bytes of a zip holding one file.

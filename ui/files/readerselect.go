@@ -3,7 +3,7 @@ package files
 import (
 	"strings"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // spot is a place in a file: a line, and a column across it, columns

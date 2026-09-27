@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // The hex view lays the file out as bytes: an offset, the numbers, and

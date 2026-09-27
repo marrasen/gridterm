@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // slow is a filesystem that can be made to stop part way through reading

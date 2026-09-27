@@ -1,9 +1,9 @@
 package files
 
 import (
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 // Key is one key on the bar along the bottom of the browser: the chord

@@ -1,6 +1,6 @@
 package serve
 
-// What one gridterm says to another.
+// What one kakel says to another.
 //
 // Kept to SSH's own shapes wherever there is one that fits. A session
 // channel carries the bytes of a program, a window-change request
@@ -9,7 +9,7 @@ package serve
 // the library's own framing rather than inventing a frame to put inside
 // it.
 //
-// The names carry @gridterm so that an ordinary SSH client connecting
+// The names carry @kakel so that an ordinary SSH client connecting
 // to a serving window is refused by name rather than being handed a
 // shell it did not ask for.
 const (
@@ -171,7 +171,7 @@ type Open struct {
 	// State is what it is doing: opened, active, settled or closed.
 	State string `json:"state"`
 
-	// Window says the machine it is on is another gridterm the served
+	// Window says the machine it is on is another kakel the served
 	// window has taken over, rather than a machine it has a shell on.
 	//
 	// A client cannot open anything there: it is a window, with panes of

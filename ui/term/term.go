@@ -15,11 +15,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vt"
 )
 
 // readChunk is how much session output is taken per read. Large enough
@@ -644,7 +644,7 @@ func (t *Terminal) EndSecret(which *secretAsk) {
 		return
 	}
 	ask.done <- false
-	t.Say("-- gridterm: nothing is waiting for that any more. --")
+	t.Say("-- kakel: nothing is waiting for that any more. --")
 }
 
 // AskedForASecret reports whether the pane is waiting for one to be

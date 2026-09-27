@@ -4,8 +4,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // Choice is one answer a drop-down offers. Key is what the field holds

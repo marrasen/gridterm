@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/meter"
 )
 
 // echoServer answers every connection by sending back what it is sent,

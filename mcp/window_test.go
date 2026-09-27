@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/kakel/agent"
 )
 
-// oneWindow is a gridterm window with a single pane handed over, for
+// oneWindow is a kakel window with a single pane handed over, for
 // testing the whole way from an agent's JSON down to the window.
 type oneWindow struct {
 	mu     sync.Mutex

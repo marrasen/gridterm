@@ -7,7 +7,7 @@ import (
 
 // Closing the window, however it is asked for: the menu, the key, or
 // the close button on the title bar. It asks first while anything is
-// open, as gridterm does, and says what: a window holding a copy half
+// open, and says what: a window holding a copy half
 // done and three shells is not one to lose to a slip of the mouse.
 
 // askToQuit asks before the window goes, and says what is still open.
@@ -24,7 +24,7 @@ func (a *app) askToQuit() {
 	a.leaving = true
 	go func() {
 		_, err := a.ask(a.ctx, Ask{
-			Title: "Exit gridterm?", Text: "Still open: " + listOf(open) + ".",
+			Title: "Exit kakel?", Text: "Still open: " + listOf(open) + ".",
 			Yes: "Exit", Danger: true,
 		})
 		a.events <- func() {

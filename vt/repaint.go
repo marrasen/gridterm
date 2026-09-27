@@ -5,7 +5,7 @@ import (
 	"image/color"
 	"strings"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Repaint writes a grid as the escape sequences that would draw it.

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/settings"
 )
 
 // echoed types a command at pane id's prompt and waits for what it
@@ -20,7 +20,7 @@ func echoed(t *testing.T, a *app, id, cmd, want string) {
 
 func TestANewShellIsToldTheTerminalsName(t *testing.T) {
 	a, _ := agentApp(t)
-	echoed(t, a, a.st.Panes[0].ID, "echo tp=$TERM_PROGRAM", "tp=gridterm")
+	echoed(t, a, a.st.Panes[0].ID, "echo tp=$TERM_PROGRAM", "tp=kakel")
 	a.st.TermProgram = "WezTerm"
 	set, err := settingsIn(t)
 	if err != nil {
@@ -36,7 +36,7 @@ func TestANewTerminalStartsInTheFolderOfThePaneInFront(t *testing.T) {
 	a, _ := agentApp(t)
 	a.st.ShellSetup = true
 	// Taught with bash's PROMPT_COMMAND, which dash, the /bin/sh here,
-	// lacks, as gridterm teaches it.
+	// lacks.
 	t.Setenv("SHELL", "/bin/bash")
 	// The first shell, taught, says where it is once it has moved.
 	a.handle(NewTerminal{})

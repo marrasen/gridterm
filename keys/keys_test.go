@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 // write puts a shortcuts file in a directory.
@@ -113,7 +113,7 @@ func TestTwoLinesForTheSameChordAreRefused(t *testing.T) {
 	}
 }
 
-// A file from a version this gridterm does not read is said so rather
+// A file from a version this kakel does not read is said so rather
 // than guessed at.
 func TestAFileFromAnotherVersionIsRefused(t *testing.T) {
 	dir := t.TempDir()
@@ -294,7 +294,7 @@ func TestTheFileLivesBesideTheSettings(t *testing.T) {
 
 // A chord the user would type is refused: a shortcut runs before the
 // pane sees the key, so one on a plain letter would take that letter
-// away everywhere, with nothing in gridterm to give it back.
+// away everywhere, with nothing in kakel to give it back.
 func TestAChordTheUserWouldTypeIsRefused(t *testing.T) {
 	for _, spelling := range []string{"k", "shift+K", "Enter", "shift+Tab", "Escape", "Space", "0"} {
 		dir := t.TempDir()
@@ -315,7 +315,7 @@ func TestAChordTheUserWouldTypeIsRefused(t *testing.T) {
 	}
 }
 
-// A chord the pane does not type is taken, so the shortcuts gridterm
+// A chord the pane does not type is taken, so the shortcuts kakel
 // comes with can all be written in the file.
 func TestAChordThePaneDoesNotTypeIsTaken(t *testing.T) {
 	for _, spelling := range []string{

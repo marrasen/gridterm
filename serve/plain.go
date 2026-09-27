@@ -8,7 +8,7 @@ import (
 )
 
 // Text a far end chose is shown in three places -- a pane, a dialog and
-// the console gridterm was started from -- and all three act on escape
+// the console kakel was started from -- and all three act on escape
 // sequences. One rule, in one place, so they cannot drift apart:
 //
 //   - a line feed is kept, because the text is meant to be read on lines

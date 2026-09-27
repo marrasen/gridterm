@@ -23,7 +23,7 @@ func margit() Host {
 	return Host{Name: "margit", Address: "margit.skalarit.net", User: "marcus"}
 }
 
-// A machine that has never run gridterm has no file, and that is not
+// A machine that has never run kakel has no file, and that is not
 // something to report.
 func TestLoadBookWithNoFileIsEmptyAndFine(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "nested", "servers.json")
@@ -107,7 +107,7 @@ func TestBookThatCouldNotBeReadWillNotBeWrittenOver(t *testing.T) {
 	}
 }
 
-// A file written by a newer gridterm may hold fields this one would drop
+// A file written by a newer kakel may hold fields this one would drop
 // on the way through.
 func TestBookFromANewerVersionWillNotBeWrittenOver(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
@@ -436,7 +436,7 @@ func TestHostValidateRefusesWhatCannotBeSaved(t *testing.T) {
 //
 // Every change rereads the file first, so one bad write locks the user
 // out of their own servers for good: the list cannot be repaired from
-// inside gridterm, because repairing it is a change.
+// inside kakel, because repairing it is a change.
 func TestABookThatCouldNotBeReadBackIsNotWritten(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "servers.json")
 	b, err := LoadBook(path)

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // blind is a filesystem that will not say whether one name is there.

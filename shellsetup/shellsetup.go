@@ -1,7 +1,7 @@
 // Package shellsetup holds the lines that teach a shell to say what it
 // is doing.
 //
-// A shell is a separate program, and gridterm only sees the bytes it
+// A shell is a separate program, and kakel only sees the bytes it
 // prints. So it cannot know which directory the shell is in, or where
 // one command's output ends and the next begins, unless the shell says
 // so. The shell says so by printing escape sequences nobody sees: OSC 7
@@ -9,14 +9,14 @@
 //
 // The lines here are typed into the shell as soon as it starts, the way
 // a user would type them. That is the one way that works everywhere: on
-// a server the login shell is started by sshd and gridterm never sees a
+// a server the login shell is started by sshd and kakel never sees a
 // command line to add to.
 package shellsetup
 
 import (
 	"strings"
 
-	"github.com/marrasen/gridterm/shells"
+	"github.com/marrasen/kakel/shells"
 )
 
 // Route is the kind of shell the lines are written for.

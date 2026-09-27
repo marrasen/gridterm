@@ -8,10 +8,10 @@ import (
 
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/serve"
 )
 
-// Reach is everything reaching another gridterm window needs.
+// Reach is everything reaching another kakel window needs.
 type Reach struct {
 	Addr, KeyFile string
 	Ring          *Ring

@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // claimer is a fake that takes one chord for itself, the way a reader

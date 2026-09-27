@@ -18,13 +18,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // DirName is the directory pictures and dropped files are written in:
 // under the temporary directory on this machine, and under the home
 // directory on another.
-const DirName = "gridterm-pasted"
+const DirName = "kakel-pasted"
 
 // PNG is a picture as the bytes that go over a connection.
 func PNG(img image.Image) ([]byte, error) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // fileOf writes a file on this machine and returns its path.

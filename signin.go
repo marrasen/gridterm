@@ -4,16 +4,16 @@ import (
 	"context"
 	"strings"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
 )
 
 // A server that signs in through a browser says where to go, and waits.
-// The window shows it as gridterm does: in the connection's log, where
-// it stays to be copied, and in a question that offers the one link to
-// open and the words to copy, and goes by itself once the connection is
-// made or fails. It opens on Close, so a stray Enter opens nothing a
-// server chose.
+// The window shows it in the connection's log, where it stays to be
+// copied, and in a question that offers the one link to open and the
+// words to copy, and goes by itself once the connection is made or
+// fails. It opens on Close, so a stray Enter opens nothing a server
+// chose.
 
 // AskAction is a button of a question that does something and leaves
 // the question open, such as Open Link.

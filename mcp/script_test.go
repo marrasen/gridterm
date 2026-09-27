@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/kakel/agent"
 )
 
 // steps runs a list of steps in the fake pane and gives back what the

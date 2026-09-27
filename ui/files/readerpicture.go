@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"image"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 // ShowsAPicture reports whether the file is one the reader shows as a

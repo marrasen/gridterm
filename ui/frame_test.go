@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // single is the light box-drawing set, which is what a style that says

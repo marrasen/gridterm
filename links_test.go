@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // ctrlClick clicks with Ctrl down on where text is on pane id's

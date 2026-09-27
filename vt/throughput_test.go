@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // findOutput is what a command that floods a terminal looks like: long

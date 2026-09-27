@@ -13,16 +13,15 @@ import (
 
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/steps"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/steps"
+	"github.com/marrasen/kakel/ui"
 )
 
 // -shot drives the window through a short script and writes what is on
-// screen to PNG files, as gridterm's does: for looking at the pixels,
-// which a test cannot check. The script is the steps package's, on one
-// line:
+// screen to PNG files: for looking at the pixels, which a test cannot
+// check. The script is the steps package's, on one line:
 //
 //	wait:250         wait a quarter of a second
 //	until:$          wait until that text arrives on the focused pane

@@ -3,7 +3,7 @@ package ui
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Border picks the characters the rule around a box is drawn with.

@@ -6,12 +6,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/marrasen/gridterm/jobs"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/jobs"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/vfs"
 )
 
-// Doing a copy again, and keeping copies to do again, as gridterm does:
+// Doing a copy again, and keeping copies to do again:
 // a finished copy can be repeated, and saved, and the saved ones run
 // from the Saved Copies pane or the palette. The machines at either
 // end are opened again first, as their files may have been closed.
@@ -37,7 +37,7 @@ type (
 // kindCopies is the Saved Copies pane.
 const kindCopies = "copies"
 
-// mostSavedCopies is how many copies are kept, as gridterm keeps them.
+// mostSavedCopies is how many copies are kept.
 const mostSavedCopies = 50
 
 // runningNamed is the job with id, or nil.

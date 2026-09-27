@@ -12,7 +12,7 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/serve"
 )
 
 // ErrCloseAbandoned says an SFTP client's own close never came back

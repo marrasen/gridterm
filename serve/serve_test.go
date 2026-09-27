@@ -63,7 +63,7 @@ func serving(t *testing.T, allowed string) *Server {
 func connect(t *testing.T, s *Server, as ssh.Signer) (*ssh.Client, error) {
 	t.Helper()
 	return ssh.Dial("tcp", s.Addr(), &ssh.ClientConfig{
-		User:            "gridterm",
+		User:            "kakel",
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(as)},
 		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
 		Timeout:         5 * time.Second,
@@ -119,7 +119,7 @@ func TestNothingButAKeyIsOffered(t *testing.T) {
 
 	var offered []string
 	_, err := ssh.Dial("tcp", s.Addr(), &ssh.ClientConfig{
-		User: "gridterm",
+		User: "kakel",
 		Auth: []ssh.AuthMethod{
 			ssh.Password("hunter2"),
 			ssh.KeyboardInteractive(func(_, _ string, qs []string, _ []bool) ([]string, error) {
@@ -431,7 +431,7 @@ func TestListenSaysWhatIsMissing(t *testing.T) {
 // A key carrying restrictions is refused, rather than admitted with
 // them quietly dropped.
 //
-// gridterm does not honour from=, command= or any of the rest. A user
+// kakel does not honour from=, command= or any of the rest. A user
 // who copied a line they deliberately restricted would otherwise be
 // handing out a full takeover of their window from anywhere.
 func TestARestrictedKeyIsRefused(t *testing.T) {

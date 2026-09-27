@@ -72,7 +72,7 @@ func ParseAllowed(raw []byte, from string) (*Allowed, error) {
 		}
 		if len(options) > 0 {
 			return nil, fmt.Errorf(
-				"serve: %s line %d carries %s, which gridterm does not honour."+
+				"serve: %s line %d carries %s, which kakel does not honour."+
 					" Remove it, or keep that key for ssh only",
 				from, n+1, strings.Join(options, ","))
 		}
@@ -81,7 +81,7 @@ func ParseAllowed(raw []byte, from string) (*Allowed, error) {
 			// list behind it, and none of that is checked here. Taking
 			// one as a plain key would honour it for ever.
 			return nil, fmt.Errorf(
-				"serve: %s line %d is a certificate, which gridterm does not check."+
+				"serve: %s line %d is a certificate, which kakel does not check."+
 					" List the key itself", from, n+1)
 		}
 		a.keys = append(a.keys, key)

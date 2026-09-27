@@ -5,7 +5,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // testAsk stands in for the window: it answers with whatever the test

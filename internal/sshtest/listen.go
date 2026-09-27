@@ -176,7 +176,7 @@ type chanConn struct {
 func (c *chanConn) LocalAddr() net.Addr  { return fakeAddr{} }
 func (c *chanConn) RemoteAddr() net.Addr { return fakeAddr{} }
 
-// A channel has no deadlines. Nothing in gridterm sets one on a
+// A channel has no deadlines. Nothing in kakel sets one on a
 // forwarded connection, and saying so beats pretending it worked.
 func (c *chanConn) SetDeadline(time.Time) error      { return errNoDeadline }
 func (c *chanConn) SetReadDeadline(time.Time) error  { return errNoDeadline }

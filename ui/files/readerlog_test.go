@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/ui"
 )
 
 // aJSONLog is a handful of lines the way a logger writes them.

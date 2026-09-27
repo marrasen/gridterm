@@ -6,19 +6,18 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/internal/build"
-	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/ui"
-	uiterm "github.com/marrasen/gridterm/ui/term"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/ui"
+	uiterm "github.com/marrasen/kakel/ui/term"
+	"github.com/marrasen/kakel/vt"
 )
 
-// shell is a running program and its screen, on gridterm's own
-// terminal: the emulator, the selection, the mouse, the history and
-// what an agent reads all behave as they do in gridterm. The window
-// draws the screen into view, a grid of its own, and copies the rows
-// that changed into the pane.
+// shell is a running program and its screen, on kakel's own terminal:
+// the emulator, the selection, the mouse, the history and what an agent
+// reads. The window draws the screen into view, a grid of its own, and
+// copies the rows that changed into the pane.
 type shell struct {
 	t *uiterm.Terminal
 	// mu guards view, which the window's goroutine draws into and
@@ -78,7 +77,7 @@ func openShell(sess session.Session, pal vt.Palette, hooks shellHooks) *shell {
 		FindPath:      hooks.findPath,
 		OnPath:        hooks.openPath,
 		// A session's failures have nowhere else to go; the window log
-		// keeps them, as gridterm's does.
+		// keeps them.
 		OnError: func(err error) { log.Printf("a pane's session: %v", err) },
 	})
 	if err != nil {

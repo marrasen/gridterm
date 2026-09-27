@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // spacedList is a list of machines, each with a connection under it.

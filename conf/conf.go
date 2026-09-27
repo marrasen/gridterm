@@ -1,9 +1,9 @@
-// Package conf decides where gridterm keeps its files.
+// Package conf decides where kakel keeps its files.
 //
 // There are two places. One is the directory the operating system gives
 // a program for its settings, which is where they go by default. The
 // other is a directory beside the executable, which lets one machine
-// hold several copies of gridterm, each with files of its own.
+// hold several copies of kakel, each with files of its own.
 package conf
 
 import (
@@ -16,16 +16,24 @@ import (
 	"sync"
 )
 
-// Name is what gridterm's directory under the operating system's own is
-// called. Existing files are under this name, so it does not change.
-const Name = "gridterm"
+// Name is what kakel's directory under the operating system's own is
+// called.
+const Name = "kakel"
 
 // BesideName is what the directory beside the executable is called. Not
-// "gridterm", which on a system where the executable has no extension
+// "kakel", which on a system where the executable has no extension
 // would be the executable itself.
-const BesideName = "gridterm-files"
+const BesideName = "kakel-files"
 
-// Dir returns the directory gridterm keeps its files in.
+// kakel was called gridterm, and kept its files under these names. The
+// first time kakel looks for one of its directories and finds only the
+// old one, it renames the old one; see adopt.
+const (
+	oldName       = "gridterm"
+	oldBesideName = "gridterm-files"
+)
+
+// Dir returns the directory kakel keeps its files in.
 func Dir() (string, error) {
 	d := decide()
 	if d.err != nil {
@@ -37,7 +45,7 @@ func Dir() (string, error) {
 	return system()
 }
 
-// Private returns the directory gridterm keeps files nobody else may
+// Private returns the directory kakel keeps files nobody else may
 // read in: the key a serving window proves itself with.
 func Private() (string, error) {
 	d := decide()
@@ -50,18 +58,22 @@ func Private() (string, error) {
 	return localProfile()
 }
 
-// CarriesItsOwn reports whether gridterm keeps its files beside itself,
+// CarriesItsOwn reports whether kakel keeps its files beside itself,
 // and where that directory is either way.
 func CarriesItsOwn() (bool, string, error) {
 	d := decide()
 	return d.own, d.beside, d.err
 }
 
-// Beside returns the directory a copy of gridterm at exe would carry its
-// files in.
-func Beside(exe string) string { return filepath.Join(filepath.Dir(exe), BesideName) }
+// Beside returns the directory a copy of kakel at exe would carry its
+// files in. A copy that carried gridterm's files beside it carries them
+// on under the new name.
+func Beside(exe string) string {
+	dir := filepath.Dir(exe)
+	return adopt(filepath.Join(dir, BesideName), filepath.Join(dir, oldBesideName))
+}
 
-// DirFor returns the directory a copy of gridterm at exe keeps its files
+// DirFor returns the directory a copy of kakel at exe keeps its files
 // in: the one beside it when the user has made that directory, and
 // otherwise the one the operating system gives a program.
 func DirFor(exe string) (string, error) {
@@ -75,7 +87,7 @@ func DirFor(exe string) (string, error) {
 	return system()
 }
 
-// PrivateFor returns the directory a copy of gridterm at exe keeps its
+// PrivateFor returns the directory a copy of kakel at exe keeps its
 // private files in: the one beside it when it carries its own, and
 // otherwise the local profile rather than the roaming one, which a
 // domain account copies to a file server at every logon.
@@ -90,7 +102,7 @@ func PrivateFor(exe string) (string, error) {
 	return localProfile()
 }
 
-// CarriesItsOwnFor reports whether a copy of gridterm at exe keeps its
+// CarriesItsOwnFor reports whether a copy of kakel at exe keeps its
 // files beside itself, and where that directory is either way.
 func CarriesItsOwnFor(exe string) (bool, string, error) {
 	there, err := isDir(Beside(exe))
@@ -100,31 +112,31 @@ func CarriesItsOwnFor(exe string) (bool, string, error) {
 	return there, Beside(exe), nil
 }
 
-// system returns the directory the operating system gives gridterm for
+// system returns the directory the operating system gives kakel for
 // its settings.
 func system() (string, error) {
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", fmt.Errorf("conf: no configuration directory: %w", err)
 	}
-	return filepath.Join(base, Name), nil
+	return adopt(filepath.Join(base, Name), filepath.Join(base, oldName)), nil
 }
 
-// localProfile returns the directory gridterm keeps private files in
+// localProfile returns the directory kakel keeps private files in
 // when it is not carrying its own: the local profile on Windows, where
 // os.UserConfigDir gives the roaming one.
 func localProfile() (string, error) {
 	if runtime.GOOS == "windows" {
 		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return filepath.Join(local, Name), nil
+			return adopt(filepath.Join(local, Name), filepath.Join(local, oldName)), nil
 		}
 	}
 	return system()
 }
 
-// choice is where gridterm keeps its files, worked out once.
+// choice is where kakel keeps its files, worked out once.
 type choice struct {
-	// own says the files are beside this copy of gridterm, and beside is
+	// own says the files are beside this copy of kakel, and beside is
 	// that directory whether they are there or not.
 	own    bool
 	beside string
@@ -134,7 +146,7 @@ type choice struct {
 
 // made and once hold the answer for the life of the process.
 //
-// Worked out once so a directory made or deleted while gridterm is
+// Worked out once so a directory made or deleted while kakel is
 // running cannot send part of a session's writes to the other place.
 var (
 	made choice
@@ -142,7 +154,7 @@ var (
 )
 
 // findExe is the executable's own path. A test points it elsewhere.
-var findExe = whereGridtermIs
+var findExe = whereKakelIs
 
 // decide works out where the files go, the first time anything asks.
 func decide() choice {
@@ -171,17 +183,38 @@ func isDir(path string) (bool, error) {
 	}
 }
 
-// whereGridtermIs returns the executable's own path with any link
+// whereKakelIs returns the executable's own path with any link
 // followed, so a copy started through a link finds the files beside the
 // real one.
-func whereGridtermIs() (string, error) {
+func whereKakelIs() (string, error) {
 	exe, err := os.Executable()
 	if err != nil {
-		return "", fmt.Errorf("conf: find gridterm's own path: %w", err)
+		return "", fmt.Errorf("conf: find kakel's own path: %w", err)
 	}
 	real, err := filepath.EvalSymlinks(exe)
 	if err != nil {
 		return "", fmt.Errorf("conf: follow %s: %w", exe, err)
 	}
 	return real, nil
+}
+
+// adopt returns the directory to use for dir, taking over old, the
+// directory the same files had under gridterm's name. With dir there,
+// or old missing, it is dir. With only old there, old is renamed to
+// dir, so the servers, secrets, themes and keys kept there carry on.
+// Where the rename fails, as on Windows while an old gridterm still has
+// a file in it open, it is old, used where it is, and the rename is
+// tried again next time.
+func adopt(dir, old string) string {
+	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
+		return dir
+	}
+	info, err := os.Lstat(old)
+	if err != nil || !info.IsDir() {
+		return dir
+	}
+	if err := os.Rename(old, dir); err != nil {
+		return old
+	}
+	return dir
 }

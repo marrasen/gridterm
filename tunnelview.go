@@ -10,8 +10,8 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 )
 
 // The window's side of tunnels: the dialog that opens one, and the

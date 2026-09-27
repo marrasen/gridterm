@@ -7,7 +7,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/kakel/remote"
 )
 
 // servingDialog serves the window, or, while it is served, says where

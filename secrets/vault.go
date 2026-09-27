@@ -97,7 +97,7 @@ type contents struct {
 	// rollback buys is the ones added afterwards. Anybody who can write
 	// this file is running as the user, and somebody running as the user
 	// can read the passphrase as it is typed, have the SSH agent sign
-	// for them, or replace gridterm itself. Guarding this file against
+	// for them, or replace kakel itself. Guarding this file against
 	// them while all of that is open is guarding the smallest door in
 	// the house.
 	//

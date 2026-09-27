@@ -8,7 +8,7 @@ import (
 	"github.com/marrasen/gunim/driver"
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vt"
 )
 
 func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {

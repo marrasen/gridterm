@@ -4,8 +4,8 @@ import (
 	"image/color"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // How a chooser is measured: the margin round it, the rule, and the

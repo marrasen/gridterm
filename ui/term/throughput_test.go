@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/ui"
 )
 
 // flood is a session that hands over one lot of output as fast as it is

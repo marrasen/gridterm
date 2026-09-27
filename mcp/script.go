@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/steps"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/steps"
 )
 
 // longestList is how long a whole list of steps may take.
@@ -278,7 +278,7 @@ func (s *server) sayWaits(pane string, list []steps.Step, waits []waited, clampe
 	for i, w := range waits {
 		b.WriteString("\n\n" + waitHead(w) + "\n")
 		if i == len(waits)-1 {
-			// The last one whole, with what gridterm has to say about
+			// The last one whole, with what kakel has to say about
 			// the pane as it now stands.
 			b.WriteString(showScreen(w.screen, w.ended, clamped))
 			continue

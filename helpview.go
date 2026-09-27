@@ -12,14 +12,14 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/internal/build"
-	"github.com/marrasen/gridterm/keys"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/themes"
-	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/keys"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/ui/files"
 )
 
 // The window's help: every command with its shortcut and its name in
@@ -52,10 +52,9 @@ func everyCommand() [][2]string {
 }
 
 // helpPane lists every command in a table: its title, its shortcut and
-// its name in the shortcuts file, under the menu it is on, as
-// gridterm's help groups them. The keys no menu shows follow, then the
-// file pane's and the reader's, from gridterm's own lists. Typing
-// finds one by its title.
+// its name in the shortcuts file, under the menu it is on. The keys no
+// menu shows follow, then the file pane's and the reader's, from
+// kakel's own lists. Typing finds one by its title.
 type helpPane struct {
 	table *widget.Table
 	rows  map[widget.Key][3]string
@@ -199,7 +198,7 @@ func (p *helpPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids g
 }
 
 // applyShortcuts takes on the changes the shortcuts file makes to the
-// keys gridterm comes with, and reports whether it did. A file naming a
+// keys kakel comes with, and reports whether it did. A file naming a
 // command there is none of changes nothing, and says which.
 func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 	known := map[string]bool{}
@@ -261,7 +260,7 @@ func (w *window) applyShortcuts(changes []keys.Change, u *gunim.UI) bool {
 
 // aboutDialog says what this build is.
 func (w *window) aboutDialog(u *gunim.UI) {
-	d := widget.NewDialog("About gridterm")
+	d := widget.NewDialog("About kakel")
 	d.Body = widget.NewForm().
 		Add("", widget.NewLabel("A GPU-drawn terminal emulator, on gunim.")).
 		Add("Version", widget.NewLabel(build.Version()))
@@ -290,7 +289,7 @@ func (w *window) fileLocationsDialog(u *gunim.UI) {
 	}
 	form.Add("", widget.NewLabel("SSH keys and known_hosts stay in ~/.ssh."))
 	if own, beside, err := conf.CarriesItsOwn(); err == nil && own {
-		form.Add("", widget.NewLabel("Portable: the files are kept beside gridterm, in "+beside+". The serving key is in there too, and is only as private as that folder."))
+		form.Add("", widget.NewLabel("Portable: the files are kept beside kakel, in "+beside+". The serving key is in there too, and is only as private as that folder."))
 	}
 	d := widget.NewDialog("File Locations")
 	d.Body = form

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Match is one command a query found, and where in its title it matched.

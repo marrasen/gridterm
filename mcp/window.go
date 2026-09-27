@@ -8,17 +8,17 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/kakel/agent"
 )
 
-// Window is the panes of one gridterm window, as an agent reaches them.
+// Window is the panes of one kakel window, as an agent reaches them.
 //
 // It holds no credentials. A session code arrives in a tool call, says
 // which window to reach and opens the panes of one share there, and is
 // not kept: what is kept is the connection it opened.
 type Window struct {
 	mu sync.Mutex
-	// reached is one connection per gridterm window, by the port its
+	// reached is one connection per kakel window, by the port its
 	// codes name. A user handing over panes of two windows is handing
 	// over two windows, and losing the first the moment the second
 	// arrives would be a pane they thought they had given away.

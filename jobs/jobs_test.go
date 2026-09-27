@@ -14,10 +14,10 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // budget is how long a test waits for a job. Generous on purpose: a

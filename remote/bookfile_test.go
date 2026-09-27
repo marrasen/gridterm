@@ -93,7 +93,7 @@ func TestBookWillNotGuessAtARepeatedKey(t *testing.T) {
 	}
 }
 
-// A list from a newer gridterm says so, even when that gridterm also
+// A list from a newer kakel says so, even when that kakel also
 // added a field this build does not know.
 //
 // The strict decode used to run first, so the user was told "json:
@@ -109,10 +109,10 @@ func TestANewerListSaysSoRatherThanNamingItsNewField(t *testing.T) {
 	_, err := LoadBook(path)
 
 	if err == nil {
-		t.Fatal("a list from a newer gridterm loaded clean")
+		t.Fatal("a list from a newer kakel loaded clean")
 	}
-	if !strings.Contains(err.Error(), "newer gridterm") {
-		t.Fatalf("error = %v, want it to say the list is from a newer gridterm", err)
+	if !strings.Contains(err.Error(), "newer kakel") {
+		t.Fatalf("error = %v, want it to say the list is from a newer kakel", err)
 	}
 }
 

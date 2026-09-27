@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // takeOver builds the ladder taking over a window climbs, through the

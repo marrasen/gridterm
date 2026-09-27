@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // homeAt makes the usual key files look for their keys in a directory

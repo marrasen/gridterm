@@ -7,7 +7,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/settings"
 )
 
 // commandDialog asks for a command to run in a pane of its own, on the
@@ -18,7 +18,7 @@ func (w *window) commandDialog(u *gunim.UI) { w.commandDialogOn(w.machineOf(w.fo
 func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
-			w.toasts.Show(widget.Toast{Title: machine + " is a gunimterm window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
+			w.toasts.Show(widget.Toast{Title: machine + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
 			return
 		}
 	}
@@ -117,8 +117,8 @@ func (w *window) setSavedCommands(saved []settings.SavedCommand) {
 func (w *window) termProgramDialog(u *gunim.UI) {
 	called := widget.NewTextField()
 	called.SetText(w.termProgram)
-	called.Placeholder = "gridterm"
-	known := widget.NewDropdown(append([]string{"gridterm"}, knownTerminals...)...)
+	called.Placeholder = "kakel"
+	known := widget.NewDropdown(append([]string{"kakel"}, knownTerminals...)...)
 	known.Label = "Known terminals"
 	known.OnPick(func(i int, u *gunim.UI) {
 		if i == 0 {
@@ -130,7 +130,7 @@ func (w *window) termProgramDialog(u *gunim.UI) {
 	})
 	d := widget.NewDialog("Terminal Identity")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports gridterm. Another name can turn on features such as pictures, and can also bring sequences that show as text. It applies to new panes.")).
+		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports kakel. Another name can turn on features such as pictures, and can also bring sequences that show as text. It applies to new panes.")).
 		Add("TERM_PROGRAM", called).Add("Known", known)
 	d.SetButtons("Save", "Cancel")
 	d.OnAccept = func() gunim.Intent { return SetTermProgram{Called: called.Text()} }

@@ -11,7 +11,7 @@ import (
 	"unicode"
 )
 
-// What agents typed, kept for each pane, as gridterm keeps it: Typing
+// What agents typed, kept for each pane: Typing
 // History shows it in a reader, as the agent sent it, edits included,
 // so the user can see what went into a pane that has since scrolled.
 

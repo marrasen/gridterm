@@ -1,7 +1,7 @@
 // Package keys reads the file of keyboard shortcuts a user has written.
 //
 // The file holds changes on top of the shortcuts built in, so shortcuts
-// added to a later gridterm still arrive.
+// added to a later kakel still arrive.
 package keys
 
 import (
@@ -14,9 +14,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/internal/newfile"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/internal/newfile"
+	"github.com/marrasen/kakel/ui"
 )
 
 // FileVersion is the version this package writes and reads.
@@ -78,7 +78,7 @@ var startHelp = []string{
 	"Add a line to put a command on another chord.",
 	"To move a command, set its old chord to \"" + Nothing + "\" as well," +
 		" or it runs on both.",
-	"Delete a line and that chord goes back to what gridterm comes with.",
+	"Delete a line and that chord goes back to what kakel comes with.",
 	"Every chord here runs before a pane sees it, so a chord a program in" +
 		" the pane needs stops reaching it.",
 	"A dialog that is open sees a chord before either of them.",
@@ -106,7 +106,7 @@ func Load(path string) ([]Change, error) {
 	}
 	if file.Version != FileVersion {
 		return nil, fmt.Errorf(
-			"%s says version %d, and this gridterm reads version %d",
+			"%s says version %d, and this kakel reads version %d",
 			path, file.Version, FileVersion)
 	}
 	// Sorted by what the file spells, so a file with two bad lines names
@@ -150,7 +150,7 @@ func Load(path string) ([]Change, error) {
 //
 // A shortcut runs before the pane sees the key, so one on a chord the
 // user types would take that character away everywhere in the window,
-// with nothing in gridterm to give it back.
+// with nothing in kakel to give it back.
 func bindable(c ui.Chord) error {
 	if c.Mods&^input.ModShift != 0 {
 		return nil

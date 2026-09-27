@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // noAgentHere points SSH_AUTH_SOCK at nothing, so dialling the agent
@@ -16,7 +16,7 @@ func noAgentHere(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "not-an-agent")
 	if runtime.GOOS == "windows" {
 		// Only a pipe is honoured there, and this one is not served.
-		path = `\\.\pipe\gridterm-test-no-agent`
+		path = `\\.\pipe\kakel-test-no-agent`
 	}
 	t.Setenv("SSH_AUTH_SOCK", path)
 }

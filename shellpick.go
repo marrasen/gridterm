@@ -3,10 +3,10 @@ package main
 import (
 	"slices"
 
-	shellfind "github.com/marrasen/gridterm/shells"
+	shellfind "github.com/marrasen/kakel/shells"
 )
 
-// Choosing the shell, as gridterm does: the shells on this machine are
+// Choosing the shell: the shells on this machine are
 // found as the window opens, and where there is more than one, as on
 // Windows with its Command Prompt, its two PowerShells and its WSL
 // distributions, the palette opens a terminal with any of them and

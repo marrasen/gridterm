@@ -3,7 +3,7 @@ package vt
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // applySGR updates the pen from one SGR sequence.

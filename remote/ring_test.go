@@ -9,7 +9,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 const testPassphrase = "let me in"
@@ -241,7 +241,7 @@ func TestConnectStopsWhenThePassphraseDialogIsCancelled(t *testing.T) {
 }
 
 // Cancelling the window while a dialog is open has to let the connecting
-// goroutine go, or closing gridterm waits for an answer nobody will give.
+// goroutine go, or closing kakel waits for an answer nobody will give.
 func TestConnectCancelsWhileADialogIsOpen(t *testing.T) {
 	s := sshtest.New(t)
 	path := sshtest.WriteEncryptedKey(t, testPassphrase)

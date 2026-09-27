@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/vt"
 )
 
 // Watcher is somebody else looking at this terminal.

@@ -10,8 +10,8 @@ import (
 	"github.com/marrasen/gunim/widget"
 )
 
-// The chips at the end of the menu bar, as gridterm has them: what the
-// window is doing for someone else, a click away from its dialog.
+// The chips at the end of the menu bar: what the window is doing for
+// someone else, a click away from its dialog.
 // "Agent Share" while panes are shared with an agent, and "Serving"
 // while the window is served, with how many windows are watching.
 

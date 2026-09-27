@@ -12,21 +12,20 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/mcp"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/ui"
-	uiterm "github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/mcp"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/ui"
+	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
-// Panes shared with an agent, as gridterm shares them. The user puts
-// panes into a share and gives a program they are talking to the
-// share's one code. With it, through gridterm's MCP server, the agent
-// can read those panes, type into them and wait for them to settle,
-// and reaches nothing else. Nothing listens until a pane is shared,
-// the port is on the loopback address, and taking the last pane back
-// makes the code useless.
+// Panes shared with an agent. The user puts panes into a share and gives
+// a program they are talking to the share's one code. With it, through
+// kakel's MCP server, the agent can read those panes, type into them and
+// wait for them to settle, and reaches nothing else. Nothing listens
+// until a pane is shared, the port is on the loopback address, and
+// taking the last pane back makes the code useless.
 
 // Share is the share, as the window shows it: its code, and the panes
 // in it with what each allows.
@@ -305,8 +304,8 @@ func (a *app) copyAgentPrompt(name string) {
 	}
 	a.notify("Prompt copied", "Paste it into "+host.called+". It carries the share's code.", handoverPrompt(host, sh.code, exePath()))
 	if _, ok := exeKnown(); !ok {
-		// Said, as gridterm says it: the user may never read the prompt.
-		a.notify("gunimterm path not found", `The prompt uses "gunimterm" as the command. It works when gunimterm is on the PATH.`, "")
+		// Said: the user may never read the prompt.
+		a.notify("kakel path not found", `The prompt uses "kakel" as the command. It works when kakel is on the PATH.`, "")
 	}
 	a.showShare()
 }
@@ -596,7 +595,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 			return struct{}{}, errors.New("the program in that pane is still running, so there is nothing to start again")
 		}
 		// Starting it again on a machine the window has let go of means
-		// dialling it, and dialling is the user's, as in gridterm: what
+		// dialling it, and dialling is the user's: what
 		// the box allows is a program started again on a connection the
 		// window already holds.
 		if machine := w.a.machineOf(h.pane); machine != "" && w.a.conns[machine] == nil && w.a.windows[machine] == nil {
@@ -658,7 +657,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if !w.a.agents.allowed(h).OpenMore {
 			return struct{}{}, errors.New(`this hand-over does not let you open another pane. Ask the user to tick "` + agent.BoxOpenMore + `"`)
 		}
-		// Not from a pane opened to run one command, as in gridterm:
+		// Not from a pane opened to run one command:
 		// "another pane there" would read as the command run again, and
 		// this opens a shell.
 		if _, ok := w.a.commands[h.pane]; ok {
@@ -768,13 +767,13 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 
 // secretLine is what the pane says when an agent asks for a secret.
 func secretLine(what string) string {
-	// Cleaned as gridterm cleans it: one plain line, cut short, with
-	// nothing in it that could draw or pass itself off as the window.
+	// Cleaned to one plain line, cut short, with nothing in it that
+	// could draw or pass itself off as the window.
 	asked := strings.TrimSpace(agent.CleanSecretAsk(what))
 	if asked == "" {
 		asked = "something it says it cannot see"
 	}
-	return `-- gunimterm: an agent wants something typed here. The window never tells it what you type. The program in this pane gets it, so if you can see the characters as you type them, the agent can read them off the screen too. It asked for: "` + asked + `" --`
+	return `-- kakel: an agent wants something typed here. The window never tells it what you type. The program in this pane gets it, so if you can see the characters as you type them, the agent can read them off the screen too. It asked for: "` + asked + `" --`
 }
 
 // typeInto types text into a terminal and then presses keys.
@@ -786,7 +785,7 @@ func typeInto(t *uiterm.Terminal, text string, keys []string) error {
 	for _, name := range keys {
 		chord, err := ui.ParseChord(name)
 		if err != nil {
-			return fmt.Errorf("gunimterm cannot press %q: %w", name, err)
+			return fmt.Errorf("kakel cannot press %q: %w", name, err)
 		}
 		press := input.Event{Kind: input.KeyPress, Key: chord.Key, Mods: chord.Mods}
 		if chord.Key == input.KeySpace && chord.Mods == 0 {
@@ -861,8 +860,7 @@ func trimBlankTail(text string) string {
 
 func countLines(text string) int { return strings.Count(text, "\n") + 1 }
 
-// The agent programs the prompt and setup are written for, as gridterm
-// knows them.
+// The agent programs the prompt and setup are written for.
 const (
 	hostClaudeCode = "Claude Code"
 	hostCodex      = "Codex"
@@ -882,7 +880,7 @@ type agentHost struct {
 }
 
 var agentHosts = []agentHost{
-	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude", skillIn: []string{".claude", "skills", "gridterm"}, skillEnv: "CLAUDE_CONFIG_DIR"},
+	{name: hostClaudeCode, called: hostClaudeCode, cmd: "claude", skillIn: []string{".claude", "skills", "kakel"}, skillEnv: "CLAUDE_CONFIG_DIR"},
 	{name: hostCodex, called: hostCodex, cmd: "codex"},
 	{name: hostCursor, called: hostCursor, configAt: "~/.cursor/mcp.json"},
 	{name: hostOther, called: "the host"},
@@ -910,7 +908,7 @@ func exePath() string {
 	if exe, ok := exeKnown(); ok {
 		return exe
 	}
-	return "gunimterm"
+	return "kakel"
 }
 
 // exeKnown is where this program is, and false when the system will not
@@ -929,13 +927,13 @@ func quotedPath(path string) string {
 
 func mcpConfig(exe string) string {
 	inJSON := strings.ReplaceAll(strings.ReplaceAll(exe, `\`, `\\`), `"`, `\"`)
-	return `{"mcpServers": {"gridterm": {` + "\n" + `  "command": "` + inJSON + `",` + "\n" + `  "args": ["-mcp"]}}}`
+	return `{"mcpServers": {"kakel": {` + "\n" + `  "command": "` + inJSON + `",` + "\n" + `  "args": ["-mcp"]}}}`
 }
 
 // setupToCopy is what adds the MCP server to h.
 func (h agentHost) setupToCopy(exe string) string {
 	if h.cmd != "" {
-		return h.cmd + " mcp add gridterm -- " + quotedPath(exe) + " -mcp"
+		return h.cmd + " mcp add kakel -- " + quotedPath(exe) + " -mcp"
 	}
 	return mcpConfig(exe)
 }
@@ -959,13 +957,13 @@ func (h agentHost) setupForAgent(exe string) string {
 
 // handoverPrompt is what the user pastes into the agent program.
 func handoverPrompt(host agentHost, code, exe string) string {
-	return fmt.Sprintf(`The user has shared terminal panes with you in gridterm, a terminal
-running on this machine. You work in those panes through gridterm's MCP
+	return fmt.Sprintf(`The user has shared terminal panes with you in kakel, a terminal
+running on this machine. You work in those panes through kakel's MCP
 server, and the user watches everything you do.
 
 That server runs on this machine, on standard input and output (stdio), because
 the port inside the code is on the loopback address. If you do not have
-gridterm's tools, it has not been added here yet.
+kakel's tools, it has not been added here yet.
 
 %s
 
@@ -1015,13 +1013,13 @@ func skillPathFor(host agentHost) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(dir, "skills", "gridterm", skillFile), nil
+	return filepath.Join(dir, "skills", "kakel", skillFile), nil
 }
 
 // fromHome is a directory an agent program's own setting named, as an
 // absolute path: a leading ~, and a relative path, are read from home,
 // as the program reads its setting from its own home and not from
-// wherever this window was started, as gridterm reads it.
+// wherever this window was started.
 func fromHome(dir string) (string, error) {
 	if filepath.IsAbs(dir) {
 		return dir, nil
@@ -1043,11 +1041,10 @@ func (a *app) writeSkill(in WriteSkill) error {
 	if err != nil {
 		return err
 	}
-	// Refused rather than written with the bare name, as gridterm
-	// refuses it: a file goes on saying the wrong thing long after the
-	// failure is forgotten.
+	// Refused rather than written with the bare name: a file goes on
+	// saying the wrong thing long after the failure is forgotten.
 	if _, ok := exeKnown(); !ok {
-		return errors.New("the path to gunimterm could not be found, so the skill would name no program to start")
+		return errors.New("the path to kakel could not be found, so the skill would name no program to start")
 	}
 	body := skillFor(host, exePath())
 	if was, err := os.ReadFile(path); err == nil && string(was) == body {

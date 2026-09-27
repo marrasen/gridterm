@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Name is what the vault file is called inside gridterm's directory.
+// Name is what the vault file is called inside kakel's directory.
 const Name = "secrets.json"
 
 // fileVersion is the format written. A file from a later version is
@@ -81,7 +81,7 @@ func readFile(path string) (*file, error) {
 	}
 	if f.Version > fileVersion {
 		return nil, fmt.Errorf(
-			"secrets: %s was written by a newer gridterm (version %d, this one reads %d)",
+			"secrets: %s was written by a newer kakel (version %d, this one reads %d)",
 			path, f.Version, fileVersion)
 	}
 	if len(f.Slots) == 0 {

@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vt"
 )
 
 // fakeSession is a session driven by the test: what it hands to the

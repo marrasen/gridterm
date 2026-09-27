@@ -8,18 +8,18 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/text"
 
-	"github.com/marrasen/gridterm/fonts"
-	"github.com/marrasen/gridterm/glyph"
+	"github.com/marrasen/kakel/fonts"
+	"github.com/marrasen/kakel/glyph"
 )
 
-// The terminals' typeface, as gridterm picks it: Go Mono, compiled in;
-// the IBM VGA face, compiled in for a theme that asks for the look of a
-// DOS program; or a monospaced family installed on this machine, found
-// by a scan as the window opens. A theme may name one, which is taken
-// unless the user has picked one from the Font menu.
+// The terminals' typeface: Go Mono, compiled in; the IBM VGA face,
+// compiled in for a theme that asks for the look of a DOS program; or a
+// monospaced family installed on this machine, found by a scan as the
+// window opens. A theme may name one, which is taken unless the user has
+// picked one from the Font menu.
 
 // bundledFamily and dosFamily are what the Font menu calls the faces
-// compiled in, as gridterm calls them.
+// compiled in.
 const (
 	bundledFamily = "Go Mono (bundled)"
 	dosFamily     = "PxPlus IBM VGA8"
@@ -192,7 +192,7 @@ func fontCommandID(family string) string {
 }
 
 // openCols and openRows are the terminal a new window opens with, beside
-// the sidebar: gridterm's 100 by 32, less its sidebar and bar.
+// the sidebar: 100 by 32 for the whole window, less its sidebar and bar.
 const openCols, openRows = 80, 30
 
 // frameW and frameH are the window around the terminal: the divider

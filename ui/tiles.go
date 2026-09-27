@@ -5,8 +5,8 @@ import (
 	"math"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // leastTile is the smallest a tile may be, in cells. Below this there is

@@ -21,8 +21,8 @@ import (
 // and the pane picked grows back to fill the stage.
 
 var (
-	switcherScrim = theme.Color("gunimterm.switcher.scrim", color.NRGBA{R: 0x0c, G: 0x0e, B: 0x12, A: 0xe8})
-	switcherRing  = theme.Color("gunimterm.switcher.ring", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
+	switcherScrim = theme.Color("kakel.switcher.scrim", color.NRGBA{R: 0x0c, G: 0x0e, B: 0x12, A: 0xe8})
+	switcherRing  = theme.Color("kakel.switcher.ring", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
 )
 
 // switcher is the overview, over the window while it is open.

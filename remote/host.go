@@ -58,7 +58,7 @@ type Host struct {
 	Folders []string `json:"folders,omitempty"`
 
 	// Setup says the shell on this machine is taught to say where it
-	// is and where each command starts, by gridterm typing one line in
+	// is and where each command starts, by kakel typing one line in
 	// as the shell starts.
 	//
 	// Off unless the user asks for it: the line goes into whatever
@@ -73,7 +73,7 @@ type Host struct {
 	// root on that server can sign with these keys.
 	ForwardAgent bool `json:"forwardAgent,omitempty"`
 
-	// Window says this is another gridterm serving, taken over rather
+	// Window says this is another kakel serving, taken over rather
 	// than logged in to.
 	//
 	// Address and Port are where it serves, and the first of Identities
@@ -82,7 +82,7 @@ type Host struct {
 	Window bool `json:"window,omitempty"`
 }
 
-// ServePort is the port a gridterm serves on when none is given.
+// ServePort is the port a kakel serves on when none is given.
 const ServePort = 2222
 
 // ServeAddr returns where a saved window serves, as host:port.

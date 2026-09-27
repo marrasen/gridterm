@@ -162,7 +162,7 @@ func TestABigAnswerReachesTheAgent(t *testing.T) {
 //
 // The two are not the same thing to whoever is watching: a window that
 // hung up wants looking at, and one that sent too much is a build of
-// gridterm that disagrees with this one about how big an answer may be.
+// kakel that disagrees with this one about how big an answer may be.
 func TestAnAnswerTooLongToReadIsSaidInWords(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -263,9 +263,9 @@ func TestAnotherProtocolVersionIsToldWhichBuildIsOlder(t *testing.T) {
 		spoke string
 		want  string
 	}{
-		{"gridterm-agent-1", "the gridterm serving this mcp server is an older build"},
+		{"gridterm-agent-1", "the kakel serving this mcp server is an older build"},
 		{"gridterm-agent-9", "this window is an older build"},
-		{"GET / HTTP/1.1", "not one of gridterm"},
+		{"GET / HTTP/1.1", "not one of kakel"},
 	} {
 		_, s, _ := listening(t)
 		conn, err := net.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", s.Port()))

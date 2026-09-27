@@ -3,7 +3,7 @@ package vt
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // Palette is the colour theme a terminal resolves SGR colours against.

@@ -12,7 +12,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/pasted"
+	"github.com/marrasen/kakel/pasted"
 )
 
 // onClipboard puts a picture on the clipboard as the program reads it,

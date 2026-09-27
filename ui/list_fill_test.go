@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/vt"
 )
 
 // A row with a fill washes the ground of that share of its width, and

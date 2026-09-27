@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // listStyled returns colours a test can tell apart from a blank cell.

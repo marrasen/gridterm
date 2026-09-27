@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/marrasen/gridterm/input"
+import "github.com/marrasen/kakel/input"
 
 // Cursor is a shape the mouse pointer takes.
 //

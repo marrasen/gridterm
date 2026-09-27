@@ -10,7 +10,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/kakel/session"
 )
 
 // The biggest pane a client may ask for. A size is four bytes on the
@@ -69,17 +69,17 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			if len(nch.ExtraData()) > 0 {
 				if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 					// The same shape trouble a session request has: the
-					// encoding is positional, so this is a gridterm of
+					// encoding is positional, so this is a kakel of
 					// another build.
 					_ = nch.Reject(ssh.ConnectionFailed,
-						"that is not a file session request this gridterm understands: "+
+						"that is not a file session request this kakel understands: "+
 							"both windows have to be the same build")
 					continue
 				}
 			}
 			if files.Load() >= mostFileSessions {
 				_ = nch.Reject(ssh.ResourceShortage,
-					"this gridterm is already serving as many file sessions"+
+					"this kakel is already serving as many file sessions"+
 						" as it will on one connection")
 				continue
 			}
@@ -92,16 +92,16 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 		}
 		if nch.ChannelType() != SessionChannel {
 			_ = nch.Reject(ssh.UnknownChannelType,
-				"this is gridterm, and it serves "+SessionChannel)
+				"this is kakel, and it serves "+SessionChannel)
 			continue
 		}
 		var want openSession
 		if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
 			// The shape is fixed and positional, with no room for a
 			// field one end knows and the other does not, so this is
-			// what a gridterm of another build looks like from here.
+			// what a kakel of another build looks like from here.
 			_ = nch.Reject(ssh.ConnectionFailed,
-				"that is not a session request this gridterm understands: "+
+				"that is not a session request this kakel understands: "+
 					"both windows have to be the same build")
 			continue
 		}
@@ -131,7 +131,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 // the only reader of.
 func (s *Server) runFiles(ctx context.Context, nch ssh.NewChannel, host string) {
 	if s.cfg.Files == nil {
-		_ = nch.Reject(ssh.Prohibited, "this gridterm does not serve its files")
+		_ = nch.Reject(ssh.Prohibited, "this kakel does not serve its files")
 		return
 	}
 	ch, reqs, err := nch.Accept()
@@ -148,7 +148,7 @@ func (s *Server) runFiles(ctx context.Context, nch ssh.NewChannel, host string) 
 	if err := s.cfg.Files(ctx, host, ch); err != nil {
 		// Said over there as well as here: the client is left holding
 		// a stream that stopped, and this is the only account of why.
-		if _, werr := io.WriteString(ch.Stderr(), "gridterm: "+err.Error()+"\r\n"); werr != nil {
+		if _, werr := io.WriteString(ch.Stderr(), "kakel: "+err.Error()+"\r\n"); werr != nil {
 			s.onError(fmt.Errorf("serve: say why a file session stopped: %w", werr))
 		}
 		s.onError(fmt.Errorf("serve: carry a file session: %w", err))
@@ -206,7 +206,7 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 	case want.Attach != "":
 		if s.cfg.Attach == nil {
 			s.refuseSession(ch, reqs,
-				errors.New("this gridterm cannot be worked in from elsewhere"))
+				errors.New("this kakel cannot be worked in from elsewhere"))
 			return
 		}
 		sess, err = s.cfg.Attach(Attached{
@@ -215,7 +215,7 @@ func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
 			Kind: want.AttachKind,
 		}, cols, rows)
 	case s.cfg.Open == nil:
-		s.refuseSession(ch, reqs, errors.New("this gridterm has nothing to open"))
+		s.refuseSession(ch, reqs, errors.New("this kakel has nothing to open"))
 		return
 	default:
 		sess, named, err = s.cfg.Open(cols, rows)
@@ -329,7 +329,7 @@ func (s *Server) refuseSession(ch ssh.Channel, reqs <-chan *ssh.Request, why err
 	// connection would wait for ever.
 	go ssh.DiscardRequests(reqs)
 
-	if _, err := io.WriteString(ch.Stderr(), "gridterm: "+why.Error()+"\r\n"); err != nil {
+	if _, err := io.WriteString(ch.Stderr(), "kakel: "+why.Error()+"\r\n"); err != nil {
 		s.onError(fmt.Errorf("serve: say why a session could not start: %w", err))
 	}
 	// A failure, not a program that ended cleanly.

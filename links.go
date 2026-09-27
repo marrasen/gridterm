@@ -13,14 +13,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/kakel/remote"
 )
 
-// Links in a terminal, as gridterm follows them: Ctrl and a click on
-// an address opens it in the browser, and on a path opens it, a folder
-// in a file pane and a file in the reader, at the line it names. An
-// address on a server's own loopback, such as a development server's,
-// opens through a tunnel made for it.
+// Links in a terminal: Ctrl and a click on an address opens it in the
+// browser, and on a path opens it, a folder in a file pane and a file in
+// the reader, at the line it names. An address on a server's own
+// loopback, such as a development server's, opens through a tunnel made
+// for it.
 
 // withLinks gives a pane's hooks what follows its links, for a pane on
 // machine.
@@ -170,7 +170,7 @@ func linkIsOpenable(at string) error {
 	case "http", "https", "mailto", "ftp", "ftps":
 		return nil
 	}
-	return fmt.Errorf("gunimterm opens web and mail links, and %s is a %q link", at, u.Scheme)
+	return fmt.Errorf("kakel opens web and mail links, and %s is a %q link", at, u.Scheme)
 }
 
 // findOnDisk is the file or folder a path in a pane names on this

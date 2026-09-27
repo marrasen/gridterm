@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // servers is a drop-down whose keys are not what it shows, the way a

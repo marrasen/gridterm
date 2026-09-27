@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // filler draws its name over every cell it is given, so a test can see

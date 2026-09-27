@@ -1,4 +1,4 @@
-// Package appicon draws gridterm's own icon, at whatever size a window
+// Package appicon draws kakel's own icon, at whatever size a window
 // system or an icon file asks for.
 package appicon
 

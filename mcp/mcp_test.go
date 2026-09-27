@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/kakel/agent"
 )
 
 // fakePanes is a window with one pane, for testing what an agent is
@@ -354,7 +354,7 @@ func TestItSaysWhatItIsAndWhatItCanDo(t *testing.T) {
 	if !strings.Contains(string(raw), protocolVersion) {
 		t.Errorf("it did not say which protocol: %s", raw)
 	}
-	if !strings.Contains(string(raw), "gridterm") {
+	if !strings.Contains(string(raw), "kakel") {
 		t.Errorf("it did not say what it is: %s", raw)
 	}
 
@@ -685,7 +685,7 @@ func TestItSaysWhatAClientNeedsToKnow(t *testing.T) {
 	if said.Capabilities == nil || said.Capabilities.Tools == nil {
 		t.Errorf("it did not say it has tools: %s", raw)
 	}
-	if said.ServerInfo == nil || said.ServerInfo.Name != "gridterm" ||
+	if said.ServerInfo == nil || said.ServerInfo.Name != "kakel" ||
 		said.ServerInfo.Version == "" {
 		t.Errorf("it did not say what it is: %s", raw)
 	}
@@ -975,21 +975,21 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 	}{{
 		what: "a shell that says nothing, before the agent has typed",
 		pane: func(f *fakePanes) { f.screen = "$ " },
-		says: []string{"does not tell gridterm", "Nothing has been typed here yet"},
+		says: []string{"does not tell kakel", "Nothing has been typed here yet"},
 		not:  []string{"exit status", "still running"},
 	}, {
 		what: "a shell that says nothing, while what was sent runs",
 		pane: func(f *fakePanes) { f.screen, f.watching = "$ make", true },
-		says: []string{"does not tell gridterm", "has not come back", "still running"},
+		says: []string{"does not tell kakel", "has not come back", "still running"},
 	}, {
 		what: "a shell that says nothing, with the prompt back",
 		pane: func(f *fakePanes) { f.screen, f.watching, f.back = "$ ", true, true },
-		says: []string{"does not tell gridterm", "prompt you last typed at is back", "usually"},
+		says: []string{"does not tell kakel", "prompt you last typed at is back", "usually"},
 	}, {
 		what: "a command running",
 		pane: func(f *fakePanes) { f.screen, f.marks, f.running = "$ make", true, true },
 		says: []string{"a command is running", "call wait_for again"},
-		not:  []string{"does not tell gridterm"},
+		not:  []string{"does not tell kakel"},
 	}, {
 		what: "a command the agent sent, finished",
 		pane: func(f *fakePanes) {
@@ -997,7 +997,7 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 			f.status, f.hasStatus, f.yours = 2, true, true
 		},
 		says: []string{"finished with exit status 2", "That is what you sent"},
-		not:  []string{"does not tell gridterm", "may be the user's"},
+		not:  []string{"does not tell kakel", "may be the user's"},
 	}, {
 		what: "a command that finished before the agent typed",
 		pane: func(f *fakePanes) {
@@ -1011,12 +1011,12 @@ func TestAScreenSaysWhatIsKnownAboutTheCommand(t *testing.T) {
 	}, {
 		what: "a full-screen program, which has no command line to report",
 		pane: func(f *fakePanes) { f.screen, f.alt = "~ VIM ~", true },
-		not:  []string{"does not tell gridterm", "command is running", "exit status"},
+		not:  []string{"does not tell kakel", "command is running", "exit status"},
 	}, {
 		what: "a pane whose program has gone",
 		pane: func(f *fakePanes) { f.screen, f.gone = "logout", true },
 		says: []string{"has finished"},
-		not:  []string{"does not tell gridterm", "Read the screen and judge"},
+		not:  []string{"does not tell kakel", "Read the screen and judge"},
 	}} {
 		t.Run(tc.what, func(t *testing.T) {
 			panes := &fakePanes{code: "gt1-2222-abc"}

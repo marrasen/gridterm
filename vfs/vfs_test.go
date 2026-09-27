@@ -12,8 +12,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/remote"
 )
 
 // tree is a filesystem to test and a directory on it that the test owns.

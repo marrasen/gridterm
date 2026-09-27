@@ -16,12 +16,12 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
-	"github.com/marrasen/gridterm/settings"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/ui"
 )
 
 // The window: a sidebar listing the panes, beside the stage, which
@@ -29,12 +29,12 @@ import (
 
 // The window's own tokens.
 var (
-	sidebarFill = theme.Color("gunimterm.sidebar", color.NRGBA{R: 0x1b, G: 0x1e, B: 0x26, A: 0xff})
-	rowActive   = theme.Color("gunimterm.row.active", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0x40})
-	rowHover    = theme.Color("gunimterm.row.hover", color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x12})
-	faint       = theme.Color("gunimterm.faint", color.NRGBA{R: 0x8a, G: 0x93, B: 0xa6, A: 0xff})
-	noGap       = theme.Length("gunimterm.nogap", 0)
-	smallText   = theme.Length("gunimterm.small", 12)
+	sidebarFill = theme.Color("kakel.sidebar", color.NRGBA{R: 0x1b, G: 0x1e, B: 0x26, A: 0xff})
+	rowActive   = theme.Color("kakel.row.active", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0x40})
+	rowHover    = theme.Color("kakel.row.hover", color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x12})
+	faint       = theme.Color("kakel.faint", color.NRGBA{R: 0x8a, G: 0x93, B: 0xa6, A: 0xff})
+	noGap       = theme.Length("kakel.nogap", 0)
+	smallText   = theme.Length("kakel.small", 12)
 )
 
 // window is the view the program's state drives.
@@ -412,9 +412,8 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.permissionsDialog(w.share, u)
 		return true
 	case "agent.hand":
-		// Shared, it opens its permissions, as gridterm's does: to open
-		// them again for a pane shared already, or to tick more once the
-		// share is made.
+		// Shared, it opens its permissions: to open them again for a
+		// pane shared already, or to tick more once the share is made.
 		if slices.ContainsFunc(w.share.Panes, func(p SharedPane) bool { return p.Pane == w.focused }) {
 			w.permissionsDialog(w.share, u)
 			return true
@@ -509,8 +508,7 @@ func (w *window) openDialog(d *widget.Dialog, u *gunim.UI) {
 }
 
 // zoom makes the font a point larger for each notch the wheel turns
-// away from the user, with Ctrl held, and smaller toward, as gridterm
-// does.
+// away from the user, with Ctrl held, and smaller toward.
 func (w *window) zoom(s input.Scroll, u *gunim.UI) {
 	w.zoomed += s.Delta.Y / zoomNotch
 	steps := int(w.zoomed)
@@ -543,7 +541,7 @@ func (w *window) showFonts(st State) {
 		m.Items = append(m.Items, name)
 		m.Checked = append(m.Checked, fontCommandID(name) == fontCommandID(st.Font.Name))
 		if i == 1 {
-			// A line under Go Mono, as in gridterm.
+			// A line under Go Mono.
 			m.Breaks = append(m.Breaks, i)
 		}
 	}
@@ -556,7 +554,7 @@ func (w *window) showFonts(st State) {
 
 // programName is what the window is called, before the focused
 // terminal's title.
-const programName = "gunimterm"
+const programName = "kakel"
 
 // showTitle names the window after the focused terminal's title, as
 // its program sets it. Read from the focused one only: a build running
@@ -757,8 +755,8 @@ func (w *window) servers(saved []remote.Host) {
 		}
 		return ""
 	}
-	// As gridterm has it: the saved servers first, under Connect To,
-	// then what is always there.
+	// The saved servers first, under Connect To, then what is
+	// always there.
 	m := widget.BarMenu{Title: "Servers"}
 	w.serverIDs = nil
 	if len(saved) > 0 {
@@ -846,7 +844,7 @@ func (w *window) servers(saved []remote.Host) {
 	}
 }
 
-// runItem carries out a command on one thing of many, by gridterm's
+// runItem carries out a command on one thing of many, by kakel's
 // name for it: a saved server, a machine, a folder saved on one, a
 // shell, a saved command or tunnel. It reports false for any other id.
 func (w *window) runItem(id string, u *gunim.UI) bool {
@@ -939,7 +937,7 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 	return true
 }
 
-// shellIDs are gridterm's names for the commands that open a terminal
+// shellIDs are kakel's names for the commands that open a terminal
 // with each of the shells here, in the order of shellChoices.
 func (w *window) shellIDs() []string {
 	list := make([]shellfind.Shell, len(w.shellChoices))
@@ -950,8 +948,8 @@ func (w *window) shellIDs() []string {
 }
 
 // savingClashes says what stands in the way of saving h in place of
-// old, as gridterm checks it: a new name something is connected as, a
-// window saved twice, a connected window moved.
+// old: a new name something is connected as, a window saved twice, a
+// connected window moved.
 func (w *window) savingClashes(h remote.Host, old *remote.Host) string {
 	under := ""
 	if old != nil {
@@ -1079,7 +1077,7 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	}
 	// A window has no account, nothing to go through and no session to
 	// carry an agent over: those are greyed out while the type says
-	// window, as in gridterm, rather than taken and dropped.
+	// window, rather than taken and dropped.
 	applies := func() {
 		window := kind.Selected == 1
 		via.Disabled = window || len(ids) <= 1
@@ -1160,9 +1158,9 @@ func (w *window) nextFilePane(id string, back bool) string {
 	return files[(at+step+len(files))%len(files)]
 }
 
-// foldersOn are the folders offered for a machine, as gridterm offers
-// them: the ones saved for it, and on this computer each WSL
-// distribution's, which Windows serves on a share of its own.
+// foldersOn are the folders offered for a machine: the ones saved for
+// it, and on this computer each WSL distribution's, which Windows serves
+// on a share of its own.
 func (w *window) foldersOn(m string) []string {
 	var out []string
 	for _, h := range w.saved {
@@ -1180,8 +1178,8 @@ func (w *window) foldersOn(m string) []string {
 	return out
 }
 
-// removeSays is what removing a server closes, as gridterm says it, and
-// nothing when it closes nothing.
+// removeSays is what removing a server closes, and nothing when it
+// closes nothing.
 func (w *window) removeSays(name string) string {
 	switch {
 	case slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == name }):
@@ -1289,7 +1287,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 		return true
 	}
 	// Ctrl lights the link under the pointer in whichever pane it is
-	// over, whatever has the keyboard, as in gridterm.
+	// over, whatever has the keyboard.
 	switch k := e.(type) {
 	case input.WindowFocusGained:
 		w.away = false
@@ -1367,7 +1365,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		rows = slices.Insert(rows, at, item)
 	}
 	rows = w.markRows(rows, st)
-	// At the foot, as in gridterm, the way to a machine not yet listed.
+	// At the foot, the way to a machine not yet listed.
 	rows = append(rows, sideItem{key: "connect:new", text: "+ Connect to server…", local: w.connectDialog})
 	widget.Sync(w.list, u, rows,
 		func(r sideItem) widget.Key { return widget.Key(r.key) },
@@ -1379,8 +1377,8 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 	if st.Focus != w.revealed {
-		// The sidebar follows the stage, as gridterm's does: the row of
-		// the pane in front scrolls into view.
+		// The sidebar follows the stage: the row of the pane in front
+		// scrolls into view.
 		w.revealed = st.Focus
 		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(st.Focus)); ok {
 			u.Reveal(row)
@@ -1887,8 +1885,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 	for _, w := range windows {
 		add(w.Name)
 	}
-	// The saved servers, as gridterm lists them, each under its heading
-	// with its plus, which connects to it.
+	// The saved servers, each under its heading with its plus, which
+	// connects to it.
 	for _, name := range saved {
 		add(name)
 	}
@@ -1945,8 +1943,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 			}
 		}
 		// Each machine the window reached, under a heading of its own a
-		// step in, as gridterm has them: this window's panes on it, and
-		// what the window has open there.
+		// step in: this window's panes on it, and what the window has
+		// open there.
 		for _, host := range far {
 			out = append(out, sideItem{key: "machine:" + m + farSep + host, text: host, heading: true, depth: 1})
 			for _, p := range panes {
@@ -2127,8 +2125,7 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
 			if r.closes != nil && r.marks.onCross(e.Pos) {
-				// The cross at the end: close the row, as gridterm's
-				// does, rather than go to it.
+				// The cross at the end: close the row, rather than go to it.
 				u.Send(r, r.closes)
 				return true
 			}
@@ -2149,7 +2146,7 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 			}
 			r.w.focusRow(r.key, step, u)
 		case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
-			// A page of rows, as gridterm's list moves.
+			// A page of rows.
 			step := sidebarPage
 			if e.Key == input.KeyPageUp {
 				step = -step
@@ -2181,9 +2178,9 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 // no room; given something to say, it grows into place.
 //
 // While a menu is open it says instead the full title of the item
-// highlighted, as gridterm's bottom row does, over the bottom of the
-// stage when the line has no room of its own: the terminal keeps its
-// size while the pointer runs down a menu.
+// highlighted, over the bottom of the stage when the line has no room of
+// its own: the terminal keeps its size while the pointer runs down a
+// menu.
 type statusLine struct {
 	anim.Group
 	label  *widget.Label
@@ -2462,7 +2459,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	for _, h := range w.saved {
 		if h.Name == m && h.Window && !window {
 			// Saved as a window and not connected: nothing that needs a
-			// shell applies, as in gridterm.
+			// shell applies.
 			saved := h
 			add("Connect", send(ConnectTo{Saved: m}))
 			add("Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
@@ -2523,8 +2520,8 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 }
 
 // askSplit asks what goes in the new half of a split of the focused
-// pane, as gridterm's Split Right and Split Down ask: a new terminal,
-// one on another shell or machine, or a pane already open, moved in.
+// pane: a new terminal, one on another shell or machine, or a pane
+// already open, moved in.
 // Moving one in is how two file panes come to sit side by side.
 func (w *window) askSplit(vertical bool, u *gunim.UI) {
 	focus := w.focused

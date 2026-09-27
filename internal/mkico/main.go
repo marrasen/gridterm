@@ -1,4 +1,4 @@
-// Command mkico writes gridterm's icon as a Windows .ico file and says
+// Command mkico writes kakel's icon as a Windows .ico file and says
 // where it went.
 //
 // The file is not what a running window uses: that sets its own icon
@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/marrasen/gridterm/appicon"
+	"github.com/marrasen/kakel/appicon"
 )
 
 func main() {
@@ -44,7 +44,7 @@ func write(at string, raw []byte) (string, error) {
 		}
 		return at, nil
 	}
-	f, err := os.CreateTemp("", "gridterm-*.ico")
+	f, err := os.CreateTemp("", "kakel-*.ico")
 	if err != nil {
 		return "", fmt.Errorf("make a file for the icon: %w", err)
 	}

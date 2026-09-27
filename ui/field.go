@@ -6,8 +6,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // FieldStyle colours a text field.

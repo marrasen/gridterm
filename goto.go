@@ -5,13 +5,12 @@ import (
 
 	"github.com/marrasen/gunim"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
-// Go To completes a folder's name as it is typed, as gridterm's does:
-// the rest of the name shows faintly after the caret, and Tab or Right
-// takes it. Only folders are offered, and where several match, the
-// part they share.
+// Go To completes a folder's name as it is typed: the rest of the name
+// shows faintly after the caret, and Tab or Right takes it. Only folders
+// are offered, and where several match, the part they share.
 
 // ListFolders asks for the folders in Dir of a file pane's files, for
 // Go To to complete from.

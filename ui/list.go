@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // listWheel is how many rows one notch of the wheel moves.

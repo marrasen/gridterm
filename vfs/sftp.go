@@ -95,7 +95,7 @@ func (s *SFTP) ReadDir(path string) ([]Entry, error) {
 	infos, err := s.client.ReadDir(path)
 	if err != nil && path == "/" {
 		// A Windows machine lists its drives at the top, and the SFTP
-		// server gridterm runs there gives up on the whole list when one
+		// server kakel runs there gives up on the whole list when one
 		// drive cannot be read: an empty card reader answers "the device
 		// is not ready" and every other drive goes with it. The drives
 		// are asked about one at a time instead, and the ones that answer

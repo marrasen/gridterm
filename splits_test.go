@@ -8,7 +8,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // A pane open on a stage of its own moves into a split beside another.

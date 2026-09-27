@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/marrasen/gridterm/internal/newfile"
+	"github.com/marrasen/kakel/internal/newfile"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -19,7 +19,7 @@ import (
 // It says who may read the key only where a mode says anything. On
 // Windows a file has no mode to read and the key is as private as the
 // directory holding it, which is why MakeKey insists on a full path
-// rather than writing one wherever gridterm was started.
+// rather than writing one wherever kakel was started.
 const KeyPerm = 0o600
 
 // PubPerm is the mode the public half is made with. It is public, and it
@@ -41,10 +41,10 @@ type NewKey struct {
 // path with ".pub" on the end.
 //
 // ed25519 because it is what ssh-keygen makes by default now, every
-// server gridterm can reach takes it, and it has no size to choose.
+// server kakel can reach takes it, and it has no size to choose.
 //
 // The path has to be an absolute one. A relative path would put a
-// private key wherever gridterm happened to be started, which on Windows
+// private key wherever kakel happened to be started, which on Windows
 // is also the whole of what keeps it private.
 //
 // An empty passphrase leaves the key unencrypted, the way ssh-keygen
@@ -142,7 +142,7 @@ func writeWhole(path string, body []byte, perm os.FileMode) error {
 }
 
 // DefaultKeyPath is where a new key goes when the user names nowhere:
-// beside the keys ssh already looks for, under a name gridterm's own.
+// beside the keys ssh already looks for, under a name kakel's own.
 //
 // Its own name so the first thing the dialog offers is not the one path
 // most likely to be taken already.
@@ -151,5 +151,5 @@ func DefaultKeyPath() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("find your home directory: %w", err)
 	}
-	return filepath.Join(home, ".ssh", "id_ed25519_gridterm"), nil
+	return filepath.Join(home, ".ssh", "id_ed25519_kakel"), nil
 }

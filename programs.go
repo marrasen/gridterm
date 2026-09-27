@@ -8,22 +8,21 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/marrasen/gridterm/notify"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/notify"
+	"github.com/marrasen/kakel/vt"
 )
 
-// What a program in a pane says about itself, as gridterm shows it: how
-// far along it is, from OSC 9;4, and a message, from OSC 9. Both go on
-// the pane's sidebar row. A new message also goes to the window log,
-// and to a pop-up outside the window where the system has one, at most
-// one every toastGap.
+// What a program in a pane says about itself: how far along it is, from
+// OSC 9;4, and a message, from OSC 9. Both go on the pane's sidebar row.
+// A new message also goes to the window log, and to a pop-up outside the
+// window where the system has one, at most one every toastGap.
 
 // toastGap is the least time between two pop-ups, so a program that
 // says something on every line does not bury the screen.
 const toastGap = 2 * time.Second
 
 // toaster shows pop-ups outside the window: on Windows, in its
-// notification area, and elsewhere nowhere, as in gridterm. It is made
+// notification area, and elsewhere nowhere. It is made
 // at the first pop-up, since on Windows it puts an icon there.
 var toaster = sync.OnceValue(func() notify.Toaster { return notify.New(programName) })
 

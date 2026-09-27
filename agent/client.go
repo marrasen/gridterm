@@ -50,7 +50,7 @@ func Dial(code string) (*Client, error) {
 	}
 	conn, err := net.DialTimeout("tcp", fmt.Sprintf("127.0.0.1:%d", port), 5*time.Second)
 	if err != nil {
-		return nil, fmt.Errorf("agent: no gridterm window is listening on port %d: %w", port, err)
+		return nil, fmt.Errorf("agent: no kakel window is listening on port %d: %w", port, err)
 	}
 	c := &Client{
 		conn:     conn,
@@ -60,7 +60,7 @@ func Dial(code string) (*Client, error) {
 	}
 	if _, err := c.say(ask{Do: "hello", Protocol: hello}); err != nil {
 		return nil, errors.Join(
-			fmt.Errorf("agent: %s is not a gridterm window this can talk to: %w",
+			fmt.Errorf("agent: %s is not a kakel window this can talk to: %w",
 				conn.RemoteAddr(), err),
 			c.Close())
 	}

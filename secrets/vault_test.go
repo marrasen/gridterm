@@ -653,9 +653,9 @@ func itemNamed(t *testing.T, v *Vault, name string) Item {
 // has since been renamed to.
 func TestAPassphraseIsFoundByItsKeyFile(t *testing.T) {
 	v, _, _ := aVault(t)
-	keyFile := "/home/marcus/.ssh/id_ed25519_gridterm"
+	keyFile := "/home/marcus/.ssh/id_ed25519_kakel"
 
-	saved, err := v.Put(Item{Name: "id_ed25519_gridterm", Kind: Passphrase, File: keyFile},
+	saved, err := v.Put(Item{Name: "id_ed25519_kakel", Kind: Passphrase, File: keyFile},
 		"a long generated one")
 	if err != nil {
 		t.Fatalf("put: %v", err)
@@ -697,7 +697,7 @@ func TestNoPassphraseForAKeyIsNotAFailure(t *testing.T) {
 // there unused with nothing saying which locks the key.
 func TestOnlyOnePassphrasePerKeyFile(t *testing.T) {
 	v, _, _ := aVault(t)
-	keyFile := "/home/marcus/.ssh/id_ed25519_gridterm"
+	keyFile := "/home/marcus/.ssh/id_ed25519_kakel"
 	first, err := v.Put(Item{Name: "the first", Kind: Passphrase, File: keyFile}, "one")
 	if err != nil {
 		t.Fatalf("put the first: %v", err)

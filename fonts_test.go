@@ -10,9 +10,9 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/text"
 
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/themes"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/vt"
 )
 
 func fontApp(t *testing.T) *app {

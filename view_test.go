@@ -15,10 +15,10 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/logs"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/ui/files"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/logs"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/ui/files"
+	"github.com/marrasen/kakel/vt"
 )
 
 // lastWindow is the offscreen window windowStage made last, for a test

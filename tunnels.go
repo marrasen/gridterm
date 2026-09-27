@@ -11,16 +11,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marrasen/gridterm/logs"
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/logs"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 )
 
-// Tunnels: ports forwarded over a connection, as gridterm forwards
-// them. Each is a row in the sidebar under its machine, saying what it
-// is carrying. Its pane is its account, written as it goes: when it
-// opened, each stream that failed, and, while asked, the traffic.
+// Tunnels: ports forwarded over a connection. Each is a row in the
+// sidebar under its machine, saying what it is carrying. Its pane is its
+// account, written as it goes: when it opened, each stream that failed,
+// and, while asked, the traffic.
 
 // Tunnel is a forwarded port, as the sidebar lists it.
 type Tunnel struct {
@@ -422,10 +422,10 @@ func (a *app) serverID(machine string) string {
 	return ""
 }
 
-// mostSavedTunnels is how many tunnels are kept, as gridterm keeps them.
+// mostSavedTunnels is how many tunnels are kept.
 const mostSavedTunnels = 50
 
-// asSaved is a tunnel written the way gridterm keeps it.
+// asSaved is a tunnel written the way kakel keeps it.
 func asSaved(host, id string, t remote.Tunnel) settings.SavedTunnel {
 	return settings.SavedTunnel{Host: host, HostID: id, Kind: t.Kind.String(), Listen: t.Listen, Target: t.Target}
 }

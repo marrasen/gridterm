@@ -11,11 +11,11 @@ import (
 	"github.com/marrasen/gunim/widget"
 )
 
-// Ctrl+Tab walks the panes in the order they were last used, as
-// gridterm walks them: the first press goes back to the pane before,
-// and each press while Ctrl is held goes one further, with the list
-// shown in the middle of the window. Letting go of Ctrl ends the walk
-// on the pane reached, which is then the most recent.
+// Ctrl+Tab walks the panes in the order they were last used: the first
+// press goes back to the pane before, and each press while Ctrl is held
+// goes one further, with the list shown in the middle of the window.
+// Letting go of Ctrl ends the walk on the pane reached, which is then
+// the most recent.
 
 // paneWalk is a walk under way: the panes in the order it goes, and
 // how far it has got.
@@ -136,8 +136,8 @@ func (l *walkList) show(titles []string, at int) {
 	l.at = at
 }
 
-// walkWidth, walkRow and walkPad are the list's size: a card as wide as
-// gridterm's, a row per pane, and room around them.
+// walkWidth, walkRow and walkPad are the list's size: a card's width, a
+// row per pane, and room around them.
 const walkWidth, walkRow, walkPad = 360, 30, 8
 
 // Children implements [gunim.Composite].

@@ -3,7 +3,7 @@ package ui
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // dragField presses in a form field, moves the pointer and lets go. The

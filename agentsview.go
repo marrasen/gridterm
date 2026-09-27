@@ -7,8 +7,8 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/settings"
 )
 
 // The window's side of sharing panes with an agent.
@@ -113,7 +113,7 @@ func (w *window) permissionsDialog(st Share, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
-// setupDialog shows how to add gridterm's MCP server to an agent
+// setupDialog shows how to add kakel's MCP server to an agent
 // program, and copies it.
 func (w *window) setupDialog(host agentHost, u *gunim.UI) {
 	what := "Run this, as one command line, then start " + host.called + " again. It only writes the config."
@@ -136,7 +136,7 @@ func (w *window) setupDialog(host agentHost, u *gunim.UI) {
 }
 
 // mayWords is what a shared pane lets the agent do beyond reading and
-// typing, as gridterm's share lists it, or nothing.
+// typing, or nothing.
 func mayWords(may settings.AgentMay) string {
 	var adds []string
 	if may.ReadOnly {

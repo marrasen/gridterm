@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // The columns the log view lays out. Fixed, because a log is read by

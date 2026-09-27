@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/marrasen/gridterm/secrets"
+	"github.com/marrasen/kakel/secrets"
 )
 
 // Taking the secrets to another manager and bringing them in from one,
-// as CSV files, the way gridterm does.
+// as CSV files.
 
 // Intents for secrets files.
 type (

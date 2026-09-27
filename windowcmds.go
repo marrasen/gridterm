@@ -9,20 +9,19 @@ import (
 
 	"github.com/marrasen/gunim/theme"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/internal/build"
-	"github.com/marrasen/gridterm/internal/update"
-	"github.com/marrasen/gridterm/keys"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/themes"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/internal/update"
+	"github.com/marrasen/kakel/keys"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/ui"
 )
 
-// The window's own files and commands, as gridterm has them: the
-// shortcuts file, the themes file, checking for a newer release, and
-// the list of every command.
+// The window's own files and commands: the shortcuts file, the themes
+// file, checking for a newer release, and the list of every command.
 
 // Intents for the window's files and commands.
 type (
@@ -36,7 +35,7 @@ type (
 	// WriteThemeFile writes a themes file holding a copy of the theme
 	// the window is drawn in, for the user to start from.
 	WriteThemeFile struct{}
-	// CheckUpdates asks whether a newer gridterm is out.
+	// CheckUpdates asks whether a newer kakel is out.
 	CheckUpdates struct{}
 	// MakePortable makes the folder beside the program and copies the
 	// files it reads now into it, for a copy that carries its own.
@@ -133,7 +132,7 @@ func (a *app) reloadThemes() {
 	a.notify("Themes read again", strings.Join(a.st.Themes, ", "), "")
 }
 
-// checkUpdates asks, in the background, whether a newer gridterm is
+// checkUpdates asks, in the background, whether a newer kakel is
 // out, and says what it found.
 func (a *app) checkUpdates() {
 	if a.checking {

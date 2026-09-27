@@ -483,19 +483,19 @@ func whichIsOlder(spoke string) string {
 	said := "this window speaks " + hello + "."
 	theirs, ok := protocolNumber(spoke)
 	if !ok {
-		return said + " That greeting is not one of gridterm's."
+		return said + " That greeting is not one of kakel's."
 	}
 	switch mine, _ := protocolNumber(hello); {
 	case theirs < mine:
-		return said + " The gridterm serving this MCP server is an older build than this window."
+		return said + " The kakel serving this MCP server is an older build than this window."
 	case theirs > mine:
-		return said + " This window is an older build than the gridterm serving this MCP server."
+		return said + " This window is an older build than the kakel serving this MCP server."
 	}
 	return said
 }
 
 // protocolNumber is the version out of a greeting, and whether it was
-// one of gridterm's at all.
+// one of kakel's at all.
 func protocolNumber(spoke string) (int, bool) {
 	rest, ok := strings.CutPrefix(spoke, "gridterm-agent-")
 	if !ok {

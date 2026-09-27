@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // A copy that fails after the user said to replace something must leave

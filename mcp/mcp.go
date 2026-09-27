@@ -1,4 +1,4 @@
-// Package mcp serves gridterm's panes to an agent over the Model
+// Package mcp serves kakel's panes to an agent over the Model
 // Context Protocol.
 //
 // It translates and nothing more: an agent speaks JSON-RPC on this
@@ -22,8 +22,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/internal/build"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/internal/build"
 )
 
 // protocolVersion is the one version this speaks. An agent that asks
@@ -80,7 +80,7 @@ const (
 // Panes is what this server can do with a window's panes.
 //
 // It is the whole of what an agent can reach. An implementation talks
-// to one gridterm window; nothing here knows how.
+// to one kakel window; nothing here knows how.
 type Panes interface {
 	// Use takes a session code the user gave the agent and opens the
 	// panes the share it names holds.
@@ -489,8 +489,8 @@ func (s *server) call(req request) (any, *rpcError) {
 			"protocolVersion": protocolVersion,
 			"capabilities":    map[string]any{"tools": map[string]any{}},
 			"serverInfo": map[string]any{
-				"name":    "gridterm",
-				"title":   "gridterm panes",
+				"name":    "kakel",
+				"title":   "kakel panes",
 				"version": build.Version(),
 			},
 			"instructions": instructions,
@@ -535,7 +535,7 @@ func fail(id json.RawMessage, code int, why string) response {
 // rules. It is the only place an agent is told those, so the prompt the
 // user pastes says none of it.
 var instructions = strings.Join([]string{
-	`gridterm hands you terminal panes to work in.
+	`kakel hands you terminal panes to work in.
 
 The user puts panes into a share -- on whatever machines, as whatever
 user -- and gives you one session code for the whole share. Call
@@ -550,7 +550,7 @@ now.`,
 }, "\n\n")
 
 // Workflow is how an agent works in a pane of its share. This
-// server's initialize answer and the skill gridterm writes both carry
+// server's initialize answer and the skill kakel writes both carry
 // it, so the two cannot drift apart.
 const Workflow = `read_pane gives you the pane's screen as plain text, and takes lines to read that many,
 back through what has scrolled off the top. read_output gives you what the last command
@@ -570,7 +570,7 @@ those ended the waiting, and says when the time ran out instead. A command whose
 man -- needs --no-pager or a pipe to cat, or you will be stuck in less, where q gets you out.
 list_panes is the panes in your share now, and that is all it lists: the user can put
 one in or take one back while you work. In an answer with
-a screen, the screen ends at a line reading -- gridterm --, and the rest is gridterm talking.
+a screen, the screen ends at a line reading -- kakel --, and the rest is kakel talking.
 Avoid clear: read_output already gives you the last command's output on its own. Clearing
 hides nothing either way -- these tools stop reading above it, and the user can still
 scroll up to everything that was there.`

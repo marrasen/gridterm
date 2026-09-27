@@ -9,10 +9,10 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/settings"
 )
 
 // shellEnds types exit into pane id's shell and waits for the pane to
@@ -92,8 +92,8 @@ func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 }
 
 // A pane on a server whose connection has gone connects again when
-// started again, as gridterm's Reconnect does, and says so when the
-// server is at another address than the pane was opened at.
+// started again, and says so when the server is at another address
+// than the pane was opened at.
 func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("SSH_AUTH_SOCK", "")

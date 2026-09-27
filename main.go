@@ -1,10 +1,8 @@
-// Command gunimterm is a spike: one gridterm terminal in a gunim window.
+// Command kakel is a terminal emulator, drawn with gunim.
 //
-// It runs the user's shell through gridterm's own session, VT parser
-// and key encoder, and draws the screen with gunim's CellGrid. It is
-// here to measure whether gunim draws a busy terminal fast enough, and
-// whether every key reaches the shell as it should, before gridterm's
-// interface moves over.
+// It runs shells here and on other machines through its own sessions,
+// VT parser and key encoder, and draws their screens with gunim's
+// CellGrid, beside the file panes, tunnels and the rest of the window.
 package main
 
 import (
@@ -22,9 +20,9 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 
-	"github.com/marrasen/gridterm/appicon"
-	"github.com/marrasen/gridterm/mcp"
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/appicon"
+	"github.com/marrasen/kakel/mcp"
+	"github.com/marrasen/kakel/settings"
 )
 
 func main() {
@@ -45,7 +43,7 @@ func run() error {
 	}
 	switch {
 	case opts.asMCP:
-		// gridterm's MCP server, for an agent program to start: it holds
+		// kakel's MCP server, for an agent program to start: it holds
 		// nothing and reaches nothing until the agent gives it a code.
 		return mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
 	case opts.mcpSkill:
@@ -54,7 +52,7 @@ func run() error {
 	case opts.listFonts:
 		return printFonts(os.Stdout)
 	}
-	if path := os.Getenv("GUNIMTERM_PROFILE"); path != "" {
+	if path := os.Getenv("KAKEL_PROFILE"); path != "" {
 		f, err := os.Create(path)
 		if err != nil {
 			return err
@@ -96,7 +94,7 @@ func run() error {
 			Arrive:     true,
 		})
 		if err != nil {
-			return fmt.Errorf("gunimterm: %w", err)
+			return fmt.Errorf("kakel: %w", err)
 		}
 		c := w.Client()
 		sh := &shells{m: map[string]*shell{}}

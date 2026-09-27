@@ -1,4 +1,4 @@
-// Package serve lets one gridterm window take over another's.
+// Package serve lets one kakel window take over another's.
 //
 // A window can listen for a client on a port of its own. What crosses
 // the wire is what the host has open and the bytes of whatever the
@@ -21,13 +21,13 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/internal/newfile"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/newfile"
 	"golang.org/x/crypto/ssh"
 )
 
 // The files a serving window keeps, in the directory conf gives
-// gridterm. The host key is private and goes wherever conf.Private says.
+// kakel. The host key is private and goes wherever conf.Private says.
 const (
 	keyFile = "serve_host_key"
 
@@ -124,13 +124,13 @@ func readHostKey(path string) (ssh.Signer, error) {
 		return nil, fmt.Errorf(
 			"serve: the host key %s is readable by others (mode %04o), because the"+
 				" drive it is on gives every file that mode. Mount it with fmask=0077,"+
-				" or keep gridterm's files on a drive that keeps file permissions",
+				" or keep kakel's files on a drive that keeps file permissions",
 			path, info.Mode().Perm())
 	}
 	if modesMeanSomething && info.Mode().Perm()&0o077 != 0 {
 		return nil, fmt.Errorf(
 			"serve: the host key %s is readable by others (mode %04o)."+
-				" Fix its permissions, or delete it and let gridterm make another",
+				" Fix its permissions, or delete it and let kakel make another",
 			path, info.Mode().Perm())
 	}
 	pemBytes, err := os.ReadFile(path)
@@ -188,7 +188,7 @@ func makeHostKey(path string) (ssh.Signer, error) {
 	if err != nil {
 		return nil, fmt.Errorf("serve: make a host key: %w", err)
 	}
-	block, err := ssh.MarshalPrivateKey(key, "gridterm")
+	block, err := ssh.MarshalPrivateKey(key, "kakel")
 	if err != nil {
 		return nil, fmt.Errorf("serve: encode the host key: %w", err)
 	}

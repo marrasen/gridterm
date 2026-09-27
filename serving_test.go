@@ -20,8 +20,8 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
 )
 
 // servedApp is agentApp's window served on a free port of this

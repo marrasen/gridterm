@@ -12,10 +12,10 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/jobs"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/jobs"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/vfs"
 )
 
 func TestACopyShowsOnTheJobsPaneUntilCleared(t *testing.T) {

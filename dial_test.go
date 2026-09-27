@@ -12,8 +12,8 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/remote"
 )
 
 // dialApp is a program side and the test SSH server, saved as "srv",

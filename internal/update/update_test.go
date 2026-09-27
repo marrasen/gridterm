@@ -25,7 +25,7 @@ func TestTheNewestReleaseIsRead(t *testing.T) {
 		asked = r
 		_, _ = w.Write([]byte(`{
 			"tag_name": "v0.2.0",
-			"html_url": "https://github.com/marrasen/gridterm/releases/tag/v0.2.0",
+			"html_url": "https://github.com/marrasen/kakel/releases/tag/v0.2.0",
 			"name": "v0.2.0"
 		}`))
 	})
@@ -37,7 +37,7 @@ func TestTheNewestReleaseIsRead(t *testing.T) {
 	if got.Version != "v0.2.0" {
 		t.Errorf("it is %q, want the tag", got.Version)
 	}
-	if got.Page != "https://github.com/marrasen/gridterm/releases/tag/v0.2.0" {
+	if got.Page != "https://github.com/marrasen/kakel/releases/tag/v0.2.0" {
 		t.Errorf("its page is %q", got.Page)
 	}
 	// GitHub refuses a request that names nobody, so every build has to

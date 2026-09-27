@@ -17,8 +17,8 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
 )
 
 // secretsApp is the program side with a home of its own, holding an

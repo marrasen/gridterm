@@ -13,28 +13,29 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/marrasen/gridterm/serve"
+	"github.com/marrasen/kakel/serve"
 )
 
 // drainGrace is how long Close waits for the remote to finish after its
 // stdin is closed, so output already on the wire can still be read.
 const drainGrace = 250 * time.Millisecond
 
-// GridtermWindowKind is what the server list calls an entry that is
-// another gridterm serving, for the message that tells a user their
-// machine is really one of those.
+// WindowKind is what the server list calls an entry that is another
+// kakel serving, for the message that tells a user their machine is
+// really one of those. It keeps gridterm's name, which saved server
+// lists hold.
 //
 // A constant here rather than in the window, so the message and the
 // dialog cannot drift apart.
-const GridtermWindowKind = "gridterm window"
+const WindowKind = "gridterm window"
 
-// isGridterm reports whether a refusal came from a gridterm serving.
+// isKakelWindow reports whether a refusal came from a kakel serving.
 //
 // It says so in the refusal itself, which is the only thing that
 // crosses: an SSH client is told a channel type is unknown and nothing
 // else. Matched on serve's own constant, so renaming the channel is a
 // change this stops compiling over rather than one it stops noticing.
-func isGridterm(err error) bool {
+func isKakelWindow(err error) bool {
 	var refused *ssh.OpenChannelError
 	if !errors.As(err, &refused) {
 		return false
@@ -43,7 +44,7 @@ func isGridterm(err error) bool {
 		strings.Contains(refused.Message, serve.SessionChannel)
 }
 
-// notAMachine says the far end is a gridterm window saved as a machine,
+// notAMachine says the far end is a kakel window saved as a machine,
 // and what to change about it.
 //
 // Said plainly, because what the user has to change is one field in the
@@ -56,9 +57,9 @@ func notAMachine(addr string, refused error) error {
 		inner = refused
 	}
 	return fmt.Errorf(
-		"remote: %s is a gridterm window, not a machine to log in to."+
+		"remote: %s is a kakel window, not a machine to log in to."+
 			" Set its Kind to %q and take it over instead: %w",
-		addr, GridtermWindowKind, inner)
+		addr, WindowKind, inner)
 }
 
 // ShellConfig describes one shell or command to run on a connection.
@@ -157,7 +158,7 @@ func (c *Conn) Shell(ctx context.Context, cfg ShellConfig) (*Shell, error) {
 
 	sess, err := openWithin(ctx, "open a session on "+c.String(), c.client.NewSession)
 	if err != nil {
-		if isGridterm(err) {
+		if isKakelWindow(err) {
 			return nil, notAMachine(c.addr, err)
 		}
 		return nil, err

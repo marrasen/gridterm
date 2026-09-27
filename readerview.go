@@ -15,13 +15,13 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/ui/files"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/ui/files"
 )
 
-// reader shows a file on gridterm's own reader: its lines, coloured by
+// reader shows a file on kakel's own reader: its lines, coloured by
 // the file's kind, with find, going to a line, following, a hex view,
 // a view of a JSON log as columns, a minimap along the side, selecting
 // and copying, and saving what it shows; or a picture. It draws into a

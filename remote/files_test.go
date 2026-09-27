@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // An SFTP session rides on the connection, so closing the machine closes

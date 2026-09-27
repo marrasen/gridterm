@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // aPictureFile is a reader on a picture, laid out and read.

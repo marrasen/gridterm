@@ -1,7 +1,7 @@
 package vt
 
 import (
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // DefaultScrollback is how many lines of history the primary buffer

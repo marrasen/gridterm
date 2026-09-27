@@ -344,11 +344,11 @@ func NewCode(port int) (string, error) {
 func ReadCode(code string) (port int, err error) {
 	parts := strings.Split(strings.TrimSpace(code), "-")
 	if len(parts) != 3 || parts[0] != codePrefix || parts[2] == "" {
-		return 0, fmt.Errorf("%q is not a gridterm session code", code)
+		return 0, fmt.Errorf("%q is not a kakel session code", code)
 	}
 	port, err = strconv.Atoi(parts[1])
 	if err != nil || port < 1 || port > 65535 {
-		return 0, fmt.Errorf("%q does not name a port to reach gridterm on", code)
+		return 0, fmt.Errorf("%q does not name a port to reach kakel on", code)
 	}
 	return port, nil
 }

@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"slices"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // How large a form is allowed to get, and how much of the area it leaves

@@ -7,8 +7,8 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/vt"
 )
 
 func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {

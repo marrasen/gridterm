@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/agent"
-	"github.com/marrasen/gridterm/steps"
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/steps"
 )
 
 // tool is one thing an agent can ask for.
@@ -205,7 +205,7 @@ func toolList() []tool {
 			Title: agent.BoxOpenMore,
 			Description: "Open a second pane where a pane you have is: another shell on the" +
 				" same machine, handed to you as it opens. The answer names it. It runs" +
-				" nothing, and it opens no connection: gridterm must already be connected" +
+				" nothing, and it opens no connection: kakel must already be connected" +
 				" to that machine. A pane opened to run one command is refused." +
 				" It works only if the user ticked \"" + agent.BoxOpenMore + "\", which" +
 				" use_session_code and list_panes both report.",
@@ -324,7 +324,7 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 		if len(panes) == 0 {
 			return say("You have no panes. The user has not given you a session code" +
 				" yet, or they have taken every pane out of the share you used, or" +
-				" the gridterm window has closed." +
+				" the kakel window has closed." +
 				" Ask them for a code and use it with use_session_code.")
 		}
 		var out strings.Builder
@@ -752,7 +752,7 @@ func commandNote(s Screen) string {
 // The prompt coming back is the only sign there is, and it is a guess:
 // a prompt that carries the time or a branch name never comes back the
 // same, and a command that prints the prompt's own text looks like one.
-const noMarks = "This shell does not tell gridterm when a command starts or stops," +
+const noMarks = "This shell does not tell kakel when a command starts or stops," +
 	" so nothing here knows for certain whether one is running."
 
 func watchedNote(s Screen) string {
@@ -768,10 +768,10 @@ func watchedNote(s Screen) string {
 		" which usually means what you sent is still running."
 }
 
-// notesMarker is the line between the pane's own text and what gridterm
+// notesMarker is the line between the pane's own text and what kakel
 // has to say about it. The tools name it, so an agent knows where the
 // screen ends.
-const notesMarker = "-- gridterm --"
+const notesMarker = "-- kakel --"
 
 // status says what an answer carries about the command line, for the
 // tools that answer with a screen.
@@ -785,7 +785,7 @@ const status = " Every screen says what is known about the command line: with sh
 // marked says what the marker means, for the tools that answer with a
 // screen.
 var marked = fmt.Sprintf(" The screen ends at the last line reading %q; what follows is"+
-	" gridterm, not the pane. The last one, because a pane can print that line itself.",
+	" kakel, not the pane. The last one, because a pane can print that line itself.",
 	notesMarker)
 
 // allThereIsNote is what an agent is told when the pane had fewer lines

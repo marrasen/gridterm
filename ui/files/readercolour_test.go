@@ -4,9 +4,9 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 // aColouredFile is a reader on a file with a name, so it is drawn the

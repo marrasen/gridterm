@@ -10,7 +10,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vt"
 )
 
 func TestFilesDroppedOnAShellThatSaidNoFolderAreTyped(t *testing.T) {
@@ -57,7 +57,7 @@ func TestFilesDroppedOnAPaneOnAWindowAreCopiedThereAndTyped(t *testing.T) {
 		}
 		return strings.Contains(a.terminal(there).Text(), "report.txt")
 	})
-	got, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), "gridterm-pasted", "report.txt"))
+	got, err := os.ReadFile(filepath.Join(os.Getenv("HOME"), "kakel-pasted", "report.txt"))
 	if err != nil || string(got) != "far" {
 		t.Fatalf("copied %q, %v", got, err)
 	}

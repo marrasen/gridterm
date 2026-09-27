@@ -10,7 +10,7 @@ import (
 )
 
 // What a saved server turns into is what reaches the machine. Get it
-// wrong and gridterm connects as the wrong user, on the wrong port, with
+// wrong and kakel connects as the wrong user, on the wrong port, with
 // none of the keys that were chosen — and says nothing about it.
 func TestHostConfigCarriesEverythingThatReachesTheMachine(t *testing.T) {
 	h := Host{
@@ -78,7 +78,7 @@ func TestHostFromTargetKeepsThePort(t *testing.T) {
 	}
 }
 
-// The file is what another version of gridterm, and the user in an
+// The file is what another version of kakel, and the user in an
 // editor, will read. Its shape is part of what this promises.
 func TestBookWritesTheShapeItPromises(t *testing.T) {
 	b := newBook(t)

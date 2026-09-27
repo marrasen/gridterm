@@ -1,4 +1,4 @@
-// Package fonts holds the faces compiled into gridterm that need no
+// Package fonts holds the faces compiled into kakel that need no
 // file on the machine.
 package fonts
 

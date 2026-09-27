@@ -7,11 +7,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/marrasen/gridterm/glyph"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/glyph"
+	"github.com/marrasen/kakel/vt"
 )
 
-// options are what the command line asks for, as gridterm's flags ask.
+// options are what the command line asks for.
 type options struct {
 	fontSize   float64
 	command    string
@@ -51,7 +51,7 @@ func parseOptions(args []string) (options, error) {
 	fs.BoolVar(&o.asMCP, "mcp", false,
 		"serve this machine's panes to an agent over the Model Context Protocol,"+
 			" on standard input and output, instead of opening a window")
-	fs.BoolVar(&o.stats, "stats", os.Getenv("GUNIMTERM_STATS") == "1",
+	fs.BoolVar(&o.stats, "stats", os.Getenv("KAKEL_STATS") == "1",
 		"say each second how many frames were drawn, on standard error")
 	fs.StringVar(&o.shot, "shot", "",
 		"drive the window through a script and write PNGs, then exit;"+
@@ -78,7 +78,7 @@ func parseOptions(args []string) (options, error) {
 }
 
 // printFonts writes the installed monospaced families and their styles,
-// as gridterm's -list-fonts does.
+// for -list-fonts.
 func printFonts(w io.Writer) error {
 	families, err := glyph.Monospaced()
 	if err != nil {

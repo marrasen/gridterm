@@ -1,12 +1,16 @@
+/kakel
+/kakel.exe
+/kakel.test.exe
+/kakel-arm64.exe
+/kakel-linux
+/.idea/
+/dist/
+/go.work
+/go.work.sum
+# Built before the rename, and still in some working copies.
 /gridterm
 /gridterm.exe
 /gridterm.test.exe
 /gridterm-arm64.exe
 /gridterm-linux
-/.idea/
-/dist/
-/go.work
-/go.work.sum
 /gunimterm
-/cmd/gunimterm/gunimterm
-/cmd/gunimterm/gunimterm.exe

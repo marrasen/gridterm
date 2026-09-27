@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/jobs"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/jobs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Copying, moving, deleting, renaming and making folders, with
-// gridterm's jobs package, on the program's side.
+// kakel's jobs package, on the program's side.
 
 // Intents for working on files.
 type (
@@ -168,7 +168,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 	}
 	c := a.clip
 	if c == nil {
-		return errors.New("gunimterm: nothing to paste; copy or cut files first, with F5 or F6")
+		return errors.New("kakel: nothing to paste; copy or cut files first, with F5 or F6")
 	}
 	if c.kind == jobs.Move {
 		// A move happens once.
@@ -405,8 +405,8 @@ func (a *app) showJobsPane() {
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Jobs", Kind: kindJobs}, nil, placement{})
 }
 
-// renameFile renames one name, refusing to write over another, as
-// gridterm does, where a change of letter case alone goes through.
+// renameFile renames one name, refusing to write over another. A
+// change of letter case alone goes through.
 func (a *app) renameFile(in RenameFile) {
 	f, at, ok := a.folderOf(in.Pane)
 	if !ok || in.To == in.From {
@@ -459,7 +459,7 @@ func (a *app) makeFolder(in MakeFolder) {
 }
 
 // plainName reports whether name is a name in a folder rather than a
-// path, as gridterm checks it.
+// path.
 func plainName(f vfs.FS, name string) error {
 	switch {
 	case name == "":

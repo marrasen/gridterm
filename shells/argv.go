@@ -7,7 +7,7 @@ import "strings"
 // filepath.Base is not enough here. It splits on the separator of the
 // machine this is running on, so a Linux build reads
 // `C:\Windows\System32\cmd.exe` as one long name and recognises no
-// shell in it. A pane runs a Windows shell whatever gridterm itself is
+// shell in it. A pane runs a Windows shell whatever kakel itself is
 // running on -- over SSH to a Windows server, or through WSL -- so a
 // command line is taken apart with both separators everywhere, and the
 // answer is the same on every machine.

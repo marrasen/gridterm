@@ -4,7 +4,7 @@ import (
 	"image/color"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // eightTiles is a switcher's worth of tiles on a grid to draw them on.

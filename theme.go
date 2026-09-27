@@ -11,22 +11,21 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/themes"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/vt"
 )
 
-// gridterm's themes, turned into gunim's. A theme is a terminal palette
+// kakel's themes, turned into gunim's. A theme is a terminal palette
 // with a ground and a text colour at its two ends; the window's own
 // surfaces are worked out from those, the ground a step towards the
-// text, as gridterm works them out, or taken from the frame a theme
-// writes down. Switching themes fades every colour across, the
-// terminals' included.
+// text, or taken from the frame a theme writes down. Switching themes
+// fades every colour across, the terminals' included.
 
 // termBackground is a terminal's ground, where its cells leave it clear.
-var termBackground = theme.Color("gunimterm.background", color.NRGBA{R: 0x14, G: 0x17, B: 0x1c, A: 0xff})
+var termBackground = theme.Color("kakel.background", color.NRGBA{R: 0x14, G: 0x17, B: 0x1c, A: 0xff})
 
-// themed is a gridterm theme ready for the window: gunim's theme, and
+// themed is a kakel theme ready for the window: gunim's theme, and
 // the palette the terminals draw with.
 type themed struct {
 	name  string
@@ -36,7 +35,7 @@ type themed struct {
 	// frame round its blue ground does not.
 	content theme.Theme
 	palette vt.Palette
-	// source is the gridterm theme it came from, for writing a copy.
+	// source is the kakel theme it came from, for writing a copy.
 	source themes.Theme
 }
 
@@ -72,8 +71,8 @@ func standout(bg color.NRGBA, cs ...color.NRGBA) color.NRGBA {
 	return best
 }
 
-// loadThemes returns the themes on offer, ready: gridterm's own and the
-// user's, from the themes file gridterm reads, or gridterm's own alone
+// loadThemes returns the themes on offer, ready: kakel's own and the
+// user's, from the themes file kakel reads, or kakel's own alone
 // when there is no file to read.
 func loadThemes() []themed {
 	all, _ := loadThemesSaying()
@@ -83,8 +82,8 @@ func loadThemes() []themed {
 // loadThemesSaying is loadThemes, with what went wrong on the way: a
 // themes file that could not be found or read, which leaves the ones
 // built in, and each theme in it that would not draw, which is left
-// out. Said rather than dropped, as gridterm says it: the reason is
-// what tells the user to go and fix the file.
+// out. Said rather than dropped: the reason is what tells the user to
+// go and fix the file.
 func loadThemesSaying() ([]themed, error) {
 	all := themes.Built()
 	var trouble []error
@@ -170,7 +169,7 @@ func echoOf(t themes.Theme, pal vt.Palette) ([]theme.Entry, error) {
 	return out, nil
 }
 
-// themeOf turns a gridterm theme into gunim's.
+// themeOf turns a kakel theme into gunim's.
 func themeOf(t themes.Theme) (themed, error) {
 	pal, err := t.Palette()
 	if err != nil {
@@ -258,7 +257,7 @@ func themeOf(t themes.Theme) (themed, error) {
 	return themed{name: t.Name, theme: th, content: content, palette: pal, source: t}, nil
 }
 
-// registerThemes names gridterm's themes to the window, for the program
+// registerThemes names kakel's themes to the window, for the program
 // to switch between.
 func registerThemes(w *gunim.Window, all []themed) {
 	for _, t := range all {

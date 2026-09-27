@@ -13,7 +13,7 @@ import (
 
 	"github.com/aymanbagabas/go-pty"
 
-	"github.com/marrasen/gridterm/internal/build"
+	"github.com/marrasen/kakel/internal/build"
 )
 
 // hangupGrace is how long Close waits for a child to act on the hangup
@@ -74,7 +74,7 @@ type local struct {
 	released bool
 
 	// job holds the shell and everything it starts. It kills them if
-	// gridterm ends without reaching Close; on Unix it is empty.
+	// kakel ends without reaching Close; on Unix it is empty.
 	job shellJob
 }
 
@@ -239,7 +239,7 @@ func (l *local) Close() error {
 			// go-pty closes the slave this process already released.
 			err = nil
 		}
-		// The job is there for a gridterm that never reaches this point, so
+		// The job is there for a kakel that never reaches this point, so
 		// a pane the user closed lets go of it rather than killing what the
 		// shell started.
 		l.closeErr = errors.Join(err, l.job.letGo())

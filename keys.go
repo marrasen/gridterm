@@ -5,12 +5,12 @@ import (
 
 	"github.com/marrasen/gunim"
 
-	"github.com/marrasen/gridterm/input"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/ui"
 )
 
-// The window's shortcuts: gridterm's own chords, for the commands this
+// The window's shortcuts: kakel's own chords, for the commands this
 // window has so far. Each is Ctrl+Shift and a key, or Ctrl with a key
 // no shell reads, so the shell keeps the rest.
 
@@ -113,7 +113,7 @@ var commands = []struct{ id, title string }{
 	{"view.themesStart", "New Theme File"},
 	{"view.themesReload", "Reload Themes"},
 	{"help.files", "File Locations"},
-	{"app.about", "About gridterm"},
+	{"app.about", "About kakel"},
 	{"sshkey.make", "New SSH Key"},
 	{"sshkey.lock", "Lock SSH Keys"},
 	{"files.copies", "Saved Copies"},
@@ -235,7 +235,7 @@ var menus = []struct {
 		{id: "palette.open", title: "All Commands…"},
 		{id: "help.shortcuts", title: "Shortcuts and Commands"},
 		{id: "view.log", title: "Window Log", group: true},
-		{id: "app.about", title: "About gridterm", group: true},
+		{id: "app.about", title: "About kakel", group: true},
 	}},
 }
 

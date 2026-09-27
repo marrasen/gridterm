@@ -8,7 +8,7 @@ import (
 
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {

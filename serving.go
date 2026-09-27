@@ -16,19 +16,18 @@ import (
 
 	"github.com/pkg/sftp"
 
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/serve"
-	"github.com/marrasen/gridterm/session"
-	"github.com/marrasen/gridterm/settings"
-	uiterm "github.com/marrasen/gridterm/ui/term"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/session"
+	"github.com/marrasen/kakel/settings"
+	uiterm "github.com/marrasen/kakel/ui/term"
 )
 
-// Serving this window, as gridterm serves one: another window, on a
-// machine whose key is in this one's authorized keys, connects over
-// SSH and can watch and type in the panes here, open shells here, and
-// read and write the files of this machine and of the servers this
-// window is connected to.
+// Serving this window: another window, on a machine whose key is in this
+// one's authorized keys, connects over SSH and can watch and type in the
+// panes here, open shells here, and read and write the files of this
+// machine and of the servers this window is connected to.
 
 // Serving is the serving, as the window shows it.
 type Serving struct {
@@ -582,8 +581,8 @@ func (a *app) offerToServeAgain() {
 		return
 	}
 	if len(ans.Answers) > 0 && ans.Answers[len(ans.Answers)-1] == "Don't Ask Again" {
-		// As gridterm has it: the window stops being served as it opens,
-		// until the user serves it again.
+		// The window stops being served as it opens, until the user
+		// serves it again.
 		a.events <- func() {
 			if a.settings != nil {
 				if err := a.settings.PutServeOn(false); err != nil {

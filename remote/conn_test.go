@@ -11,8 +11,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/session"
 )
 
 // A remote shell has to be usable wherever a local one is, or the

@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/marrasen/gridterm/logs"
+	"github.com/marrasen/kakel/logs"
 )
 
 // Logs: the window's own, and each server's account of how it was
@@ -74,11 +74,10 @@ func (a *app) showLog(machine string) {
 	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindLog}, openShell(l.Open(), a.palette, a.hooks(id)), placement{})
 }
 
-// watchDial shows a machine's connection log as the connection is made,
-// as gridterm does: the dial's steps, and why it failed, where the user
-// is looking. It returns the pane it opened, or "" when the log's pane
-// was open already, which it goes to instead. Closing the pane gives
-// the dial up.
+// watchDial shows a machine's connection log as the connection is made:
+// the dial's steps, and why it failed, where the user is looking. It
+// returns the pane it opened, or "" when the log's pane was open
+// already, which it goes to instead. Closing the pane gives the dial up.
 func (a *app) watchDial(machine string) string {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {

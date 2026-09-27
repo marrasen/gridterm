@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // formStyled returns colours a test can tell apart from a blank cell.
@@ -999,7 +999,7 @@ func TestTheCopyChordCopiesWhatAFormSaysIsCopyable(t *testing.T) {
 	f.CopyChord = func(ev input.Event) bool {
 		return ev.Key == input.KeyC && ev.Mods == input.ModCtrl|input.ModShift
 	}
-	f.Copyable = `claude mcp add gridterm -- "gridterm.exe" -mcp`
+	f.Copyable = `claude mcp add kakel -- "kakel.exe" -mcp`
 
 	if _, err := f.HandleKey(press(input.KeyC, input.ModCtrl|input.ModShift)); err != nil {
 		t.Fatalf("the copy chord: %v", err)

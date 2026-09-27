@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 func TestOutputIsToldOnceTheScreenHasIt(t *testing.T) {

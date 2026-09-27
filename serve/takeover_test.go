@@ -16,8 +16,8 @@ import (
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
-	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/session"
 )
 
 // echoSession is a program for a test to work in: it says what size it
@@ -505,7 +505,7 @@ func TestAWindowServingNothingSaysSoAndFails(t *testing.T) {
 //
 // Kept apart on the wire even though a pane puts them on one screen:
 // the two are different things, and a client that wanted to tell them
-// apart -- to say "gridterm could not do that" rather than draw it as
+// apart -- to say "kakel could not do that" rather than draw it as
 // output -- can only do so if they arrived separately.
 func TestTheReasonTravelsOnItsOwnStream(t *testing.T) {
 	_, w := takenOver(t, func(int, int) (session.Session, Attached, error) {
@@ -1615,7 +1615,7 @@ func TestDialSaysEachStep(t *testing.T) {
 		"asking " + s.Addr() + " who it is",
 		"host key",
 		"its host key is accepted",
-		"signing in as gridterm, offering 1 keys",
+		"signing in as kakel, offering 1 keys",
 	} {
 		if !strings.Contains(account, want) {
 			t.Errorf("the account does not say %q:\n%s", want, account)
@@ -1692,7 +1692,7 @@ func TestAFileSessionWithNoPayloadAsksForTheServedMachine(t *testing.T) {
 // reaches the client.
 //
 // The encoding is positional, with no room for a field one end knows and
-// the other does not, so this is what a gridterm of another build looks
+// the other does not, so this is what a kakel of another build looks
 // like from here.
 func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
 	started := make(chan struct{}, 1)

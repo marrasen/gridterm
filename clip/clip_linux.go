@@ -39,7 +39,7 @@ const wait = 2 * time.Second
 // ready reports whether the clipboard can be reached, worked out
 // once and remembered.
 //
-// It is not done at startup. A gridterm with no display still runs --
+// It is not done at startup. A kakel with no display still runs --
 // one started over SSH to serve panes -- and there the clipboard is
 // simply not among the things it can do. The library also warns that a
 // Read or a Write after a failed Init may panic outright, so every call

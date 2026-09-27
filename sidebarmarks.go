@@ -13,16 +13,15 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/meter"
+	"github.com/marrasen/kakel/meter"
 )
 
-// What a sidebar row shows besides its words, as gridterm's rows show
-// it: a mark in front saying how the thing is doing, green while it is
-// there, breathing while bytes go past, grey once it has finished; a
-// little picture of what kind of thing it is; how far a piece of work
-// has got, filling the row; the last seconds of a tunnel's traffic, as
-// a graph; and, while the pointer is on a row that can close, a cross
-// that closes it.
+// What a sidebar row shows besides its words: a mark in front saying how
+// the thing is doing, green while it is there, breathing while bytes go
+// past, grey once it has finished; a little picture of what kind of
+// thing it is; how far a piece of work has got, filling the row; the
+// last seconds of a tunnel's traffic, as a graph; and, while the pointer
+// is on a row that can close, a cross that closes it.
 
 // rowMarks are a row's marks and where they were laid out.
 type rowMarks struct {

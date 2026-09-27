@@ -15,14 +15,14 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/internal/update"
-	"github.com/marrasen/gridterm/keys"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
-	"github.com/marrasen/gridterm/themes"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/internal/update"
+	"github.com/marrasen/kakel/keys"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/themes"
+	"github.com/marrasen/kakel/ui"
 )
 
 func TestTheShortcutsFileMovesAKey(t *testing.T) {
@@ -150,7 +150,7 @@ func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 		t.Fatal("the help lacks Close Pane on Ctrl+Shift+W")
 	}
 	// Under the menu it is on, and the file pane's keys from
-	// gridterm's own list.
+	// kakel's own list.
 	var heads []string
 	under := map[string]string{}
 	keys := slices.Sorted(maps.Keys(win.help.rows))
@@ -182,7 +182,7 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 		change(input.KeyE, "secrets.forget"),
 	}, ShortcutsRead: 1})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyB, Mods: input.ModCtrl | input.ModAlt}); id != "conn.terminal" {
-		t.Fatalf("gridterm's pane.open is bound to %q, want New Terminal", id)
+		t.Fatalf("kakel's pane.open is bound to %q, want New Terminal", id)
 	}
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyC, Mods: input.ModCtrl | input.ModAlt}); id != "server.open.my-desk" {
 		t.Fatalf("a saved server's command is bound to %q", id)
@@ -376,7 +376,7 @@ func TestMakePortableCopiesTheFilesBesideTheProgram(t *testing.T) {
 	t.Cleanup(func() { _ = os.RemoveAll(beside) })
 	a.handle(MakePortable{})
 	waitFor(t, a, "the list of what was done", func() bool { return len(a.st.Asks) == 1 })
-	if q := a.st.Asks[0]; q.Title != "Made Portable" || !strings.Contains(q.Text, "Created "+beside) || !strings.Contains(q.Text, "Restart gunimterm") {
+	if q := a.st.Asks[0]; q.Title != "Made Portable" || !strings.Contains(q.Text, "Created "+beside) || !strings.Contains(q.Text, "Restart kakel") {
 		t.Fatalf("made portable, it says %+v", q)
 	}
 	if made, err := conf.IsDir(beside); !made || err != nil {

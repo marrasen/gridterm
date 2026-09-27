@@ -195,7 +195,7 @@ func checkerFor(lines [][]byte, paths []string, saying func(string)) (cb ssh.Hos
 		}, nil
 	}
 
-	tmp, err := os.CreateTemp("", "gridterm-known-hosts-*")
+	tmp, err := os.CreateTemp("", "kakel-known-hosts-*")
 	if err != nil {
 		return nil, fmt.Errorf("remote: stage known_hosts: %w", err)
 	}
@@ -285,7 +285,7 @@ func parseKnownHosts(f *os.File) (lines [][]byte, dropped int, err error) {
 // hostKeyCheck builds the check a connection uses: the known_hosts
 // files given, and a question for a host that is not in any of them.
 //
-// One gridterm reaching another takes its own files, because a window
+// One kakel reaching another takes its own files, because a window
 // is a machine to be checked like any other but does not belong in the
 // user's ~/.ssh/known_hosts. The rule is the same either way and must
 // not be written twice: an unknown host is offered to the user and only

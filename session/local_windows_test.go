@@ -349,14 +349,14 @@ func TestStartLocalReportsAMissingCommandOnWindows(t *testing.T) {
 
 // A program started in a pane is told which terminal it is talking to.
 // TERM names a kind of terminal and every terminal borrows the same few
-// names, so TERM_PROGRAM is the only way to tell gridterm from the rest.
+// names, so TERM_PROGRAM is the only way to tell kakel from the rest.
 func TestAPaneNamesTheTerminalToItsProgram(t *testing.T) {
 	s := shell(t, "cmd.exe", "/c", "echo called=%TERM_PROGRAM% version=%TERM_PROGRAM_VERSION%")
 
 	got := readUntil(t, s, "called=", budget)
 
-	if !strings.Contains(got, "called=gridterm") {
-		t.Errorf("TERM_PROGRAM is %q, want gridterm", strings.TrimSpace(got))
+	if !strings.Contains(got, "called=kakel") {
+		t.Errorf("TERM_PROGRAM is %q, want kakel", strings.TrimSpace(got))
 	}
 	if strings.Contains(got, "version= ") || strings.Contains(got, "version=%") {
 		t.Errorf("TERM_PROGRAM_VERSION was not set: %q", strings.TrimSpace(got))

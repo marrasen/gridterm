@@ -11,7 +11,7 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/settings"
+	"github.com/marrasen/kakel/settings"
 )
 
 // jobsPane shows the file jobs as cards, newest at the bottom: each

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vt"
 )
 
 // sixteen is a full set of named colours, for a test whose point is
@@ -16,7 +16,7 @@ import (
 const sixteen = `"ansi":["#000","#100","#200","#300","#400","#500","#600","#700",` +
 	`"#800","#900","#a00","#b00","#c00","#d00","#e00","#f00"]`
 
-// Every theme that comes with gridterm reads back as a palette.
+// Every theme that comes with kakel reads back as a palette.
 func TestTheBuiltInThemesAreGood(t *testing.T) {
 	built := Built()
 	if len(built) < 2 {
@@ -116,7 +116,7 @@ func TestAThemeWithoutSixteenColoursIsRefused(t *testing.T) {
 }
 
 // A file that is not there is what the first run looks like: the themes
-// that come with gridterm and no complaint.
+// that come with kakel and no complaint.
 func TestNoFileLeavesTheBuiltInThemes(t *testing.T) {
 	got, err := Load(Path(t.TempDir()))
 
@@ -216,7 +216,7 @@ func TestAThemeWithNoNameOrATakenOneIsRefused(t *testing.T) {
 	}
 }
 
-// A file from a version this gridterm does not read is said so rather
+// A file from a version this kakel does not read is said so rather
 // than guessed at.
 func TestAThemeFileFromAnotherVersionIsRefused(t *testing.T) {
 	dir := t.TempDir()

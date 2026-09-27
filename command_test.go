@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/settings"
-	shellfind "github.com/marrasen/gridterm/shells"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
 )
 
 func TestACommandRunsInAPaneOfItsOwnAndAgain(t *testing.T) {

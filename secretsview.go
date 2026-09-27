@@ -9,8 +9,8 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
 )
 
 // secretsPane lists what is in the vault, by name, over a bar of what
@@ -73,8 +73,7 @@ func newSecretsPane(w *window) *secretsPane {
 	onRow(p.reveal, func(it SecretItem, u *gunim.UI) { u.Send(p.table, RevealSecret{ID: it.ID}) })
 	onRow(p.change, func(it SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
 	p.remove.OnActivate(func(u *gunim.UI) {
-		// The ones marked with Space, as gridterm removes several at
-		// once, or the one under the cursor.
+		// The ones marked with Space, or the one under the cursor.
 		var picked []SecretItem
 		for _, k := range p.table.Marked() {
 			picked = append(picked, p.byID[k])

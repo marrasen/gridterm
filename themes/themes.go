@@ -14,8 +14,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/marrasen/gridterm/internal/newfile"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/internal/newfile"
+	"github.com/marrasen/kakel/vt"
 )
 
 // FileVersion is the version this package writes and reads.
@@ -49,12 +49,12 @@ type Theme struct {
 	// keeps the typeface it was already drawn in.
 	Font string `json:"font,omitempty"`
 
-	// Echo is how the rings gunimterm sends past its window's edges look
+	// Echo is how the rings kakel sends past its window's edges look
 	// under this theme. Nil takes them from the palette.
 	Echo *Echo `json:",omitempty"`
 }
 
-// Echo is the look of the rings gunimterm sends out past its window's
+// Echo is the look of the rings kakel sends out past its window's
 // edges: a colour for each tone, and how strong they are. An empty
 // colour is taken from the palette: Problem from bright red, Done from
 // bright green, Call from bright yellow, and Wait from the text, dimmed.
@@ -148,7 +148,7 @@ func ParseColour(raw string) (color.RGBA, error) {
 // Colour writes a colour back the way a file holds one.
 func Colour(c color.RGBA) string { return fmt.Sprintf("#%02x%02x%02x", c.R, c.G, c.B) }
 
-// Built are the themes that come with gridterm, the one a window opens
+// Built are the themes that come with kakel, the one a window opens
 // on first.
 func Built() []Theme {
 	return []Theme{
@@ -182,7 +182,7 @@ func Built() []Theme {
 			// window writes its own labels and notes in those colours.
 			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
 			Selection: "#007b7b",
-			// The IBM VGA character set, which comes with gridterm, so
+			// The IBM VGA character set, which comes with kakel, so
 			// the theme reads as a DOS program rather than as DOS
 			// colours in a modern typeface.
 			Font: "PxPlus IBM VGA8",
@@ -223,7 +223,7 @@ func Built() []Theme {
 }
 
 // File is what the user's own themes are kept in, in the directory conf
-// gives gridterm.
+// gives kakel.
 const File = "themes.json"
 
 // Path is where the file of the user's own themes lives, in a
@@ -251,7 +251,7 @@ func Load(path string) ([]Theme, error) {
 	}
 	if file.Version != FileVersion {
 		return all, fmt.Errorf(
-			"themes: %s says version %d, and this gridterm reads version %d",
+			"themes: %s says version %d, and this kakel reads version %d",
 			path, file.Version, FileVersion)
 	}
 	// Built up beside the list rather than into it, so a file that fails

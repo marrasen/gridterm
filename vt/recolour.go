@@ -3,7 +3,7 @@ package vt
 import (
 	"image/color"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // recolours moves the colours of one theme to the same places in

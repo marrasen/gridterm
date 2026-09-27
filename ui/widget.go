@@ -11,8 +11,8 @@
 package ui
 
 import (
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/input"
 )
 
 // Size is how many cells a widget has to draw in.

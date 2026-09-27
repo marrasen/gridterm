@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/session"
+	"github.com/marrasen/kakel/session"
 )
 
 // esc is the byte that starts an escape sequence.
@@ -97,7 +97,7 @@ func TestFilteringHoldsBackACharacterThatNeverFinishes(t *testing.T) {
 // among them -- and pass its own words off as this window's.
 func TestWhatTheFarEndSaysCannotDriveThisTerminal(t *testing.T) {
 	_, w := takenOverWith(t, nil, func(want Attached, cols, rows int) (session.Session, error) {
-		return nil, errors.New("\x1b[2J\x1b[Hgridterm: its host key is accepted\x07")
+		return nil, errors.New("\x1b[2J\x1b[Hkakel: its host key is accepted\x07")
 	})
 
 	sess, err := w.Attach(Open{ID: "1", Kind: "Terminal", Label: "bash"}, 80, 24)

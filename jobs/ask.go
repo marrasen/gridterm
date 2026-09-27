@@ -3,7 +3,7 @@ package jobs
 import (
 	"context"
 
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // What the user chose to do about a name that is already there.

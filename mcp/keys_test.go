@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gridterm/agent"
+	"github.com/marrasen/kakel/agent"
 )
 
 // use is the call that opens the one pane a fakePanes has.
@@ -507,7 +507,7 @@ func TestAReadOfEverythingThereIsSaysSo(t *testing.T) {
 
 // The screen ends at a marker, and the tools say so.
 //
-// Everything after it is gridterm talking. An agent that compares two
+// Everything after it is kakel talking. An agent that compares two
 // reads, or quotes a line back as contains, has to be able to tell the
 // pane's own text from what was added to it.
 func TestTheNotesComeAfterAMarkerTheToolsName(t *testing.T) {

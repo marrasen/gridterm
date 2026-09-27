@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 )
 
-// Local is the filesystem gridterm is running on.
+// Local is the filesystem kakel is running on.
 //
 // It holds nothing and costs nothing to make, so a pane that shows this
 // machine makes its own rather than sharing one.

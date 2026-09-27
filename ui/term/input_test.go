@@ -3,7 +3,7 @@ package term
 import (
 	"testing"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // keyHandler and mouseHandler are anything a test can press a key on or

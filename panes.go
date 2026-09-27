@@ -12,8 +12,8 @@ import (
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
-	"github.com/marrasen/gridterm/ui/files"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/ui/files"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // The window's side of file panes and readers.
@@ -102,7 +102,7 @@ func (b *browser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	kids.At(0).Paint(p)
 }
 
-// Handle implements [gunim.Handler]: gridterm's keys for files.
+// Handle implements [gunim.Handler]: kakel's keys for files.
 // Backspace goes up; F5 or Ctrl+C copies the marked names, or the one
 // under the cursor, to the file clipboard, and F6 or Ctrl+X cuts them;
 // F7 or Ctrl+V pastes here; F8 or Delete deletes, after asking; F2
@@ -167,8 +167,7 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 		// The table has had it first, for a name being found.
 		u.Send(b, DropFileClip{})
 	case k.Key == gi.KeyTab && (k.Mods == 0 || k.Mods == gi.ModShift):
-		// To the next file pane, or the one before, as between
-		// gridterm's two.
+		// To the next file pane, or the one before.
 		if next := b.w.nextFilePane(b.id, k.Mods == gi.ModShift); next != "" {
 			u.Send(b, FocusPane{Pane: next})
 		}
@@ -179,8 +178,8 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	return true
 }
 
-// newKeys is the bar of the pane's keys, as gridterm's file manager
-// shows them, each lit while it does something here.
+// newKeys is the bar of the pane's keys, each lit while it does
+// something here.
 func (b *browser) newKeys() *keyBar {
 	onRow := func() bool {
 		c, ok := b.table.Cursor()
@@ -197,7 +196,7 @@ func (b *browser) newKeys() *keyBar {
 		"Copy": somePicked, "Cut": somePicked, "Delete": somePicked, "Paste": waiting,
 	}
 	var keys []barKey
-	// gridterm's own list, so the two bars say the same.
+	// kakel's own list, so the two bars say the same.
 	for _, k := range files.BrowserKeys() {
 		if press, ok := pressOf(k.Chord); ok {
 			keys = append(keys, barKey{k.Shown + " " + k.Title, press, on[k.Title]})
@@ -408,7 +407,7 @@ func (b *browser) list(u *gunim.UI) {
 	})
 	var keys []widget.Key
 	if !b.st.Top {
-		// Nowhere above the top of a filesystem, as in gridterm.
+		// Nowhere above the top of a filesystem.
 		keys = append(keys, up)
 	}
 	clear(b.byName)
@@ -422,8 +421,7 @@ func (b *browser) list(u *gunim.UI) {
 
 // row is what the table shows for an entry: folders strong, links in
 // the accent colour with where they go, names starting with a dot
-// faint, and one waiting to be pasted with a dot in front, as gridterm
-// marks it.
+// faint, and one waiting to be pasted with a dot in front.
 func (b *browser) row(k widget.Key) widget.TableRow {
 	if k == up {
 		return widget.TableRow{Cells: []string{"..", "", ""}, Strong: true}

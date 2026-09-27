@@ -271,17 +271,17 @@ func TestUnixPath(t *testing.T) {
 	}{
 		{`C:\Workspace`, "/mnt/c/Workspace"},
 		{`c:\`, "/mnt/c/"},
-		{"C:/Workspace/gridterm", "/mnt/c/Workspace/gridterm"},
+		{"C:/Workspace/kakel", "/mnt/c/Workspace/kakel"},
 		{`D:\a b\c`, "/mnt/d/a b/c"},
 		{`C:\Workspace\`, "/mnt/c/Workspace/"},
-		{`C:/Workspace\gridterm/shells`, "/mnt/c/Workspace/gridterm/shells"},
+		{`C:/Workspace\kakel/shells`, "/mnt/c/Workspace/kakel/shells"},
 		// A drive-relative path names the drive's working directory, which WSL has no idea about.
 		{`C:Workspace`, ""},
 		// A long-path prefix is left for WSL to fail on, the same as a UNC path.
 		{`\\?\C:\Workspace`, ""},
 		{`\\server\share`, ""},
 		{"//server/share", ""},
-		{`Workspace\gridterm`, ""},
+		{`Workspace\kakel`, ""},
 		{"", ""},
 		{"C:", ""},
 		{"/usr/local", ""},

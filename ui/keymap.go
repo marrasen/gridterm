@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/marrasen/gridterm/input"
+	"github.com/marrasen/kakel/input"
 )
 
 // Chord is a key with the modifiers held down with it.

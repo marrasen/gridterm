@@ -8,16 +8,16 @@ import (
 	"time"
 
 	"fmt"
-	"github.com/marrasen/gridterm/glyph"
-	"github.com/marrasen/gridterm/jobs"
-	"github.com/marrasen/gridterm/keys"
-	"github.com/marrasen/gridterm/logs"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
-	"github.com/marrasen/gridterm/settings"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/vfs"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/glyph"
+	"github.com/marrasen/kakel/jobs"
+	"github.com/marrasen/kakel/keys"
+	"github.com/marrasen/kakel/logs"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/settings"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/vfs"
+	"github.com/marrasen/kakel/vt"
 	"slices"
 	"strconv"
 	"strings"
@@ -105,7 +105,7 @@ type State struct {
 	ChosenShell string
 	// ShellSetup says new shells here are taught to say what they are
 	// doing, and TermProgram what they are told the terminal is called,
-	// "" for gridterm's own name.
+	// "" for kakel's own name.
 	// Shortcuts are the changes the user's shortcuts file makes to the
 	// window's keys, and ShortcutsRead counts its reads; ShortcutsAgain
 	// says the last read was asked for, and the window says so once it
@@ -424,7 +424,7 @@ type app struct {
 	local    vfs.FS
 	remoteFS map[string]vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
-	// settings is gridterm's settings file, which keeps the theme
+	// settings is kakel's settings file, which keeps the theme
 	// picked.
 	themes   []themed
 	palette  vt.Palette
@@ -629,7 +629,7 @@ func (a *app) run(ctx context.Context) error {
 			}
 		}
 	}
-	// The theme picked last time, as gridterm keeps it, or the first.
+	// The theme picked last time, or the first.
 	if len(a.themes) > 0 {
 		name := a.themes[0].name
 		if a.settings != nil {
@@ -637,9 +637,8 @@ func (a *app) run(ctx context.Context) error {
 				if slices.ContainsFunc(a.themes, func(t themed) bool { return t.name == picked }) {
 					name = picked
 				} else {
-					// Said rather than swapped quietly, as gridterm says
-					// it: a window in another theme with no word reads as
-					// one that forgot.
+					// Said rather than swapped quietly: a window in another
+					// theme with no word reads as one that forgot.
 					log.Printf("the theme %q is not in the list any more, so this window is %q", picked, name)
 				}
 			}
@@ -1171,7 +1170,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	}
 	if machine != "" && a.conns[machine] == nil && a.windows[machine] == nil {
 		// Not connected: connected to first, as a saved server's plus
-		// in the sidebar does in gridterm.
+		// in the sidebar does.
 		return a.dialAgain(machine, func(err error) {
 			if err != nil {
 				then("", err)
@@ -1193,7 +1192,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		}
 		sess, err := a.startLocalSession(argv, a.dirHere(), shellCols, shellRows, true)
 		if err != nil {
-			return fmt.Errorf("gunimterm: start the shell: %w", err)
+			return fmt.Errorf("kakel: start the shell: %w", err)
 		}
 		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), ""))
 		a.argvs[id] = argv
@@ -1206,7 +1205,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		return fmt.Errorf("gunimterm: %s is not connected", machine)
+		return fmt.Errorf("kakel: %s is not connected", machine)
 	}
 	go func() {
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: shellCols, Rows: shellRows})
@@ -1287,7 +1286,7 @@ func (a *app) split(in SplitPane) error {
 }
 
 // movePane moves a pane that is open into a split beside another, as
-// gridterm's Split Right and Split Down can: the way to two file panes
+// Split Right and Split Down can: the way to two file panes
 // side by side.
 func (a *app) movePane(in MovePane) {
 	if in.Pane == in.Beside || !a.has(in.Pane) || !a.has(in.Beside) {
@@ -1373,8 +1372,8 @@ func (a *app) remove(id string) {
 		return
 	}
 	if p := a.st.Panes[i]; p.Kind == kindLog && p.Machine != "" {
-		// Closing the log of a connection being made gives it up, as
-		// in gridterm: it is where the dial is watched from.
+		// Closing the log of a connection being made gives it up: it is
+		// where the dial is watched from.
 		a.giveUp(p.Machine)
 	}
 	if sh := a.shells.get(id); sh != nil {
@@ -1471,7 +1470,7 @@ func (a *app) pickTheme(name string) bool {
 		}
 		if name != a.st.Theme {
 			// Another theme: its wish for a typeface stands again, over
-			// one picked by hand for the theme before, as in gridterm.
+			// one picked by hand for the theme before.
 			a.fontPicked = a.fontFixed
 		}
 		a.st.Theme = name

@@ -9,8 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/marrasen/gridterm/meter"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/meter"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // copyBuffer is how much is moved at a time. Big enough that a file over
@@ -442,7 +442,7 @@ func (j *Job) skip(it item) {
 
 // partSuffix marks a file that is still being written. A name nothing
 // else would choose, so what is left after a crash can be recognised.
-const partSuffix = ".gridterm-part"
+const partSuffix = ".kakel-part"
 
 // file copies one file's contents.
 //

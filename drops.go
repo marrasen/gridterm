@@ -7,19 +7,19 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/marrasen/gridterm/jobs"
-	"github.com/marrasen/gridterm/pasted"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/vfs"
+	"github.com/marrasen/kakel/jobs"
+	"github.com/marrasen/kakel/pasted"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Files dropped on a terminal from another program go where the program
-// in it can open them, as gridterm puts them. A program reading a
-// terminal cannot be handed a file, so the file is put where that
-// program is already looking: the folder the shell last said it was in.
-// A shell that has said none leaves nowhere to put it, and then the path
-// is typed instead, after a copy for a file that has to reach another
-// machine. Each copy is a job, with a card saying how far it has got.
+// in it can open them. A program reading a terminal cannot be handed a
+// file, so the file is put where that program is already looking: the
+// folder the shell last said it was in. A shell that has said none
+// leaves nowhere to put it, and then the path is typed instead, after a
+// copy for a file that has to reach another machine. Each copy is a job,
+// with a card saying how far it has got.
 
 // DropFiles puts files dropped on the window into a terminal pane: the
 // one they were dropped on, or the focused one when Pane is empty.

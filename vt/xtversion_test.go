@@ -11,14 +11,14 @@ import (
 // does not.
 func TestXTVersionNamesTheTerminal(t *testing.T) {
 	h := newHarness(t, 20, 5)
-	h.term.SetProgram("gridterm 1.2.3")
+	h.term.SetProgram("kakel 1.2.3")
 
 	h.write("\x1b[>q")
 
 	if len(h.replies) != 1 {
 		t.Fatalf("replies = %q, want the one answer", h.replies)
 	}
-	if want := "\x1bP>|gridterm 1.2.3\x1b\\"; h.replies[0] != want {
+	if want := "\x1bP>|kakel 1.2.3\x1b\\"; h.replies[0] != want {
 		t.Errorf("it answers %q, want %q", h.replies[0], want)
 	}
 }
@@ -40,7 +40,7 @@ func TestATerminalWithNoNameAnswersNothing(t *testing.T) {
 // its own name in the middle of whatever the program was drawing.
 func TestTheVersionAnswerIsNotPrinted(t *testing.T) {
 	h := newHarness(t, 20, 5)
-	h.term.SetProgram("gridterm 1.2.3")
+	h.term.SetProgram("kakel 1.2.3")
 
 	h.write("before\x1b[>qafter")
 
@@ -59,12 +59,12 @@ func TestOnlyTheRightQIsTheVersionQuestion(t *testing.T) {
 		"a different letter": "\x1b[>c",
 	} {
 		h := newHarness(t, 20, 5)
-		h.term.SetProgram("gridterm 1.2.3")
+		h.term.SetProgram("kakel 1.2.3")
 
 		h.write(sent)
 
 		for _, said := range h.replies {
-			if strings.Contains(said, "gridterm") {
+			if strings.Contains(said, "kakel") {
 				t.Errorf("%s answered with the version: %q", what, said)
 			}
 		}
@@ -75,11 +75,11 @@ func TestOnlyTheRightQIsTheVersionQuestion(t *testing.T) {
 // 0, and a program that sends it means the same question.
 func TestAParameterDoesNotStopTheVersionAnswer(t *testing.T) {
 	h := newHarness(t, 20, 5)
-	h.term.SetProgram("gridterm 1.2.3")
+	h.term.SetProgram("kakel 1.2.3")
 
 	h.write("\x1b[>0q")
 
-	if len(h.replies) != 1 || !strings.Contains(h.replies[0], "gridterm 1.2.3") {
+	if len(h.replies) != 1 || !strings.Contains(h.replies[0], "kakel 1.2.3") {
 		t.Errorf("it answers %q, want the name and version", h.replies)
 	}
 }
@@ -88,7 +88,7 @@ func TestAParameterDoesNotStopTheVersionAnswer(t *testing.T) {
 // one it is, and a claim added there is a claim about a capability.
 func TestTheVersionAnswerDoesNotChangeDeviceAttributes(t *testing.T) {
 	h := newHarness(t, 20, 5)
-	h.term.SetProgram("gridterm 1.2.3")
+	h.term.SetProgram("kakel 1.2.3")
 
 	h.write("\x1b[c")
 

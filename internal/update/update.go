@@ -1,4 +1,4 @@
-// Package update asks GitHub which release of gridterm is the newest,
+// Package update asks GitHub which release of kakel is the newest,
 // for the button on the about dialog.
 package update
 
@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/internal/build"
+	"github.com/marrasen/kakel/internal/build"
 )
 
 // repo is the project a release comes from, as GitHub names it.
-const repo = "marrasen/gridterm"
+const repo = "marrasen/kakel"
 
 // Releases is the page every release is listed on, which is where
 // somebody is sent when the release GitHub named carries no page of its
@@ -39,7 +39,7 @@ const patience = 10 * time.Second
 // an endless body from filling this window's memory.
 const readLimit = 1 << 20
 
-// Release is one release of gridterm, as GitHub describes it.
+// Release is one release of kakel, as GitHub describes it.
 type Release struct {
 	// Version is the tag the release was cut from: "v0.1.0".
 	Version string

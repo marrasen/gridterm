@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gridterm/input"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/ui"
 )
 
 // countingSession counts the reads the terminal made on it, so a test

@@ -1,6 +1,6 @@
 package ui
 
-import "github.com/marrasen/gridterm/grid"
+import "github.com/marrasen/kakel/grid"
 
 // Selected is the text picked out in the field, and empty when nothing
 // is.

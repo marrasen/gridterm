@@ -57,7 +57,7 @@ func TestBookIsWrittenForItsOwnerOnly(t *testing.T) {
 		t.Fatalf("stat the directory: %v", err)
 	}
 	// The directory is only ours to check when this made it.
-	if dir.Mode().Perm()&0o077 != 0 && strings.Contains(dir.Name(), "gridterm") {
+	if dir.Mode().Perm()&0o077 != 0 && strings.Contains(dir.Name(), "kakel") {
 		t.Errorf("the directory is %v, want nothing for anyone else", dir.Mode().Perm())
 	}
 }

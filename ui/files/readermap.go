@@ -5,8 +5,8 @@ import (
 	"image/color"
 	"math"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/ui"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/ui"
 )
 
 // mapLeast is the narrowest pane that still gets a strip. Below it the

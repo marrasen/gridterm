@@ -4,7 +4,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/marrasen/gridterm/grid"
+	"github.com/marrasen/kakel/grid"
 )
 
 // renderOf draws a terminal onto a grid a test can read.

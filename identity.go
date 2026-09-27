@@ -4,23 +4,23 @@ import (
 	"os"
 	"strings"
 
-	"github.com/marrasen/gridterm/internal/build"
-	"github.com/marrasen/gridterm/session"
-	shellfind "github.com/marrasen/gridterm/shells"
-	"github.com/marrasen/gridterm/shellsetup"
+	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/session"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
 )
 
-// What a shell here is started with, as gridterm starts one: in the
-// folder of the pane the user is in, told which terminal it runs in,
-// and, with Shell Setup on, taught to say what it is doing, so paths
-// it prints can be followed and an agent can tell a command's end.
+// What a shell here is started with: in the folder of the pane the user
+// is in, told which terminal it runs in, and, with Shell Setup on,
+// taught to say what it is doing, so paths it prints can be followed and
+// an agent can tell a command's end.
 
 // Intents for the shell's start.
 type (
 	// ToggleShellSetup turns the teaching of new shells here on or off.
 	ToggleShellSetup struct{}
 	// SetTermProgram sets what new shells here are told the terminal
-	// is called, "" for gridterm's own name.
+	// is called, "" for kakel's own name.
 	SetTermProgram struct{ Called string }
 )
 

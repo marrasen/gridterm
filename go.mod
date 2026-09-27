@@ -1,4 +1,4 @@
-module github.com/marrasen/gridterm
+module github.com/marrasen/kakel
 
 go 1.27.1
 

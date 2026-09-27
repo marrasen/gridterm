@@ -481,20 +481,20 @@ func TestARealExportSurvivesTheRoundTrip(t *testing.T) {
 func TestReplaceWillNotCrossOneKeyPassphraseWithAnother(t *testing.T) {
 	v, _, _ := aVault(t)
 	if _, err := v.Put(Item{
-		Name: "id_ed25519_gridterm", Kind: Passphrase, File: "/home/b/.ssh/id_ed25519_gridterm",
+		Name: "id_ed25519_kakel", Kind: Passphrase, File: "/home/b/.ssh/id_ed25519_kakel",
 	}, "this machine's"); err != nil {
 		t.Fatalf("put: %v", err)
 	}
 
 	// The same name and kind, for the other machine's key.
 	in := []Export{{Item: Item{
-		Name: "id_ed25519_gridterm", Kind: Passphrase, File: "/home/a/.ssh/id_ed25519_gridterm",
+		Name: "id_ed25519_kakel", Kind: Passphrase, File: "/home/a/.ssh/id_ed25519_kakel",
 	}, Value: "the other machine's"}}
 	if _, _, err := v.Import(in, ReplaceThem); err != nil {
 		t.Fatalf("import: %v", err)
 	}
 
-	got, err := v.PassphraseFor("/home/b/.ssh/id_ed25519_gridterm")
+	got, err := v.PassphraseFor("/home/b/.ssh/id_ed25519_kakel")
 	if err != nil {
 		t.Fatalf("PassphraseFor: %v", err)
 	}

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/marrasen/gridterm/remote"
+	"github.com/marrasen/kakel/remote"
 )
 
-// Connecting to servers, with gridterm's remote package, and answering
+// Connecting to servers, with kakel's remote package, and answering
 // what it asks through the window.
 
 // Ask is a question a connection is waiting on the user for, shown as
@@ -45,7 +45,7 @@ type Ask struct {
 
 // errDeclined is the user saying no to a question, which stops the
 // connection quietly.
-var errDeclined = errors.New("gunimterm: declined")
+var errDeclined = errors.New("kakel: declined")
 
 // connect connects to a server, through the jump hosts a saved one
 // names, and opens a shell there once it is connected.
@@ -59,13 +59,13 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	name := in.Saved
 	if in.Saved != "" {
 		if a.book == nil {
-			return fmt.Errorf("gunimterm: no saved servers")
+			return fmt.Errorf("kakel: no saved servers")
 		}
 		hosts, err := a.book.Route(in.Saved)
 		if err != nil {
 			return err
 		}
-		// A saved gridterm window is connected to as one.
+		// A saved kakel window is connected to as one.
 		if last := hosts[len(hosts)-1]; last.Window {
 			key := ""
 			if len(last.Identities) > 0 {
@@ -178,7 +178,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						delete(a.letGo, name)
 					} else {
 						// Gone by itself: its row stays, greyed, until it
-						// is cleared, as in gridterm.
+						// is cleared.
 						a.dropped[name] = true
 						a.problem()
 					}
@@ -195,8 +195,8 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 }
 
 // askAboutTheOneOnItsWay asks what to do about a server already being
-// connected to, as gridterm asks: wait for that one, which then does
-// what was asked; give it up and connect again; or drop what was asked.
+// connected to: wait for that one, which then does what was asked; give
+// it up and connect again; or drop what was asked.
 func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)) {
 	go func() {
 		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + name, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
@@ -362,7 +362,7 @@ func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error)
 // saveServer saves a server in the book, and says so.
 func (a *app) saveServer(in SaveServer) error {
 	if a.book == nil {
-		return fmt.Errorf("gunimterm: the saved servers could not be read")
+		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
 	if err := a.book.Put(in.Host, in.Under); err != nil {
 		return err
@@ -382,7 +382,7 @@ func (a *app) saveServer(in SaveServer) error {
 // removeServer forgets a saved server.
 func (a *app) removeServer(name string) error {
 	if a.book == nil {
-		return fmt.Errorf("gunimterm: the saved servers could not be read")
+		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
 	if err := a.book.Remove(name); err != nil {
 		return err

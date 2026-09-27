@@ -27,7 +27,7 @@ type PicturePutter func(png []byte) error
 // takes what it read as the failure.
 func (s *Server) runClipboard(ctx context.Context, nch ssh.NewChannel) {
 	if s.cfg.Picture == nil {
-		_ = nch.Reject(ssh.Prohibited, "this gridterm does not take pictures")
+		_ = nch.Reject(ssh.Prohibited, "this kakel does not take pictures")
 		return
 	}
 	ch, reqs, err := nch.Accept()

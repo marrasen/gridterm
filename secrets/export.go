@@ -50,7 +50,7 @@ func (v *Vault) Everything() ([]Export, error) {
 // note's own text goes.
 //
 // Then kind and file, which are this window's own. They are what lets
-// gridterm read its own export back without losing what it knows, and
+// kakel read its own export back without losing what it knows, and
 // every importer ignores a column it does not recognise.
 var csvHeader = []string{"name", "url", "username", "password", "notes", "kind", "file"}
 

@@ -12,7 +12,7 @@ import (
 
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // agentWith is an agent source holding one key under a comment, for a

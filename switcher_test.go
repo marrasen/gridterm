@@ -8,8 +8,8 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 
-	"github.com/marrasen/gridterm/vfs"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/vfs"
+	"github.com/marrasen/kakel/vt"
 )
 
 // switcherStage puts three terminal panes in a window, p1 on stage, and

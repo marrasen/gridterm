@@ -9,12 +9,12 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
 
-	"github.com/marrasen/gridterm/grid"
-	"github.com/marrasen/gridterm/vt"
+	"github.com/marrasen/kakel/grid"
+	"github.com/marrasen/kakel/vt"
 )
 
 // A pane shared with an agent, or watched from another window, has a
-// ring round it that glows slowly, as in gridterm: so whoever sits at
+// ring round it that glows slowly: so whoever sits at
 // the window can tell at a glance which panes somebody else can see.
 // Shared both ways, it has two rings, the agent's outside.
 
@@ -25,7 +25,7 @@ const glowEvery = 3 * time.Second
 // colours: an agent's, and another window's.
 type Marks struct{ Agent, Watched color.NRGBA }
 
-// marksOf are the rings' colours in a palette, as gridterm picks them.
+// marksOf are the rings' colours in a palette.
 func marksOf(p vt.Palette) Marks {
 	// Lifted towards whichever of black and white the ground is not.
 	black, white := color.RGBA{A: 0xff}, color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}

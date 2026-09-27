@@ -423,7 +423,7 @@ func (r *renameable) Renamed(now string) { r.now = now }
 
 // An archive changed since it was read is read again. The wrapper holds
 // the last one it read, and a copy from another pane or a program
-// outside gridterm can change the file under it.
+// outside kakel can change the file under it.
 func TestAnArchiveChangedSinceItWasReadIsReadAgain(t *testing.T) {
 	// Asked every time here, rather than once a second.
 	was := archiveRecheck

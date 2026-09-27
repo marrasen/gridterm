@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/marrasen/gridterm/internal/sshtest"
+	"github.com/marrasen/kakel/internal/sshtest"
 )
 
 // typingAsk answers with the next passphrase it was given, and records

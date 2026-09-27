@@ -12,13 +12,13 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gridterm/clip"
-	"github.com/marrasen/gridterm/conf"
-	"github.com/marrasen/gridterm/remote"
-	"github.com/marrasen/gridterm/secrets"
+	"github.com/marrasen/kakel/clip"
+	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/secrets"
 )
 
-// The secrets, on the program's side: gridterm's vault, in the same
+// The secrets, on the program's side: kakel's vault, in the same
 // file gridterm keeps it in. The vault opens with a key the window has
 // already unlocked to reach a server, or asks to unlock one, or asks
 // for the vault's own passphrase when no key of its is here.
@@ -295,8 +295,7 @@ func (a *app) knownKeys() []string {
 	return vaultKeysWith(a.settings.Keys)
 }
 
-// vaultKeysWith is vaultKeys, with the key files kept, as gridterm
-// keeps them, first.
+// vaultKeysWith is vaultKeys, with the key files kept first.
 func vaultKeysWith(kept func() []string) []string {
 	var out []string
 	seen := map[string]bool{}
@@ -376,10 +375,10 @@ func joinLines(lines []string) string {
 	return out
 }
 
-// showVault publishes what the vault holds, the names alone.
-// watchVault reads the vault again each second while the secrets pane
-// is open, as gridterm's pane does: much of what changes it happens in
-// another window, or another program altogether.
+// showVault publishes what the vault holds, the names alone. watchVault
+// reads the vault again each second while the secrets pane is open: much
+// of what changes it happens in another window, or another program
+// altogether.
 func (a *app) watchVault() {
 	if a.watchingVault {
 		return
@@ -533,8 +532,8 @@ func (a *app) copySecret(id string) {
 }
 
 // takeSecretBack clears the clipboard as the window closes, when it
-// still holds a secret copied less than clipboardHolds ago, as gridterm
-// does: the window's own clearing would never come.
+// still holds a secret copied less than clipboardHolds ago: the
+// window's own clearing would never come.
 func (a *app) takeSecretBack() {
 	if a.copied == "" || time.Since(a.copiedAt) > clipboardHolds*time.Second {
 		return

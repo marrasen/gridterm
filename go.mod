@@ -49,3 +49,11 @@ require (
 // layer in Go for v2.10, so none of it needs C any more: gridterm builds
 // with CGO_ENABLED=0 on every platform now.
 replace github.com/hajimehoshi/ebiten/v2 => github.com/marrasen/ebiten/v2 v2.10.2-gt.1
+
+// marrasen/go-vte is upstream v1.0.11 with two changes. The parser hands
+// a performer its own params and intermediates, reused from one sequence
+// to the next, where it allocated them for every sequence: a screen of
+// true colour half blocks sends two sequences a cell. vt reads them only
+// during the call. And SOS, PM and APC strings stop growing at a
+// megabyte, which upstream's own test expected.
+replace github.com/danielgatis/go-vte => github.com/marrasen/go-vte v1.0.11-gt.1

@@ -68,8 +68,15 @@ type window struct {
 	serving Serving
 	// bells is the bells as last published, titles whether panes show
 	// their titles, and captions the line over each pane that does.
-	// sidebarShown is whether the sidebar shows, as last published.
+	// sidebarShown is whether the sidebar shows, as last published, and
+	// sideWidth the width it has while it does, or 0 while it is hidden.
 	sidebarShown bool
+	sideWidth    float32
+	// presenting says the window fills the screen with the stage alone:
+	// the menu bar, the sidebar and the status line slide away. barShade
+	// holds the menu bar, to slide it up.
+	presenting bool
+	barShade   *shade
 	// savedCommands are the commands kept, and remoteWindows the
 	// windows connected to, as last published.
 	savedCommands []settings.SavedCommand
@@ -257,7 +264,8 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	w.chips = newChipBar()
 	bar := widget.Row(w.bar, w.chips, widget.NewWindowControls()).Grow(w.bar, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
-	w.top = widget.Column(bar, w.outer).Grow(w.outer, 1)
+	w.barShade = newShade(bar)
+	w.top = widget.Column(w.barShade, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
 		if i < len(w.paletteIDs) {
@@ -286,6 +294,8 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 		return true
 	case "menu.open":
+		// The menus live in the menu bar, which comes back for them.
+		w.present(false, u)
 		w.bar.Open(0, u)
 		return true
 	case "view.switcher":
@@ -374,7 +384,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.fileLocationsDialog(u)
 		return true
 	case "view.fullScreen":
-		u.SetFullScreen(!u.FullScreen())
+		w.present(!w.presenting, u)
 		return true
 	case "shell.termProgram":
 		w.termProgramDialog(u)
@@ -1322,7 +1332,6 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 
 // update shows st.
 func (w *window) update(st State, u *gunim.UI) {
-	th := u.Theme()
 	w.panes = st.Panes
 	if st.Theme != w.themeNow {
 		if c, ok := w.contents[st.Theme]; ok {
@@ -1549,14 +1558,12 @@ func (w *window) update(st State, u *gunim.UI) {
 		}
 	}
 
-	width := float32(0)
+	w.sideWidth = 0
 	if st.Sidebar {
-		width = st.SidebarWidth
+		w.sideWidth = st.SidebarWidth
 		w.side.least = st.SidebarWidth
 	}
-	if w.outer.Share() != width {
-		w.outer.SetShare(width, widget.Settle.Get(th))
-	}
+	w.placeSidebar(u)
 	w.status.set(st.Status, u)
 	w.showChips(st)
 	for _, n := range st.Notices {
@@ -2184,6 +2191,9 @@ type statusLine struct {
 	text   string
 	hint   *widget.Label
 	hinted string
+	// hidden folds the line away whatever it says, while the window is
+	// presenting.
+	hidden bool
 }
 
 func newStatusLine() *statusLine {
@@ -2211,12 +2221,28 @@ func (s *statusLine) set(text string, u *gunim.UI) {
 		return
 	}
 	s.text = text
-	to := float32(0)
 	if text != "" {
-		to = 24
 		s.label.SetText(text)
 	}
-	s.height.Animate(to, widget.Settle.Get(u.Theme()))
+	s.fold(u)
+}
+
+// hide folds the line away while on is set, whatever it says.
+func (s *statusLine) hide(on bool, u *gunim.UI) {
+	s.hidden = on
+	s.fold(u)
+}
+
+// fold grows the line to its height while it has something to say and
+// shows, and folds it away otherwise.
+func (s *statusLine) fold(u *gunim.UI) {
+	to := float32(0)
+	if s.text != "" && !s.hidden {
+		to = statusHeight
+	}
+	if s.height.Target() != to {
+		s.height.Animate(to, widget.Settle.Get(u.Theme()))
+	}
 }
 
 // Children implements [gunim.Composite].
@@ -2310,6 +2336,7 @@ func (w *window) focusRowsAway(from string, n int, u *gunim.UI) {
 // focusSidebar gives the keyboard to the sidebar's row for the focused
 // pane, or to its first row, showing the sidebar first.
 func (w *window) focusSidebar(u *gunim.UI) {
+	w.present(false, u)
 	if !w.sidebarShown {
 		u.Send(w, ToggleSidebar{})
 	}
@@ -2629,4 +2656,83 @@ func (w *window) echoFor(st State, u *gunim.UI) {
 		w.echo.Ping(u, widget.EchoCall)
 	}
 	w.echo.Wait(u, widget.EchoWait, len(st.Dialing) > 0)
+}
+
+// present fills the screen with the stage, the pane or split in front,
+// with on set, as F11 asks: the window goes full screen, the menu bar
+// slides up, the sidebar slides away to the left and the status line
+// folds. With on unset all of it comes back.
+func (w *window) present(on bool, u *gunim.UI) {
+	if on == w.presenting {
+		return
+	}
+	w.presenting = on
+	u.SetFullScreen(on)
+	spring := widget.Settle.Get(u.Theme())
+	w.barShade.show(!on, spring)
+	w.status.hide(on, u)
+	w.placeSidebar(u)
+	if on {
+		w.toasts.Show(widget.Toast{Title: "Full screen", Body: "F11 brings the menus and the sidebar back."}, u)
+	}
+	u.Invalidate()
+}
+
+// placeSidebar slides the sidebar to its width, or away while it is
+// hidden or the window is presenting.
+func (w *window) placeSidebar(u *gunim.UI) {
+	width := w.sideWidth
+	if w.presenting {
+		width = 0
+	}
+	if w.outer.Share() != width {
+		w.outer.SetShare(width, widget.Settle.Get(u.Theme()))
+	}
+}
+
+// shade holds a strip across the window, such as the menu bar, that
+// slides up out of sight and back down. Its child keeps its own height
+// all the while, and is clipped to what shows.
+type shade struct {
+	anim.Group
+	child gunim.Node
+	// open is how much shows, from 0 to 1.
+	open *anim.Float
+}
+
+func newShade(child gunim.Node) *shade {
+	s := &shade{child: child, open: anim.NewFloat(1)}
+	s.Add(s.open)
+	return s
+}
+
+// show slides the strip down into sight, or with on unset up out of it.
+func (s *shade) show(on bool, spring anim.Spring) {
+	to := float32(0)
+	if on {
+		to = 1
+	}
+	s.open.Animate(to, spring)
+}
+
+// Children implements [gunim.Composite].
+func (s *shade) Children() []gunim.Node { return []gunim.Node{s.child} }
+
+// Layout implements [gunim.Node].
+func (s *shade) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+	k := kids.At(0)
+	size := k.Layout(gunim.Constraints{Min: geom.Sz(c.Max.W, 0), Max: c.Max})
+	open := min(max(s.open.Value(), 0), 1)
+	h := size.H * open
+	k.Place(geom.Pt(0, h-size.H))
+	return geom.Sz(size.W, h)
+}
+
+// Paint implements [gunim.Node].
+func (s *shade) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids gunim.Children) {
+	if box.H < 0.5 {
+		return
+	}
+	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
+	kids.At(0).Paint(p)
 }

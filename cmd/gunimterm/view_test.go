@@ -440,3 +440,42 @@ func TestTheReaderCopiesAndSaves(t *testing.T) {
 		t.Fatalf("the save failed, and the reader says %q", got)
 	}
 }
+
+// F11 fills the screen with the stage alone: the menu bar, the sidebar
+// and the status line slide away, and come back with F11 again.
+func TestFullScreenShowsTheStageAlone(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := twoPanes("p2", nil)
+	st.SidebarWidth = 220
+	st.Status = "Connecting…"
+	publish(st)
+	settle := func() {
+		for range 90 {
+			lastWindow.Frame(time.Second / 60)
+		}
+	}
+	settle()
+	before, ok := lastUI.Bounds(win.stage)
+	if !ok || before.Min.X < 200 || before.Min.Y < 20 {
+		t.Fatalf("before F11 the stage is at %v, want it beside the sidebar and under the menu bar", before)
+	}
+
+	win.run("view.fullScreen", lastUI)
+	settle()
+	if !lastWindow.Offscreen().FullScreen() {
+		t.Fatal("F11 left the window out of full screen")
+	}
+	all, _ := lastUI.Bounds(win.stage)
+	if d := all.Min; d.X > 0.5 || d.Y > 0.5 || all.Max.X < 899.5 || all.Max.Y < 599.5 {
+		t.Fatalf("in full screen the stage is at %v, want the whole window", all)
+	}
+
+	win.run("view.fullScreen", lastUI)
+	settle()
+	if lastWindow.Offscreen().FullScreen() {
+		t.Fatal("F11 again kept the window full screen")
+	}
+	if back, _ := lastUI.Bounds(win.stage); back != before {
+		t.Fatalf("after F11 again the stage is at %v, want %v as before", back, before)
+	}
+}

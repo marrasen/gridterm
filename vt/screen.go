@@ -31,6 +31,7 @@ type modes struct {
 	AppKeypad   bool // DECNKM (66)
 	Alt         bool // 47 / 1047 / 1049
 	Bracketed   bool // 2004
+	Sync        bool // 2026, a synchronized update
 	FocusEvents bool // 1004
 	ReverseVid  bool // DECSCNM (5)
 

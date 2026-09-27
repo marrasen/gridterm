@@ -294,6 +294,10 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 			t.setPrivateModes(params, false)
 		case 'n':
 			t.deviceStatus(argRaw(0, 0), true)
+		case 'p':
+			if len(intermediates) > 1 && intermediates[1] == '$' {
+				t.reportMode(argRaw(0, 0), true)
+			}
 		}
 		return
 	}
@@ -305,6 +309,8 @@ func (t *Terminal) CsiDispatch(params [][]uint16, intermediates []byte, ignore b
 			t.setCursorStyle(argRaw(0, 0))
 		case intermediates[0] == '>' && r == 'q':
 			t.answerVersion()
+		case intermediates[0] == '$' && r == 'p':
+			t.reportMode(argRaw(0, 0), false)
 		}
 		return
 	}
@@ -496,8 +502,73 @@ func (t *Terminal) setPrivateModes(params [][]uint16, on bool) {
 			}
 		case 2004:
 			t.scr.mode.Bracketed = on
+		case 2026:
+			// A synchronized update. The host holds the update's bytes
+			// back and hands them over whole, so there is nothing to do
+			// here but remember it, to answer DECRQM truly.
+			t.scr.mode.Sync = on
 		}
 	}
+}
+
+// reportMode answers DECRQM, which asks whether a mode is set: 1 set,
+// 2 reset, 0 a mode this terminal does not know. A program asks before
+// it uses a mode, as for the synchronized updates of mode 2026.
+func (t *Terminal) reportMode(n int, private bool) {
+	on, known := t.modeState(n, private)
+	state := 0
+	switch {
+	case known && on:
+		state = 1
+	case known:
+		state = 2
+	}
+	prefix := "\x1b["
+	if private {
+		prefix = "\x1b[?"
+	}
+	t.reply(prefix + strconv.Itoa(n) + ";" + strconv.Itoa(state) + "$y")
+}
+
+// modeState says whether mode n is set, and whether it is one this
+// terminal knows.
+func (t *Terminal) modeState(n int, private bool) (on, known bool) {
+	m := t.scr.mode
+	if !private {
+		if n == 4 {
+			return m.Insert, true
+		}
+		return false, false
+	}
+	switch n {
+	case 1:
+		return m.AppCursor, true
+	case 5:
+		return m.ReverseVid, true
+	case 6:
+		return t.scr.cursor.Origin, true
+	case 7:
+		return m.Wrap, true
+	case 25:
+		return m.CursorVis, true
+	case 47, 1047, 1049:
+		return m.Alt, true
+	case 1000:
+		return m.MouseClick, true
+	case 1002:
+		return m.MouseDrag, true
+	case 1003:
+		return m.MouseMotion, true
+	case 1004:
+		return m.FocusEvents, true
+	case 1006:
+		return m.MouseSGR, true
+	case 2004:
+		return m.Bracketed, true
+	case 2026:
+		return m.Sync, true
+	}
+	return false, false
 }
 
 // deviceStatus answers DSR. 5 asks whether the terminal is healthy, 6

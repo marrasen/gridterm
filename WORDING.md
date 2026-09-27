@@ -1,6 +1,6 @@
-# How gridterm words things
+# How kakel words things
 
-Every dialog, button, menu row, command title and error in gridterm is
+Every dialog, button, menu row, command title and error in kakel is
 written to these rules. They are here so a new one comes out right the
 first time rather than being rewritten later.
 
@@ -21,7 +21,7 @@ there too.
    cannot: which machine, which path, one consequence. If the title says
    it all, there is no body.
 4. **Never explain the program's reasoning.** The user needs the choice,
-   not why gridterm has to offer it.
+   not why kakel has to offer it.
 5. **Buttons are one verb**, from a small fixed set: `OK` `Add` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
    `Skip` `Open` `Run` `Connect` `Generate` `Show` `Type`. No pronouns:
@@ -74,7 +74,7 @@ header around it, and it heads the notice shown when the command fails.
    the missing word; those rows are listed at the end of
    [COMMANDS.md](COMMANDS.md).
 3. **`…` means the command asks something before it acts.** A command
-   that shows something and asks nothing has none: `About gridterm`,
+   that shows something and asks nothing has none: `About kakel`,
    `File Locations`, `Typing History`.
 4. **Every word a title loses goes into `AlsoFind`**, along with the
    ordinary synonyms and both spellings, so whoever learned the old

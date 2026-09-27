@@ -30,8 +30,8 @@ true.
 
 ## What a release ships
 
-- `gridterm_vX.Y.Z_windows_amd64.zip`
-- `gridterm_vX.Y.Z_linux_amd64.tar.gz`
+- `kakel_vX.Y.Z_windows_amd64.zip`
+- `kakel_vX.Y.Z_linux_amd64.tar.gz`
 - `SHA256SUMS`
 
 The version is stamped into the binary at link time, so a build can

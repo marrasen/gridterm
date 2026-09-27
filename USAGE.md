@@ -1,11 +1,11 @@
-# Using gridterm
+# Using kakel
 
 Keys, the shortcuts file, sharing panes with an agent, and where things
 are kept. [FEATURES.md](FEATURES.md) says what each of these is for.
 
 ## Keys
 
-gridterm comes with:
+Kakel comes with:
 
 | Key | |
 |---|---|
@@ -29,15 +29,15 @@ runs it, and the name the shortcuts file calls it by.
 
 To change a shortcut, take "Write a starting keyboard shortcuts file" on
 the same menu. It writes `keys.json` holding every shortcut you have
-now, and gridterm reads the file the next time it starts.
+now, and kakel reads the file the next time it starts.
 
 The file says what to change, not what the whole window does:
 
 - Add a line to put a command on another chord. To move it, set the old
   chord to `"nothing"` as well, or the command runs on both.
-- Delete a line and that chord goes back to what gridterm comes with.
-- Shortcuts added to a later gridterm arrive on their own. A built-in
-  chord that a later gridterm moves does not, because your file still
+- Delete a line and that chord goes back to what kakel comes with.
+- Shortcuts added to a later kakel arrive on their own. A built-in
+  chord that a later kakel moves does not, because your file still
   names the old one.
 
 Every chord in the file runs before the pane sees it, so a chord a
@@ -70,7 +70,7 @@ password prompt can ask you to type it into the pane: a line appears
 saying what it wants, what you type goes to the program, and the agent
 is told you typed something and never what.
 
-gridterm writes down what an agent types, and "What the agent typed" on
+Kakel writes down what an agent types, and "What the agent typed" on
 the Servers menu shows it for the pane you are on. You hand the pane
 over, you give the access and you hold the secrets, so what the agent
 does in there is yours to read. It is what the agent sent, not what the
@@ -87,13 +87,13 @@ which agent it is for -- Claude Code, Codex, Cursor, or another host
 that takes a JSON MCP config -- and remembers the answer for next time.
 "Copy the prompt" puts a prompt on the clipboard and does nothing else:
 paste the whole of it to the agent, and it carries the code and says how
-that host adds this window's `gridterm -mcp` server. What the tools do
+that host adds this window's `kakel -mcp` server. What the tools do
 and what the rules are come from the server's own instructions once the
 agent connects, so the prompt does not repeat them. "Instructions" opens
 those setup lines on their own, with a button and the copy chord that
 take the command line -- or the JSON, for a host set up by a file -- off
 the dialog. "Write the skill" saves a `SKILL.md` where that host reads
-skills from, and says where it went; `gridterm -mcp-skill` prints the
+skills from, and says where it went; `kakel -mcp-skill` prints the
 same file. "Stop sharing" ends the share and the code stops working, and
 so does taking the last pane out.
 
@@ -106,15 +106,19 @@ address and the key to offer. Connecting opens nothing over there: what
 that window has open lands on the sidebar under its name, and the plus
 on that heading opens a pane on it. Nothing listens until you ask it to,
 and the keys allowed in are the ones you list in an `authorized_keys`
-file in gridterm's own directory, not the one in `~/.ssh`.
+file in kakel's own directory, not the one in `~/.ssh`.
 
-## Where gridterm keeps its files
+## Where kakel keeps its files
 
-gridterm keeps its files where the operating system puts a program's.
-Make a directory called `gridterm-files` beside `gridterm.exe` and it
+Kakel keeps its files where the operating system puts a program's.
+Make a directory called `kakel-files` beside `kakel.exe` and it
 keeps them there instead, so one machine can hold several copies with
-files of their own. "Where gridterm keeps its files" on the Help menu
+files of their own. "Where kakel keeps its files" on the Help menu
 names every file and says how to move them.
+
+Kakel used to be called gridterm. On its first start it renames
+gridterm's old directories: `gridterm` becomes `kakel`, and
+`gridterm-files` becomes `kakel-files`.
 
 ## The file manager
 

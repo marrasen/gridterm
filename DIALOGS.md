@@ -1,4 +1,4 @@
-# Every dialog in gridterm — rewrite
+# Every dialog in kakel — rewrite
 
 A change sheet against `Every_dialog_in_gridterm.md`, matched on the
 D-ids. Each entry gives the on-screen text as it should read after the
@@ -27,7 +27,7 @@ from: this file is the change sheet, that one is the standing rule.
    cannot: which machine, which path, one consequence. If the title
    says it all, there is no body.
 4. **Never explain the program's reasoning.** The user needs the
-   choice, not why gridterm has to offer it.
+   choice, not why kakel has to offer it.
 5. **Buttons are one verb**, from a small fixed set: `OK` `Cancel`
    `Close` `Retry` `Wait` `Save` `Create` `Delete` `Remove` `Replace`
    `Skip` `Open` `Run` `Connect`. No pronouns: never `Make it`,
@@ -160,7 +160,7 @@ had enough, and that arrives as a connection error.
 - **Fields:** as today
 - **Buttons:** `OK` · `Cancel`
 
-**Instructions:** gridterm's own line stays first, for the reason in
+**Instructions:** Kakel's own line stays first, for the reason in
 the Notes.
 
 ## D08
@@ -288,7 +288,7 @@ that says so.
 
 **Instructions:** The tick sits above the two fields it turns off, so
 it is read before a passphrase has been typed into one of them. Ticked,
-both are disabled and cleared (G5): gridterm makes the passphrase, locks
+both are disabled and cleared (G5): kakel makes the passphrase, locks
 the key with it, and puts it in the vault, and nobody is shown it. The
 tick is absent, not disabled, where there is no vault, because a
 disabled field never gets the focus its hint is drawn for.
@@ -472,8 +472,8 @@ window -- `<name>  from <addr>` -- and `Disconnect <name>`, or
 
 **Instructions:** The button already says what it copies, so the
 sentence describing the button goes, and the one about the shortcut
-with it. The paragraph about gridterm's own path goes too; the setup
-lines simply use `gridterm`. Keep every `copyTitle()` to two words:
+with it. The paragraph about kakel's own path goes too; the setup
+lines simply use `kakel`. Keep every `copyTitle()` to two words:
 `Copy command`, `Copy config`.
 
 ## D25
@@ -499,8 +499,8 @@ lines simply use `gridterm`. Keep every `copyTitle()` to two words:
 and D32: the button that changes nothing.
 
 ## D27
-- **Title:** `gridterm path not found`
-- **Body:** `The prompt uses "gridterm" as the command. It works when gridterm is on the PATH.`
+- **Title:** `kakel path not found`
+- **Body:** `The prompt uses "kakel" as the command. It works when kakel is on the PATH.`
 - **Buttons:** `OK`
 
 ## D28
@@ -652,7 +652,7 @@ editing the file is looking when they need them.
 - **Body:** one line per file, with these labels: `Settings`,
   `Saved servers`, `Themes`, `Shortcuts`, `Authorized keys`,
   `Known windows`, `Serving key`. Then the `~/.ssh` note cut to one
-  line. Then either `Portable: files are kept beside gridterm.` or
+  line. Then either `Portable: files are kept beside kakel.` or
   nothing.
 - **Buttons:** `Make portable` *(same condition as today)* · `Copy` · `OK`
 - **Focus:** `OK`
@@ -672,10 +672,10 @@ button does them.
 - **Body:**
   ```
   Programs read TERM_PROGRAM to identify the terminal.
-  Blank reports gridterm.
+  Blank reports kakel.
 
   Another name can enable features such as inline images.
-  It can also produce sequences that gridterm shows as text.
+  It can also produce sequences that kakel shows as text.
 
   Applies to new panes.
   ```
@@ -711,13 +711,13 @@ stay: title `Shell setup <on|off>`, body `Applies to new panes.`, `OK`.
 # 10. The window itself
 
 ## D51
-- **Title:** `Exit gridterm?`
+- **Title:** `Exit kakel?`
 - **Body:** `Still open: <list>.` — the last item reads `an agent share`
 - **Buttons:** `Exit` · `Cancel`
 - **Focus:** `Cancel`
 
 ## D52
-- **Title:** `About gridterm`
+- **Title:** `About kakel`
 - **Body:**
   ```
   A GPU-rendered terminal emulator for Windows.
@@ -1069,7 +1069,7 @@ focus, the way it does on every question about exposing something.
 
 Rule 4 applies hardest here: the body says what it costs and never how
 a slot key is made. The first draft explained the challenge and the
-signature, which is gridterm's reasoning and not the user's choice.
+signature, which is kakel's reasoning and not the user's choice.
 
 The agent is asked by fingerprint, off the `.pub` file beside the key,
 so nothing has to be unlocked to ask. A key with no `.pub`, or an agent
@@ -1152,7 +1152,7 @@ to hold them. The shape a tunnel already uses -- a form to fill in,
 then a question naming what filling it in would do.
 
 Plain text on purpose. It is what every other manager reads, and a way
-out that only gridterm can read is not one.
+out that only kakel can read is not one.
 
 ## D75
 - **Title:** `Secrets written`
@@ -1319,7 +1319,7 @@ it can be held against another and believed to match.
 - **Body:**
   ```
   v0.2.0 is the newest release; this build is v0.1.0.
-  https://github.com/marrasen/gridterm/releases/tag/v0.2.0
+  https://github.com/marrasen/kakel/releases/tag/v0.2.0
   ```
 - **Buttons:** `Open` · `Copy` · `OK`
 - **Focus:** `OK`
@@ -1331,7 +1331,7 @@ it can be held against another and believed to match.
 - **Body:**
   ```
   v0.2.0 is the newest release; this build is dev-3e62f4547e66.
-  https://github.com/marrasen/gridterm/releases/tag/v0.2.0
+  https://github.com/marrasen/kakel/releases/tag/v0.2.0
   ```
 - **Buttons:** `Open` · `Copy` · `OK`
 - **Focus:** `OK`

@@ -22,13 +22,11 @@ input or the clipboard work.
 | `ui` | 5,919 | no | the widget toolkit: panes, decks, menus, dialogs, fields, lists |
 | `ui/term` | 787 | no | a shell on a widget |
 | `ui/files` | 1,455 | no | the file manager: any number of panes side by side |
-| `glyph` | 1,301 | yes | glyph atlas, system font fallback, box drawing |
-| `render` | 1,779 | yes | grid to batched triangles |
-| `main` | 8,499 | yes | the window and the wiring |
+| `glyph` | 407 | no | finds the monospaced font families on this machine, and holds their font files |
+| `main` | 18,125 | yes | the window and the wiring, drawn by gunim |
 
-The layering is deliberate: `vt` never imports the renderer, `input`
-never imports ebiten (that lives in `input/ebitenin`), `ui` knows nothing
-about terminals or SSH, `serve` carries bytes without knowing what rides
+The layering is deliberate: only `main` imports gunim, the GUI framework
+that draws the window. `ui` knows nothing about terminals or SSH, `serve` carries bytes without knowing what rides
 on them, and `session` knows nothing about any of them. Everything
 fiddly is testable without a display, which is how the emulator got
 written.
@@ -37,22 +35,18 @@ written.
 
 **The grid is for text. Nothing else has to be cells.** A terminal is a
 grid of characters, so the grid is what the emulator writes into and
-what the renderer rasterises. That is where the name comes from and it
-is right for text.
+what the window draws. That is right for text.
 
-It is not a limit on what can be drawn. A layer is pixels. The renderer
-draws quads, and a layer can carry a shader pass of its own: the frosted
-panel behind a dialog is a signed distance field with a rounded corner
-and a lit rim, computed per pixel, and it knows nothing about cells.
-Anything that is a shape rather than a character belongs there.
+It is not a limit on what can be drawn. The window is drawn by gunim,
+whose painter draws rounded rectangles, strokes, shadows and pictures in
+pixels. Anything that is a shape rather than a character belongs there.
 
 Reaching for cells because the thing in front of you is already a grid
 is how that gets forgotten. Two places have paid for it:
 
 - The rules around a menu are box-drawing characters, so they are a cell
   thick, they break where a font draws those characters differently, and
-  a corner can only be the shapes a font has. `glyph.Arms` and the
-  stretching in the renderer exist to paper over that.
+  a corner can only be the shapes a font has.
 - The border round a shared pane was cells filled with colour, which
   made it a character wide and a character tall.
 
@@ -101,16 +95,6 @@ Two faces are compiled in: Go Mono, and the IBM VGA set the Turbo theme
 asks for. `fonts/README.md` says where the second came from and what its
 licence asks of anyone shipping it.
 
-**A style the family has no face for is faked, not borrowed.** A family
-may ship one face or four. `buildFaces` records what each style has to
-fake in `Atlas.faked`, and the rasteriser applies it to the mask after
-the glyph is drawn: bold is a smear a pixel to the right, italic is a
-shear about the baseline. Before this, a one-face family drew bold and
-italic as the regular glyph again, so `ESC[1m` printed nothing different.
-
-A fallback face stands in for a *rune* the family cannot draw rather
-than for a style, so what it draws is left alone.
-
 **Paste takes whatever is on the clipboard.** Text when there is text,
 and the picture when there is none. A clipboard holding both is text:
 that is what copying from a browser leaves, and the words are what was
@@ -124,7 +108,7 @@ question is whether this window can put one there.
 
 - A pane on this machine: the picture is already on the clipboard that
   program reads, so the paste key is pressed and that is all of it.
-- A pane on a gridterm this window has taken over: the picture is sent
+- A pane on a kakel this window has taken over: the picture is sent
   over a channel of its own on the connection that is already open, put
   on that machine's clipboard, and then the paste key is pressed. Only
   once it has landed, or it would paste whatever was there before.
@@ -138,15 +122,16 @@ what a name at a prompt wants -- `magick <paste>` -- rather than a
 picture for something that reads the clipboard itself. It is also what
 the ordinary paste falls back to where there is no clipboard to reach.
 
-Reading the clipboard is per-platform. `clipboard_image_windows.go` asks
+Reading the clipboard is per-platform. `clip/image_windows.go` asks
 the operating system for a device independent bitmap and turns it into
-an image; everywhere else reports that there is no picture, so the
+an image, and `clip/clip_linux.go` reads one through X11; everywhere
+else reports that there is no picture, so the
 command says so rather than failing in a way that reads like a fault.
 
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
-picture rather than putting one anywhere. So this is gridterm's own
-channel between two gridterms.
+picture rather than putting one anywhere. So this is kakel's own
+channel between two kakel windows.
 
 The file an SSH pane gets goes under the home directory of whoever the
 connection logs in as, because where a temporary directory is depends on
@@ -186,7 +171,7 @@ looked at, and three frames in four skipped anyway.
 
 Both of those used to be stepped instead -- 200ms and 250ms a step --
 and both said in their own comments that it was to cost nothing. It is
-the wrong worry. Marcus runs termflix in a full-screen gridterm on an
+the wrong worry. Marcus runs termflix in a full-screen kakel on an
 ultrawide monitor, which animates every character on it at 24fps, and
 the fans stay off. A few borders and icons are not what makes a computer
 warm. If they ever look expensive, that is a thing to measure and fix
@@ -197,22 +182,15 @@ had to learn again: a mark that pulses must not rest *on* the colour it
 pulses from, or a busy row at rest cannot be told from a settled one.
 `pulseRest` is what keeps it off the end.
 
-**Damage tracking is load-bearing.** `ebiten.SetScreenClearedEveryFrame(false)`
-means a row the renderer skips shows the *previous* frame, not a blank.
-A row wrongly considered clean is a visible bug, so `grid.Set` compares
-before it writes and never dirties a row for content that did not
-change.
-
-Two things dirty a row on a clock rather than on a change, and both are
-meant to. The sidebar pulses the active connection's row every 200 ms,
-which is `panel.go`'s `pulse`. A blinking cursor dirties the one row it
-sits on each time its phase turns over, twice a second, which is
-`render.Layer.stepCursorBlink`. A steady cursor dirties nothing at all,
-so a window showing one is idle between keystrokes.
+**Damage tracking is load-bearing.** `term.sync` copies only the rows
+the grid marks dirty into what the window draws, so a row it skips keeps
+showing what it held before. A row wrongly considered clean is a visible
+bug, so `grid.Set` compares before it writes and never dirties a row for
+content that did not change.
 
 **Nothing on a UI thread writes to a pty.** Writing to a pty blocks once
 the program stops reading its input. Both the output pump — which holds
-the terminal lock — and the ebiten thread produce input, so both queue
+the terminal lock — and the UI thread produce input, so both queue
 through a writer goroutine. Without that, a program that stops reading
 wedges the whole window.
 
@@ -251,16 +229,16 @@ once with raw bytes through `cmd /c type`, which agreed.
 
 What follows from it:
 
-- **Everything gridterm reads today is passed on.** The pictures and
+- **Everything kakel reads today is passed on.** The pictures and
   the prompt marks are in the left column, which is why they work.
 
 - **DA1 is answered by ConPTY from its own model.** It asks this
   window once as it starts and keeps the answer. So adding a
-  capability to gridterm's own DA1 reply changes what conhost thinks
+  capability to kakel's own DA1 reply changes what conhost thinks
   and not what a program is told. Sixel is discovered through DA1, so
   that is the second thing blocking it.
 
-- **XTVERSION reaches gridterm.** That settles the open question: the
+- **XTVERSION reaches kakel.** That settles the open question: the
   CSI sequences ConPTY has no opinion about are passed on.
 
 - **There is no passthrough flag.** microsoft/terminal#1985 asked for
@@ -305,7 +283,7 @@ What follows from it:
 
 - **Every shell gets "Connection closed. Reconnect?"**, whether the
   transport went or the user typed exit, and whether the shell is on a
-  machine or this one. That is what ssh prints, and gridterm calls
+  machine or this one. That is what ssh prints, and kakel calls
   every pane a connection. Settled twice on 2026-09-17: a reviewer
   argued a local shell was never connected, and Marcus kept the one
   wording.

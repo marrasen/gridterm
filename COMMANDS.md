@@ -23,7 +23,7 @@ to a command title:
    where its header already says the missing word; those rows are
    listed at the end.
 3. **`…` means the command asks something before it acts.** A command
-   that shows something and asks nothing has none: `About gridterm`,
+   that shows something and asks nothing has none: `About kakel`,
    `File Locations`, `Typing History`. This is the classic rule, it is
    narrower than "opens a dialog", and it settles `server.connect` and
    `server.add`: both ask, both get `…`.
@@ -223,11 +223,11 @@ Fallback for a tunnel that will not parse:
 | `palette.open` | All Commands… | show, palette, search |
 | `menu.open` | Focus Menu Bar | show |
 | `help.shortcuts` | Shortcuts and Commands | keys, keyboard, help |
-| `help.files` | File Locations | where gridterm keeps its files, settings, config, folder, portable |
+| `help.files` | File Locations | where kakel keeps its files, settings, config, folder, portable |
 | `view.log` | Window Log | show what the window has logged, debug, errors, what went wrong |
 | `shortcuts.write` | New Shortcuts File | write, starting, keyboard, create |
 | `shortcuts.reload` | Reload Shortcuts | keyboard, reread |
-| `app.about` | About gridterm | version |
+| `app.about` | About kakel | version |
 | `app.exit` | Exit | quit, close this window |
 
 **Instructions:**
@@ -327,7 +327,7 @@ Dialog titles from the dialog sheet that P3 moves to Title Case, and
 that no constant above already covers: D01 `Connect to Server`, D02
 `Connect to Window`, D05 `Unlock Private Key`, D11 `Add Server`, D19
 `Serve This Window`, D30 `New Directory`, D33 `Go to Directory`, D39
-`Choose Theme`, D45 `Terminal Identity`, D52 `About gridterm`.
+`Choose Theme`, D45 `Terminal Identity`, D52 `About kakel`.
 
 ---
 

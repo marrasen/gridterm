@@ -43,6 +43,34 @@ sealed under the old cost.
 
 ### Changed
 
+**gridterm is now kakel, and its window is drawn with gunim.** Kakel is
+Swedish for tile. The window was drawn with ebitengine; it is now drawn
+with [gunim](https://github.com/marrasen/gunim), a GPU toolkit built
+around animation, and the ebitengine window and its fork are gone. The
+program is `kakel`, the module is `github.com/marrasen/kakel`, and
+`go install github.com/marrasen/kakel@latest` installs it.
+
+Your files come along. The first time kakel starts, it renames
+gridterm's directory to kakel's, and a copy that carried a
+`gridterm-files` directory beside it carries it on as `kakel-files`.
+Shortcut files keep working, since the commands kept their names, and a
+kakel and a gridterm still connect to each other. An agent set up for
+gridterm is set up again for kakel: the MCP server is now called kakel.
+
+With gunim came motion and a few things of its own:
+
+- The window fades in as it opens and out as it closes, and the pane
+  switcher zooms from every pane into the one you pick.
+- An echo goes out past the window's edges when something happens you
+  may be looking away from: red for a failure, green for work done,
+  amber for a bell, and a faint grey ring while a connection is made. A
+  theme's `Echo` block sets its colours and strength.
+- `F11` fills the screen with the pane or split in front, and brings
+  the menus and the sidebar back again.
+- A program that wraps its frames in synchronized updates, as termflix
+  does, is shown a whole frame at a time, and one that asks whether the
+  terminal knows a mode is told.
+
 **What this window is serving is a pane too.** It was a dialog, which
 could only say who was connected at the moment it opened -- and what it
 is about changes while it is up, as windows connect and go. The pane

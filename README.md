@@ -1,33 +1,38 @@
-# gridterm
+# kakel
 
-A GPU-rendered terminal emulator in Go, for Windows and Linux.
+A terminal emulator in Go, for Windows and Linux, drawn on the GPU with
+[gunim](https://github.com/marrasen/gunim) and animated all through.
 
 It runs a shell on a local pseudo-terminal -- a PTY on Unix, a ConPTY on
 Windows -- or on another machine over SSH, feeds the output through a VT
-emulator of its own, and draws the character grid as batched triangles.
-A full screen of text is typically two draw calls, and a screen that did
-not change draws nothing at all.
+emulator of its own, and draws the character grid with gunim. A screen
+that did not change draws nothing at all, and one that changed in part
+redraws that part.
 
 It is also a window manager for the things a terminal drags along with
 it: panes on several machines at once, a two-pane file manager, a file
 viewer, tunnels, and a way to hand a few panes to an agent without
 handing over the machine.
 
-71,729 lines of Go, 112,235 lines of tests, 3,697 tests.
+Kakel is Swedish for tile. It was called gridterm until September 2026;
+see [Coming from gridterm](#coming-from-gridterm).
 
-![a split window: a shell on the left, vim on the right, the sidebar listing both](docs/hero.png)
+66,124 lines of Go, 68,501 lines of tests, 2,535 tests.
+
+![kakel with vim open on one of its own source files](docs/hero.png)
 
 ## Install
 
-**Download a build.** The [releases page](https://github.com/marrasen/gridterm/releases)
+**Download a build.** The [releases page](https://github.com/marrasen/kakel/releases)
 has a zip for Windows and a tarball for Linux, both amd64, with
 `SHA256SUMS` beside them. There is nothing to install: unpack it and run
 it.
 
-**Or with Go.** There is no C toolchain to install, on either platform:
+**Or with Go.** Every build is pure Go, with no C toolchain on either
+platform:
 
 ```
-go install github.com/marrasen/gridterm@latest
+go install github.com/marrasen/kakel@latest
 ```
 
 **Or from source.** [BUILDING.md](BUILDING.md).
@@ -35,11 +40,12 @@ go install github.com/marrasen/gridterm@latest
 ## Start
 
 ```
-gridterm                       # your login shell
-gridterm -ssh user@host        # a shell on another machine
-gridterm -e 'vim /etc/hosts'   # one command
-gridterm -font-size 18
-gridterm -font /path/to/Regular.ttf,/path/to/Bold.ttf
+kakel                          # your login shell
+kakel -ssh user@host           # a shell on another machine
+kakel -e 'vim /etc/hosts'      # one command
+kakel -font-size 18
+kakel -font-family 'Cascadia Mono'
+kakel -list-fonts              # the monospace families installed
 ```
 
 With `-ssh` the window opens first and connects in a pane, so it asks
@@ -48,64 +54,72 @@ machine was reached. A new pane or split opens on that machine too, and
 its row on the sidebar offers the rest: files, a command, a tunnel and
 the account.
 
-Text is drawn in the four Go Mono faces compiled into the binary:
-regular, bold, italic and bold italic. `-font` takes font files instead,
-comma separated, in the order regular, bold, italic, bold italic. Only
-the regular font is required — a style you leave out borrows one you
-gave. There is no way to pick a font by family name yet; give paths.
+Text is drawn in Go Mono, compiled into the binary, until you pick an
+installed family with `-font-family` or from the Font menu. `-font`
+takes font files instead, comma separated, in the order regular, bold,
+italic, bold italic. Only the regular font is required: a style you
+leave out borrows one you gave.
 
 ## What it does
 
 - **A real terminal.** bash, vim and less all run: alternate screen,
   scrollback, true colour, the text attributes, cursor shapes, mouse
-  modes and bracketed paste. Wide characters and combining marks are
-  handled, and the box-drawing characters are drawn at the exact cell
-  size so a framed TUI has unbroken lines.
+  modes, bracketed paste and synchronized updates. Wide characters and
+  combining marks are handled, and the box-drawing and block characters
+  are drawn to the exact cell size, so a framed TUI has unbroken lines.
 - **Shells here and on other machines**, over one SSH connection that
   carries several panes, a file session and tunnels at once.
 - **A two-pane file manager** with panes on as many machines as you
   like, and copying, moving and deleting that run in the background and
   say how far they have got.
-- **A file viewer without a shell** -- paging, search, hex, tailing,
+- **A file viewer without a shell**: paging, search, hex, tailing,
   syntax colour, and JSON logs laid out as logs.
-- **Tunnels** -- local, remote and SOCKS5 -- each with a pane saying
-  what it is carrying.
-- **One gridterm working inside another**, including joining a program
+- **Tunnels**, local, remote and SOCKS5, each with a pane saying what it
+  is carrying.
+- **One kakel working inside another**, including joining a program
   already running over there so both people see it.
 - **Panes shared with an agent** over MCP, where one code reaches
   exactly the panes you shared and nothing else.
+- **Motion that says what happened.** The pane switcher zooms from
+  every pane into the one you pick, and the window arrives and leaves
+  with a fade. When something happens
+  that you may be looking away from, the window sends an echo out past
+  its edges, onto the desktop: red for a failure, green for work done,
+  amber for a bell, and a faint grey ring while a connection is made. A
+  theme sets the echo's colours and strength.
 
 [FEATURES.md](FEATURES.md) has the whole list, in detail.
 
-![the command palette open over a shell](docs/palette.png)
-
-![the file manager showing a source tree, with the key bar along the bottom](docs/files.png)
-
 ## Keys
 
-gridterm comes with:
+kakel comes with:
 
 | Key | |
 |---|---|
+| `Ctrl+Shift+T` | a new terminal |
+| `Ctrl+Shift+D` / `Ctrl+Shift+E` | split right / split down |
+| `Ctrl+Shift+W` | close the pane |
+| `Ctrl+Tab` / `Ctrl+Shift+Tab` | the next / previous pane |
+| `Ctrl+Shift+A` | show every pane at once, and pick one |
+| `Ctrl+Shift+K` | the command palette |
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
-| mouse wheel | scroll, or arrow keys on the alternate screen |
-| drag | select; `Alt+drag` selects a rectangle |
-| `Shift+drag` | select even while a program owns the mouse |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
-| middle click | paste |
+| `Ctrl+Alt+V` | paste a picture |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
 | `Ctrl+Shift+B` | show or hide the sidebar |
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
-| `Ctrl+Shift+A` | show every pane at once |
-| `F11` | fill the screen with the panes |
+| `Ctrl+Shift+G` | go to a directory, in a file pane |
+| `Ctrl+Shift+H` | every shortcut |
+| `F10` | the menus |
+| `F11` | fill the screen with the pane or split in front |
 
 [USAGE.md](USAGE.md) covers the rest, and how to change a shortcut.
 
 ## An administrator shell on Windows
 
-gridterm has no setting to run a pane as administrator. On Windows 11
-24H2 and later, Windows `sudo` can do it inside a normal pane:
+kakel has no setting to run a pane as administrator. On Windows 11 24H2
+and later, Windows `sudo` can do it inside a normal pane:
 
 ```
 sudo config --enable normal    # once: run elevated commands in the same pane
@@ -115,8 +129,23 @@ sudo pwsh                      # an administrator PowerShell, in this pane
 The first line asks for UAC (User Account Control) itself, and can also
 be set in Settings → System → For developers → Enable sudo → Inline.
 Out of the box `sudo` is set to open a new window, which is a console
-window outside gridterm. Inline mode shares the pane with processes that
+window outside kakel. Inline mode shares the pane with processes that
 are not elevated, which is why Windows does not turn it on by default.
+
+## Coming from gridterm
+
+kakel is gridterm, renamed, with its window rebuilt on gunim.
+
+- **Your files come along.** The first time kakel starts, it renames
+  gridterm's directory, with the saved servers, secrets, themes, keys
+  and shortcuts in it, to kakel's. A copy that carried a `gridterm-files`
+  directory beside it carries it on as `kakel-files`.
+- **Shortcut files keep working.** The commands kept gridterm's names.
+- **A kakel and a gridterm still talk to each other.** The names they
+  use between machines are unchanged, so windows of either can connect
+  to each other.
+- **An agent set up for gridterm is set up again for kakel.** The MCP
+  server is now called kakel, and runs the kakel executable.
 
 ## Read more
 
@@ -134,19 +163,22 @@ are not elevated, which is why Windows does not turn it on by default.
 | [COMMANDS.md](COMMANDS.md) | every command in the palette |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each release |
 | [RELEASING.md](RELEASING.md) | how a release is cut |
-| [REMOTE-APPS.md](REMOTE-APPS.md) | an idea: remote windows inside gridterm |
+| [REMOTE-APPS.md](REMOTE-APPS.md) | an idea: remote windows inside kakel |
+| [docs/gunimterm.md](docs/gunimterm.md) | how the window moved onto gunim |
 
 ## Licence
 
-MIT; see [LICENSE](LICENSE). The dependencies are all permissive:
-ebitengine and `golang.org/x/*` are Apache-2.0 or BSD, `pkg/sftp` and
-`kr/fs` are BSD, and `go-vte`, `go-pty`, `uniseg`, `atotto/clipboard`
-and `golang.design/x/clipboard` are MIT.
+MIT; see [LICENSE](LICENSE). The window is drawn by
+[gunim](https://github.com/marrasen/gunim), by the same author. The
+other dependencies are permissive: `golang.org/x/*`, `pkg/sftp`,
+`kr/fs` and `atotto/clipboard` are BSD, and `go-vte` (as the fork
+[marrasen/go-vte](https://github.com/marrasen/go-vte)), `go-pty`,
+`uniseg` and `golang.design/x/clipboard` are MIT.
 
 ## How this was built
 
 Each step was reviewed adversarially before the next one started, which
-is where most of the interesting bugs came from — a crash on a
+is where most of the interesting bugs came from: a crash on a
 one-column screen, two denial-of-service paths, a deadlock between the
 output pump and a device report, and a reaper that threw away a short
 command's entire output. The commit messages record what each review

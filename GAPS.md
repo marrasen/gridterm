@@ -1,15 +1,13 @@
 # Known gaps
 
 What is not there yet, said plainly. The
-[issues](https://github.com/marrasen/gridterm/issues) are the working
-list; this is the part worth knowing before you try to use gridterm for
+[issues](https://github.com/marrasen/kakel/issues) are the working
+list; this is the part worth knowing before you try to use kakel for
 something.
 
-- **Fonts are chosen by file path, not by name.** `-font` takes paths.
-  Matching a family name means reading the name table out of every font
-  file on the system, grouping the four styles despite inconsistent
-  subfamily strings, and rejecting proportional fonts; none of that is
-  written yet.
+- **Split with runs no command.** The "Split with" choice offers a
+  terminal on each machine; the "Command on <machine>…" lines, which
+  would run a command in the new half, are still to come.
 - **A fallback glyph is always upright.** The system fonts consulted for
   runes the main font lacks are shared by every style, so CJK, braille
   and heavy box drawing stay regular even in bold or italic text.
@@ -21,12 +19,8 @@ something.
   bitmap tables that colour emoji fonts use.
 - **Emoji ZWJ sequences and flags** show only their first glyph; the
   rest of the cluster is dropped rather than stacked in one cell.
-- **OSC 52 clipboard writes** are parsed but not yet applied. Reads are
-  deliberately never answered — replying would let any program that can
-  write to the terminal exfiltrate the clipboard.
-- **A click faster than one frame is missed.** ebiten reports the mouse
-  as polled state, so a press and release inside the same 16 ms are
-  never seen as either. No human manages it; a test harness does.
+- **OSC 52 clipboard reads** are never answered: replying would let any
+  program that can write to the terminal read the clipboard out.
 - **File panes share the width evenly, and the split cannot be dragged.**
   Five panes in an eighty-column window are sixteen columns each. Closing
   one gives its width back to the rest, but there is no way to make one
@@ -36,7 +30,7 @@ something.
   else's shell to fit a pane they are not looking at would reach further
   than watching was asked to. So the size travels instead and the row
   says what it is; a screen wider than the pane showing it wraps.
-- **Two gridterm windows have to be the same build.** What one window
+- **Two kakel windows have to be the same build.** What one window
   says to another uses SSH's own encoding, which is positional: there is
   no room for a field one end knows and the other does not. A window of
   another build is refused by name rather than half understood.

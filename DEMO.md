@@ -1,6 +1,6 @@
-# gridterm: what to demo
+# Kakel: what to demo
 
-A list of everything gridterm does, grouped, with a box against each
+A list of everything kakel does, grouped, with a box against each
 one to tick. Then what is planned, so a question from the room has an
 answer.
 
@@ -15,13 +15,13 @@ anywhere else, in an order where each leans on the one before.
 1. **A sidebar instead of tabs.** Open a shell, a file browser and a
    tunnel, and show that everything open is one list under the machine
    it is on.
-2. **One window working inside another.** Serve one gridterm, connect
+2. **One window working inside another.** Serve one kakel, connect
    from a second, open a pane on the first machine, and type in it
    from both sides at once.
 3. **A pane handed to an agent.** One code, one prompt, and the agent
    works in a pane you are watching and can take back.
 4. **Click what a server printed.** `vite dev` on a server, click the
-   address it prints, and the browser opens through a tunnel gridterm
+   address it prints, and the browser opens through a tunnel kakel
    made on the spot.
 
 The rest of this file is the full list.
@@ -57,19 +57,16 @@ The rest of this file is the full list.
 
 ## Drawing, and what it costs
 
-Worth a minute with an engineering audience. The numbers are the point.
+Worth a minute with an engineering audience.
 
-- [ ] **Batched rendering.** A full screen of text is one
-      `DrawTriangles` call for the backgrounds plus one per atlas page
-      for the glyphs — typically two in total, however much text is on
-      screen.
+- [ ] **Drawn by gunim.** The window is drawn on the GPU by gunim, a
+      pure-Go GUI framework by the same author. It loads OpenGL at run
+      time, and presents through DXGI on Windows.
 - [ ] **Damage tracking.** Writing a cell that already holds the same
-      thing does not dirty its row, so an idle screen draws nothing at
-      all. Only two things dirty a row on a clock: the sidebar's pulse
-      on the active connection, and a blinking cursor. A steady cursor
-      dirties nothing.
-- [ ] **No cgo on Windows.** `go build` and that is the whole
-      toolchain.
+      thing does not dirty its row, and only the rows that changed are
+      passed on to be drawn.
+- [ ] **No cgo anywhere.** `CGO_ENABLED=0 go build` on Windows and on
+      Linux, and that is the whole toolchain.
 
 ## Panes, the sidebar and getting around
 
@@ -135,7 +132,7 @@ The bits to say out loud if anyone in the room owns the servers.
       password, one-time code. An unlocked key stays in memory only,
       never written anywhere, so the second connection asks nothing.
 - [ ] **Key authentication only between windows**, from an
-      `authorized_keys` file in gridterm's own directory, not the one
+      `authorized_keys` file in kakel's own directory, not the one
       in `~/.ssh`. Nothing listens until you ask it to.
 - [ ] **A tunnel open to the network asks first**, as does every remote
       forward, because where the far machine binds it is its own
@@ -150,7 +147,7 @@ The bits to say out loud if anyone in the room owns the servers.
       says to close that connection, because that is the only thing
       that stops it.
 
-## One gridterm working inside another
+## One kakel working inside another
 
 - [ ] **Take a window over.** Serve one on a port you opt into; another
       window on another machine connects. Its sidebar appears under
@@ -274,7 +271,7 @@ This is the group with the most "oh, nice" in it.
 
 ## Shell integration
 
-- [ ] **gridterm sets the shell up itself.** As a shell starts it types
+- [ ] **Kakel sets the shell up itself.** As a shell starts it types
       one line in and clears the pane. Nothing to install, no profile
       to edit. On for this machine; a tick per server.
 - [ ] **What it buys:** relative paths become clickable, dropped files
@@ -294,7 +291,7 @@ This is the group with the most "oh, nice" in it.
       where an environment variable does not.
 - [ ] **"What this window calls itself…"** changes the name to a
       terminal a program has heard of. That is how to make a picture
-      viewer show pictures before it has heard of gridterm. Try it
+      viewer show pictures before it has heard of kakel. Try it
       with yazi before demoing it: yazi falls back to block art, and
       the name is what should stop it, but nobody has watched it work
       yet.
@@ -346,7 +343,7 @@ The big ones from Marcus's own list.
 - **Serve over the Teilen relay.** A one-time share through the
   in-house relay: a stream key and an encryption key, end-to-end, no
   authorized keys and no open port.
-- **Run as a backend.** gridterm on a server with no window, so you
+- **Run as a backend.** Kakel on a server with no window, so you
   close the client on one machine and carry on from another.
 - **Copy with colours**, and "copy as an image" for pasting into a
   chat.
@@ -358,8 +355,8 @@ The big ones from Marcus's own list.
   headings now.
 - **Dropdown fields that look like dropdowns**, with an icon that opens
   a picker.
-- **A mobile app.** Ebiten supports it; getting the keyboard right is
-  the challenge. After Linux.
+- **A mobile app.** Getting the keyboard right is the challenge. After
+  Linux.
 
 ## Open work, by subject
 
@@ -402,17 +399,15 @@ Honest limits, in case they come up.
   write to the terminal read your clipboard.
 - **An OSC payload other than a picture is capped at a kilobyte** by
   the parser, so a very long clipboard write is cut short.
-- **A click faster than one frame is missed.** ebiten reports the mouse
-  as polled state. No human manages it; a test harness does.
 - **File panes share the width evenly** and the split cannot be
   dragged.
 - **A watched pane is not resized to suit the watcher.**
 - **`-e` splits its argument on spaces**, with no quoting.
 - **Kitty graphics and sixel cannot work in a pane on this machine.**
   ConPTY throws away the sequences that carry them, so neither ever
-  reaches gridterm. OSC 1337 is the one it passes on, which is why
+  reaches kakel. OSC 1337 is the one it passes on, which is why
   pictures work at all. Measured on 2026-09-20; the table is in
   `DESIGN.md`.
 - **Small faults are written down** as issues with the `bug`
   label: a zip is not browsable over a connection to another
-  gridterm, for one.
+  kakel, for one.

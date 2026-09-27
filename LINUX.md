@@ -1,4 +1,4 @@
-# gridterm on Linux
+# Kakel on Linux
 
 It runs. Marcus asked for this on 2026-09-19; it was built, tested and
 opened on a Linux desktop on 2026-09-21. macOS still waits: neither of
@@ -8,15 +8,9 @@ What follows is what is true now, then what is left.
 
 ## The short of it
 
-The fork question is settled twice over. It was settled the first time
-by trying it: the old `v2.7.5-ub.27.win.1` fork built on Linux
-unchanged, and the `.win.1` tag meant what the note beside it said -- a
-build tag, not a Windows feature.
-
-It is settled properly now. gridterm sits on `v2.10.2-gt.1`, which is
-upstream v2.10.2 with the key-event pipeline added in 404 lines. v2.10
-rewrote ebitengine's GLFW layer from C into Go, so the Linux build needs
-no cgo, no headers and no C toolchain at all.
+Kakel draws its window with gunim, which is pure Go and loads OpenGL
+at run time. So the Linux build needs no cgo, no headers and no C
+toolchain at all.
 
 `go build ./...` passes, `go test ./...` passes, and the window opens on
 X11 and runs a shell.
@@ -35,27 +29,19 @@ No C toolchain, no X11 development headers, no display for the tests,
 and no cgo: `CGO_ENABLED=0` is the whole build. A Linux release
 cross-compiles from Windows and the other way round.
 
-That was not true when this file was first written. The build needed
-`libx11-dev` and the rest, because ebitengine's bundled GLFW was C.
-Upstream rewrote that layer in Go for v2.10, gridterm's fork moved onto
-it, and the requirement went with it -- along with the glibc floor: the
-binary asks for no versioned glibc symbol at all now, where the cgo
-build wanted GLIBC_2.34.
-
-What a built gridterm needs to run is a desktop's own libraries, opened
+What a built kakel needs to run is a desktop's own libraries, opened
 when it starts. A desktop has them.
 
-Wayland was not needed. The desktop it was built and run on is X11, and
-ebiten used the X11 path without being asked.
+The desktop it was built and run on is X11.
 
 ## What was fixed to get here
 
 Five things, and only one of them was Linux code. The last one is its
 own section below, because it is a Windows fix as much as a Linux one.
 
-**The clipboard.** `clipboard_linux.go` is new and does the work that
-`clipboard_image_other.go` used to refuse: `clipboardHasText`,
-`clipboardImage`, `setClipboardImage`, and now the text side as well.
+**The clipboard.** `clip/clip_linux.go` does the work that
+`clip/image_other.go` refuses: `clip.HasText`, `clip.Image`,
+`clip.SetImage`, and the text side as well.
 
 It goes through `golang.design/x/clipboard`, which talks to X11 itself.
 The old text path shelled out to `xclip` or `xsel` through
@@ -65,11 +51,11 @@ at all. Text and pictures now go through one library, which they have to:
 X11 gives the clipboard to a single owning process, so text written by a
 helper process and pictures written by this one would take the clipboard
 from each other on every copy. Windows and macOS are untouched and still
-use `atotto/clipboard`, in `clipboard_text_other.go`.
+use `atotto/clipboard`, in `clip/text_other.go`.
 
 A picture that cannot be read is still an error, told apart from a
 clipboard that holds no picture, which is what the paste command needs.
-`clipboard.Init` is asked once, lazily, and never at startup: a gridterm
+`clipboard.Init` is asked once, lazily, and never at startup: a kakel
 with no display still runs, and there the clipboard is simply not one of
 the things it can do.
 
@@ -78,9 +64,9 @@ Text written by another program pastes into a pane; text copied out of a
 pane is read back by another program; a PNG put on the clipboard by
 another program arrives in the pane as a file whose pixels are identical
 to what was sent. The desktop it was checked on runs `csd-clipboard`,
-Cinnamon's clipboard manager, so what gridterm copies outlives gridterm
+Cinnamon's clipboard manager, so what kakel copies outlives kakel
 there; a desktop without one would lose it when the window closes, which
-is X11 rather than gridterm.
+is X11 rather than kakel.
 
 **Reading a Windows path on a machine that is not Windows.**
 `shells.CommandBase` is new, in `shells/argv.go`, and `shells.IsWSL` and
@@ -97,7 +83,7 @@ holding `/` or the filesystem's own separator. On Linux that let a
 backslash through, so the rule changed with the machine. It refuses both
 everywhere now.
 
-**Five tests that described Windows rather than gridterm.** The quoting
+**Five tests that described Windows rather than kakel.** The quoting
 of a path on a command line follows the platform's shell and the tests
 said double quotes; the default shell is COMSPEC only on Windows; a
 connection to a closed port hangs on Windows and is refused at once on
@@ -130,11 +116,9 @@ the text with the row breaks taken out.
 Linux, and `localArgv` asks `session.DefaultShell` rather than working
 it out for itself.
 
-**Fonts.** Nothing to do. `gridterm -list-fonts` on the test machine
+**Fonts.** Nothing to do. `kakel -list-fonts` on the test machine
 found DejaVu Sans Mono, Liberation Mono, Nimbus Mono PS, Noto Sans Mono
-and the Noto CJK families. The list in `glyph/fallback.go` is still a
-guess rather than a fontconfig query, and still wants trying on a machine
-with a thin font set.
+and the Noto CJK families.
 
 ## Pasting a picture into a POSIX shell
 
@@ -144,7 +128,7 @@ fix is not either.
 With a picture on the clipboard and nothing else, the ordinary paste
 shortcut reaches `pastePicture`, and for a pane on this machine that was
 `pane.PressPaste()` -- which sends the program a literal ctrl+V. That is
-the right thing more often than it looks. gridterm cannot hand a picture
+the right thing more often than it looks. Kakel cannot hand a picture
 down a pty, so what it does is nudge the program to go and read the
 clipboard itself, which is how Claude Code and the rest take one as a
 picture rather than as a path.
@@ -160,7 +144,7 @@ with nothing on screen to say why.
 -- those are `hostMachine` and were already handed a file. Through WSL: a
 WSL pane is local, so it is `hostHere`, and it runs bash.
 
-Two questions decide it now, and neither is about which machine gridterm
+Two questions decide it now, and neither is about which machine kakel
 is running on:
 
 - Does this pane run a shell that reads ctrl+V that way?
@@ -185,11 +169,10 @@ is paste there.
 
 - **A release.** The CI runner is one Windows box, pinned by hand. Linux
   binaries need a second runner or a container.
-- **Wayland.** ebiten chose X11 here and was never put to the question.
-  Whether the fork's key-event pipeline behaves the same on Wayland is
-  unknown.
+- **Wayland.** The window has only been run on X11. How it behaves on
+  Wayland is unknown.
 - **The icon and the taskbar.** `appicon` builds and the window title is
-  right -- it reads `gridterm — rdp@marras-skylake: /tmp`, so OSC 7
+  right -- it reads `kakel — rdp@marras-skylake: /tmp`, so OSC 7
   reaches it. What a Linux desktop does with the icon has not been seen.
 - **The primary selection.** Middle-click paste, and the selection
   clipboard as distinct from the clipboard, are still not implemented.
@@ -200,22 +183,16 @@ is paste there.
 
 ## Driving it without a person
 
-`gridterm -shot` runs a script of steps and writes PNGs, which is how the
+`kakel -shot` runs a script of steps and writes PNGs, which is how the
 window was checked here:
 
 ```
-gridterm -shot "until:$ shot:before.png type:pwd key:enter until:/ shot:after.png"
+kakel -shot "until:$ shot:before.png type:pwd key:enter until:/ shot:after.png"
 ```
 
-It is the way to take a picture of the window from a script, because
-ebiten draws only inside its own loop and there is no reading a frame
-back without one.
+It is the way to take a picture of the window from a script.
 
 For driving it rather than photographing it, `xdotool` works on an
 unlocked screen, and is the better tool: its key presses go through X11
-and so through the fork's key-event pipeline, which is the part of this
-that was worth doubting. Typing, chords such as ctrl+shift+K, and
-mouse selection by drag all arrive. A locked screen is the one thing
-that stops it: the screensaver holds the X keyboard grab, and synthetic
-events sent straight to the window with `--window` are ignored, because
-GLFW drops anything with the `send_event` flag set.
+the way a person's do. A locked screen is the one thing that stops it:
+the screensaver holds the X keyboard grab.

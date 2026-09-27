@@ -1,4 +1,4 @@
-# What gridterm does
+# What kakel does
 
 The whole list. The [README](README.md) has the short version.
 
@@ -11,13 +11,13 @@ The whole list. The [README](README.md) has the short version.
   reports, bracketed paste and mouse modes.
 - **Local shells and SSH.** One `session.Session` interface with two
   implementations. Nothing above it — the emulator, the grid, the
-  renderer — can tell the difference.
+  window — can tell the difference.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
   rather than a second login. A remote command gets a connection of its
   own, named by what it runs. Connect from inside the window with
   `Ctrl+Shift+N`.
-- **One gridterm window working in another.** A window can serve itself
+- **One kakel window working in another.** A window can serve itself
   on a port you opt into, and another window on another machine can take
   it over: its sidebar appears under that window's name, and a pane
   opened there is drawn here. Key authentication only, from a list of
@@ -51,7 +51,7 @@ The whole list. The [README](README.md) has the short version.
   you, and you can take them back. Nothing listens until you share a
   pane, the port is on the loopback address, and taking the last pane
   back makes the code useless at once.
-  `gridterm -mcp` is the Model Context Protocol server the agent runs;
+  `kakel -mcp` is the Model Context Protocol server the agent runs;
   it holds no credentials and reaches nothing until you give it a code.
 - **One machine reached through another.** A saved server can say it is
   behind another one. The second connection is carried inside a channel
@@ -60,7 +60,7 @@ The whole list. The [README](README.md) has the short version.
   rides on it.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
-  sidebar: this machine, a server, or five of each with gridterm in the
+  sidebar: this machine, a server, or five of each with kakel in the
   middle. Each pane says which machine it is on above the directory it
   is showing. Tab moves to the next pane and Shift+Tab back, Enter
   descends, Backspace goes up and Space marks, the way a two-pane browser
@@ -109,11 +109,11 @@ The whole list. The [README](README.md) has the short version.
   text. It works on a server too: the machine at the far end is asked
   over the connection the window already has, and what it says is kept,
   so a path lights up a moment after the pointer reaches it. A relative
-  name needs the shell to say where it is, which gridterm sets up
+  name needs the shell to say where it is, which kakel sets up
   itself; see **Shell integration** below.
 - **The files inside WSL.** Every distribution installed is a line on
   the plus for this machine, and the browser reads it like any other
-  directory: Windows serves them on a share, so nothing of gridterm's
+  directory: Windows serves them on a share, so nothing of kakel's
   own is needed. A file dropped on a WSL pane lands in the directory
   that shell is in, on the same share.
 - **A picture a program put in its output.** OSC 1337, the sequence
@@ -190,14 +190,12 @@ The whole list. The [README](README.md) has the short version.
   keys for as long as the connection is up. A machine that will not
   carry the agent opens no pane, rather than opening one that quietly
   has no keys.
-- **Batched rendering.** A full screen of text is one `DrawTriangles`
-  call for the backgrounds plus one per atlas page for the glyphs,
-  typically two in total however much text is on screen.
+- **Drawn by gunim.** The window is drawn on the GPU by gunim, a
+  pure-Go GUI framework by the same author. It loads OpenGL at run time,
+  and presents through DXGI on Windows.
 - **Damage tracking.** Writing a cell that already holds the same
-  content does not dirty its row, so an idle screen draws nothing at all.
-  Two things dirty a row on a clock instead of on a change: the sidebar
-  pulses the active connection's row, and a blinking cursor dirties the
-  row it sits on twice a second. A steady cursor dirties nothing.
+  content does not dirty its row, and only the rows that changed are
+  passed on to be drawn.
 - **Wide characters and combining marks.** CJK and emoji take two
   columns; a base character and its marks share one cell.
 - **Box drawing that joins up.** The box and block characters are drawn
@@ -217,45 +215,45 @@ The whole list. The [README](README.md) has the short version.
 ## Telling a program which terminal this is
 
 `TERM` names a kind of terminal and every terminal borrows the same few
-names, so a program reading it learns nothing about this one. gridterm
+names, so a program reading it learns nothing about this one. Kakel
 says which it is in two ways:
 
 - **`TERM_PROGRAM` and `TERM_PROGRAM_VERSION`** in every pane it starts.
   A pane in a WSL distribution gets them too: a Windows variable does
-  not cross unless `WSLENV` names it, and gridterm adds the two names to
+  not cross unless `WSLENV` names it, and kakel adds the two names to
   whatever is already carried.
 - **XTVERSION**, `CSI > q`, answered with the same name and version.
   That is the way of asking that survives ssh and tmux, where an
   environment variable does not.
 
-Both say `gridterm`, which is true and which no program has heard of
+Both say `kakel`, which is true and which no program has heard of
 yet. "What this window calls itself…" in the command palette changes the
 name to a terminal a program does know, which is how to make one show
 pictures before it has heard of this one. It may then send the rest of
-that terminal's sequences, and whatever gridterm does not read lands on
+that terminal's sequences, and whatever kakel does not read lands on
 the screen as text. That is the trade, and it is why the honest name is
 the default.
 
 ## Shell integration
 
-A shell is a separate program, and gridterm only sees the bytes it
+A shell is a separate program, and kakel only sees the bytes it
 prints. So it cannot know which directory the shell is in, or where one
 command's output ends and the next begins, unless the shell says so. The
 shell says so by printing escape sequences nobody sees: OSC 7 or OSC 9;9
 for the directory, OSC 133 around each command.
 
-gridterm sets this up itself. As a shell starts it types one line in,
+Kakel sets this up itself. As a shell starts it types one line in,
 the way you would type it, and then clears the pane. There is nothing to
 install and no profile to edit.
 
 - **On this machine it is on**, and `Shell setup on this machine, on or
-  off` in the command palette turns it off. It is invisible: gridterm
+  off` in the command palette turns it off. It is invisible: kakel
   builds the line for whichever shell the pane runs.
 - **On a server it is off**, and the **Shell setup** field in the server
   dialog turns it on. It is off because the line goes into whatever
   login shell that account has. bash and zsh understand it; fish, a
   device CLI or a menu would answer with an error.
-- **Another gridterm is never set up from here.** The window over there
+- **Another kakel is never set up from here.** The window over there
   starts the shell and applies its own answer.
 
 A program can say things of its own through the same channel. A

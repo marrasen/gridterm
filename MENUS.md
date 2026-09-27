@@ -161,7 +161,7 @@ machine's row in the sidebar.
 - ⟨separator⟩
 - `[id: view.log]` Window Log
 - ⟨separator⟩
-- `[id: app.about]` About gridterm
+- `[id: app.about]` About kakel
 
 ---
 

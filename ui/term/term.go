@@ -1580,33 +1580,54 @@ func (t *Terminal) writeLoop(r *run) {
 func (t *Terminal) readLoop(r *run) {
 	defer r.wg.Done()
 	buf := make([]byte, readChunk)
+	// A synchronized update reaches the emulator whole; see syncer.
+	updates := &syncer{write: func(b []byte) {
+		t.mu.Lock()
+		_, _ = t.term.Write(b)
+		// And to anyone watching from another machine, who is shown
+		// the same bytes rather than a second rendering of them: what
+		// they see is then what is on this screen. Still under the
+		// lock, so a chunk cannot be handed on after a screen that was
+		// taken once it was parsed.
+		t.tell(b)
+		// Counted under the lock, so a reader that takes the lock sees
+		// the screen and the count from the same moment.
+		t.said.Add(1)
+		t.mu.Unlock()
+	}}
 	for {
 		n, err := r.sess.Read(buf)
 		if n > 0 {
-			t.mu.Lock()
-			_, _ = t.term.Write(buf[:n])
-			// And to anyone watching from another machine, who is
-			// shown the same bytes rather than a second rendering of
-			// them: what they see is then what is on this screen.
-			// Still under the lock, so a chunk cannot be handed on
-			// after a screen that was taken once it was parsed.
-			t.tell(buf[:n])
-			// Counted under the lock, so a reader that takes the lock
-			// sees the screen and the count from the same moment.
-			t.said.Add(1)
-			t.mu.Unlock()
-			t.pending.Store(true)
-			if t.cfg.OnOutput != nil {
-				t.cfg.OnOutput()
+			wrote, began := updates.feed(buf[:n])
+			if began != 0 {
+				time.AfterFunc(syncLimit, func() {
+					if updates.expire(began) {
+						t.outputArrived()
+					}
+				})
+			}
+			if wrote {
+				t.outputArrived()
 			}
 		}
 		if err != nil {
+			if updates.flush() {
+				t.outputArrived()
+			}
 			if !errors.Is(err, io.EOF) {
 				t.fail(fmt.Errorf("read session: %w", err))
 			}
 			t.finish(r)
 			return
 		}
+	}
+}
+
+// outputArrived says the screen has taken something new to draw.
+func (t *Terminal) outputArrived() {
+	t.pending.Store(true)
+	if t.cfg.OnOutput != nil {
+		t.cfg.OnOutput()
 	}
 }
 

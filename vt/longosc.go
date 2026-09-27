@@ -57,6 +57,10 @@ const (
 func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 	for _, b := range p {
 		switch {
+		case s.num == nil && len(s.lead) == 0 && b != 0x1b:
+			// Nearly every byte: nothing held back, and only an escape
+			// begins a marker.
+			pass(b)
 		case s.num == nil:
 			s.match(b, pass)
 		case s.esc:

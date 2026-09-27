@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -114,5 +115,35 @@ func BenchmarkRenderAfterOneRow(b *testing.B) {
 			b.Fatal(err)
 		}
 		term.Render(g)
+	}
+}
+
+// halfBlockFrame is one frame of an animation in half blocks at true
+// colour, as termflix draws: every cell sets both of its colours.
+func halfBlockFrame(cols, rows int) []byte {
+	var b strings.Builder
+	b.WriteString("\x1b[?2026h\x1b[H")
+	for y := range rows {
+		for x := range cols {
+			fmt.Fprintf(&b, "\x1b[38;2;%d;90;160m\x1b[48;2;40;%d;160m▀", (x+y)%256, (x*y)%256)
+		}
+		if y < rows-1 {
+			b.WriteString("\r\n")
+		}
+	}
+	b.WriteString("\x1b[?2026l")
+	return []byte(b.String())
+}
+
+// How fast a frame of such an animation can be parsed.
+func BenchmarkWriteHalfBlockFrame(b *testing.B) {
+	out := halfBlockFrame(250, 75)
+	term := New(250, 75, DefaultPalette(), 1000, Callbacks{})
+	b.SetBytes(int64(len(out)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := term.Write(out); err != nil {
+			b.Fatal(err)
+		}
 	}
 }

@@ -63,6 +63,7 @@ func TestCtrlClickOpensAFileInTheReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := a.st.Panes[0].ID
+	widen(a, id)
 	a.terminal(id).Paste(clearAndEcho(file) + "\r")
 	ctrlClick(t, a, id, file)
 	waitFor(t, a, "the reader", func() bool {

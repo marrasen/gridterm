@@ -49,6 +49,7 @@ func TestANewTerminalStartsInTheFolderOfThePaneInFront(t *testing.T) {
 		return got == dir
 	})
 	a.handle(NewTerminal{})
+	widen(a, a.st.Panes[2].ID)
 	echoed(t, a, a.st.Panes[2].ID, printDir(), dir)
 }
 

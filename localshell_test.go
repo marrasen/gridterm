@@ -112,3 +112,8 @@ func saysFolder(dir string) string {
 	}
 	return "\x1b]7;" + (&url.URL{Scheme: "file", Host: "localhost", Path: filepath.ToSlash(dir)}).String() + "\x07"
 }
+
+// widen gives pane id a screen wide enough for a long path on one row.
+// A Windows temporary folder is long enough to wrap at 80 columns, and
+// each row of the screen reads as a line of its own.
+func widen(a *app, id string) { a.shells.get(id).resize(240, shellRows) }

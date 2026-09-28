@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Connecting to servers, with kakel's remote package, and answering
@@ -98,7 +100,12 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	if in.Saved != "" {
 		savedID = a.serverID(in.Saved)
 	}
-	if _, ok := a.conns[name]; ok {
+	if c, ok := a.conns[name]; ok {
+		if route := routeOf(hops); in.Saved != "" && a.routes[c] != "" && a.routes[c] != route {
+			// Saved otherwise since: the connection is to where it was,
+			// and a shell on it would be too.
+			return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", name, a.routes[c], route)
+		}
 		if then != nil {
 			then(nil)
 			return nil
@@ -178,6 +185,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				a.events <- func() {
 					a.letHopsGo(conn.Via())
 					delete(a.routes, conn)
+					// By its name now: it may have been renamed since.
+					name := a.nameOfConn(conn, name)
+					if l := a.accounts[name]; l != nil {
+						acct = l
+					}
 					if err != nil {
 						logLine(acct, badly, "disconnected: "+err.Error())
 					} else {
@@ -384,10 +396,19 @@ func (a *app) saveServer(in SaveServer) error {
 	if a.book == nil {
 		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
+	old, renamed := in.Under, in.Under != "" && in.Under != in.Host.Name
+	if renamed {
+		if err := a.canRename(old, in.Host.Name); err != nil {
+			return err
+		}
+	}
 	if err := a.book.Put(in.Host, in.Under); err != nil {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	if renamed {
+		a.renameMachine(old, in.Host.Name)
+	}
 	// Its key is kept, to be offered for the next server.
 	if len(in.Host.Identities) > 0 && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
@@ -430,8 +451,9 @@ func (a *app) removeServer(name string) error {
 // once nothing goes through it any more.
 
 // routeOf names the route to the last of hops: each hop's login, in
-// order. Two connections reached by the same route are to the same
-// machine, as far as the saved servers say.
+// order, and whether it carries this machine's SSH agent. Two
+// connections reached by the same route are to the same machine, with
+// the same agent, as far as the saved servers say.
 func routeOf(hops []remote.Config) string {
 	var b strings.Builder
 	for i, h := range hops {
@@ -439,6 +461,9 @@ func routeOf(hops []remote.Config) string {
 			b.WriteString(" > ")
 		}
 		b.WriteString(h.Target())
+		if h.ForwardAgent {
+			b.WriteString(" (agent)")
+		}
 	}
 	return b.String()
 }
@@ -564,5 +589,111 @@ func (a *app) letGoOfRiders(c *remote.Conn) {
 				a.letGo[n] = true
 			}
 		}
+	}
+}
+
+// nameOfConn is the name conn is kept under now, or was when it is
+// kept under none.
+func (a *app) nameOfConn(conn *remote.Conn, was string) string {
+	for n, c := range a.conns {
+		if c == conn {
+			return n
+		}
+	}
+	return was
+}
+
+// canRename says why a saved server cannot be renamed from old to name
+// now, or nil. One being connected to, or a window connected to, is
+// renamed once that is over: what watches them knows them by their
+// name.
+func (a *app) canRename(old, name string) error {
+	switch {
+	case a.dialing[old]:
+		return fmt.Errorf("%s is being connected to. Rename it once that is over", old)
+	case a.dialing[name]:
+		return fmt.Errorf("%s is being connected to, and something else cannot take its name", name)
+	case a.windows[old] != nil:
+		return fmt.Errorf("the window %s is connected to. Disconnect it first, then rename it", old)
+	case a.conns[name] != nil || a.windows[name] != nil:
+		return fmt.Errorf("%s is connected already, and something else cannot take its name", name)
+	}
+	return nil
+}
+
+// renameMachine moves what the window holds under a server's old name
+// to its new one, once the saved server is renamed: its connection, its
+// files, its log, its panes, readers, jobs and tunnels' rows. A
+// tunnel's forwarder holds the connection itself, not its name.
+func (a *app) renameMachine(old, name string) {
+	move := func(m any) {
+		switch m := m.(type) {
+		case map[string]*remote.Conn:
+			if v, ok := m[old]; ok {
+				delete(m, old)
+				m[name] = v
+			}
+		case map[string]string:
+			if v, ok := m[old]; ok {
+				delete(m, old)
+				m[name] = v
+			}
+		case map[string]bool:
+			if v, ok := m[old]; ok {
+				delete(m, old)
+				m[name] = v
+			}
+		case map[string]vfs.FS:
+			if v, ok := m[old]; ok {
+				delete(m, old)
+				m[name] = v
+			}
+		case map[string]*logs.Lines:
+			if v, ok := m[old]; ok {
+				delete(m, old)
+				m[name] = v
+			}
+		}
+	}
+	for _, m := range []any{a.conns, a.hops, a.connIDs, a.reached, a.dropped, a.letGo, a.remoteFS, a.accounts} {
+		move(m)
+	}
+	for i, n := range a.st.Accounts {
+		if n == old {
+			a.st.Accounts[i] = name
+		}
+	}
+	a.forgetFar(old)
+	for i := range a.st.Panes {
+		if p := &a.st.Panes[i]; p.Machine == old {
+			p.Machine = name
+		}
+	}
+	for id, spec := range a.reads {
+		if spec.machine == old {
+			spec.machine = name
+			a.reads[id] = spec
+		}
+	}
+	for i := range a.st.Tunnels {
+		if a.st.Tunnels[i].Machine == old {
+			a.st.Tunnels[i].Machine = name
+		}
+	}
+	for _, r := range a.running {
+		if r.from == old {
+			r.from = name
+		}
+		if r.to == old {
+			r.to = name
+		}
+	}
+	for i := range a.st.Jobs {
+		if a.st.Jobs[i].Machine == old {
+			a.st.Jobs[i].Machine = name
+		}
+	}
+	if c := a.clip; c != nil && c.machine == old {
+		c.machine = name
 	}
 }

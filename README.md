@@ -140,6 +140,11 @@ kakel is gridterm, renamed, with its window rebuilt on gunim.
   gridterm's directory, with the saved servers, secrets, themes, keys
   and shortcuts in it, to kakel's. A copy that carried a `gridterm-files`
   directory beside it carries it on as `kakel-files`.
+- **A gridterm still installed keeps its files.** On Linux and macOS,
+  kakel leaves a link at the old name, leading to its own directory, so
+  both programs read the same files. On Windows there is no link:
+  making one needs rights most users lack. A gridterm started there
+  after kakel starts with no files.
 - **Shortcut files keep working.** The commands kept gridterm's names.
 - **A kakel and a gridterm still talk to each other.** The names they
   use between machines are unchanged, so windows of either can connect

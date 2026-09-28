@@ -279,7 +279,8 @@ func aDirectoryBeside(t *testing.T, exe string) string {
 
 // A machine that ran gridterm has its files under gridterm's names.
 // The first look for kakel's directory renames gridterm's, files and
-// all; after that it is kakel's, and gridterm's name is gone.
+// all; after that it is kakel's. On Unix a link at gridterm's name
+// leads to it, so a gridterm still installed finds its files.
 func TestGridtermsFilesCarryOnUnderKakelsName(t *testing.T) {
 	home := withConfigHome(t)
 	asACopyAt(t, aCopyAt(t))
@@ -300,8 +301,18 @@ func TestGridtermsFilesCarryOnUnderKakelsName(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "servers.json")); err != nil {
 		t.Fatalf("gridterm's servers did not come along: %v", err)
 	}
-	if _, err := os.Stat(old); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("gridterm's directory is still there: %v", err)
+	info, err := os.Lstat(old)
+	if runtime.GOOS == "windows" {
+		if !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("gridterm's directory is still there: %v", err)
+		}
+		return
+	}
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("gridterm's name is no link to kakel's directory: %v, %v", info, err)
+	}
+	if _, err := os.Stat(filepath.Join(old, "servers.json")); err != nil {
+		t.Fatalf("gridterm's name leads nowhere: %v", err)
 	}
 }
 
@@ -315,13 +326,13 @@ func TestKakelsOwnDirectoryWins(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := adopt(dir, old); got != dir {
+	if got := adopt(dir, old, false); got != dir {
 		t.Fatalf("adopt chose %s, want kakel's own %s", got, dir)
 	}
 	if _, err := os.Stat(old); err != nil {
 		t.Fatalf("gridterm's directory went: %v", err)
 	}
-	if got := adopt(filepath.Join(root, "none"), filepath.Join(root, "neither")); got != filepath.Join(root, "none") {
+	if got := adopt(filepath.Join(root, "none"), filepath.Join(root, "neither"), false); got != filepath.Join(root, "none") {
 		t.Fatalf("with neither there, adopt chose %s", got)
 	}
 }
@@ -341,7 +352,7 @@ func TestAFailedRenameUsesGridtermsDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.Chmod(root, 0o700) })
-	if got := adopt(filepath.Join(root, "kakel"), old); got != old {
+	if got := adopt(filepath.Join(root, "kakel"), old, false); got != old {
 		t.Fatalf("with the rename refused, adopt chose %s, want %s", got, old)
 	}
 }
@@ -359,5 +370,89 @@ func TestACopyCarriesGridtermsFilesOn(t *testing.T) {
 	}
 	if want := filepath.Join(filepath.Dir(exe), "kakel-files"); beside != want {
 		t.Fatalf("its files are at %s, want %s", beside, want)
+	}
+}
+
+// A rename that fails because another kakel, starting at the same time,
+// has just made the rename itself uses kakel's directory: gridterm's
+// name is gone by then.
+func TestARenameAnotherKakelMadeFirstUsesKakelsDirectory(t *testing.T) {
+	root := t.TempDir()
+	dir, old := filepath.Join(root, "kakel"), filepath.Join(root, "gridterm")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	rename = func(from, to string) error {
+		if err := os.Rename(from, to); err != nil {
+			return err
+		}
+		return errors.New("the other kakel got there first")
+	}
+	t.Cleanup(func() { rename = os.Rename })
+
+	if got := adopt(dir, old, false); got != dir {
+		t.Fatalf("adopt chose %s, which the other kakel renamed away; want %s", got, dir)
+	}
+}
+
+// Where kakel's directory is is worked out once for the session. A
+// rename refused at the start and allowed later would otherwise send
+// the rest of the session's writes to the other directory.
+func TestARenameRefusedAtTheStartStaysRefused(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Getuid() == 0 {
+		t.Skip("a directory the test cannot write to is made with Unix permissions")
+	}
+	home := withConfigHome(t)
+	old := filepath.Join(home, "gridterm")
+	if err := os.MkdirAll(old, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(home, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(home, 0o700) })
+	first, err := system()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != old {
+		t.Fatalf("with the rename refused, the directory is %s, want %s", first, old)
+	}
+
+	if err := os.Chmod(home, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	then, err := system()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if then != first {
+		t.Fatalf("the directory moved from %s to %s part way through", first, then)
+	}
+}
+
+// gridterm's directory kept as a link to a directory elsewhere, as a
+// dotfile manager keeps it, is taken over like a directory.
+func TestALinkedGridtermDirectoryCarriesOn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("making a link on Windows needs rights a test may lack")
+	}
+	home := withConfigHome(t)
+	asACopyAt(t, aCopyAt(t))
+	real := t.TempDir()
+	if err := os.WriteFile(filepath.Join(real, "servers.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(real, filepath.Join(home, "gridterm")); err != nil {
+		t.Fatal(err)
+	}
+
+	dir, err := Dir()
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dir, "servers.json")); err != nil {
+		t.Fatalf("the files behind gridterm's link did not come along to %s: %v", dir, err)
 	}
 }

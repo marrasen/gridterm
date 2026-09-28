@@ -4,6 +4,13 @@
 // a program for its settings, which is where they go by default. The
 // other is a directory beside the executable, which lets one machine
 // hold several copies of kakel, each with files of its own.
+//
+// kakel was called gridterm. The first time it starts, it renames
+// gridterm's directories to its own names, so the user's files carry
+// on. On Unix it leaves a link at the old name of the settings
+// directory, leading to the new one, so a gridterm still installed
+// finds its files there. On Windows the directory is renamed with no
+// link: making a link there needs rights most users lack.
 package conf
 
 import (
@@ -70,7 +77,7 @@ func CarriesItsOwn() (bool, string, error) {
 // on under the new name.
 func Beside(exe string) string {
 	dir := filepath.Dir(exe)
-	return adopt(filepath.Join(dir, BesideName), filepath.Join(dir, oldBesideName))
+	return adoptOnce(filepath.Join(dir, BesideName), filepath.Join(dir, oldBesideName), false)
 }
 
 // DirFor returns the directory a copy of kakel at exe keeps its files
@@ -119,7 +126,7 @@ func system() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("conf: no configuration directory: %w", err)
 	}
-	return adopt(filepath.Join(base, Name), filepath.Join(base, oldName)), nil
+	return adoptOnce(filepath.Join(base, Name), filepath.Join(base, oldName), true), nil
 }
 
 // localProfile returns the directory kakel keeps private files in
@@ -128,7 +135,7 @@ func system() (string, error) {
 func localProfile() (string, error) {
 	if runtime.GOOS == "windows" {
 		if local := os.Getenv("LOCALAPPDATA"); local != "" {
-			return adopt(filepath.Join(local, Name), filepath.Join(local, oldName)), nil
+			return adoptOnce(filepath.Join(local, Name), filepath.Join(local, oldName), false), nil
 		}
 	}
 	return system()
@@ -198,23 +205,63 @@ func whereKakelIs() (string, error) {
 	return real, nil
 }
 
+// rename is os.Rename. A test points it elsewhere.
+var rename = os.Rename
+
+// adopted holds adopt's answer for each directory, for the life of the
+// process, and adoptedMu guards it.
+var (
+	adoptedMu sync.Mutex
+	adopted   = map[string]string{}
+)
+
+// adoptOnce is adopt, worked out once per directory. A rename refused
+// at the start and allowed later in the session would otherwise send
+// the rest of the session's writes to the other directory.
+func adoptOnce(dir, old string, leave bool) string {
+	adoptedMu.Lock()
+	defer adoptedMu.Unlock()
+	if use, ok := adopted[dir]; ok {
+		return use
+	}
+	use := adopt(dir, old, leave)
+	adopted[dir] = use
+	return use
+}
+
 // adopt returns the directory to use for dir, taking over old, the
 // directory the same files had under gridterm's name. With dir there,
 // or old missing, it is dir. With only old there, old is renamed to
 // dir, so the servers, secrets, themes and keys kept there carry on.
-// Where the rename fails, as on Windows while an old gridterm still has
-// a file in it open, it is old, used where it is, and the rename is
-// tried again next time.
-func adopt(dir, old string) string {
+// An old that is a link to a directory is taken over too: the link is
+// renamed, and leads to the same place under the new name.
+//
+// Where the rename fails, it is dir if dir is there now, as when
+// another kakel starting at the same time made the rename first.
+// Otherwise it is old, used where it is, as on Windows while an old
+// gridterm still has a file in it open.
+//
+// With leave set, a rename leaves a link at old's name leading to dir,
+// so a gridterm still installed finds its files. Windows gets no link:
+// making one there needs rights most users lack.
+func adopt(dir, old string, leave bool) string {
 	if _, err := os.Lstat(dir); !errors.Is(err, fs.ErrNotExist) {
 		return dir
 	}
-	info, err := os.Lstat(old)
+	info, err := os.Stat(old)
 	if err != nil || !info.IsDir() {
 		return dir
 	}
-	if err := os.Rename(old, dir); err != nil {
+	if err := rename(old, dir); err != nil {
+		if _, err := os.Lstat(dir); err == nil {
+			return dir
+		}
 		return old
+	}
+	if leave && runtime.GOOS != "windows" {
+		// The link is a convenience for gridterm. kakel has its files
+		// either way, so a link that cannot be made changes nothing.
+		_ = os.Symlink(filepath.Base(dir), old)
 	}
 	return dir
 }

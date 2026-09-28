@@ -15,6 +15,7 @@ import (
 
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
+	"github.com/marrasen/kakel/vfs"
 )
 
 func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
@@ -36,8 +37,12 @@ func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
 	if got, _ := os.ReadFile(filepath.Join(home, "kept.txt")); string(got) != "one\ntwo\n" {
 		t.Fatalf("saved over a file that was there: it holds %q", got)
 	}
-	if r := a.st.Readers["p1"]; r.Saves != 2 || !strings.Contains(r.SaveErr, "already there") {
+	if r := a.st.Readers["p1"]; r.Saves != 2 || !strings.HasPrefix(r.SaveErr, "already there") {
 		t.Fatalf("saved over a file that was there, the reader reads %+v", r)
+	}
+	// The name offered next is one nothing has, so saving again saves.
+	if r := a.st.Readers["p1"]; r.SaveAs != "~/kept 2.txt" {
+		t.Fatalf("after the refusal, the name offered is %q", r.SaveAs)
 	}
 
 	a.handle(SaveLines{Pane: "p1", Path: filepath.Join(home, "missing", "kept.txt"), Lines: []string{"one"}})
@@ -119,5 +124,47 @@ func TestAnArchiveOpensAsAFolder(t *testing.T) {
 	waitFor(t, a, "the archive's insides", func() bool {
 		es := a.st.Browsers[pane].Entries
 		return len(es) == 1 && es[0].Name == "inside.txt"
+	})
+}
+
+// A rename that changes only the letter case goes through, unless the
+// folder holds another file with that very name, as a folder where case
+// counts can: that one is not written over.
+func TestARenameOfCaseAloneWritesOverNothing(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a.ctx = t.Context()
+	dir := t.TempDir()
+	write := func(name, text string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("readme", "lower")
+	if err := a.openFilesOn("", vfs.NewLocal(), dir); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Focus
+	waitFor(t, a, "the listing", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	// Is case counted here? Where it is not, readme and README are one.
+	write("README", "upper")
+	if entries, _ := os.ReadDir(dir); len(entries) == 2 {
+		a.handle(RenameFile{Pane: pane, From: "readme", To: "README"})
+		waitFor(t, a, "the refusal", func() bool { return len(a.st.Notices) > 0 })
+		if got, _ := os.ReadFile(filepath.Join(dir, "README")); string(got) != "upper" {
+			t.Fatalf("renaming readme to README wrote over README: it holds %q", got)
+		}
+		if n := a.st.Notices[0]; !strings.Contains(n.Body, "already there") {
+			t.Fatalf("the refusal says %+v", n)
+		}
+		if err := os.Remove(filepath.Join(dir, "README")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.handle(RenameFile{Pane: pane, From: "readme", To: "Readme"})
+	waitFor(t, a, "the rename", func() bool {
+		entries, _ := os.ReadDir(dir)
+		return len(entries) == 1 && entries[0].Name() == "Readme"
 	})
 }

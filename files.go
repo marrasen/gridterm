@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -560,7 +561,15 @@ func (a *app) followFile(id string, f vfs.FS, path string) {
 func (a *app) saveLines(in SaveLines) {
 	at, err := expandHome(in.Path)
 	if err == nil {
-		err = writeNew(at, []byte(strings.Join(in.Lines, "\n")+"\n"))
+		err = createNew(at, func(w io.Writer) error {
+			_, err := io.WriteString(w, strings.Join(in.Lines, "\n")+"\n")
+			return err
+		})
+	}
+	taken := errors.Is(err, fs.ErrExist)
+	if taken {
+		// Why first: a narrow pane cuts the end off.
+		err = fmt.Errorf("already there, give it another name: %s", at)
 	}
 	r, ok := a.st.Readers[in.Pane]
 	if !ok {
@@ -576,29 +585,51 @@ func (a *app) saveLines(in SaveLines) {
 	if err != nil {
 		r.SaveErr = err.Error()
 	}
+	if taken {
+		// Offered next time, so saving again is saving somewhere new.
+		r.SaveAs = freeName(in.Path)
+	}
 	a.setReader(in.Pane, r)
 }
 
-// writeNew writes data to a file that is not there yet. A file already
-// there is left alone, and the save refused: the name comes filled in,
-// and one Enter would lose it. A write that fails part way takes its
-// half-written file away.
-func writeNew(at string, data []byte) error {
+// createNew writes a file that is not there yet, readable by the user
+// alone. A file already there is left alone, and the error is one
+// errors.Is finds fs.ErrExist in: a name that comes filled in is one
+// Enter from losing that file. The file is on the disk before it
+// returns, and one that could not be written whole is taken away.
+func createNew(at string, write func(io.Writer) error) error {
 	f, err := os.OpenFile(at, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
-	if errors.Is(err, fs.ErrExist) {
-		return fmt.Errorf("%s is already there. Give it another name", at)
-	}
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(data)
-	if cerr := f.Close(); err == nil {
-		err = cerr
+	if err := write(f); err != nil {
+		return errors.Join(err, f.Close(), os.Remove(at))
 	}
-	if err != nil {
-		_ = os.Remove(at)
+	if err := f.Sync(); err != nil {
+		return errors.Join(err, f.Close(), os.Remove(at))
 	}
-	return err
+	if err := f.Close(); err != nil {
+		return errors.Join(err, os.Remove(at))
+	}
+	return nil
+}
+
+// freeName is a name like typed, "~/notes.txt", that nothing has yet:
+// "~/notes 2.txt", then 3 and on. It is typed back when none is found.
+func freeName(typed string) string {
+	ext := filepath.Ext(typed)
+	stem := strings.TrimSuffix(typed, ext)
+	for n := 2; n < 1000; n++ {
+		try := fmt.Sprintf("%s %d%s", stem, n, ext)
+		at, err := expandHome(try)
+		if err != nil {
+			return typed
+		}
+		if _, err := os.Lstat(at); errors.Is(err, fs.ErrNotExist) {
+			return try
+		}
+	}
+	return typed
 }
 
 // order sorts a folder's entries: folders first, then by name, as a

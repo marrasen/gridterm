@@ -422,7 +422,15 @@ func (a *app) renameFile(in RenameFile) {
 		switch {
 		case err == nil && !strings.EqualFold(in.From, in.To):
 			err = fmt.Errorf("%s is already there", in.To)
-		case err != nil && !errors.Is(err, fs.ErrNotExist):
+		case err == nil:
+			// Only the letter case changes. Where case counts, the folder
+			// may hold another file with that very name, which the rename
+			// would write over.
+			err = sameFolderHas(f, at, in.To)
+			if err == nil {
+				err = f.Rename(from, to)
+			}
+		case !errors.Is(err, fs.ErrNotExist):
 		default:
 			err = f.Rename(from, to)
 		}
@@ -434,6 +442,21 @@ func (a *app) renameFile(in RenameFile) {
 			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.To})
 		}
 	}()
+}
+
+// sameFolderHas refuses, saying so, when folder at holds an entry
+// named exactly name.
+func sameFolderHas(f vfs.FS, at, name string) error {
+	entries, err := f.ReadDir(at)
+	if err != nil {
+		return err
+	}
+	for _, e := range entries {
+		if e.Name == name {
+			return fmt.Errorf("%s is already there", name)
+		}
+	}
+	return nil
 }
 
 // makeFolder makes a folder, and puts the cursor on it.

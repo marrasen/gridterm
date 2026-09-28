@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -56,21 +57,12 @@ func (a *app) exportSecrets(in ExportSecrets) {
 		if err != nil {
 			return err
 		}
-		f, err := os.OpenFile(at, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		err = createNew(at, func(w io.Writer) error { return secrets.WriteCSV(w, out) })
 		if errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("%s is already there; the export writes a new file only", at)
 		}
 		if err != nil {
 			return err
-		}
-		if err := secrets.WriteCSV(f, out); err != nil {
-			return errors.Join(err, f.Close(), os.Remove(at))
-		}
-		if err := f.Sync(); err != nil {
-			return errors.Join(err, f.Close(), os.Remove(at))
-		}
-		if err := f.Close(); err != nil {
-			return errors.Join(err, os.Remove(at))
 		}
 		a.worked("Secrets exported", fmt.Sprintf("%s in plain text, to %s. Import it as Chrome or Other CSV, then remove the file.", count(len(out), "secret"), at), "")
 		return nil

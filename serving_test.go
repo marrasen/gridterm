@@ -22,6 +22,7 @@ import (
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // servedApp is agentApp's window served on a free port of this
@@ -168,8 +169,11 @@ func TestAnotherWindowReadsTheFilesHere(t *testing.T) {
 			err = e
 			return
 		}
-		defer func() { _ = c.Close() }()
-		f, e := c.Open(filepath.Join(home, "here.txt"))
+		files := vfs.NewSFTP("laptop", nil, c, c.Close)
+		defer func() { _ = files.Close() }()
+		// Named the way this machine names it, as a pane's shell here
+		// says it: on Windows, "C:\...", which SFTP spells "/C:/...".
+		f, e := files.Open(filepath.Join(home, "here.txt"))
 		if e != nil {
 			err = e
 			return

@@ -150,3 +150,16 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 		t.Fatalf("read again, the reader ends %q", r.Lines[len(r.Lines)-3:])
 	}
 }
+
+// A path a shell on a far Windows machine prints from the top of a
+// drive is looked for at the top of that drive.
+func TestAWindowsPathFromTheTopOfADriveStandsAlone(t *testing.T) {
+	for p, abs := range map[string]bool{
+		`C:\Users\x`: true, "d:/x": true, `C:\`: true,
+		"C:": false, "a:b.jar": false, "notes.txt": false, "/home/x": false, "1:/x": false,
+	} {
+		if windowsAbs(p) != abs {
+			t.Errorf("%q from the top of a drive: %v, want %v", p, !abs, abs)
+		}
+	}
+}

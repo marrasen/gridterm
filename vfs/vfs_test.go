@@ -579,6 +579,31 @@ func TestJoinKeepsWhereThePathStarts(t *testing.T) {
 	}
 }
 
+// A pane on a Windows machine says its folder the Windows way. Its
+// files over SFTP take "/C:/dir" for that, and its server reads
+// "C:\dir" as a name under the folder it started in.
+func TestAWindowsPathIsSpelledTheWaySFTPNamesDrives(t *testing.T) {
+	f := &SFTP{name: "far"}
+	for _, c := range []struct{ path, want string }{
+		{`C:\Users\x`, "/C:/Users/x"},
+		{"c:/Users/x", "/c:/Users/x"},
+		{`C:\`, "/C:/"},
+		{"C:", "/C:"},
+		{"/C:/Users", "/C:/Users"},
+		{"/home/x", "/home/x"},
+		{"a:b.jar", "a:b.jar"},
+		{"notes.txt", "notes.txt"},
+	} {
+		if got := Spelled(f, c.path); got != c.want {
+			t.Errorf("%q is spelled %q, want %q", c.path, got, c.want)
+		}
+	}
+	// A filesystem with backslashes takes the path as it is.
+	if got := Spelled(newWinPaths(), `C:\Users`); got != `C:\Users` {
+		t.Errorf("on Windows' own files, C:\\Users is spelled %q", got)
+	}
+}
+
 // winPaths is a filesystem of its own that names paths the way Windows
 // does, whatever machine the tests are running on.
 //

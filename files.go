@@ -363,6 +363,7 @@ func (a *app) openFilesOn(machine string, f vfs.FS, path string) error {
 		}
 		path = home
 	}
+	path = vfs.Spelled(f, path)
 	a.next++
 	id := "p" + itoa(a.next)
 	// Beside the file pane in front: two side by side is the way to
@@ -382,6 +383,7 @@ func (a *app) browse(in Browse) {
 	if f == nil {
 		return
 	}
+	in.Path = vfs.Spelled(f, in.Path)
 	go func() {
 		entries, err := f.ReadDir(in.Path)
 		a.events <- func() {
@@ -426,6 +428,7 @@ func (a *app) readFile(in ReadFile) {
 // is past zero, placed at at. A picture is read as a picture. A file
 // followed is read again each time it changes.
 func (a *app) readOn(machine string, f vfs.FS, path string, follow bool, line int, at placement) {
+	path = vfs.Spelled(f, path)
 	a.next++
 	id := "p" + itoa(a.next)
 	title := vfs.Base(f, path)

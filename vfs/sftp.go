@@ -15,6 +15,9 @@ import (
 // Paths are POSIX whatever this machine runs, because they are read over
 // there. A Windows pane and one of these sit side by side and neither
 // may assume the other's separator.
+//
+// A Windows path it is handed, "C:\dir", is read as "/C:/dir": see
+// Spelled.
 type SFTP struct {
 	// mu guards name. Renamed is called on the goroutine that draws,
 	// and every listing and every job reads the name from its own.
@@ -92,6 +95,7 @@ func (s *SFTP) Home() (string, error) {
 // on this machine: a listing with something quietly missing from it is
 // worse than one that says it could not be read.
 func (s *SFTP) ReadDir(path string) ([]Entry, error) {
+	path = Spelled(s, path)
 	infos, err := s.client.ReadDir(path)
 	if err != nil && path == "/" {
 		// A Windows machine lists its drives at the top, and the SFTP
@@ -135,6 +139,7 @@ func (s *SFTP) ReadDir(path string) ([]Entry, error) {
 
 // Stat reads one name, without following a symbolic link.
 func (s *SFTP) Stat(path string) (Entry, error) {
+	path = Spelled(s, path)
 	info, err := s.client.Lstat(path)
 	if err != nil {
 		return Entry{}, wrap(s, "read", path, err)
@@ -154,6 +159,7 @@ func (s *SFTP) Stat(path string) (Entry, error) {
 // opened one would already have emptied the file it was copying to
 // before finding out.
 func (s *SFTP) Open(path string) (io.ReadCloser, error) {
+	path = Spelled(s, path)
 	f, err := s.client.Open(path)
 	if err != nil {
 		return nil, wrap(s, "open", path, err)
@@ -175,6 +181,7 @@ func (s *SFTP) Open(path string) (io.ReadCloser, error) {
 // the file that was asked for. One that is already there keeps the mode
 // it has, which is what happens on this machine too.
 func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
+	path = Spelled(s, path)
 	// Only "it is not there" makes the file new. Any other failure
 	// leaves it unknown whether the file has a mode of its own to keep,
 	// and guessing it has none overwrites the permissions on it.
@@ -203,6 +210,7 @@ func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
 // Mkdir makes one directory, with the mode it was asked for rather than
 // whatever the far end's umask allows.
 func (s *SFTP) Mkdir(path string, mode fs.FileMode) error {
+	path = Spelled(s, path)
 	if err := s.client.Mkdir(path); err != nil {
 		// SFTP version 3 has no status for "it is already there": every
 		// refusal arrives as the same failure. Asking says which it was,
@@ -234,6 +242,7 @@ func (s *SFTP) Mkdir(path string, mode fs.FileMode) error {
 
 // Symlink makes a symbolic link pointing at target.
 func (s *SFTP) Symlink(target, path string) error {
+	path = Spelled(s, path)
 	if err := s.client.Symlink(target, path); err != nil {
 		return wrap(s, "link", path+" to "+target, err)
 	}
@@ -242,6 +251,7 @@ func (s *SFTP) Symlink(target, path string) error {
 
 // Remove takes away one file or one empty directory.
 func (s *SFTP) Remove(path string) error {
+	path = Spelled(s, path)
 	return wrap(s, "remove", path, s.client.Remove(path))
 }
 
@@ -251,6 +261,7 @@ func (s *SFTP) Remove(path string) error {
 // on this machine replaces it. OpenSSH's posix-rename extension is what
 // makes the two agree, so it is used wherever the far end has it.
 func (s *SFTP) Rename(from, to string) error {
+	from, to = Spelled(s, from), Spelled(s, to)
 	var err error
 	if _, ok := s.client.HasExtension("posix-rename@openssh.com"); ok {
 		err = s.client.PosixRename(from, to)
@@ -269,6 +280,7 @@ func (s *SFTP) Rename(from, to string) error {
 
 // Chmod sets the permissions.
 func (s *SFTP) Chmod(path string, mode fs.FileMode) error {
+	path = Spelled(s, path)
 	return wrap(s, "set the permissions on", path, s.client.Chmod(path, mode.Perm()))
 }
 

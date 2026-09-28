@@ -82,6 +82,8 @@ func (a *app) droppedInto(id string) (string, bool) {
 // the files are where the program is already looking.
 func (a *app) copyDropped(machine string, paths []string, dir string) error {
 	return a.withFiles(machine, func(to vfs.FS) {
+		// The shell's own spelling stays for what the user is told.
+		into := vfs.Spelled(to, dir)
 		var started []*jobs.Job
 		var already []string
 		for _, path := range paths {
@@ -91,8 +93,8 @@ func (a *app) copyDropped(machine string, paths []string, dir string) error {
 				already = append(already, filepath.Base(path))
 				continue
 			}
-			op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{filepath.Base(path)}, To: to, Into: dir}
-			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, dir), "", machine))
+			op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{filepath.Base(path)}, To: to, Into: into}
+			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, into), "", machine))
 		}
 		if len(already) > 0 {
 			a.tell(arrived(already, dir, machine), "Already there.")

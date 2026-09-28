@@ -266,6 +266,19 @@ func Base(f FS, path string) string {
 	return trimmed
 }
 
+// Spelled is a path the way f takes it. A Windows path handed to a
+// filesystem whose separator is "/" -- a Windows machine over SFTP --
+// becomes "/C:/dir", the way SFTP names that machine's drives. Its
+// server reads "C:\dir" as a name under the folder it started in. A
+// pane's shell on that machine says its folder the Windows way, which
+// is how such a path arrives. Any other path comes back as it is.
+func Spelled(f FS, p string) string {
+	if f.Sep() != '/' || len(p) < 2 || !isDrive(p[:2]) || len(p) > 2 && p[2] != '\\' && p[2] != '/' {
+		return p
+	}
+	return "/" + strings.ReplaceAll(p, `\`, "/")
+}
+
 // IsTop reports whether a path has nothing above it: the root of a
 // POSIX filesystem, or a drive on this one.
 func IsTop(f FS, path string) bool {

@@ -225,11 +225,11 @@ func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
 		return "", false, false
 	}
 	at := text
-	if !strings.HasPrefix(text, "/") {
+	if !strings.HasPrefix(text, "/") && !windowsAbs(text) {
 		if dir == "" {
 			return "", false, false
 		}
-		at = strings.TrimSuffix(dir, "/") + "/" + text
+		at = strings.TrimRight(dir, `/\`) + "/" + text
 	}
 	key := machine + "\x00" + at
 	a.far.mu.Lock()
@@ -265,6 +265,17 @@ func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
 		}
 	}()
 	return "", false, false
+}
+
+// windowsAbs reports whether a path starts at the top of a Windows
+// drive, "C:\dir" or "C:/dir", the way a shell on a Windows machine
+// prints one.
+func windowsAbs(p string) bool {
+	if len(p) < 3 || p[1] != ':' || p[2] != '\\' && p[2] != '/' {
+		return false
+	}
+	c := p[0]
+	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // openPath opens a path a link named: a folder in a file pane, a file

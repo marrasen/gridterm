@@ -189,10 +189,7 @@ func linkTarget(f FS, at, target string) string {
 	if !isAbsOn(f, target) {
 		return Join(f, Dir(f, at), target)
 	}
-	if f.Sep() == '/' && len(target) >= 2 && isDrive(target[:2]) {
-		return "/" + strings.ReplaceAll(target, `\`, "/")
-	}
-	return target
+	return Spelled(f, target)
 }
 
 // isAbsOn reports whether a path starts at the top of a filesystem: at

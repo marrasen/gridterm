@@ -37,6 +37,10 @@ func TestClosingAPaneLeavesDetachedWorkRunning(t *testing.T) {
 	}
 	pid := awaitChild(t, l.cmd.Process.Pid, ping, was)
 	running := watchExit(t, pid)
+	// ping is detached once its own console is up, which a loaded
+	// machine can take a while over; closed before that, the pane's
+	// console is still ping's.
+	awaitConsole(t, pid)
 
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -174,12 +178,27 @@ func childrenNamed(t *testing.T, parent int, name string) []int {
 	return found
 }
 
+// awaitConsole waits for a process started with a console of its own to
+// have it: the console's host, conhost or Windows Terminal's
+// OpenConsole, runs as the process's child.
+func awaitConsole(t *testing.T, pid int) {
+	t.Helper()
+	deadline := time.Now().Add(budget)
+	for time.Now().Before(deadline) {
+		if len(childrenNamed(t, pid, "conhost.exe")) > 0 || len(childrenNamed(t, pid, "OpenConsole.exe")) > 0 {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("process %d never had a console of its own", pid)
+}
+
 // watchExit opens a process and returns a handle that is signalled when
 // it exits. Holding the handle stops Windows reusing the id, so a wait on
 // it cannot be answered by some later process.
 func watchExit(t *testing.T, pid int) windows.Handle {
 	t.Helper()
-	h, err := windows.OpenProcess(windows.SYNCHRONIZE, false, uint32(pid))
+	h, err := windows.OpenProcess(windows.SYNCHRONIZE|windows.PROCESS_QUERY_LIMITED_INFORMATION, false, uint32(pid))
 	if err != nil {
 		t.Fatalf("open process %d: %v", pid, err)
 	}

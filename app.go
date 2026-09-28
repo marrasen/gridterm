@@ -445,6 +445,10 @@ type app struct {
 	// connections going through each.
 	hops     map[string]*remote.Conn
 	hopUsers map[*remote.Conn]int
+	// routes are the route each connection was reached by, a hop's and
+	// a server's alike, so one is gone through again only where the
+	// saved servers still name that route.
+	routes map[*remote.Conn]string
 	// connIDs is the saved server each connection was reached by, ""
 	// for one reached by a typed address.
 	connIDs map[string]string
@@ -616,6 +620,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		conns:       map[string]*remote.Conn{},
 		hops:        map[string]*remote.Conn{},
 		hopUsers:    map[*remote.Conn]int{},
+		routes:      map[*remote.Conn]string{},
 		connIDs:     map[string]string{},
 		dialing:     map[string]bool{},
 		ring:        remote.NewRing(),

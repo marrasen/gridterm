@@ -124,3 +124,56 @@ func TestAFailedRouteClosesItsHopsAndNamesTheOneThatFailed(t *testing.T) {
 		t.Fatalf("a failed route kept its hops: %v, %v", a.hops, a.hopUsers)
 	}
 }
+
+// A dial going through a jump host holds it: the server that was going
+// through it may leave meanwhile, and the jump host stays for the dial.
+func TestADialHoldsTheJumpHostItGoesThrough(t *testing.T) {
+	a, s, answering := jumpApp(t)
+	a.handle(ConnectTo{Saved: "inner1"})
+	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
+	// inner2's dial waits on its password, unanswered for now.
+	a.handle(ConnectTo{Saved: "inner2"})
+	waitFor(t, a, "inner2's password question", func() bool { return len(a.st.Asks) > 0 })
+	a.handle(Disconnect{Machine: "inner1"})
+	waitFor(t, a, "inner1 to go", func() bool { return a.conns["inner1"] == nil })
+	waitFor(t, a, "inner2", func() bool { answering(); return a.conns["inner2"] != nil || len(a.dialing) == 0 })
+	if a.conns["inner2"] == nil {
+		t.Fatalf("inner2 did not connect: %+v", a.st.Notices)
+	}
+	if n := s.Conns(); n != 3 {
+		t.Fatalf("signed in %d times, want 3: the jump host once", n)
+	}
+}
+
+// A jump host whose saved server has changed is not gone through again:
+// the connection to it is to where it was.
+func TestAChangedJumpHostIsNotGoneThroughAgain(t *testing.T) {
+	a, _, answering := jumpApp(t)
+	a.handle(ConnectTo{Saved: "inner1"})
+	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
+	b, _ := a.book.Lookup("bastion")
+	b.Address, b.Port = "127.0.0.1", 1
+	if err := a.book.Put(b, "bastion"); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(ConnectTo{Saved: "inner2"})
+	waitFor(t, a, "the dial to end", func() bool { answering(); return len(a.dialing) == 0 })
+	if a.conns["inner2"] != nil {
+		t.Fatal("inner2 connected through the bastion as it was before the change")
+	}
+}
+
+// Disconnecting a jump host the user connected to takes the servers
+// reached through it with it, as let go of rather than dropped.
+func TestDisconnectingAJumpHostLetsGoOfWhatWentThroughIt(t *testing.T) {
+	a, _, answering := jumpApp(t)
+	a.handle(ConnectTo{Saved: "bastion"})
+	waitFor(t, a, "the bastion", func() bool { answering(); return a.conns["bastion"] != nil })
+	a.handle(ConnectTo{Saved: "inner1"})
+	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
+	a.handle(Disconnect{Machine: "bastion"})
+	waitFor(t, a, "both to go", func() bool { return a.conns["bastion"] == nil && a.conns["inner1"] == nil })
+	if a.dropped["inner1"] || a.dropped["bastion"] {
+		t.Fatalf("let go of on purpose, they are kept as dropped: %v", a.dropped)
+	}
+}

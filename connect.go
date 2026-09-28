@@ -125,10 +125,14 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	a.st.Status = "Connecting to " + name + "…"
 	// From the nearest hop already connected, so a second server behind
 	// a jump host does not sign in to the jump host again.
-	start, from := a.hopConnected(names)
+	start, from := a.hopConnected(names, hops)
+	// Held while the dial goes through it, so it does not close under
+	// the dial when what else went through it goes.
+	a.holdHops(start)
 	go func() {
 		conn, made, err := dialFrom(dctx, start, from, hops, names)
 		a.events <- func() {
+			defer a.letHopsGo(start)
 			delete(a.dialing, name)
 			delete(a.dialCancel, name)
 			cancel()
@@ -164,7 +168,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			}
 			a.conns[name] = conn
 			a.connIDs[name] = savedID
-			a.keepHops(conn, names, made)
+			a.keepHops(conn, names, hops, made)
 			delete(a.dropped, name)
 			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
@@ -172,7 +176,8 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			go func() {
 				err := conn.Wait()
 				a.events <- func() {
-					a.letHopsGo(conn)
+					a.letHopsGo(conn.Via())
+					delete(a.routes, conn)
 					if err != nil {
 						logLine(acct, badly, "disconnected: "+err.Error())
 					} else {
@@ -410,6 +415,7 @@ func (a *app) removeServer(name string) error {
 	case a.windows[name] != nil:
 		return a.disconnectWindow(name)
 	case a.conns[name] != nil:
+		a.letGoOfRiders(a.conns[name])
 		return a.conns[name].Close()
 	}
 	a.worked("Removed "+name, "", "")
@@ -423,20 +429,36 @@ func (a *app) removeServer(name string) error {
 // themselves is theirs, and stays. One made only to go through closes
 // once nothing goes through it any more.
 
+// routeOf names the route to the last of hops: each hop's login, in
+// order. Two connections reached by the same route are to the same
+// machine, as far as the saved servers say.
+func routeOf(hops []remote.Config) string {
+	var b strings.Builder
+	for i, h := range hops {
+		if i > 0 {
+			b.WriteString(" > ")
+		}
+		b.WriteString(h.Target())
+	}
+	return b.String()
+}
+
 // hopConnected returns the nearest hop of a route, searching back from
-// the far end, that is connected already, and the index of the first
-// hop to dial after it. With none, it returns nil and 0.
-func (a *app) hopConnected(names []string) (*remote.Conn, int) {
+// the far end, that is connected already by that same route, and the
+// index of the first hop to dial after it. With none, it returns nil
+// and 0. A hop whose saved server has been changed since is not gone
+// through: it may be another machine now.
+func (a *app) hopConnected(names []string, hops []remote.Config) (*remote.Conn, int) {
 	for i := len(names) - 2; i >= 0; i-- {
 		n := names[i]
 		if n == "" {
 			continue
 		}
-		if c := a.conns[n]; c != nil && !c.Closed() {
-			return c, i + 1
-		}
-		if c := a.hops[n]; c != nil && !c.Closed() {
-			return c, i + 1
+		route := routeOf(hops[:i+1])
+		for _, c := range []*remote.Conn{a.conns[n], a.hops[n]} {
+			if c != nil && !c.Closed() && a.routes[c] == route {
+				return c, i + 1
+			}
 		}
 	}
 	return nil, 0
@@ -471,28 +493,39 @@ func dialFrom(ctx context.Context, start *remote.Conn, from int, hops []remote.C
 	return conn, made, nil
 }
 
-// keepHops keeps the connections conn goes through: made, the ones its
-// dial made, for the next route to use, and every one under it, counted
-// as used by it.
-func (a *app) keepHops(conn *remote.Conn, names []string, made []*remote.Conn) {
+// keepHops keeps conn, reached by hops, and the connections it goes
+// through: made, the ones its dial made, for the next route to use, and
+// every one under it, counted as used by it.
+func (a *app) keepHops(conn *remote.Conn, names []string, hops []remote.Config, made []*remote.Conn) {
+	a.routes[conn] = routeOf(hops)
 	// The hops made are the last ones before the far end.
 	first := len(names) - 1 - len(made)
 	for i, h := range made {
+		a.routes[h] = routeOf(hops[:first+i+1])
 		if n := names[first+i]; n != "" {
-			if have := a.hops[n]; have == nil || have.Closed() {
+			// One reached by a route the saved servers no longer name
+			// is still counted by what goes through it, and closes with
+			// that; this one is gone through from now on.
+			if have := a.hops[n]; have == nil || have.Closed() || a.routes[have] != a.routes[h] {
 				a.hops[n] = h
 			}
 		}
 	}
-	for h := conn.Via(); h != nil; h = h.Via() {
+	a.holdHops(conn.Via())
+}
+
+// holdHops counts one more use of c and each connection under it.
+func (a *app) holdHops(c *remote.Conn) {
+	for h := c; h != nil; h = h.Via() {
 		a.hopUsers[h]++
 	}
 }
 
-// letHopsGo counts conn, gone, off the hops it went through, and closes
-// each one nothing uses any more that the user did not connect to.
-func (a *app) letHopsGo(conn *remote.Conn) {
-	for h := conn.Via(); h != nil; h = h.Via() {
+// letHopsGo counts one use off c and each connection under it, and
+// closes each one nothing uses any more that the user did not connect
+// to.
+func (a *app) letHopsGo(c *remote.Conn) {
+	for h := c; h != nil; h = h.Via() {
 		a.hopUsers[h]--
 		if a.hopUsers[h] > 0 {
 			continue
@@ -501,11 +534,12 @@ func (a *app) letHopsGo(conn *remote.Conn) {
 		if a.ownConn(h) {
 			continue
 		}
-		for n, c := range a.hops {
-			if c == h {
+		for n, o := range a.hops {
+			if o == h {
 				delete(a.hops, n)
 			}
 		}
+		delete(a.routes, h)
 		go func() { _ = h.Close() }()
 	}
 }
@@ -518,4 +552,17 @@ func (a *app) ownConn(c *remote.Conn) bool {
 		}
 	}
 	return false
+}
+
+// letGoOfRiders marks the servers that go through c as let go of on
+// purpose, as c is closed: they close with it, and are not connections
+// that dropped by themselves.
+func (a *app) letGoOfRiders(c *remote.Conn) {
+	for n, o := range a.conns {
+		for h := o.Via(); h != nil; h = h.Via() {
+			if h == c {
+				a.letGo[n] = true
+			}
+		}
+	}
 }

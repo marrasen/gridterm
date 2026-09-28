@@ -365,7 +365,9 @@ func (a *app) disconnect(machine string) error {
 	if !ok {
 		return fmt.Errorf("this window is not connected to %s", machine)
 	}
-	// Let go of on purpose: its row goes with it.
+	// Let go of on purpose: its row goes with it, and those of the
+	// servers reached through it.
 	a.letGo[machine] = true
+	a.letGoOfRiders(conn)
 	return conn.Close()
 }

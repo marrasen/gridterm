@@ -156,7 +156,7 @@ func (a *app) startServing(in StartServing) error {
 		OnStopped: func(err error) {
 			post(func() {
 				a.serving.server, a.serving.clients = nil, nil
-				a.notify("This window is no longer served", err.Error(), "")
+				a.failed("This window is no longer served", err.Error())
 				a.problem()
 				a.showServing()
 			})
@@ -235,7 +235,7 @@ func (a *app) clientCame(c *serve.Client) {
 func (a *app) clientWent(c *serve.Client, why error) {
 	a.serving.clients = slices.DeleteFunc(a.serving.clients, func(have *serve.Client) bool { return have == c })
 	if why != nil && !serve.Ended(why) {
-		a.notify("Connection to "+c.Name+" lost", why.Error(), "")
+		a.failed("Connection to "+c.Name+" lost", why.Error())
 		a.problem()
 	}
 	a.showServing()
@@ -586,7 +586,7 @@ func (a *app) offerToServeAgain() {
 		a.events <- func() {
 			if a.settings != nil {
 				if err := a.settings.PutServeOn(false); err != nil {
-					a.notify("Couldn't keep that for next time", err.Error(), "")
+					a.failed("Couldn't keep that for next time", err.Error())
 				}
 			}
 		}
@@ -595,7 +595,7 @@ func (a *app) offerToServeAgain() {
 	in := StartServing{Port: strconv.Itoa(s.Port), Anywhere: s.Anywhere}
 	a.events <- func() {
 		if err := a.startServing(in); err != nil {
-			a.notify("Couldn't serve the window", err.Error(), "")
+			a.failed("Couldn't serve the window", err.Error())
 		}
 	}
 }

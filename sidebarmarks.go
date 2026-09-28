@@ -2,7 +2,6 @@ package main
 
 import (
 	"image/color"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
@@ -188,82 +188,45 @@ func (m *rowMarks) paintGraph(p *paint.Painter, f gunim.Frame, now time.Time) {
 
 // paintCross draws a cross in r.
 func paintCross(p *paint.Painter, r geom.Rect, c color.NRGBA) {
-	at := r.Center()
-	for _, rad := range []float32{math.Pi / 4, -math.Pi / 4} {
-		func() {
-			defer p.Push(paint.Rotate(rad, at))()
-			p.RRect(geom.Rc(at.X-5, at.Y-0.75, 10, 1.5), 0.75, paint.Solid(c))
-		}()
-	}
+	drawIcon(p, icon.X, r, c, 1.5)
 }
 
-// paintIcon draws the little picture for a kind of row in r, from
-// rounded rectangles: a terminal, a folder, a page, a tunnel, a lock, a
-// window, and a page for each kind of file work.
+// kindIcons are the pictures for the kinds of row: a terminal, a
+// command, a folder, a page, a log, a tunnel, a lock, a window, and one
+// for each kind of file work.
+var kindIcons = map[string]*icon.Icon{
+	"files":    icon.Folder,
+	"reader":   icon.FileText,
+	"log":      icon.ScrollText,
+	"tunnel":   icon.Cable,
+	"secrets":  icon.Lock,
+	"jobs":     icon.Files,
+	"copy":     icon.Copy,
+	"move":     icon.FileInput,
+	"delete":   icon.Trash2,
+	"window":   icon.AppWindow,
+	"served":   icon.ScreenShare,
+	"command":  icon.SquareChevronRight,
+	"terminal": icon.SquareTerminal,
+}
+
+// paintIcon draws the little picture for a kind of row in r.
 func paintIcon(p *paint.Painter, kind string, r geom.Rect, c color.NRGBA) {
-	x, y, w, h := r.Min.X, r.Min.Y, r.Size().W, r.Size().H
-	line := func(x0, y0, lw, lh float32) { p.RRect(geom.Rc(x0, y0, lw, lh), min(lw, lh)/2, paint.Solid(c)) }
-	outline := func(x0, y0, ow, oh, radius float32) {
-		p.RRectStroke(geom.Rc(x0, y0, ow, oh), radius, paint.Fill{}, paint.Stroke{Width: 1.3, Color: c})
+	ic, ok := kindIcons[kind]
+	if !ok {
+		ic = icon.SquareTerminal
 	}
-	switch kind {
-	case "files":
-		// A folder: a tab and a body.
-		line(x, y+2, w*0.45, 2)
-		outline(x+0.5, y+3.5, w-1, h-5, 2)
-	case "reader", "log":
-		// A page with lines on it.
-		outline(x+1.5, y+0.5, w-3, h-1, 1.5)
-		for i := range 3 {
-			lw := w - 7
-			if kind == "log" && i%2 == 1 {
-				lw -= 3
-			}
-			line(x+3.5, y+3.5+float32(i)*2.7, lw, 1.2)
-		}
-	case "tunnel":
-		// Two ends and what runs between them.
-		p.RRect(geom.Rc(x, y+h/2-2.5, 5, 5), 2.5, paint.Solid(c))
-		p.RRect(geom.Rc(x+w-5, y+h/2-2.5, 5, 5), 2.5, paint.Solid(c))
-		line(x+4, y+h/2-0.6, w-8, 1.2)
-	case "secrets":
-		// A padlock.
-		outline(x+3, y+0.5, w-6, 7, 3)
-		p.RRect(geom.Rc(x+1, y+5.5, w-2, h-6), 1.5, paint.Solid(c))
-	case "jobs", "copy", "move", "delete":
-		// Pages: one behind the other for a copy, one going for a move,
-		// one struck through for a delete.
-		switch kind {
-		case "delete":
-			outline(x+2, y+1, w-4, h-2, 1.5)
-			line(x+3.5, y+h/2-0.6, w-7, 1.2)
-		case "move":
-			outline(x+1, y+2, w-6, h-4, 1.5)
-			line(x+w-6, y+h/2-0.6, 6, 1.2)
-		default:
-			outline(x+3, y, w-5, h-3, 1.5)
-			outline(x+0.5, y+3, w-5, h-3, 1.5)
-		}
-	case "window", "served":
-		// A window: a title bar and a pane.
-		outline(x+0.5, y+1, w-1, h-2, 2)
-		line(x+1, y+1.5, w-2, 2.5)
-	default:
-		// A terminal: a screen with a prompt on it, or for a command,
-		// a filled one.
-		outline(x+0.5, y+1, w-1, h-2, 2)
-		at := geom.Pt(x+4.5, y+h/2)
-		for _, rad := range []float32{math.Pi / 4, -math.Pi / 4} {
-			func() {
-				defer p.Push(paint.Rotate(rad, geom.Pt(at.X+2, at.Y)))()
-				line(at.X-0.2, at.Y-0.6, 3, 1.2)
-			}()
-		}
-		line(x+7.5, y+h/2+2, 3, 1.2)
-		if kind == "command" {
-			p.RRect(geom.Rc(x+w-4, y+2.5, 2, 2), 1, paint.Solid(c))
-		}
+	drawIcon(p, ic, r, c, 1.3)
+}
+
+// drawIcon draws ic into r tinted c, its strokes thick pixels wide
+// whatever r's size.
+func drawIcon(p *paint.Painter, ic *icon.Icon, r geom.Rect, c color.NRGBA, thick float32) {
+	size := min(r.Size().W, r.Size().H)
+	if size <= 0 {
+		return
 	}
+	p.Mask(icon.Stroke{Icon: ic, Width: thick * 24 / size, Progress: 1}, r, c)
 }
 
 // markRows gives the sidebar's rows their marks, and puts the file work

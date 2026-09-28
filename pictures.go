@@ -59,7 +59,7 @@ func (a *app) pastePicture(id string, asFile bool) error {
 		a.events <- func() {
 			switch {
 			case err != nil:
-				a.notify("Couldn't paste the picture", err.Error(), "")
+				a.failed("Couldn't paste the picture", err.Error())
 			case !have && asFile:
 				a.notify("There is no picture on the clipboard", "Copy one first, then paste it as a file.", "")
 			case !have:
@@ -67,7 +67,7 @@ func (a *app) pastePicture(id string, asFile bool) error {
 				// asked for.
 			default:
 				if err := a.handPicture(id, img, asFile); err != nil {
-					a.notify("Couldn't paste the picture", err.Error(), "")
+					a.failed("Couldn't paste the picture", err.Error())
 				}
 			}
 		}
@@ -109,7 +109,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.notify("Couldn't paste the picture into "+machine, err.Error(), "")
+					a.failed("Couldn't paste the picture into "+machine, err.Error())
 				case a.terminal(id) == t:
 					t.PressPaste()
 				}
@@ -128,11 +128,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.notify("Couldn't paste the picture to "+placeName(key), err.Error(), "")
+					a.failed("Couldn't paste the picture to "+placeName(key), err.Error())
 				case a.terminal(id) == t:
 					t.Paste(path)
 				default:
-					a.notify("Picture saved", path+" on "+placeName(key)+".", path)
+					a.worked("Picture saved", path+" on "+placeName(key)+".", path)
 				}
 			}
 		}()
@@ -189,6 +189,6 @@ func (a *app) distroOf(id string) string {
 // something to say: an empty clipboard says nothing.
 func (a *app) noTextToPaste() {
 	if img, have, err := readPicture(); err == nil && have && img != nil {
-		a.notify("Could not paste", "The clipboard holds a picture rather than text, and this takes text.", "")
+		a.failed("Could not paste", "The clipboard holds a picture rather than text, and this takes text.")
 	}
 }

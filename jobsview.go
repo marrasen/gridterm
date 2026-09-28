@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
@@ -30,7 +31,7 @@ type jobsPane struct {
 func newJobsPane() *jobsPane {
 	p := &jobsPane{
 		head:  widget.NewLabel("Jobs"),
-		clear: widget.NewButton("Clear Finished"),
+		clear: iconButton(icon.ListX, "Clear Finished"),
 		empty: widget.NewLabel("Copies, moves and deletes show here as they run."),
 		list:  widget.NewList(),
 		none:  true,
@@ -106,7 +107,7 @@ func newJobCard(j Job) *jobCard {
 	c := &jobCard{
 		title: widget.NewLabel(""), detail: widget.NewLabel(""), names: widget.NewLabel(""),
 		bar: widget.NewProgressBar(), graph: widget.NewLiveGraph(sampleEvery, mostSpeeds),
-		cancel: widget.NewButton("Cancel"), repeat: widget.NewButton("Repeat"), save: widget.NewCheckbox("Save this copy"),
+		cancel: iconButton(icon.CircleStop, "Cancel"), repeat: iconButton(icon.Repeat, "Repeat"), save: widget.NewCheckbox("Save this copy"),
 	}
 	c.graph.Label = func(v float64) string { return humanSize(int64(v)) + "/s" }
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
@@ -329,4 +330,11 @@ func (p *copiesPane) Handle(e gi.Event, u *gunim.UI) bool {
 		}
 	}
 	return false
+}
+
+// iconButton returns a button with ic before its label.
+func iconButton(ic *icon.Icon, label string) *widget.Button {
+	b := widget.NewButton(label)
+	b.Icon = ic
+	return b
 }

@@ -72,7 +72,7 @@ func (a *app) exportSecrets(in ExportSecrets) {
 		if err := f.Close(); err != nil {
 			return errors.Join(err, os.Remove(at))
 		}
-		a.notify("Secrets exported", fmt.Sprintf("%s in plain text, to %s. Import it as Chrome or Other CSV, then remove the file.", count(len(out), "secret"), at), "")
+		a.worked("Secrets exported", fmt.Sprintf("%s in plain text, to %s. Import it as Chrome or Other CSV, then remove the file.", count(len(out), "secret"), at), "")
 		return nil
 	})
 }
@@ -110,7 +110,7 @@ func (a *app) importSecrets(in ImportSecrets) {
 		if skipped > 0 {
 			said += fmt.Sprintf(", %d left as they were", skipped)
 		}
-		a.notify("Secrets imported", said+". Every secret in "+at+" is in plain text, so remove it.", "")
+		a.worked("Secrets imported", said+". Every secret in "+at+" is in plain text, so remove it.", "")
 		return nil
 	})
 }

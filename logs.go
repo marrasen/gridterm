@@ -99,7 +99,7 @@ func (a *app) watchDial(machine string) string {
 func (a *app) dialed(logPane, machine string, open bool) {
 	if open {
 		if err := a.open(machine, placement{beside: logPane}); err != nil {
-			a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+			a.failed("Couldn't open a shell on "+machine, err.Error())
 			return
 		}
 	}

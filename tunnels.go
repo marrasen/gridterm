@@ -154,11 +154,11 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		switch {
 		case in.Keep:
 			if err := a.settings.KeepTunnel(saved, mostSavedTunnels); err != nil {
-				a.notify("Couldn't save the tunnel", err.Error(), "")
+				a.failed("Couldn't save the tunnel", err.Error())
 			}
 		case slices.ContainsFunc(a.settings.Tunnels(), saved.Same):
 			if err := a.settings.DropTunnel(saved); err != nil {
-				a.notify("Couldn't forget the tunnel", err.Error(), "")
+				a.failed("Couldn't forget the tunnel", err.Error())
 			}
 		}
 		a.st.SavedTunnels = a.settings.Tunnels()
@@ -184,7 +184,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	label := tunnelLabel(f)
 	open.say("opened " + label + " over " + in.Machine)
 	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
-	a.notify("Tunnel open", label+", over "+in.Machine, "")
+	a.worked("Tunnel open", label+", over "+in.Machine, "")
 	a.tickTunnels()
 	return nil
 }
@@ -211,7 +211,7 @@ func (a *app) confirmTunnel(in OpenTunnel) {
 	in.Sure = true
 	a.events <- func() {
 		if err := a.openTunnel(in); err != nil {
-			a.notify("Couldn't open the tunnel", err.Error(), "")
+			a.failed("Couldn't open the tunnel", err.Error())
 			a.problem()
 		}
 	}
@@ -270,7 +270,7 @@ func (a *app) tunnelFailed(id string, err error) {
 	a.setTunnel(id, func(t *Tunnel) { t.Note = open.note() })
 	if !open.told {
 		open.told = true
-		a.notify("Trouble on the tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label, err.Error(), "")
+		a.failed("Trouble on the tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label, err.Error())
 		a.problem()
 	}
 }
@@ -290,7 +290,7 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 	open.say(why)
 	a.setTunnel(id, func(t *Tunnel) { t.Live, t.Watching, t.Note = false, false, "stopped" })
 	if err != nil {
-		a.notify("Tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label+" stopped", err.Error(), "")
+		a.failed("Tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label+" stopped", err.Error())
 		a.problem()
 	}
 	return closeErr

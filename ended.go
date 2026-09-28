@@ -73,7 +73,7 @@ func (a *app) paneEnded(id string) {
 		uiterm.Choice{Label: start, Do: func() error {
 			post(func() {
 				if err := a.startAgain(id); err != nil {
-					a.notify("Couldn't start it again", err.Error(), "")
+					a.failed("Couldn't start it again", err.Error())
 				}
 			})
 			return nil
@@ -119,7 +119,7 @@ func (a *app) startAgain(id string) error {
 					err = a.restarted(id, t, sess)
 				}
 				if err != nil {
-					a.notify("Couldn't start it again", err.Error(), "")
+					a.failed("Couldn't start it again", err.Error())
 				}
 			}
 		}()
@@ -147,7 +147,7 @@ func (a *app) startAgain(id string) error {
 				err = a.restarted(id, t, sess)
 			}
 			if err != nil {
-				a.notify("Couldn't start it again", err.Error(), "")
+				a.failed("Couldn't start it again", err.Error())
 			}
 		}
 	}()
@@ -266,6 +266,6 @@ func (a *app) reloadServers() error {
 	a.book = b
 	a.st.Saved = b.Hosts()
 	a.giveSavedIDs()
-	a.notify("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
+	a.worked("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
 	return nil
 }

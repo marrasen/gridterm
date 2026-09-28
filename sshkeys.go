@@ -88,7 +88,7 @@ func (a *app) makeKey(in MakeKey) error {
 func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 	if a.settings != nil {
 		if err := a.settings.KeepKey(key.Path, mostKeptKeys); err != nil {
-			a.notify("Key created, but not added to the list", err.Error(), "")
+			a.failed("Key created, but not added to the list", err.Error())
 		}
 	}
 	var b strings.Builder
@@ -103,9 +103,9 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 	}
 	line := key.Line
 	go func() {
-		ans, err := a.ask(a.ctx, Ask{Title: "SSH key created", Text: b.String(), Yes: "Copy Public Key", No: "Close"})
+		ans, err := a.ask(a.ctx, Ask{Title: "SSH key created", Icon: "key-round", Text: b.String(), Yes: "Copy Public Key", No: "Close"})
 		if err == nil && ans.Yes {
-			a.events <- func() { a.notify("Public key copied", key.Pub, line) }
+			a.events <- func() { a.worked("Public key copied", key.Pub, line) }
 		}
 	}()
 }
@@ -114,5 +114,5 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 func (a *app) lockKeys() {
 	a.ring.Lock()
 	a.lockSecrets()
-	a.notify("SSH keys locked", "Each asks for its passphrase again when next used.", "")
+	a.worked("SSH keys locked", "Each asks for its passphrase again when next used.", "")
 }

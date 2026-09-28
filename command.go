@@ -46,14 +46,14 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {
-			a.notify("Couldn't forget the command", err.Error(), "")
+			a.failed("Couldn't forget the command", err.Error())
 		}
 		a.st.SavedCommands = a.settings.Commands()
 	}
 	if in.Keep && a.settings != nil {
 		saved := settings.SavedCommand{Line: strings.Join(argv, " "), Dir: strings.TrimSpace(in.Dir), Host: in.Machine, HostID: a.serverID(in.Machine)}
 		if err := a.settings.KeepCommand(saved, mostSavedCommands); err != nil {
-			a.notify("Couldn't keep the command for next time", err.Error(), "")
+			a.failed("Couldn't keep the command for next time", err.Error())
 		}
 		a.st.SavedCommands = a.settings.Commands()
 	}
@@ -89,7 +89,7 @@ func (a *app) startCommand(machine string, cmd command, then func(session.Sessio
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Command: cmd.argv, Dir: cmd.dir, Cols: shellCols, Rows: shellRows})
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't run "+strings.Join(cmd.argv, " ")+" on "+machine, err.Error(), "")
+				a.failed("Couldn't run "+strings.Join(cmd.argv, " ")+" on "+machine, err.Error())
 				a.problem()
 				return
 			}
@@ -120,7 +120,7 @@ func (a *app) runAgain(id string, cmd command) error {
 	}
 	return a.startCommand(a.machineOf(id), cmd, func(sess session.Session) {
 		if err := a.restarted(id, t, sess); err != nil {
-			a.notify("Couldn't run it again", err.Error(), "")
+			a.failed("Couldn't run it again", err.Error())
 		}
 	})
 }

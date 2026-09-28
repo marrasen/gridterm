@@ -11,6 +11,19 @@ change how something behaves.
 
 ### Added
 
+**Icons, from Lucide.** The sidebar's rows, its close cross and its plus
+are drawn with Lucide's icons, in place of pictures built from rounded
+rectangles. The menus and the command palette show an icon beside each
+command, the machine menu beside each thing it opens, and the tunnel,
+secrets and jobs panes on their buttons. A question shows one before
+its title: a shield on "Trust this server?", a key on a passphrase, a
+plug pulled on a lost connection. A question that can do harm shows a
+warning.
+
+**A notice says whether it is a failure or work done.** A failure's
+toast has a red alert icon, and work done a green tick. Other notices
+stay plain.
+
 **The secrets open in a pane, and can be taken out again.** `Manage
 Secrets` lists what is in the vault and the keys that open it, and is
 where a secret is copied, read, changed and removed -- several at once,

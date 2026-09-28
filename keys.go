@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/icon"
 
 	"github.com/marrasen/kakel/input"
 	shellfind "github.com/marrasen/kakel/shells"
@@ -152,6 +153,86 @@ var aliases = map[string]string{
 	// gridterm's New Terminal beside the focused pane, which here opens
 	// on the stage as New Terminal does.
 	"pane.open": "conn.terminal",
+}
+
+// commandIcons are the icons the menus and the palette show beside a
+// command.
+var commandIcons = map[string]*icon.Icon{
+	"conn.terminal":          icon.SquareTerminal,
+	"shell.default":          icon.SquareTerminal,
+	"pane.splitRight":        icon.Columns2,
+	"pane.splitDown":         icon.Rows2,
+	"pane.popOut":            icon.SquareArrowOutUpRight,
+	"pane.close":             icon.X,
+	"pane.next":              icon.Redo2,
+	"pane.previous":          icon.Undo2,
+	"pane.titles":            icon.PanelTop,
+	"pane.nextInSidebar":     icon.ArrowDown,
+	"pane.previousInSidebar": icon.ArrowUp,
+	"view.switcher":          icon.LayoutGrid,
+	"pane.rename":            icon.Pencil,
+	"sidebar.toggle":         icon.PanelLeft,
+	"sidebar.focus":          icon.PanelLeftOpen,
+	"view.theme":             icon.Palette,
+	"app.exit":               icon.LogOut,
+	"edit.copy":              icon.Copy,
+	"edit.paste":             icon.ClipboardPaste,
+	"edit.pasteImage":        icon.ImagePlus,
+	"pane.scrollback":        icon.TextSearch,
+	"view.fullScreen":        icon.Maximize,
+	"view.jobs":              icon.ListChecks,
+	"font.increase":          icon.AArrowUp,
+	"font.decrease":          icon.AArrowDown,
+	"font.reset":             icon.ALargeSmall,
+	"view.scrollUp":          icon.ChevronsUp,
+	"view.scrollDown":        icon.ChevronsDown,
+	"conn.clearFinished":     icon.ListX,
+	"conn.command":           icon.SquareChevronRight,
+	"conn.files":             icon.Folder,
+	"conn.tunnel":            icon.Cable,
+	"conn.socks":             icon.Network,
+	"files.goTo":             icon.FolderSearch,
+	"files.copies":           icon.Bookmark,
+	"conn.log":               icon.ScrollText,
+	"shell.setup":            icon.Wrench,
+	"conn.disconnect":        icon.Unplug,
+	"server.editThis":        icon.Pencil,
+	"server.forget":          icon.Trash2,
+	"agent.share":            icon.Bot,
+	"agent.permissions":      icon.ShieldCheck,
+	"agent.typed":            icon.History,
+	"serve.window":           icon.ScreenShare,
+	"serve.attach":           icon.Plug,
+	"secrets.open":           icon.Vault,
+	"secrets.add":            icon.Plus,
+	"secrets.addNote":        icon.StickyNote,
+	"secrets.export":         icon.Upload,
+	"secrets.import":         icon.Download,
+	"secrets.lock":           icon.Lock,
+	"sshkey.make":            icon.KeyRound,
+	"sshkey.lock":            icon.LockKeyhole,
+	"shell.termProgram":      icon.IdCard,
+	"view.themesStart":       icon.FilePlus,
+	"shortcuts.write":        icon.FilePlus,
+	"view.themesReload":      icon.RefreshCw,
+	"shortcuts.reload":       icon.RefreshCw,
+	"server.reload":          icon.RefreshCw,
+	"help.files":             icon.FolderCog,
+	"palette.open":           icon.Command,
+	"help.shortcuts":         icon.Keyboard,
+	"view.log":               icon.ScrollText,
+	"app.about":              icon.Info,
+	"server.connect":         icon.Plug,
+	"server.add":             icon.Plus,
+	"secrets.pane":           icon.Vault,
+	"secrets.change":         icon.Pencil,
+	"secrets.forget":         icon.Trash2,
+	"secrets.addKey":         icon.KeyRound,
+	"secrets.addPassphrase":  icon.RectangleEllipsis,
+	"secrets.removeKey":      icon.Trash2,
+	"agent.hand":             icon.Bot,
+	"agent.take":             icon.BotOff,
+	"sidebar.closeRow":       icon.X,
 }
 
 // menus are the menubar's menus, in gridterm's order and words, with

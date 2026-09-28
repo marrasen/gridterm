@@ -7,6 +7,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
@@ -205,14 +206,14 @@ func newTunnelBar() *tunnelBar {
 func (b *tunnelBar) show(t Tunnel, ok bool, u *gunim.UI) {
 	switch {
 	case ok && t.Live:
-		b.watch.Label, b.watch.On = "Watch the Traffic", WatchTunnel{ID: t.ID, On: true}
+		b.watch.Label, b.watch.Icon, b.watch.On = "Watch the Traffic", icon.Activity, WatchTunnel{ID: t.ID, On: true}
 		if t.Watching {
-			b.watch.Label, b.watch.On = "Stop Watching", WatchTunnel{ID: t.ID}
+			b.watch.Label, b.watch.Icon, b.watch.On = "Stop Watching", icon.EyeOff, WatchTunnel{ID: t.ID}
 		}
-		b.close.Label, b.close.On = "Close Tunnel", CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.On = "Close Tunnel", icon.Unplug, CloseTunnel{ID: t.ID}
 		b.bar.set(t.Label+" · "+t.Note, u, b.watch, b.close)
 	case ok:
-		b.close.Label, b.close.On = "Clear", CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.On = "Clear", icon.X, CloseTunnel{ID: t.ID}
 		b.bar.set(t.Label+" · stopped", u, b.close)
 	default:
 		b.bar.set("This tunnel has closed.", u)

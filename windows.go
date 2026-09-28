@@ -118,7 +118,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 					a.closePane(logPane)
 				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
-					a.notify("Couldn't connect to the window at "+addr, err.Error(), "")
+					a.failed("Couldn't connect to the window at "+addr, err.Error())
 					a.problem()
 				}
 				return
@@ -215,12 +215,12 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		logLine(a.accounts[name], "", "connection lost")
 		a.problem()
 		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, Name: name}
-		a.askThen(a.ctx, Ask{Title: "Connection lost", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
+		a.askThen(a.ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
 			if !ans.Yes {
 				return
 			}
 			if err := a.reachWindow(again, false); err != nil {
-				a.notify("Couldn't reconnect to "+name, err.Error(), "")
+				a.failed("Couldn't reconnect to "+name, err.Error())
 				a.problem()
 			}
 		})
@@ -286,7 +286,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 		})
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't open a shell on "+name, err.Error(), "")
+				a.failed("Couldn't open a shell on "+name, err.Error())
 				then("", err)
 				return
 			}
@@ -322,7 +322,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 		sess, err := w.win.Attach(open, shellCols, shellRows)
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't work in "+open.Label, err.Error(), "")
+				a.failed("Couldn't work in "+open.Label, err.Error())
 				return
 			}
 			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Host}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Window)), placement{})

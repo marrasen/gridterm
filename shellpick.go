@@ -42,7 +42,7 @@ func (a *app) scanShells() {
 		found, err := findShells()
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't list the shells here", err.Error(), "")
+				a.failed("Couldn't list the shells here", err.Error())
 			}
 			a.found = found
 			a.st.Shells = nil

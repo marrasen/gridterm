@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/theme"
@@ -222,6 +223,7 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 				hint = chordLabel(chord)
 			}
 			bm.Items, bm.Hints = append(bm.Items, it.title), append(bm.Hints, hint)
+			bm.Icons = append(bm.Icons, commandIcons[it.id])
 			bm.Checked = append(bm.Checked, false)
 			if it.caption {
 				bm.Captions = append(bm.Captions, i)
@@ -737,6 +739,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 	}
 	d.Dismiss = AskAnswered{ID: id}
 	d.Danger, d.Careful = q.Danger, q.Careful
+	d.Icon = askIcons[q.Icon]
 	if q.Plain {
 		d.SetButtons(q.Yes, "")
 	}
@@ -762,16 +765,19 @@ func (w *window) servers(saved []remote.Host) {
 	if len(saved) > 0 {
 		m.Captions = []int{0}
 		m.Items, m.Hints = append(m.Items, "Connect To"), append(m.Hints, "")
+		m.Icons = append(m.Icons, nil)
 		w.serverIDs = append(w.serverIDs, "")
 		for _, h := range saved {
 			id := "server.open." + remote.CommandName(h.Name)
 			m.Items, m.Hints = append(m.Items, h.Name), append(m.Hints, hint(id))
+			m.Icons = append(m.Icons, icon.Server)
 			w.serverIDs = append(w.serverIDs, id)
 		}
 		m.Breaks = []int{len(m.Items)}
 	}
 	m.Items = append(m.Items, "Connect to Server…", "Add Server…", "Reload Server List")
 	m.Hints = append(m.Hints, hint("server.connect"), "", "")
+	m.Icons = append(m.Icons, icon.Plug, icon.Plus, icon.RefreshCw)
 	w.serverIDs = append(w.serverIDs, "server.connect", "server.add", "server.reload")
 	for i := range w.bar.Menus {
 		if w.bar.Menus[i].Title == "Servers" {
@@ -780,22 +786,25 @@ func (w *window) servers(saved []remote.Host) {
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
-		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Hint: hint(c.id)})
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Icon: commandIcons[c.id], Hint: hint(c.id)})
 		w.paletteIDs = append(w.paletteIDs, c.id)
 	}
 	for _, h := range saved {
-		for _, c := range []struct{ title, id string }{
-			{"Connect to " + h.Name, "server.open."},
-			{"Edit Server " + h.Name, "server.edit."},
-			{"Remove Server " + h.Name, "server.remove."},
+		for _, c := range []struct {
+			title, id string
+			icon      *icon.Icon
+		}{
+			{"Connect to " + h.Name, "server.open.", icon.Plug},
+			{"Edit Server " + h.Name, "server.edit.", icon.Pencil},
+			{"Remove Server " + h.Name, "server.remove.", icon.Trash2},
 		} {
 			id := c.id + remote.CommandName(h.Name)
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Also: []string{h.Address}, Hint: hint(id)})
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Icon: c.icon, Also: []string{h.Address}, Hint: hint(id)})
 			w.paletteIDs = append(w.paletteIDs, id)
 		}
 	}
 	for _, m := range w.accounts {
-		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m})
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Connection Log for " + m, Icon: icon.ScrollText})
 		w.paletteIDs = append(w.paletteIDs, "conn.log."+remote.CommandName(m))
 	}
 	// Every machine by name: a terminal there, its files, and each
@@ -805,10 +814,11 @@ func (w *window) servers(saved []remote.Host) {
 		if m == "" {
 			where = "This Computer"
 		}
-		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where}, widget.PaletteItem{Title: "Browse Files on " + where})
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New Terminal on " + where, Icon: icon.SquareTerminal},
+			widget.PaletteItem{Title: "Browse Files on " + where, Icon: icon.Folder})
 		w.paletteIDs = append(w.paletteIDs, "conn.terminal."+remote.CommandName(m), "conn.files."+remote.CommandName(m))
 		for i, f := range w.foldersOn(m) {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where})
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where, Icon: icon.Folder})
 			w.paletteIDs = append(w.paletteIDs, "conn.files."+remote.CommandName(m)+"."+strconv.Itoa(i+1))
 		}
 	}
@@ -817,7 +827,7 @@ func (w *window) servers(saved []remote.Host) {
 	if len(w.shellChoices) > 1 {
 		ids := w.shellIDs()
 		for i, s := range w.shellChoices {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New " + s.Title, Hint: hint(ids[i])})
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "New " + s.Title, Icon: icon.SquareTerminal, Hint: hint(ids[i])})
 			w.paletteIDs = append(w.paletteIDs, ids[i])
 			if s.ID != w.chosenShell {
 				w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Start " + s.Title + " in New Terminals"})
@@ -1581,7 +1591,7 @@ func (w *window) update(st State, u *gunim.UI) {
 				})
 			}
 		}
-		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body}, u)
+		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind]}, u)
 	}
 	// The View menu ticks the sidebar while it shows.
 	for m := range menus {
@@ -2355,11 +2365,12 @@ func (w *window) machines() []string {
 	return out
 }
 
-// showMachineMenu opens a heading's menu of items, each doing its act;
+// showMachineMenu opens a heading's menu of items, each with its icon and doing its act;
 // an item with no act is a caption over the group under it.
-func (w *window) showMachineMenu(r *sideRow, items []string, acts []func(*gunim.UI), u *gunim.UI) {
+func (w *window) showMachineMenu(r *sideRow, items []string, icons []*icon.Icon, acts []func(*gunim.UI), u *gunim.UI) {
 	r.closeMenu(u)
 	menu := widget.NewMenu(items...)
+	menu.Icons = icons
 	for i, act := range acts {
 		if act == nil {
 			menu.Captions = append(menu.Captions, i)
@@ -2432,6 +2443,23 @@ func (r *sideRow) closeMenu(u *gunim.UI) {
 	}
 }
 
+// askIcons are the icons a question can show before its title, by
+// their Lucide names.
+var askIcons = map[string]*icon.Icon{
+	"shield-alert": icon.ShieldAlert,
+	"key-round":    icon.KeyRound,
+	"log-in":       icon.LogIn,
+	"unplug":       icon.Unplug,
+	"lock":         icon.Lock,
+}
+
+// toastKinds are the toasts for the kinds of notice.
+var toastKinds = map[NoticeKind]widget.ToastKind{
+	NoticePlain:  widget.ToastPlain,
+	NoticeWorked: widget.ToastSuccess,
+	NoticeFailed: widget.ToastError,
+}
+
 // paintPlus draws a heading's plus, faint, and brighter under the
 // pointer.
 func (r *sideRow) paintPlus(p *paint.Painter, f gunim.Frame, box geom.Size) {
@@ -2439,9 +2467,9 @@ func (r *sideRow) paintPlus(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	if t := r.hover.Value(); t > 0.01 {
 		c = anim.Mix(anim.ColorCodec, c, widget.Accent.Get(f.Theme), min(t, 1))
 	}
+	// Lucide's plus spans 14 of its 24 units: 17 across draws it 10 wide.
 	cx, cy := box.W-6-plusWidth/2, box.H/2
-	p.RRect(geom.Rect{Min: geom.Pt(cx-5, cy-0.75), Max: geom.Pt(cx+5, cy+0.75)}, 0.75, paint.Solid(c))
-	p.RRect(geom.Rect{Min: geom.Pt(cx-0.75, cy-5), Max: geom.Pt(cx+0.75, cy+5)}, 0.75, paint.Solid(c))
+	drawIcon(p, icon.Plus, geom.Rc(cx-8.5, cy-8.5, 17, 17), c, 1.5)
 }
 
 // openMachineMenu opens the menu of what can be opened on a heading's
@@ -2449,9 +2477,10 @@ func (r *sideRow) paintPlus(p *paint.Painter, f gunim.Frame, box geom.Size) {
 func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	m := r.machine
 	var items []string
+	var icons []*icon.Icon
 	var acts []func(*gunim.UI)
-	add := func(title string, act func(*gunim.UI)) {
-		items = append(items, title)
+	add := func(ic *icon.Icon, title string, act func(*gunim.UI)) {
+		items, icons = append(items, title), append(icons, ic)
 		acts = append(acts, act)
 	}
 	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
@@ -2461,47 +2490,47 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 			// Saved as a window and not connected: nothing that needs a
 			// shell applies.
 			saved := h
-			add("Connect", send(ConnectTo{Saved: m}))
-			add("Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
-			add("Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
-			w.showMachineMenu(r, items, acts, u)
+			add(icon.Plug, "Connect", send(ConnectTo{Saved: m}))
+			add(icon.Pencil, "Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+			add(icon.Trash2, "Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
+			w.showMachineMenu(r, items, icons, acts, u)
 			return
 		}
 	}
 	// Grouped under headings: what opens here, then the files, then
 	// what goes through the connection, then the connection and the
 	// saved server.
-	heading := func(title string) { add(title, nil) }
+	heading := func(title string) { add(nil, title, nil) }
 	heading("Terminal")
-	add("New Terminal", send(OpenOn{Machine: m}))
+	add(icon.SquareTerminal, "New Terminal", send(OpenOn{Machine: m}))
 	if !window {
-		add("Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
+		add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	}
 	if m == "" && len(w.shellChoices) > 1 {
 		// This computer's shells, each to open a terminal with.
 		heading("Shells")
 		for _, sh := range w.shellChoices {
-			add(sh.Title, send(OpenShellNamed{ID: sh.ID}))
+			add(icon.SquareTerminal, sh.Title, send(OpenShellNamed{ID: sh.ID}))
 		}
 	}
 	heading("Files")
-	add("Home", send(FilesOn{Machine: m}))
+	add(icon.House, "Home", send(FilesOn{Machine: m}))
 	for _, f := range w.foldersOn(m) {
-		add(f, send(FilesOn{Machine: m, Path: f}))
+		add(icon.Folder, f, send(FilesOn{Machine: m, Path: f}))
 	}
 	if m != "" && !window {
 		heading("Forward")
-		add("Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
-		add("SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
+		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
+		add(icon.Network, "SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })
 	}
 	if m != "" {
 		heading("Connection")
-		add("Connection Log", send(ShowLog{Machine: m}))
+		add(icon.ScrollText, "Connection Log", send(ShowLog{Machine: m}))
 		if slices.Contains(w.dropped, m) {
 			// Its connection went: the row stays until this clears it.
-			add("Clear", send(ClearMachine{Name: m}))
+			add(icon.X, "Clear", send(ClearMachine{Name: m}))
 		} else {
-			add("Disconnect", send(Disconnect{Machine: m}))
+			add(icon.Unplug, "Disconnect", send(Disconnect{Machine: m}))
 		}
 		for _, h := range w.saved {
 			if h.Name == m {
@@ -2511,12 +2540,12 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 					what = "Window"
 				}
 				heading(what)
-				add("Edit This "+what+"…", func(u *gunim.UI) { w.serverForm(&saved, u) })
-				add("Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
+				add(icon.Pencil, "Edit This "+what+"…", func(u *gunim.UI) { w.serverForm(&saved, u) })
+				add(icon.Trash2, "Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			}
 		}
 	}
-	w.showMachineMenu(r, items, acts, u)
+	w.showMachineMenu(r, items, icons, acts, u)
 }
 
 // askSplit asks what goes in the new half of a split of the focused

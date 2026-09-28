@@ -162,7 +162,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 			dir, err := pasted.DirOn(to)
 			a.events <- func() {
 				if err != nil {
-					a.notify("Couldn't copy the files to "+placeName(machine), err.Error(), "")
+					a.failed("Couldn't copy the files to "+placeName(machine), err.Error())
 					a.problem()
 					return
 				}
@@ -183,7 +183,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 								// The pane closed while the file was on
 								// its way; the notice's Copy is the way
 								// left to the path.
-								a.notify("File copied", at+" on "+placeName(machine)+".", at)
+								a.worked("File copied", at+" on "+placeName(machine)+".", at)
 								a.done()
 							}
 						}

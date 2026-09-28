@@ -149,7 +149,7 @@ func (a *app) sharePane(id string) error {
 	if a.agents.server == nil {
 		s, err := agent.Listen(agent.Config{
 			Window:  agentWindow{a},
-			OnError: func(err error) { a.events <- func() { a.notify("The agent share had trouble", err.Error(), "") } },
+			OnError: func(err error) { a.events <- func() { a.failed("The agent share had trouble", err.Error()) } },
 			OnUse:   func(id uint64) { a.events <- func() { a.markAgent(id, 1) } },
 			OnGone:  func(id uint64) { a.events <- func() { a.markAgent(id, -1) } },
 		})
@@ -302,7 +302,7 @@ func (a *app) copyAgentPrompt(name string) {
 	if a.settings != nil {
 		_ = a.settings.PutAgentHost(host.name)
 	}
-	a.notify("Prompt copied", "Paste it into "+host.called+". It carries the share's code.", handoverPrompt(host, sh.code, exePath()))
+	a.worked("Prompt copied", "Paste it into "+host.called+". It carries the share's code.", handoverPrompt(host, sh.code, exePath()))
 	if _, ok := exeKnown(); !ok {
 		// Said: the user may never read the prompt.
 		a.notify("kakel path not found", `The prompt uses "kakel" as the command. It works when kakel is on the PATH.`, "")
@@ -321,7 +321,7 @@ func (a *app) copyAgentSetup(name string) {
 	if host.cmd == "" {
 		what = "the config"
 	}
-	a.notify("Setup copied", "Add "+what+" to "+host.called+", then start it again.", host.setupToCopy(exePath()))
+	a.worked("Setup copied", "Add "+what+" to "+host.called+", then start it again.", host.setupToCopy(exePath()))
 	a.showShare()
 }
 
@@ -1049,7 +1049,7 @@ func (a *app) writeSkill(in WriteSkill) error {
 	body := skillFor(host, exePath())
 	if was, err := os.ReadFile(path); err == nil && string(was) == body {
 		// Already there as it would be written.
-		a.notify("Skill written", path+" is up to date.", "")
+		a.worked("Skill written", path+" is up to date.", "")
 		return nil
 	}
 	if !in.Over {
@@ -1065,7 +1065,7 @@ func (a *app) writeSkill(in WriteSkill) error {
 					in.Over = true
 					a.events <- func() {
 						if err := a.writeSkill(in); err != nil {
-							a.notify("Couldn't write the skill", err.Error(), "")
+							a.failed("Couldn't write the skill", err.Error())
 						}
 					}
 				}
@@ -1083,6 +1083,6 @@ func (a *app) writeSkill(in WriteSkill) error {
 	if len(host.skillIn) == 0 {
 		how = "Copy it to where " + host.called + " reads skills from."
 	}
-	a.notify("Skill written", path+". "+how, "")
+	a.worked("Skill written", path+". "+how, "")
 	return nil
 }

@@ -6,6 +6,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
@@ -55,9 +56,11 @@ func newSecretsPane(w *window) *secretsPane {
 		s := p.keyNames[k]
 		return widget.TableRow{Cells: []string{s.Name, s.Note}, Faint: s.Passphrase}
 	}
-	button := func(label string) *widget.Button { return widget.NewButton(label) }
-	p.add, p.note, p.lock, p.unlock = button("Add Secret"), button("Add Note"), button("Lock"), button("Unlock")
-	p.typ, p.cp, p.reveal, p.change, p.remove = button("Type"), button("Copy"), button("Show"), button("Change"), button("Remove")
+	button := iconButton
+	p.add, p.note = button(icon.Plus, "Add Secret"), button(icon.StickyNote, "Add Note")
+	p.lock, p.unlock = button(icon.Lock, "Lock"), button(icon.LockOpen, "Unlock")
+	p.typ, p.cp, p.reveal = button(icon.Keyboard, "Type"), button(icon.Copy, "Copy"), button(icon.Eye, "Show")
+	p.change, p.remove = button(icon.Pencil, "Change"), button(icon.Trash2, "Remove")
 	p.lock.On, p.unlock.On = LockSecrets{}, UnlockSecrets{}
 	p.add.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Password, nil, u) })
 	p.note.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Note, nil, u) })
@@ -90,7 +93,8 @@ func newSecretsPane(w *window) *secretsPane {
 			p.w.confirmRemoveSecret(p.byID[k], u)
 		}
 	})
-	p.addKey, p.addPass, p.removeKey = button("Add Key"), button("Add Passphrase"), button("Remove")
+	p.addKey, p.addPass, p.removeKey = button(icon.KeyRound, "Add Key"), button(icon.RectangleEllipsis, "Add Passphrase"),
+		button(icon.Trash2, "Remove")
 	p.addKey.On = AddSecretsKey{}
 	p.addPass.OnActivate(func(u *gunim.UI) { p.w.passphraseForm(p.st, u) })
 	p.removeKey.OnActivate(func(u *gunim.UI) {

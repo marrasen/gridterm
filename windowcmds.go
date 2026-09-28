@@ -83,7 +83,7 @@ func (a *app) writeShortcuts(have []ui.Binding) error {
 	if err := keys.WriteStart(at, have); err != nil {
 		return err
 	}
-	a.notify("Shortcuts file created", at+" holds every shortcut now. Edit it, then choose Options → Read Again → Shortcuts.", "")
+	a.worked("Shortcuts file created", at+" holds every shortcut now. Edit it, then choose Options → Read Again → Shortcuts.", "")
 	return nil
 }
 
@@ -102,7 +102,7 @@ func (a *app) writeThemeFile() error {
 	if err := themes.WriteStart(at, a.themes[i].source); err != nil {
 		return err
 	}
-	a.notify("Theme file created", at+" holds a copy of "+a.st.Theme+". Edit it, then choose Options → Read Again → Themes.", "")
+	a.worked("Theme file created", at+" holds a copy of "+a.st.Theme+". Edit it, then choose Options → Read Again → Themes.", "")
 	return nil
 }
 
@@ -111,7 +111,7 @@ func (a *app) writeThemeFile() error {
 func (a *app) reloadThemes() {
 	all, err := loadThemesSaying()
 	if err != nil {
-		a.notify("Couldn't read all the themes", err.Error(), "")
+		a.failed("Couldn't read all the themes", err.Error())
 	}
 	a.themes = all
 	if a.registerThemes != nil {
@@ -129,7 +129,7 @@ func (a *app) reloadThemes() {
 		name = a.themes[0].name
 	}
 	a.pickTheme(name)
-	a.notify("Themes read again", strings.Join(a.st.Themes, ", "), "")
+	a.worked("Themes read again", strings.Join(a.st.Themes, ", "), "")
 }
 
 // checkUpdates asks, in the background, whether a newer kakel is
@@ -148,7 +148,7 @@ func (a *app) checkUpdates() {
 			a.checking = false
 			a.st.Status = ""
 			if err != nil {
-				a.notify("Could not check for updates", err.Error(), "")
+				a.failed("Could not check for updates", err.Error())
 				return
 			}
 			have := thisVersion()
@@ -179,7 +179,7 @@ func (a *app) offerRelease(title, have string, newest update.Release) {
 		if err == nil && ans.Yes {
 			a.events <- func() {
 				if err := openInBrowser(page); err != nil {
-					a.notify("Could not open the download page", err.Error(), "")
+					a.failed("Could not open the download page", err.Error())
 				}
 			}
 		}
@@ -226,7 +226,7 @@ func (a *app) makePortable() {
 		return conf.CarryOwn(exe, dir, ownFiles, key)
 	}()
 	if err != nil {
-		a.notify("Could not make portable", err.Error(), "")
+		a.failed("Could not make portable", err.Error())
 		return
 	}
 	said = append(said, "", "Restart "+programName+" to use them.")

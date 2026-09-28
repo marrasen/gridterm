@@ -90,7 +90,7 @@ func (a *app) copyBetween(from, to, at, into string, names []string, over func()
 			a.followOn(op, "Copying "+count(len(names), "item")+" to "+vfs.Base(tf, into), from, to)
 		}, over); err != nil {
 			over()
-			a.notify("Couldn't copy", err.Error(), "")
+			a.failed("Couldn't copy", err.Error())
 		}
 	}, over)
 	if err != nil {

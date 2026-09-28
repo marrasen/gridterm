@@ -134,7 +134,7 @@ func (a *app) goTo(in GoTo) {
 	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/' || rest[0] == f.Sep()) {
 		home, err := f.Home()
 		if err != nil {
-			a.notify("Couldn't find home", err.Error(), "")
+			a.failed("Couldn't find home", err.Error())
 			return
 		}
 		path = home + rest
@@ -216,7 +216,7 @@ func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 func (a *app) filesOn(machine, path string) error {
 	return a.withFiles(machine, func(f vfs.FS) {
 		if err := a.openFilesOn(machine, f, path); err != nil {
-			a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
+			a.failed("Couldn't open the files on "+placeName(machine), err.Error())
 		}
 	})
 }
@@ -324,7 +324,7 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 			}
 			if err := a.withFilesOr(machine, then, failed); err != nil {
 				failed()
-				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
+				a.failed("Couldn't open the files on "+placeName(machine), err.Error())
 			}
 		})
 	} else {
@@ -338,7 +338,7 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 			a.st.Status = ""
 			if err != nil {
 				failed()
-				a.notify("Couldn't open the files on "+placeName(machine), err.Error(), "")
+				a.failed("Couldn't open the files on "+placeName(machine), err.Error())
 				return
 			}
 			if have := a.fsFor(machine); have != nil {
@@ -552,7 +552,7 @@ func (a *app) saveLines(in SaveLines) {
 		// The pane closed while its save was out; a notice says how
 		// it went instead.
 		if err != nil {
-			a.notify("Couldn't save", err.Error(), "")
+			a.failed("Couldn't save", err.Error())
 		}
 		return
 	}

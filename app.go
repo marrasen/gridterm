@@ -179,11 +179,24 @@ func (a *app) done()    { a.st.Pings.Dones++ }
 type Notice struct {
 	ID          uint64
 	Title, Body string
-	Clipboard   string
+	// Kind says whether it tells of a failure, of work done, or of
+	// neither.
+	Kind      NoticeKind
+	Clipboard string
 	// Forget has the window take Clipboard back off the clipboard in
 	// half a minute, unless something else was copied since.
 	Forget bool
 }
+
+// NoticeKind is what a notice tells of, which picks its icon.
+type NoticeKind uint8
+
+// The kinds of notice.
+const (
+	NoticePlain NoticeKind = iota
+	NoticeWorked
+	NoticeFailed
+)
 
 // Pane is one pane, as the sidebar lists it.
 type Pane struct {
@@ -654,7 +667,7 @@ func (a *app) run(ctx context.Context) error {
 		a.showVault()
 	}
 	if err := a.loadShortcuts(false); err != nil {
-		a.notify("Couldn't read the shortcuts file", err.Error(), "")
+		a.failed("Couldn't read the shortcuts file", err.Error())
 	}
 	if a.settings != nil && a.settings.ServeOn() {
 		go a.offerToServeAgain()
@@ -667,7 +680,7 @@ func (a *app) run(ctx context.Context) error {
 		}
 	}
 	if a.themeTrouble != nil {
-		a.notify("Couldn't read all the themes", a.themeTrouble.Error(), "")
+		a.failed("Couldn't read all the themes", a.themeTrouble.Error())
 	}
 	if err := a.applyOptions(); err != nil {
 		return err
@@ -822,7 +835,7 @@ func (a *app) handle(in gunim.Intent) {
 		}
 		if a.settings != nil {
 			if err := a.settings.PutTheme(in.Name); err != nil {
-				a.notify("Couldn't keep the theme for next time", err.Error(), "")
+				a.failed("Couldn't keep the theme for next time", err.Error())
 			}
 		}
 	case FontSize:
@@ -833,7 +846,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.FontSize = size
 		if a.settings != nil {
 			if err := a.settings.PutFontSize(float64(size)); err != nil {
-				a.notify("Couldn't keep the font size for next time", err.Error(), "")
+				a.failed("Couldn't keep the font size for next time", err.Error())
 			}
 		}
 	case PickFont:
@@ -1063,18 +1076,27 @@ func (a *app) handle(in gunim.Intent) {
 		a.st.PaneTitles = !a.st.PaneTitles
 		if a.settings != nil {
 			if err := a.settings.PutPaneTitles(a.st.PaneTitles); err != nil {
-				a.notify("Couldn't keep the pane titles for next time", err.Error(), "")
+				a.failed("Couldn't keep the pane titles for next time", err.Error())
 			}
 		}
 	case DialogClosed:
 	}
 	if err != nil {
-		a.notify("That didn't work", err.Error(), "")
+		a.failed("That didn't work", err.Error())
 	}
 }
 
 // notify tells the user something, once, in a toast.
-func (a *app) notify(title, body, clip string) {
+func (a *app) notify(title, body, clip string) { a.notice(NoticePlain, title, body, clip) }
+
+// worked tells the user that something they asked for is done.
+func (a *app) worked(title, body, clip string) { a.notice(NoticeWorked, title, body, clip) }
+
+// failed tells the user that something went wrong, and why.
+func (a *app) failed(title, why string) { a.notice(NoticeFailed, title, why, "") }
+
+// notice tells the user something, once, in a toast of its kind.
+func (a *app) notice(kind NoticeKind, title, body, clip string) {
 	// Into the Window Log too, where it stays once the toast has gone:
 	// a failure is read again there, or copied.
 	if body != "" {
@@ -1083,7 +1105,7 @@ func (a *app) notify(title, body, clip string) {
 		log.Print(title)
 	}
 	a.notices++
-	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Clipboard: clip})
+	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Kind: kind, Clipboard: clip})
 	// The window has shown all but the newest few by now.
 	if n := len(a.st.Notices); n > 8 {
 		a.st.Notices = slices.Delete(a.st.Notices, 0, n-8)
@@ -1150,7 +1172,7 @@ func (a *app) hooks(id string) shellHooks {
 		},
 		clipboard: func(s string) {
 			a.events <- func() {
-				a.notify("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)
+				a.worked("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)
 			}
 		},
 	}
@@ -1177,7 +1199,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				return
 			}
 			if err := a.openThen(machine, at, then); err != nil {
-				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				a.failed("Couldn't open a shell on "+machine, err.Error())
 				a.problem()
 			}
 		})
@@ -1211,7 +1233,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: shellCols, Rows: shellRows})
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't open a shell on "+machine, err.Error(), "")
+				a.failed("Couldn't open a shell on "+machine, err.Error())
 				a.problem()
 				then("", err)
 				return

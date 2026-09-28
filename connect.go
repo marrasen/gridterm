@@ -41,6 +41,9 @@ type Ask struct {
 	// button so. Careful opens on Cancel without the colour. Plain has
 	// Yes alone, for something only told.
 	Danger, Careful, Plain bool
+	// Icon is the Lucide name of the icon before the title, one of
+	// askIcons, or empty for none; a Danger question shows a warning.
+	Icon string
 }
 
 // errDeclined is the user saying no to a question, which stops the
@@ -143,7 +146,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.closePane(logPane)
 				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
-					a.notify("Couldn't connect to "+name, err.Error(), "")
+					a.failed("Couldn't connect to "+name, err.Error())
 					a.problem()
 				}
 				if then != nil {
@@ -168,7 +171,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					delete(a.conns, name)
 					delete(a.connIDs, name)
 					if err := a.tunnelsDiedOn(name, a.letGo[name]); err != nil {
-						a.notify("Trouble closing the tunnels on "+name, err.Error(), "")
+						a.failed("Trouble closing the tunnels on "+name, err.Error())
 					}
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
@@ -210,7 +213,7 @@ func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)
 		a.events <- func() {
 			again := func(error) {
 				if err := a.connectThen(in, then); err != nil {
-					a.notify("Couldn't connect to "+name, err.Error(), "")
+					a.failed("Couldn't connect to "+name, err.Error())
 					a.problem()
 				}
 			}
@@ -296,7 +299,7 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 	if key.Wrong > 0 {
 		text = "That passphrase did not open " + key.Path + ". Try again."
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: "Unlock your key", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"})
+	ans, err := q.a.ask(ctx, Ask{Title: "Unlock your key", Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"})
 	if err != nil {
 		return "", err
 	}
@@ -314,7 +317,7 @@ func (q asker) Password(ctx context.Context, user, host string) (string, error) 
 		}
 		*q.asked = true
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: "Sign in to " + user + "@" + host, Text: text, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"})
+	ans, err := q.a.ask(ctx, Ask{Title: "Sign in to " + user + "@" + host, Icon: "log-in", Text: text, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"})
 	if err != nil {
 		return "", err
 	}
@@ -339,7 +342,7 @@ func (q asker) Question(ctx context.Context, rq remote.Question) ([]string, erro
 	for i, e := range rq.Echo {
 		secret[i] = !e
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: rq.User + "@" + rq.Host + " asks", Text: text, Prompts: rq.Prompts, Secret: secret, Yes: "Answer"})
+	ans, err := q.a.ask(ctx, Ask{Title: rq.User + "@" + rq.Host + " asks", Icon: "log-in", Text: text, Prompts: rq.Prompts, Secret: secret, Yes: "Answer"})
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +355,7 @@ func (q asker) TrustHostKey(ctx context.Context, k remote.HostKey) (bool, error)
 		k.Addr, k.Type(), k.Fingerprint())
 	// Careful: it opens on Cancel, as the one question where yes by
 	// reflex is the answer that cannot be taken back.
-	ans, err := q.a.ask(ctx, Ask{Title: "Trust this server?", Text: text, Yes: "Trust and Connect", Careful: true})
+	ans, err := q.a.ask(ctx, Ask{Title: "Trust this server?", Text: text, Yes: "Trust and Connect", Careful: true, Icon: "shield-alert"})
 	if errors.Is(err, errDeclined) {
 		return false, nil
 	}
@@ -371,11 +374,11 @@ func (a *app) saveServer(in SaveServer) error {
 	// Its key is kept, to be offered for the next server.
 	if len(in.Host.Identities) > 0 && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
-			a.notify("Server saved, but its key was not kept", err.Error(), "")
+			a.failed("Server saved, but its key was not kept", err.Error())
 		}
 		a.st.KeyFiles = a.settings.Keys()
 	}
-	a.notify("Saved "+in.Host.Name, in.Host.Target(), "")
+	a.worked("Saved "+in.Host.Name, in.Host.Target(), "")
 	return nil
 }
 
@@ -397,6 +400,6 @@ func (a *app) removeServer(name string) error {
 	case a.conns[name] != nil:
 		return a.conns[name].Close()
 	}
-	a.notify("Removed "+name, "", "")
+	a.worked("Removed "+name, "", "")
 	return nil
 }

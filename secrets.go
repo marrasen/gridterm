@@ -117,12 +117,12 @@ func (a *app) vault() (*secrets.Vault, error) {
 func (a *app) withSecrets(what string, then func(*secrets.Vault) error) {
 	v, err := a.vault()
 	if err != nil {
-		a.notify(what, err.Error(), "")
+		a.failed(what, err.Error())
 		return
 	}
 	run := func() {
 		if err := then(v); err != nil {
-			a.notify(what, err.Error(), "")
+			a.failed(what, err.Error())
 		}
 		a.showVault()
 	}
@@ -179,11 +179,11 @@ func (a *app) offerAVault(then func()) {
 		}
 		if err != nil {
 			if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
-				a.notify("Couldn't create the secrets", err.Error(), "")
+				a.failed("Couldn't create the secrets", err.Error())
 			}
 			return
 		}
-		a.notify("Secrets created", keyFile+" opens them.", "")
+		a.worked("Secrets created", keyFile+" opens them.", "")
 		then()
 	}
 }
@@ -214,7 +214,7 @@ func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
 				then()
 			case errors.Is(err, errDeclined), errors.Is(err, context.Canceled):
 			default:
-				a.notify(what, err.Error(), "")
+				a.failed(what, err.Error())
 			}
 		}
 	}
@@ -234,7 +234,7 @@ func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
 		return
 	}
 	for wrong := 0; ; wrong++ {
-		q := Ask{Title: "Unlock Secrets", Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+		q := Ask{Title: "Unlock Secrets", Icon: "lock", Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
 		if wrong > 0 {
 			q.Text = "That passphrase did not open the secrets. Try again."
 		}
@@ -663,9 +663,9 @@ func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
 		switch {
 		case errors.Is(err, errDeclined), errors.Is(err, context.Canceled):
 		case err != nil:
-			a.notify("Couldn't add the key", err.Error(), "")
+			a.failed("Couldn't add the key", err.Error())
 		default:
-			a.notify("Key added", fmt.Sprintf("%s opens the secrets. %d ways in now.", keyFile, len(v.Keys())), "")
+			a.worked("Key added", fmt.Sprintf("%s opens the secrets. %d ways in now.", keyFile, len(v.Keys())), "")
 		}
 		a.showVault()
 	}
@@ -696,9 +696,9 @@ func (a *app) addSecretsPassphrase(pass string) {
 			err := v.AddPassphrase(pass)
 			a.events <- func() {
 				if err != nil {
-					a.notify("Couldn't add the passphrase", err.Error(), "")
+					a.failed("Couldn't add the passphrase", err.Error())
 				} else {
-					a.notify("Passphrase added", "It opens the secrets where none of their keys is.", "")
+					a.worked("Passphrase added", "It opens the secrets where none of their keys is.", "")
 				}
 				a.showVault()
 			}

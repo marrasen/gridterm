@@ -269,10 +269,10 @@ func (a *app) showJobs() bool {
 		r.ended = true
 		switch {
 		case jobs.Trouble(p.Err) != nil:
-			a.notify(r.title+" stopped", jobs.Outcome(p), "")
+			a.failed(r.title+" stopped", jobs.Outcome(p))
 			a.problem()
 		case p.Err == nil:
-			a.notify(pastTense(r.title), row.Detail, "")
+			a.worked(pastTense(r.title), row.Detail, "")
 			a.done()
 		}
 		for _, id := range r.panes {
@@ -413,7 +413,7 @@ func (a *app) renameFile(in RenameFile) {
 		return
 	}
 	if err := plainName(f, in.To); err != nil {
-		a.notify("Couldn't rename "+in.From, upperFirst(err.Error())+".", "")
+		a.failed("Couldn't rename "+in.From, upperFirst(err.Error())+".")
 		return
 	}
 	from, to := vfs.Join(f, at, in.From), vfs.Join(f, at, in.To)
@@ -428,7 +428,7 @@ func (a *app) renameFile(in RenameFile) {
 		}
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't rename "+in.From, err.Error(), "")
+				a.failed("Couldn't rename "+in.From, err.Error())
 				return
 			}
 			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.To})
@@ -443,14 +443,14 @@ func (a *app) makeFolder(in MakeFolder) {
 		return
 	}
 	if err := plainName(f, in.Name); err != nil {
-		a.notify("Couldn't make the folder", upperFirst(err.Error())+".", "")
+		a.failed("Couldn't make the folder", upperFirst(err.Error())+".")
 		return
 	}
 	go func() {
 		err := f.Mkdir(vfs.Join(f, at, in.Name), 0o755)
 		a.events <- func() {
 			if err != nil {
-				a.notify("Couldn't make "+in.Name, err.Error(), "")
+				a.failed("Couldn't make "+in.Name, err.Error())
 				return
 			}
 			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.Name})

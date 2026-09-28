@@ -52,13 +52,13 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 	machine := a.machineOf(pane)
 	if _, ok := a.conns[machine]; ok {
 		if err := a.withFiles(key, then); err != nil {
-			a.notify("Couldn't open the files on "+placeName(key), err.Error(), "")
+			a.failed("Couldn't open the files on "+placeName(key), err.Error())
 		}
 		return true
 	}
 	if _, ok := a.windows[machine]; ok {
 		if err := a.withFiles(key, then); err != nil {
-			a.notify("Couldn't open the files on "+placeName(key), err.Error(), "")
+			a.failed("Couldn't open the files on "+placeName(key), err.Error())
 		}
 		return true
 	}
@@ -67,10 +67,10 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 			return
 		}
 		if err := a.withFiles(key, then); err != nil {
-			a.notify("Couldn't open the files on "+placeName(key), err.Error(), "")
+			a.failed("Couldn't open the files on "+placeName(key), err.Error())
 		}
 	}); err != nil {
-		a.notify("Couldn't open the files on "+placeName(key), err.Error(), "")
+		a.failed("Couldn't open the files on "+placeName(key), err.Error())
 	}
 	return true
 }

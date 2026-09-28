@@ -36,7 +36,7 @@ func (a *app) withLinks(h shellHooks, machine string) shellHooks {
 	h.link = func(at string) {
 		post(func() {
 			if err := a.openLink(machine, at); err != nil {
-				a.notify("Couldn't open "+at, err.Error(), "")
+				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
 	}
@@ -49,7 +49,7 @@ func (a *app) withLinks(h shellHooks, machine string) shellHooks {
 	h.openPath = func(at string, isDir bool, line int) {
 		post(func() {
 			if err := a.openPath(machine, at, isDir, line); err != nil {
-				a.notify("Couldn't open "+at, err.Error(), "")
+				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
 	}

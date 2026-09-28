@@ -440,6 +440,11 @@ type app struct {
 	// keys unlocked so far. book is the saved servers.
 	ctx   context.Context
 	conns map[string]*remote.Conn
+	// hops are the connections made to jump hosts to reach the servers
+	// behind them, by the saved server's name, and hopUsers counts the
+	// connections going through each.
+	hops     map[string]*remote.Conn
+	hopUsers map[*remote.Conn]int
 	// connIDs is the saved server each connection was reached by, ""
 	// for one reached by a typed address.
 	connIDs map[string]string
@@ -609,6 +614,8 @@ func newApp(c gunim.Client, sh *shells) *app {
 		groups:      map[int]*Box{},
 		groupOf:     map[string]int{},
 		conns:       map[string]*remote.Conn{},
+		hops:        map[string]*remote.Conn{},
+		hopUsers:    map[*remote.Conn]int{},
 		connIDs:     map[string]string{},
 		dialing:     map[string]bool{},
 		ring:        remote.NewRing(),
@@ -726,6 +733,7 @@ func (a *app) run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			a.takeSecretBack()
+			a.hangUp()
 			return nil
 		case in := <-a.intents:
 			if in.closed {

@@ -3,6 +3,8 @@ package main
 import (
 	"strconv"
 	"strings"
+	"sync"
+	"time"
 )
 
 // Closing the window, however it is asked for: the menu, the key, or
@@ -61,6 +63,44 @@ func (a *app) leave() {
 func (a *app) closeAll() {
 	for len(a.st.Panes) > 0 {
 		a.remove(a.st.Panes[0].ID)
+	}
+	a.hangUp()
+}
+
+// hangUpWait is the longest the program waits, on its way out, for its
+// connections to close politely.
+const hangUpWait = 2 * time.Second
+
+// hangUp closes every connection, to servers, through jump hosts and to
+// other windows, so each far end hears goodbye rather than a socket that
+// went. It waits hangUpWait at most.
+func (a *app) hangUp() {
+	var closers []func() error
+	for _, c := range a.conns {
+		closers = append(closers, c.Close)
+	}
+	for _, c := range a.hops {
+		closers = append(closers, c.Close)
+	}
+	for _, w := range a.windows {
+		w.leaving = true
+		closers = append(closers, w.win.Close)
+	}
+	if len(closers) == 0 {
+		return
+	}
+	var wg sync.WaitGroup
+	for _, c := range closers {
+		wg.Go(func() { _ = c() })
+	}
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(hangUpWait):
 	}
 }
 

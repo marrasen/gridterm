@@ -61,6 +61,9 @@ func (a *app) connect(in ConnectTo) error { return a.connectThen(in, nil) }
 // shell there when then is nil.
 func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	var hops []remote.Config
+	// names are the hops' names, the saved servers they are, and empty
+	// for a typed target.
+	var names []string
 	name := in.Saved
 	if in.Saved != "" {
 		if a.book == nil {
@@ -80,6 +83,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		}
 		for _, h := range hosts {
 			hops = append(hops, h.Config())
+			names = append(names, h.Name)
 		}
 	} else {
 		cfg, err := remote.ParseTarget(strings.TrimSpace(in.Target))
@@ -87,6 +91,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			return err
 		}
 		hops = []remote.Config{cfg}
+		names = []string{""}
 		name = cfg.Target()
 	}
 	savedID := ""
@@ -118,14 +123,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
 	}
 	a.st.Status = "Connecting to " + name + "…"
+	// From the nearest hop already connected, so a second server behind
+	// a jump host does not sign in to the jump host again.
+	start, from := a.hopConnected(names)
 	go func() {
-		conn, err := remote.Connect(dctx, hops[0])
-		for _, hop := range hops[1:] {
-			if err != nil {
-				break
-			}
-			conn, err = conn.Through(dctx, hop)
-		}
+		conn, made, err := dialFrom(dctx, start, from, hops, names)
 		a.events <- func() {
 			delete(a.dialing, name)
 			delete(a.dialCancel, name)
@@ -141,6 +143,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			}()
 			a.st.Status = ""
 			if err != nil {
+				// The hops reached on the way are no use to anything now.
+				for _, h := range made {
+					_ = h.Close()
+				}
 				logLine(acct, badly, "could not connect: "+err.Error())
 				if errors.Is(err, context.Canceled) && logPane != "" {
 					// Given up on purpose: its log goes with it. A
@@ -158,6 +164,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			}
 			a.conns[name] = conn
 			a.connIDs[name] = savedID
+			a.keepHops(conn, names, made)
 			delete(a.dropped, name)
 			a.reached[name] = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
@@ -165,6 +172,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			go func() {
 				err := conn.Wait()
 				a.events <- func() {
+					a.letHopsGo(conn)
 					if err != nil {
 						logLine(acct, badly, "disconnected: "+err.Error())
 					} else {
@@ -406,4 +414,108 @@ func (a *app) removeServer(name string) error {
 	}
 	a.worked("Removed "+name, "", "")
 	return nil
+}
+
+// Jump hosts. A saved server reached through others connects to each in
+// turn. Those connections are shared: a second server behind the same
+// jump host goes through the connection the first made, rather than
+// signing in to the jump host again. One the user connected to
+// themselves is theirs, and stays. One made only to go through closes
+// once nothing goes through it any more.
+
+// hopConnected returns the nearest hop of a route, searching back from
+// the far end, that is connected already, and the index of the first
+// hop to dial after it. With none, it returns nil and 0.
+func (a *app) hopConnected(names []string) (*remote.Conn, int) {
+	for i := len(names) - 2; i >= 0; i-- {
+		n := names[i]
+		if n == "" {
+			continue
+		}
+		if c := a.conns[n]; c != nil && !c.Closed() {
+			return c, i + 1
+		}
+		if c := a.hops[n]; c != nil && !c.Closed() {
+			return c, i + 1
+		}
+	}
+	return nil, 0
+}
+
+// dialFrom dials hops[from:], through start when it is not nil. It
+// returns the far end, and the connections it made to the hops before
+// it, first to last. An error names the hop it came from, when that is
+// not the far end.
+func dialFrom(ctx context.Context, start *remote.Conn, from int, hops []remote.Config, names []string) (*remote.Conn, []*remote.Conn, error) {
+	var made []*remote.Conn
+	conn := start
+	for i := from; i < len(hops); i++ {
+		var next *remote.Conn
+		var err error
+		if conn == nil {
+			next, err = remote.Connect(ctx, hops[i])
+		} else {
+			next, err = conn.Through(ctx, hops[i])
+		}
+		if err != nil {
+			if i < len(hops)-1 && names[i] != "" {
+				err = fmt.Errorf("through %s: %w", names[i], err)
+			}
+			return nil, made, err
+		}
+		if i < len(hops)-1 {
+			made = append(made, next)
+		}
+		conn = next
+	}
+	return conn, made, nil
+}
+
+// keepHops keeps the connections conn goes through: made, the ones its
+// dial made, for the next route to use, and every one under it, counted
+// as used by it.
+func (a *app) keepHops(conn *remote.Conn, names []string, made []*remote.Conn) {
+	// The hops made are the last ones before the far end.
+	first := len(names) - 1 - len(made)
+	for i, h := range made {
+		if n := names[first+i]; n != "" {
+			if have := a.hops[n]; have == nil || have.Closed() {
+				a.hops[n] = h
+			}
+		}
+	}
+	for h := conn.Via(); h != nil; h = h.Via() {
+		a.hopUsers[h]++
+	}
+}
+
+// letHopsGo counts conn, gone, off the hops it went through, and closes
+// each one nothing uses any more that the user did not connect to.
+func (a *app) letHopsGo(conn *remote.Conn) {
+	for h := conn.Via(); h != nil; h = h.Via() {
+		a.hopUsers[h]--
+		if a.hopUsers[h] > 0 {
+			continue
+		}
+		delete(a.hopUsers, h)
+		if a.ownConn(h) {
+			continue
+		}
+		for n, c := range a.hops {
+			if c == h {
+				delete(a.hops, n)
+			}
+		}
+		go func() { _ = h.Close() }()
+	}
+}
+
+// ownConn reports whether the user connected to c, as a server of its own.
+func (a *app) ownConn(c *remote.Conn) bool {
+	for _, o := range a.conns {
+		if o == c {
+			return true
+		}
+	}
+	return false
 }

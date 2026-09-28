@@ -82,6 +82,18 @@ func (a *app) startCommand(machine string, cmd command, then func(session.Sessio
 		return nil
 	}
 	conn, ok := a.conns[machine]
+	if _, _, far := strings.Cut(machine, farSep); !ok && !far {
+		// Not connected: connected to first, as a terminal there is.
+		return a.dialAgain(machine, func(err error) {
+			if err != nil {
+				return
+			}
+			if err := a.startCommand(machine, cmd, then); err != nil {
+				a.failed("Couldn't run "+strings.Join(cmd.argv, " ")+" on "+machine, err.Error())
+				a.problem()
+			}
+		})
+	}
 	if !ok {
 		return fmt.Errorf("this window is not connected to %s", machine)
 	}

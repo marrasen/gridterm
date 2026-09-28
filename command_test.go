@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -121,5 +122,21 @@ func TestThingsSavedBeforeServersHadIDsAreGivenThem(t *testing.T) {
 	h, _ := book.Lookup("desk")
 	if got := set.Commands()[0].HostID; got == "" || got != h.ID {
 		t.Fatalf("the command is on server id %q, want %q", got, h.ID)
+	}
+}
+
+// A command on a saved server that is not connected connects first,
+// then runs.
+func TestACommandOnAServerNotConnectedConnectsFirst(t *testing.T) {
+	a, answering := dialApp(t)
+	if err := a.runCommand(RunCommand{Machine: "srv", Line: "echo hi"}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the command's pane", func() bool {
+		answering()
+		return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == "srv" && p.Command })
+	})
+	if a.conns["srv"] == nil {
+		t.Fatal("the command ran with no connection to srv")
 	}
 }

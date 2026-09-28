@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/gunim/geom"
@@ -30,8 +31,17 @@ func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
 		t.Fatalf("saved, the reader reads %+v", r)
 	}
 
+	// Saved again under the same name, the file there is left alone.
+	a.handle(SaveLines{Pane: "p1", Path: "~/kept.txt", Lines: []string{"three"}})
+	if got, _ := os.ReadFile(filepath.Join(home, "kept.txt")); string(got) != "one\ntwo\n" {
+		t.Fatalf("saved over a file that was there: it holds %q", got)
+	}
+	if r := a.st.Readers["p1"]; r.Saves != 2 || !strings.Contains(r.SaveErr, "already there") {
+		t.Fatalf("saved over a file that was there, the reader reads %+v", r)
+	}
+
 	a.handle(SaveLines{Pane: "p1", Path: filepath.Join(home, "missing", "kept.txt"), Lines: []string{"one"}})
-	if r := a.st.Readers["p1"]; r.Saves != 2 || r.SaveErr == "" {
+	if r := a.st.Readers["p1"]; r.Saves != 3 || r.SaveErr == "" {
 		t.Fatalf("saved into a missing folder, the reader reads %+v", r)
 	}
 	if len(a.st.Notices) != 0 {

@@ -180,3 +180,33 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 		t.Fatalf("pressed again, %v, and it dialled again", err)
 	}
 }
+
+// Enter on "Replace notes.txt?" leaves the file there alone: it is the
+// first choice, which the dialog's Enter gives.
+func TestEnterOnTheOverwriteQuestionLeavesTheFile(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a.ctx = t.Context()
+	local := vfs.NewLocal()
+	for _, tc := range []struct {
+		answer string
+		want   jobs.What
+	}{{"", jobs.Skip}, {"Replace", jobs.Replace}} {
+		got := make(chan jobs.Choice, 1)
+		go func() {
+			c, _ := overwriteAsker{a}.Overwrite(t.Context(), jobs.Conflict{To: local, Path: "/tmp/notes.txt"})
+			got <- c
+		}()
+		waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+		q := a.st.Asks[0]
+		pick := tc.answer
+		if pick == "" {
+			// What Enter gives: the first choice.
+			pick = q.Choose[0]
+		}
+		a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{pick, ""}})
+		if c := <-got; c.What != tc.want {
+			t.Fatalf("answered %q, the job was told %v, want %v", pick, c.What, tc.want)
+		}
+	}
+}

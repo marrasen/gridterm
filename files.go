@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -559,7 +560,7 @@ func (a *app) followFile(id string, f vfs.FS, path string) {
 func (a *app) saveLines(in SaveLines) {
 	at, err := expandHome(in.Path)
 	if err == nil {
-		err = os.WriteFile(at, []byte(strings.Join(in.Lines, "\n")+"\n"), 0o600)
+		err = writeNew(at, []byte(strings.Join(in.Lines, "\n")+"\n"))
 	}
 	r, ok := a.st.Readers[in.Pane]
 	if !ok {
@@ -576,6 +577,28 @@ func (a *app) saveLines(in SaveLines) {
 		r.SaveErr = err.Error()
 	}
 	a.setReader(in.Pane, r)
+}
+
+// writeNew writes data to a file that is not there yet. A file already
+// there is left alone, and the save refused: the name comes filled in,
+// and one Enter would lose it. A write that fails part way takes its
+// half-written file away.
+func writeNew(at string, data []byte) error {
+	f, err := os.OpenFile(at, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if errors.Is(err, fs.ErrExist) {
+		return fmt.Errorf("%s is already there. Give it another name", at)
+	}
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		_ = os.Remove(at)
+	}
+	return err
 }
 
 // order sorts a folder's entries: folders first, then by name, as a

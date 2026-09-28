@@ -489,8 +489,9 @@ func (q overwriteAsker) Overwrite(ctx context.Context, c jobs.Conflict) (jobs.Ch
 	text := fmt.Sprintf("%s is already in %s: %s, from %s. The one arriving is %s, from %s.",
 		name, vfs.Dir(c.To, c.Path), describe(c.Have), c.Have.Mod.Format("2006-01-02 15:04"),
 		describe(c.Want), c.Want.Mod.Format("2006-01-02 15:04"))
+	// Leave It first, so Enter is the choice that loses nothing.
 	ans, err := q.a.ask(ctx, Ask{Title: "Replace " + name + "?", Text: text,
-		Choose: []string{"Replace", "Leave It"}, Also: "Do the same for the rest", No: "Stop"})
+		Choose: []string{"Leave It", "Replace"}, Also: "Do the same for the rest", No: "Stop"})
 	switch {
 	case errors.Is(err, errDeclined):
 		// Stop is an answer, and the job ends saying it was stopped.

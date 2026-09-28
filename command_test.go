@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/session"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
 )
@@ -138,5 +139,68 @@ func TestACommandOnAServerNotConnectedConnectsFirst(t *testing.T) {
 	})
 	if a.conns["srv"] == nil {
 		t.Fatal("the command ran with no connection to srv")
+	}
+}
+
+// A command on a machine whose connection is kept under another name,
+// as "web:22" is kept as "web", says so rather than connecting again
+// and again.
+func TestACommandConnectedUnderAnotherNameSaysSo(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	a.conns["web"] = a.conns["srv"]
+	t.Cleanup(func() { delete(a.conns, "web") })
+	failed := false
+	err := a.startCommand("web:22", command{argv: []string{"true"}}, commandStart{
+		then:   func(session.Session) { t.Fatal("the command started") },
+		failed: func() { failed = true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the refusal", func() bool { return failed })
+}
+
+// A command whose connection could not be made says so to whoever
+// started it, as Run Again asks again then.
+func TestACommandWhoseConnectionFailsSaysSo(t *testing.T) {
+	a, answering := dialApp(t)
+	failed := false
+	err := a.startCommand("127.0.0.1:1", command{argv: []string{"true"}}, commandStart{
+		then:   func(session.Session) { t.Fatal("the command started") },
+		failed: func() { failed = true },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the failure", func() bool { answering(); return failed })
+}
+
+// A saved command whose server was removed is not run: its name may be
+// another machine's now.
+func TestASavedCommandOnARemovedServerIsNotRun(t *testing.T) {
+	a, _ := dialApp(t)
+	err := a.runSavedCommand(settings.SavedCommand{Line: "uptime", Host: "gone", HostID: "no-such-id"})
+	if err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Fatalf("running a command on a removed server said %v", err)
+	}
+	if len(a.dialing) != 0 {
+		t.Fatalf("it dialled %v", a.dialing)
+	}
+}
+
+// A command on a saved kakel window is refused before connecting.
+func TestACommandOnASavedWindowIsRefused(t *testing.T) {
+	a, _ := dialApp(t)
+	if err := a.book.Put(remote.Host{Name: "box", Address: "127.0.0.1", Port: 1, Window: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	err := a.runCommand(RunCommand{Machine: "box", Line: "uptime"})
+	if err == nil || !strings.Contains(err.Error(), "kakel window") {
+		t.Fatalf("a command on a saved window said %v", err)
+	}
+	if len(a.dialing) != 0 {
+		t.Fatalf("it dialled %v", a.dialing)
 	}
 }

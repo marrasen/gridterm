@@ -318,9 +318,11 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 		return fmt.Errorf("this window is not connected to %s", placeName(machine))
 	}
 	a.st.Status = "Opening the files on " + placeName(machine) + "…"
+	a.starting++
 	go func() {
 		f, err := open()
 		a.events <- func() {
+			a.starting--
 			a.st.Status = ""
 			if err != nil {
 				failed()

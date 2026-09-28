@@ -290,6 +290,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 			a.starting--
 			if err != nil {
 				a.failed("Couldn't open a shell on "+name, err.Error())
+				a.stayIfEmpty()
 				then("", err)
 				return
 			}

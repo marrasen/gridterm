@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"maps"
 	"sync/atomic"
@@ -816,6 +817,15 @@ func (a *app) keep(what string, err error) {
 	}
 }
 
+// stayIfEmpty keeps an empty window open, for what went wrong opening
+// its pane to be read: the log that was its one pane closed as the
+// connection was made.
+func (a *app) stayIfEmpty() {
+	if len(a.st.Panes) == 0 {
+		a.stayEmpty = true
+	}
+}
+
 // openFirstOrSay opens the first pane. One that cannot be opened
 // leaves the window there, saying why, for a pane to be opened another
 // way: started from a desktop icon, a program that closed at once would
@@ -1313,6 +1323,14 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				then("", err)
 				return
 			}
+			if a.conns[machine] == nil && a.windows[machine] == nil {
+				// Connected, but by another name than this one: said,
+				// rather than connected to again and again.
+				err := errors.New("the connection was made under another name. Open a terminal on it from the sidebar")
+				a.failed("Couldn't open a shell on "+machine, upperFirst(err.Error())+".")
+				then("", err)
+				return
+			}
 			if err := a.openThen(machine, at, then); err != nil {
 				a.failed("Couldn't open a shell on "+machine, err.Error())
 				a.problem()
@@ -1352,6 +1370,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 			if err != nil {
 				a.failed("Couldn't open a shell on "+machine, err.Error())
 				a.problem()
+				a.stayIfEmpty()
 				then("", err)
 				return
 			}

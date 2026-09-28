@@ -57,13 +57,40 @@ func TestAShellNamingItselfByItsPathShowsItsName(t *testing.T) {
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, nil, placement{})
 	a.argvs["p1"] = []string{cmd}
 	for said, want := range map[string]string{
-		`C:\WINDOWS\system32\cmd.exe`:          "Command Prompt",
-		`C:\WINDOWS\system32\cmd.exe - ping x`: "Command Prompt - ping x",
-		"vim notes.txt":                        "vim notes.txt",
+		`C:\WINDOWS\system32\cmd.exe`:                "Command Prompt",
+		`C:\WINDOWS\system32\cmd.exe - ping x`:       "Command Prompt - ping x",
+		"vim notes.txt":                              "vim notes.txt",
+		`Administrator: C:\WINDOWS\system32\cmd.exe`: "Administrator: Command Prompt",
 	} {
 		a.retitle("p1", said)
 		if got := a.titleOf("p1"); got != want {
 			t.Errorf("titled %q, the pane is called %q, want %q", said, got, want)
 		}
+	}
+}
+
+// A pane on a server is named as its program says: the path of a shell
+// here is nothing to it.
+func TestAServersPaneKeepsTheTitleItsProgramGives(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	cmd := `C:\Windows\System32\cmd.exe`
+	a.found = []shellfind.Shell{{ID: "cmd", Title: "Command Prompt", Path: cmd}}
+	a.addPane(Pane{ID: "p1", Title: "Terminal 1", Machine: "srv"}, nil, placement{})
+	a.retitle("p1", cmd)
+	if got := a.titleOf("p1"); got != cmd {
+		t.Fatalf("a pane on a server is called %q", got)
+	}
+}
+
+// What a pane runs is kept without the folder a WSL shell was started
+// in, so starting it again goes to where it is now, not back there.
+func TestAPaneKeepsItsShellWithoutTheFolderItStartedIn(t *testing.T) {
+	got := withoutFolder([]string{"wsl.exe", "-d", "Ubuntu", "--cd", "/home/x"})
+	if !slices.Equal(got, []string{"wsl.exe", "-d", "Ubuntu"}) {
+		t.Fatalf("kept %v", got)
+	}
+	if got := withoutFolder([]string{"cmd.exe"}); !slices.Equal(got, []string{"cmd.exe"}) {
+		t.Fatalf("kept %v", got)
 	}
 }

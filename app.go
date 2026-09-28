@@ -1304,7 +1304,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 			return fmt.Errorf("kakel: start the shell: %w", err)
 		}
 		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), ""))
-		a.argvs[id] = argv
+		a.argvs[id] = withoutFolder(argv)
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
 		return nil

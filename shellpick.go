@@ -58,7 +58,8 @@ func (a *app) scanShells() {
 	}()
 }
 
-// localShell is the command a new terminal here starts: the shell
+// localShell is the command a new terminal here starts, when the pane
+// in front runs no shell to start another of (see likeHere): the shell
 // kept, or nil for the user's own.
 func (a *app) localShell() []string {
 	if a.settings == nil {
@@ -118,24 +119,38 @@ func (a *app) likeHere() {
 	}
 }
 
-// shellTitle is the title a pane's program gave, with the program's own
-// path, which the Command Prompt and PowerShell name themselves by,
-// given as the shell's name: "Command Prompt", and "Command Prompt -
-// ping host" while that runs.
+// shellTitle is the title a local pane's program gave, with the
+// program's own path, which the Command Prompt and PowerShell name
+// themselves by, given as the shell's name: "Command Prompt", and
+// "Command Prompt - ping host" while that runs. What Windows puts in
+// front for a program run as administrator stays in front.
 func (a *app) shellTitle(id, title string) string {
-	argv := a.argvs[id]
-	if len(argv) == 0 {
+	if a.machineOf(id) != "" {
 		return title
 	}
-	s, ok := shellfind.Running(a.found, argv)
+	s, ok := shellfind.Running(a.found, a.localArgv(id))
 	if !ok || s.Path == "" {
 		return title
 	}
+	admin, rest := "", title
+	if r, cut := strings.CutPrefix(title, "Administrator: "); cut {
+		admin, rest = "Administrator: ", r
+	}
 	switch {
-	case strings.EqualFold(title, s.Path):
-		return s.Title
-	case len(title) > len(s.Path) && strings.EqualFold(title[:len(s.Path)], s.Path) && strings.HasPrefix(title[len(s.Path):], " - "):
-		return s.Title + title[len(s.Path):]
+	case strings.EqualFold(rest, s.Path):
+		return admin + s.Title
+	case len(rest) > len(s.Path) && strings.EqualFold(rest[:len(s.Path)], s.Path) && strings.HasPrefix(rest[len(s.Path):], " - "):
+		return admin + s.Title + rest[len(s.Path):]
 	}
 	return title
+}
+
+// withoutFolder is argv without the folder a WSL shell was told to start
+// in, which is where the pane started, not where it is now: starting it
+// again goes to the folder the shell says then, or its home.
+func withoutFolder(argv []string) []string {
+	if n := len(argv); n >= 2 && argv[n-2] == "--cd" {
+		return argv[: n-2 : n-2]
+	}
+	return argv
 }

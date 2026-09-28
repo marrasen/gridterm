@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/remote"
@@ -47,7 +47,7 @@ func tunnelApp(t *testing.T) (a *app, conn *remote.Conn, echo string) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close() })
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	a.conns["srv"] = conn

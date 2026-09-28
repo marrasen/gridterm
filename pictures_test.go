@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 
 	"github.com/marrasen/kakel/pasted"
 )
@@ -29,7 +29,7 @@ func onClipboard(t *testing.T, img image.Image) {
 func localPane(t *testing.T, out string, argv ...string) (*app, *printed) {
 	t.Helper()
 	t.Setenv("TMPDIR", t.TempDir())
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	sess := &printed{typed: typed{done: make(chan struct{})}, out: []byte(out)}

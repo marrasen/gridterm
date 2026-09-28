@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/input"
@@ -191,7 +191,7 @@ func TestAClickOutsideTheThemePickerClosesIt(t *testing.T) {
 // a folder on this computer; one from another system starts it where it
 // would have started, rather than stopping it starting.
 func TestANewShellStartsOnlyInAFolderThatIsHere(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	dir := t.TempDir()
 	if got := a.localDir("p1", dir); got != dir {

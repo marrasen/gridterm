@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/vfs"
@@ -13,7 +13,7 @@ import (
 
 // A pane open on a stage of its own moves into a split beside another.
 func TestAPaneMovesIntoASplit(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.addPane(Pane{ID: "p1", Title: "one", Kind: kindFiles}, nil, placement{})
 	a.addPane(Pane{ID: "p2", Title: "two", Kind: kindFiles}, nil, placement{})
@@ -36,7 +36,7 @@ func TestAPaneMovesIntoASplit(t *testing.T) {
 // Files opened from a file pane opens beside it, for the two side by
 // side a copy goes between.
 func TestFilesFromAFilePaneOpenBesideIt(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	local := vfs.NewLocal()

@@ -14,8 +14,8 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/remote"
@@ -30,7 +30,7 @@ func secretsApp(t *testing.T) (a *app, keyFile string) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	keyFile = filepath.Join(home, ".ssh", "id_ed25519")
 	writeKey(t, keyFile)
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	a.secretsAt = filepath.Join(home, "secrets.json")

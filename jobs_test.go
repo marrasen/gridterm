@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/remote"
@@ -23,7 +23,7 @@ func TestACopyShowsOnTheJobsPaneUntilCleared(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(from, "a.txt"), make([]byte, 1<<20), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
@@ -75,7 +75,7 @@ func TestAFinishedCopyIsRepeatedAndSaved(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(from, "a.txt"), []byte("one"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
@@ -124,7 +124,7 @@ func TestStopOnAReplaceQuestionStopsTheCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
@@ -141,7 +141,7 @@ func TestStopOnAReplaceQuestionStopsTheCopy(t *testing.T) {
 }
 
 func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "desk"}, {ID: "s2", Name: "laptop"}}
 	for _, c := range []struct {
@@ -164,7 +164,7 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 }
 
 func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	// A machine that never answers, so the repeat stays on its way.

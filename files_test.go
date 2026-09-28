@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
@@ -18,7 +18,7 @@ import (
 
 func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
 	home := testhome.New(t)
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.setReader("p1", Reader{Path: "/x/notes.txt", Seq: 1})
 
@@ -47,7 +47,7 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 	t.Chdir(t.TempDir())
 	s := sshtest.New(t)
 	host, port := s.Host()
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	t.Cleanup(func() {

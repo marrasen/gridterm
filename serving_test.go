@@ -16,8 +16,8 @@ import (
 
 	"github.com/pkg/sftp"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/kakel/remote"
@@ -237,7 +237,7 @@ func clientOf(t *testing.T, a *app) (b *app, keyFile string) {
 		t.Fatal(err)
 	}
 	a.handle(StartServing{Port: "0"})
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	b = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	b.ctx = t.Context()
 	t.Cleanup(func() {

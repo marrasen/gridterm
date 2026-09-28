@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 )
 
 func TestEachLogHasOnePane(t *testing.T) {
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	sh := &shells{m: map[string]*shell{}}
 	a := newApp(w.Client(), sh)
 	a.ctx = t.Context()

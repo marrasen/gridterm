@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/internal/sshtest"
@@ -25,7 +25,7 @@ func dialApp(t *testing.T) (a *app, answering func()) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	s := sshtest.New(t)
 	host, port := s.Host()
-	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))

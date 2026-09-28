@@ -182,16 +182,29 @@ func TestATunnelCarriesBytesAndItsRowSaysSo(t *testing.T) {
 
 func TestATunnelOpenToTheNetworkIsAskedAboutFirst(t *testing.T) {
 	a, _, echo := tunnelApp(t)
+	// Answered no: a yes would listen on every address of this machine,
+	// and Windows asks its user whether the tests may.
 	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "0.0.0.0:0", Target: echo}})
 	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
-	if len(a.st.Tunnels) != 0 {
-		t.Fatalf("before the answer, a tunnel opened: %+v", a.st.Tunnels)
-	}
 	q := a.st.Asks[0]
 	if !q.Danger || q.Yes != "Open" {
 		t.Fatalf("the question is %+v, want a danger button saying Open", q)
 	}
-	a.handle(AskAnswered{ID: q.ID, Yes: true})
+	a.handle(AskAnswered{ID: q.ID})
+	waitFor(t, a, "the question to go", func() bool { return len(a.st.Asks) == 0 })
+	if len(a.st.Tunnels) != 0 {
+		t.Fatalf("answered no, a tunnel opened: %+v", a.st.Tunnels)
+	}
+
+	// A remote one is asked about too, since the server picks where it
+	// listens. The test server only notes the port, so this one is
+	// answered yes.
+	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.RemoteForward, Listen: "0.0.0.0:0", Target: echo}})
+	waitFor(t, a, "the second question", func() bool { return len(a.st.Asks) == 1 })
+	if len(a.st.Tunnels) != 0 {
+		t.Fatalf("before the answer, a tunnel opened: %+v", a.st.Tunnels)
+	}
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID, Yes: true})
 	waitFor(t, a, "the tunnel", func() bool { return len(a.st.Tunnels) == 1 })
 }
 

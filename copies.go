@@ -164,6 +164,9 @@ func (a *app) machineNow(name, id string) (string, error) {
 			now = h.Name
 		}
 	}
+	if now == "" && a.book == nil {
+		return "", fmt.Errorf("the server list could not be read, so %s cannot be found", name)
+	}
 	if now == "" {
 		return "", fmt.Errorf("%s was removed from the server list", name)
 	}

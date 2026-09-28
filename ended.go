@@ -156,7 +156,10 @@ func (a *app) startAgain(id string) error {
 		}()
 		return nil
 	}
-	conn, ok := a.conns[machine]
+	conn, ok, err := a.connOf(machine)
+	if err != nil {
+		return err
+	}
 	if !ok {
 		// The connection has gone: dial it again, and
 		// start the pane once it is back.

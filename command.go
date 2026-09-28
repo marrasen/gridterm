@@ -77,7 +77,7 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	title := strings.Join(argv, " ")
 	return a.startCommand(in.Machine, cmd, commandStart{then: func(sess session.Session) {
-		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Machine)), placement{beside: in.Beside, vertical: in.Vertical})
+		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), placement{beside: in.Beside, vertical: in.Vertical})
 	}})
 }
 
@@ -112,7 +112,10 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 		s.then(sess)
 		return nil
 	}
-	conn, ok := a.conns[machine]
+	conn, ok, err := a.connOf(machine)
+	if err != nil {
+		return err
+	}
 	if _, _, far := strings.Cut(machine, farSep); !ok && !far {
 		// Not connected: connected to first, as a terminal there is.
 		return a.dialAgain(machine, func(err error) {
@@ -146,6 +149,9 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 		a.events <- func() {
 			a.starting--
 			if err != nil {
+				if !s.wanted() {
+					return
+				}
 				a.failed("Couldn't run "+line+" on "+machine, err.Error())
 				a.problem()
 				s.fail()
@@ -166,6 +172,9 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 // was kept for, by that machine's name now.
 func (a *app) runSavedCommand(saved settings.SavedCommand) error {
 	machine := saved.Host
+	if saved.HostID != "" && a.book == nil {
+		return errors.New("the server list could not be read, so the server this was kept for cannot be found")
+	}
 	if saved.HostID != "" {
 		i := slices.IndexFunc(a.st.Saved, func(h remote.Host) bool { return h.ID == saved.HostID })
 		if i < 0 {
@@ -187,7 +196,7 @@ func (a *app) runAgain(id string, cmd command) error {
 	// The pane may close while a connection is made for it: then the
 	// command is not run. One that cannot be run asks again.
 	still := func() bool { return a.terminal(id) == t }
-	return a.startCommand(a.machineOf(id), cmd, commandStart{
+	err := a.startCommand(a.machineOf(id), cmd, commandStart{
 		then: func(sess session.Session) {
 			if err := a.restarted(id, t, sess); err != nil {
 				a.failed("Couldn't run it again", err.Error())
@@ -200,4 +209,9 @@ func (a *app) runAgain(id string, cmd command) error {
 			}
 		},
 	})
+	if err != nil && still() {
+		// It asks again, having said why.
+		a.paneEnded(id)
+	}
+	return err
 }

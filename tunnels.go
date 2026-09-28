@@ -137,8 +137,11 @@ func (a *app) setTunnel(id string, change func(*Tunnel)) {
 // one, since the far machine picks where it listens, is asked about
 // first.
 func (a *app) openTunnel(in OpenTunnel) error {
-	conn, ok := a.conns[in.Machine]
-	if !ok {
+	conn, ok, err := a.connOf(in.Machine)
+	switch {
+	case err != nil:
+		return err
+	case !ok:
 		return fmt.Errorf("nothing is connected to %s any more", in.Machine)
 	}
 	t := in.Tunnel

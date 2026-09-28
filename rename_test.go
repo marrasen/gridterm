@@ -4,6 +4,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // A server renamed while connected takes what is open with it: its
@@ -63,5 +66,103 @@ func TestAServerBeingConnectedToIsNotRenamed(t *testing.T) {
 	}
 	if _, ok := a.book.Lookup("srv"); !ok {
 		t.Fatal("the refused rename was saved")
+	}
+}
+
+// A terminal open before its server was renamed follows its links
+// under the new name.
+func TestATerminalFollowsItsLinksAfterItsServerIsRenamed(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	id := a.st.Panes[0].ID
+	h, _ := a.book.Lookup("srv")
+	h.Name = "prod"
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.linkNames[id].get(); got != "prod" {
+		t.Fatalf("renamed, the pane's links go to %q", got)
+	}
+}
+
+// Every way of opening something on a server changed since it was
+// connected is refused, not only Connect.
+func TestNothingOpensOnAServerChangedSinceItConnected(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	h, _ := a.book.Lookup("srv")
+	h.Address, h.Port = "127.0.0.1", 1
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
+		t.Fatal(err)
+	}
+	panes := len(a.st.Panes)
+	if err := a.open("srv", placement{}); err == nil || !strings.Contains(err.Error(), "Disconnect it first") {
+		t.Fatalf("a terminal on it said %v", err)
+	}
+	if err := a.runCommand(RunCommand{Machine: "srv", Line: "true"}); err == nil || !strings.Contains(err.Error(), "Disconnect it first") {
+		t.Fatalf("a command on it said %v", err)
+	}
+	if err := a.withFiles("srv", func(vfs.FS) {}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the files to be refused", func() bool {
+		return slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "Disconnect it first") })
+	})
+	if len(a.st.Panes) != panes {
+		t.Fatal("something opened through the connection as it was")
+	}
+}
+
+// A server renamed onto a name something is still open on is refused;
+// onto one with only a log of before, it takes the name, and the log
+// of the other machine goes.
+func TestRenamingOntoANameInUse(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	a.addPane(Pane{ID: "px", Title: "ended", Machine: "other", Ended: true}, nil, placement{})
+	h, _ := a.book.Lookup("srv")
+	h.Name = "other"
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err == nil {
+		t.Fatal("renamed onto a name a pane is open on")
+	}
+	a.remove("px")
+	a.account("other")
+	a.dropped["other"] = true
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.dropped["other"] || a.conns["other"] == nil {
+		t.Fatalf("renamed, other is dropped %v, connected %v", a.dropped["other"], a.conns["other"] != nil)
+	}
+	if n := slices.Index(a.st.Accounts, "other"); n < 0 || slices.Index(a.st.Accounts[n+1:], "other") >= 0 {
+		t.Fatalf("the logs are %v", a.st.Accounts)
+	}
+}
+
+// A connection typed by the name a saved server has is not moved when
+// the saved server is renamed.
+func TestATypedConnectionStaysWhenTheSavedServerIsRenamed(t *testing.T) {
+	a, _ := dialApp(t)
+	typed := &remote.Conn{}
+	a.conns["srv"] = typed
+	a.connIDs["srv"] = ""
+	t.Cleanup(func() {
+		// Not a connection to close.
+		for n, c := range a.conns {
+			if c == typed {
+				delete(a.conns, n)
+			}
+		}
+	})
+	h, _ := a.book.Lookup("srv")
+	h.Name = "prod"
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
+		t.Fatal(err)
+	}
+	if a.conns["srv"] != typed || a.conns["prod"] != nil {
+		t.Fatal("the typed connection moved with the saved server's name")
 	}
 }

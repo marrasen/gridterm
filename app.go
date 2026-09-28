@@ -460,8 +460,11 @@ type app struct {
 	// for one reached by a typed address.
 	connIDs map[string]string
 	dialing map[string]bool
-	ring    *remote.Ring
-	book    *remote.Book
+	// dialRoutes are the saved servers each dial under way goes
+	// through, by the one it is for.
+	dialRoutes map[string][]string
+	ring       *remote.Ring
+	book       *remote.Book
 	// replies waits for the answers to asks, by ID, and askIDs counts
 	// them.
 	replies map[uint64]chan AskAnswered
@@ -566,6 +569,9 @@ type app struct {
 	far pathsFar
 	// typed is what agents typed, by pane.
 	typed map[string]*typedLog
+	// linkNames are the machine each terminal pane's links go to, by
+	// pane, changed as that machine is renamed.
+	linkNames map[string]*machineName
 	// reads are what each reader pane reads, to read it again, and
 	// following the readers with a follow loop running.
 	reads     map[string]readSpec
@@ -632,6 +638,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		routes:      map[*remote.Conn]string{},
 		connIDs:     map[string]string{},
 		dialing:     map[string]bool{},
+		dialRoutes:  map[string][]string{},
 		ring:        remote.NewRing(),
 		replies:     map[uint64]chan AskAnswered{},
 		closing:     map[string]bool{},
@@ -653,6 +660,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		typed:       map[string]*typedLog{},
 		reads:       map[string]readSpec{},
 		following:   map[string]bool{},
+		linkNames:   map[string]*machineName{},
 		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts:    map[string]*logs.Lines{},
 		wake:        make(chan struct{}, 1),
@@ -785,7 +793,7 @@ func (a *app) loadSettings() {
 				a.st.FontSize = min(max(float32(size), 8), 40)
 			}
 		} else {
-			a.unreadable("the settings", path, err)
+			a.unreadable("the settings", path+" is repaired or removed, and kakel is started again", err)
 		}
 	}
 }
@@ -798,16 +806,16 @@ func (a *app) loadBook() {
 			a.st.Saved = b.Hosts()
 			a.giveSavedIDs()
 		} else {
-			a.unreadable("the server list", path, err)
+			a.unreadable("the server list", path+" is repaired or removed, and the list read again", err)
 		}
 	}
 }
 
-// unreadable says that what, a file of kakel's at path, could not be
-// read, and that nothing is written to it until it is repaired: a file
-// kakel cannot read is not one to write over.
-func (a *app) unreadable(what, path string, err error) {
-	a.failed("Couldn't read "+what, err.Error()+"\n\nNothing changed is kept until "+path+" is repaired or removed.")
+// unreadable says that what, a file of kakel's, could not be read, and
+// that nothing is written to it until what until says: a file kakel
+// cannot read is not one to write over.
+func (a *app) unreadable(what, until string, err error) {
+	a.failed("Couldn't read "+what, err.Error()+"\n\nNothing changed is kept until "+until+".")
 }
 
 // keep says when something could not be kept for next time.
@@ -1404,7 +1412,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		if err != nil {
 			return fmt.Errorf("kakel: start the shell: %w", err)
 		}
-		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), ""))
+		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), id, ""))
 		a.argvs[id] = withoutFolder(argv)
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
@@ -1413,8 +1421,11 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	if _, ok := a.windows[machine]; ok {
 		return a.openOnWindow(machine, id, title, at, then)
 	}
-	conn, ok := a.conns[machine]
-	if !ok {
+	conn, ok, err := a.connOf(machine)
+	switch {
+	case err != nil:
+		return err
+	case !ok:
 		return fmt.Errorf("kakel: %s is not connected", machine)
 	}
 	a.starting++
@@ -1431,7 +1442,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 			}
 			a.teachFar(machine, sess)
 			a.paneAt[id] = a.reached[machine]
-			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), machine)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
 			then(id, nil)
 		}
 	}()
@@ -1629,6 +1640,7 @@ func (a *app) remove(id string) {
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)
+	delete(a.linkNames, id)
 	// A scrollback of it has nothing left to read again, and says so.
 	for rid, r := range a.st.Readers {
 		if r.Of == id && rid != id {

@@ -380,8 +380,8 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 		return errors.Join(served, srv.Close())
 	}
 	conn, err := onApp(a, func() (*remote.Conn, error) {
-		if c, ok := a.conns[host]; ok {
-			return c, nil
+		if c, ok, err := a.connOf(host); ok {
+			return c, err
 		}
 		return nil, fmt.Errorf("this window is not connected to %s", host)
 	})

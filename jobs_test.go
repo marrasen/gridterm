@@ -144,6 +144,8 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "desk"}, {ID: "s2", Name: "laptop"}}
+	// A list read, as the names above were.
+	a.book = remote.UnusableBook(nil)
 	for _, c := range []struct {
 		name, id, want, err string
 		held                map[string]string

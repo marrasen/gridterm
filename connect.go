@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -100,11 +101,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	if in.Saved != "" {
 		savedID = a.serverID(in.Saved)
 	}
-	if c, ok := a.conns[name]; ok {
-		if route := routeOf(hops); in.Saved != "" && a.routes[c] != "" && a.routes[c] != route {
-			// Saved otherwise since: the connection is to where it was,
-			// and a shell on it would be too.
-			return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", name, a.routes[c], route)
+	if _, ok, err := a.connOf(name); ok {
+		if err != nil {
+			return err
 		}
 		if then != nil {
 			then(nil)
@@ -117,6 +116,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		return nil
 	}
 	a.dialing[name] = true
+	a.dialRoutes[name] = names
 	dctx, cancel := context.WithCancel(a.ctx)
 	a.dialCancel[name] = cancel
 	acct := a.account(name)
@@ -141,6 +141,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		a.events <- func() {
 			defer a.letHopsGo(start)
 			delete(a.dialing, name)
+			delete(a.dialRoutes, name)
 			delete(a.dialCancel, name)
 			cancel()
 			// Whoever asked for it again waits on this one, and hears
@@ -232,6 +233,10 @@ func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)
 	go func() {
 		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + name, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
 		if err != nil {
+			// Whoever asked for it hears it was not.
+			if then != nil {
+				a.events <- func() { then(errDeclined) }
+			}
 			return
 		}
 		choice := ""
@@ -461,12 +466,18 @@ func routeOf(hops []remote.Config) string {
 			b.WriteString(" > ")
 		}
 		b.WriteString(h.Target())
-		if h.ForwardAgent {
-			b.WriteString(" (agent)")
-		}
+	}
+	// The far end's agent alone: a jump host's is nothing to the
+	// servers behind it.
+	if n := len(hops); n > 0 && hops[n-1].ForwardAgent {
+		b.WriteString(agentMark)
 	}
 	return b.String()
 }
+
+// agentMark ends a route whose far end carries this machine's SSH
+// agent.
+const agentMark = " (agent)"
 
 // hopConnected returns the nearest hop of a route, searching back from
 // the far end, that is connected already by that same route, and the
@@ -479,9 +490,10 @@ func (a *app) hopConnected(names []string, hops []remote.Config) (*remote.Conn, 
 		if n == "" {
 			continue
 		}
-		route := routeOf(hops[:i+1])
+		// Gone through, its agent is nothing to what is behind it.
+		route := strings.TrimSuffix(routeOf(hops[:i+1]), agentMark)
 		for _, c := range []*remote.Conn{a.conns[n], a.hops[n]} {
-			if c != nil && !c.Closed() && a.routes[c] == route {
+			if c != nil && !c.Closed() && strings.TrimSuffix(a.routes[c], agentMark) == route {
 				return c, i + 1
 			}
 		}
@@ -592,6 +604,43 @@ func (a *app) letGoOfRiders(c *remote.Conn) {
 	}
 }
 
+// connOf is the connection to machine to open something on, and
+// whether there is one. One to a saved server changed since, to another
+// address or another setting for the SSH agent, is to where it was:
+// opening on it is refused, saying to disconnect it first.
+func (a *app) connOf(machine string) (*remote.Conn, bool, error) {
+	c, ok := a.conns[machine]
+	if !ok {
+		return nil, false, nil
+	}
+	if err := a.savedOtherwise(machine, c); err != nil {
+		return nil, true, err
+	}
+	return c, true, nil
+}
+
+// savedOtherwise says, as an error, that c, the connection to saved
+// server machine, was reached by another route than the one saved now.
+func (a *app) savedOtherwise(machine string, c *remote.Conn) error {
+	was := a.routes[c]
+	if a.book == nil || was == "" || a.connIDs[machine] == "" {
+		// Typed, not saved, or from before routes were kept.
+		return nil
+	}
+	hosts, err := a.book.Route(machine)
+	if err != nil {
+		return nil
+	}
+	var hops []remote.Config
+	for _, h := range hosts {
+		hops = append(hops, h.Config())
+	}
+	if now := routeOf(hops); now != was {
+		return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", machine, was, now)
+	}
+	return nil
+}
+
 // nameOfConn is the name conn is kept under now, or was when it is
 // kept under none.
 func (a *app) nameOfConn(conn *remote.Conn, was string) string {
@@ -608,13 +657,24 @@ func (a *app) nameOfConn(conn *remote.Conn, was string) string {
 // renamed once that is over: what watches them knows them by their
 // name.
 func (a *app) canRename(old, name string) error {
+	for dialled, route := range a.dialRoutes {
+		if slices.Contains(route, old) {
+			return fmt.Errorf("%s is being gone through to reach %s. Rename it once that is over", old, dialled)
+		}
+	}
 	switch {
 	case a.dialing[old]:
 		return fmt.Errorf("%s is being connected to. Rename it once that is over", old)
-	case a.dialing[name]:
-		return fmt.Errorf("%s is being connected to, and something else cannot take its name", name)
 	case a.windows[old] != nil:
 		return fmt.Errorf("the window %s is connected to. Disconnect it first, then rename it", old)
+	case strings.EqualFold(old, name):
+		// Only the letter case: the same one, whatever it holds.
+		return nil
+	case slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == name }),
+		slices.ContainsFunc(a.st.Tunnels, func(t Tunnel) bool { return t.Machine == name }):
+		return fmt.Errorf("something is still open on %s, and something else cannot take its name. Close it first", name)
+	case a.dialing[name]:
+		return fmt.Errorf("%s is being connected to, and something else cannot take its name", name)
 	case a.conns[name] != nil || a.windows[name] != nil:
 		return fmt.Errorf("%s is connected already, and something else cannot take its name", name)
 	}
@@ -626,6 +686,20 @@ func (a *app) canRename(old, name string) error {
 // files, its log, its panes, readers, jobs and tunnels' rows. A
 // tunnel's forwarder holds the connection itself, not its name.
 func (a *app) renameMachine(old, name string) {
+	if c := a.conns[old]; c != nil && a.connIDs[old] != a.serverID(name) {
+		// Connected to by typing the same name, not as this server:
+		// that one stays as it is.
+		return
+	}
+	// What was kept under the new name before, a log and a row of a
+	// connection that went, is of another machine, and goes.
+	if !strings.EqualFold(old, name) {
+		delete(a.accounts, name)
+		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == name })
+		delete(a.dropped, name)
+		delete(a.reached, name)
+		a.forgetFar(name)
+	}
 	move := func(m any) {
 		switch m := m.(type) {
 		case map[string]*remote.Conn:
@@ -669,6 +743,11 @@ func (a *app) renameMachine(old, name string) {
 			p.Machine = name
 		}
 	}
+	for _, on := range a.linkNames {
+		if on.get() == old {
+			on.set(name)
+		}
+	}
 	for id, spec := range a.reads {
 		if spec.machine == old {
 			spec.machine = name
@@ -695,5 +774,9 @@ func (a *app) renameMachine(old, name string) {
 	}
 	if c := a.clip; c != nil && c.machine == old {
 		c.machine = name
+	}
+	// Its files say what went wrong by its name.
+	if f, ok := a.remoteFS[name].(interface{ Renamed(string) }); ok {
+		f.Renamed(name)
 	}
 }

@@ -23,9 +23,13 @@ import (
 // loopback, such as a development server's, opens through a tunnel made
 // for it.
 
-// withLinks gives a pane's hooks what follows its links, for a pane on
-// machine.
-func (a *app) withLinks(h shellHooks, machine string) shellHooks {
+// withLinks gives pane id's hooks what follows its links, for a pane
+// on machine, by the name that machine has when a link is followed: it
+// may be renamed meanwhile.
+func (a *app) withLinks(h shellHooks, id, machine string) shellHooks {
+	on := &machineName{}
+	on.set(machine)
+	a.linkNames[id] = on
 	post := func(f func()) {
 		go func() {
 			select {
@@ -36,12 +40,13 @@ func (a *app) withLinks(h shellHooks, machine string) shellHooks {
 	}
 	h.link = func(at string) {
 		post(func() {
-			if err := a.openLink(machine, at); err != nil {
+			if err := a.openLink(on.get(), at); err != nil {
 				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
 	}
 	h.findPath = func(text, dir string) (string, bool, bool) {
+		machine := on.get()
 		if machine == "" {
 			return findOnDisk(text, dir)
 		}
@@ -49,12 +54,32 @@ func (a *app) withLinks(h shellHooks, machine string) shellHooks {
 	}
 	h.openPath = func(at string, isDir bool, line int) {
 		post(func() {
-			if err := a.openPath(machine, at, isDir, line); err != nil {
+			if err := a.openPath(on.get(), at, isDir, line); err != nil {
 				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
 	}
 	return h
+}
+
+// machineName is the name of the machine a pane is on, read as its
+// links are followed, on the window's goroutine, and changed on the
+// program's when the machine is renamed.
+type machineName struct {
+	mu   sync.Mutex
+	name string
+}
+
+func (m *machineName) get() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.name
+}
+
+func (m *machineName) set(name string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.name = name
 }
 
 // openLink opens an address in the browser: through a tunnel when it
@@ -67,7 +92,9 @@ func (a *app) openLink(machine, at string) error {
 	if !far {
 		return openInBrowser(at)
 	}
-	if _, ok := a.conns[machine]; !ok {
+	if _, ok, err := a.connOf(machine); err != nil {
+		return err
+	} else if !ok {
 		return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", machine, at)
 	}
 	local, err := a.tunnelTo(machine, target)

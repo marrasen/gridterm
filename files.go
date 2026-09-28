@@ -369,7 +369,10 @@ func (a *app) filesOpener(machine string) func() (vfs.FS, error) {
 			return vfs.NewSFTP(machine, w, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
 		}
 	}
-	if conn, ok := a.conns[machine]; ok {
+	if conn, ok, err := a.connOf(machine); ok {
+		if err != nil {
+			return func() (vfs.FS, error) { return nil, err }
+		}
 		return func() (vfs.FS, error) {
 			files, err := conn.Files(a.ctx)
 			if err != nil {

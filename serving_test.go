@@ -108,11 +108,12 @@ func TestAnotherWindowWorksInAPaneHere(t *testing.T) {
 		t.Fatal(err)
 	}
 	said := readAll(sess)
-	if _, err := sess.Write([]byte("echo attached-$((2*3))\r")); err != nil {
+	line, want := saysAnswer("attached")
+	if _, err := sess.Write([]byte(line + "\r")); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, a, "the other window to see what it typed run", func() bool { return said.has("attached-6") })
-	if !strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), "attached-6") {
+	waitFor(t, a, "the other window to see what it typed run", func() bool { return said.has(want) })
+	if !strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), want) {
 		t.Fatal("what the other window typed did not reach the pane here")
 	}
 	if size := a.terminal(a.st.Panes[0].ID).Size(); size.Cols != 70 || size.Rows != 20 {
@@ -279,9 +280,10 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	b.handle(AttachWindow{Window: addr, ID: first.ID})
 	pumpBoth(t, a, b, "the pane attached", func() bool { return len(b.st.Panes) == 2 })
 	there := b.terminal(b.st.Panes[1].ID)
-	there.Paste("echo from-b-$((3*3))\r")
+	line, want := saysAnswer("from-b")
+	there.Paste(line + "\r")
 	pumpBoth(t, a, b, "the command to run there", func() bool {
-		return strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), "from-b-9") && strings.Contains(there.Text(), "from-b-9")
+		return strings.Contains(a.terminal(a.st.Panes[0].ID).Text(), want) && strings.Contains(there.Text(), want)
 	})
 	if len(b.st.Windows[0].Open) != 0 {
 		t.Fatalf("attached, it is still listed: %+v", b.st.Windows[0].Open)

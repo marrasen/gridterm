@@ -18,7 +18,8 @@ import (
 )
 
 // agentApp is the program side with one terminal pane, p1, running
-// /bin/sh, shared with an agent, and the code for the share.
+// the local shell, shared with an agent, and the code for the share.
+// That shell is /bin/sh on Unix and cmd.exe on Windows.
 func agentApp(t *testing.T) (a *app, code string) {
 	t.Helper()
 	t.Setenv("SHELL", "/bin/sh")
@@ -86,19 +87,20 @@ func TestAnAgentTypesIntoASharedPaneAndReadsItBack(t *testing.T) {
 	}
 	id := sh.Panes[0].ID
 	var err error
-	asAgent(t, a, func() { err = c.Send(id, "echo hi-$((40+2))", []string{"Enter"}) })
+	line, want := saysAnswer("hi")
+	asAgent(t, a, func() { err = c.Send(id, line, []string{"Enter"}) })
 	if err != nil {
 		t.Fatal(err)
 	}
 	var look agent.Look
 	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(look.Screen, "hi-42") && time.Now().Before(deadline) {
+	for !strings.Contains(look.Screen, want) && time.Now().Before(deadline) {
 		asAgent(t, a, func() { look, err = c.Read(id, 0) })
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if !strings.Contains(look.Screen, "hi-42") {
+	if !strings.Contains(look.Screen, want) {
 		t.Fatalf("the agent read %q", look.Screen)
 	}
 	if a.st.Share.Panes[0].Note != "an agent is working here" {

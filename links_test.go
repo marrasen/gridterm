@@ -40,7 +40,7 @@ func TestCtrlClickOpensAnAddressInTheBrowser(t *testing.T) {
 	openInBrowser = func(at string) error { opened <- at; return nil }
 	t.Cleanup(func() { openInBrowser = was })
 	id := a.st.Panes[0].ID
-	a.terminal(id).Paste("clear; echo https://example.com/docs\r")
+	a.terminal(id).Paste(clearAndEcho("https://example.com/docs") + "\r")
 	ctrlClick(t, a, id, "https://example.com/docs")
 	var got string
 	waitFor(t, a, "the browser", func() bool {
@@ -63,7 +63,7 @@ func TestCtrlClickOpensAFileInTheReader(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := a.st.Panes[0].ID
-	a.terminal(id).Paste("clear; echo " + file + "\r")
+	a.terminal(id).Paste(clearAndEcho(file) + "\r")
 	ctrlClick(t, a, id, file)
 	waitFor(t, a, "the reader", func() bool {
 		for _, r := range a.st.Readers {
@@ -120,8 +120,8 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	a, _ := agentApp(t)
 	id := a.st.Panes[0].ID
 	// Typed at the prompt, so the numbers start a line of their own.
-	waitFor(t, a, "the prompt", func() bool { return strings.Contains(a.terminal(id).Text(), "$") })
-	a.terminal(id).Paste("seq 1 300\r")
+	waitFor(t, a, "the prompt", func() bool { return strings.Contains(a.terminal(id).Text(), promptEnd()) })
+	a.terminal(id).Paste(countTo("300") + "\r")
 	waitFor(t, a, "the numbers", func() bool { return strings.Contains(a.terminal(id).AllText(), "\n300\n") })
 	a.handle(ShowScrollback{Pane: id})
 	if len(a.st.Panes) != 2 || a.st.Panes[1].Kind != kindReader {

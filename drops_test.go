@@ -21,7 +21,7 @@ func TestFilesDroppedOnAShellThatSaidNoFolderAreTyped(t *testing.T) {
 
 func TestFilesDroppedOnAShellGoIntoItsFolder(t *testing.T) {
 	here, from := t.TempDir(), t.TempDir()
-	a, sess := localPane(t, "\x1b]7;file://localhost"+here+"\x07", "/bin/bash")
+	a, sess := localPane(t, saysFolder(here), "/bin/bash")
 	waitFor(t, a, "the shell to say where it is", func() bool {
 		dir, _ := a.terminal("p1").Dir()
 		return dir == here

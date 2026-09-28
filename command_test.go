@@ -17,35 +17,43 @@ func TestACommandRunsInAPaneOfItsOwnAndAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.settings = set
-	a.handle(RunCommand{Line: "echo command-ran", Keep: true})
-	if len(a.st.Panes) != 2 || !a.st.Panes[1].Command || a.st.Panes[1].Title != "echo command-ran" {
-		t.Fatalf("run, the panes are %+v", a.st.Panes)
+	line := echoCommand("command-ran")
+	a.handle(RunCommand{Line: line, Keep: true})
+	if len(a.st.Panes) != 2 || !a.st.Panes[1].Command || a.st.Panes[1].Title != line {
+		t.Fatalf("run, the panes are %+v; notices %+v", a.st.Panes, a.st.Notices)
 	}
-	if len(a.st.SavedCommands) != 1 || a.st.SavedCommands[0].Line != "echo command-ran" {
+	if len(a.st.SavedCommands) != 1 || a.st.SavedCommands[0].Line != line {
 		t.Fatalf("kept, the commands are %+v", a.st.SavedCommands)
 	}
 	id := a.st.Panes[1].ID
-	waitFor(t, a, "the question", func() bool {
-		return a.terminal(id).Asking() == "echo command-ran finished. Exit 0. Run it again?"
-	})
+	question := line + " finished. Exit 0. Run it again?"
+	waitFor(t, a, "the question", func() bool { return a.terminal(id).Asking() == question })
 	if err := a.startAgain(id); err != nil {
 		t.Fatal(err)
 	}
+	// Run again, the pane asks nothing until the command has ended
+	// again, so the question coming back is the second run's end.
+	// Counting the output twice failed on Windows, where the first
+	// run's output can be gone from the screen by then.
+	if got := a.terminal(id).Asking(); got != "" {
+		t.Fatalf("run again, the pane still asks %q", got)
+	}
 	waitFor(t, a, "it to run again", func() bool {
-		return strings.Count(a.terminal(id).Text(), "command-ran") == 2 && a.terminal(id).Asking() != ""
+		return a.terminal(id).Asking() == question && strings.Contains(a.terminal(id).Text(), "command-ran")
 	})
 	a.handle(RunSavedCommand{Saved: a.st.SavedCommands[0]})
-	if len(a.st.Panes) != 3 || a.st.Panes[2].Title != "echo command-ran" {
+	if len(a.st.Panes) != 3 || a.st.Panes[2].Title != line {
 		t.Fatalf("run from the saved list, the panes are %+v", a.st.Panes)
 	}
 }
 
 func TestAShellCanBeKeptForNewTerminals(t *testing.T) {
 	was := findShells
+	plain, echoer := plainShell(), shellSaying("i-am-the-echoer")
 	findShells = func() ([]shellfind.Shell, error) {
 		return []shellfind.Shell{
-			{ID: "login", Title: "sh", Path: "/bin/sh"},
-			{ID: "echoer", Title: "Echoer", Path: "/bin/sh", Args: []string{"-c", "echo i-am-the-echoer; sleep 5"}},
+			{ID: "login", Title: "Plain", Path: plain[0]},
+			{ID: "echoer", Title: "Echoer", Path: echoer[0], Args: echoer[1:]},
 		}, nil
 	}
 	t.Cleanup(func() { findShells = was })
@@ -58,12 +66,18 @@ func TestAShellCanBeKeptForNewTerminals(t *testing.T) {
 	a.scanShells()
 	waitFor(t, a, "the shells", func() bool { return len(a.st.Shells) == 2 })
 	a.handle(OpenShellNamed{ID: "echoer"})
+	if len(a.st.Panes) != 2 {
+		t.Fatalf("opened, the panes are %+v; notices %+v", a.st.Panes, a.st.Notices)
+	}
 	waitFor(t, a, "the echoer", func() bool { return strings.Contains(a.terminal(a.st.Panes[1].ID).Text(), "i-am-the-echoer") })
 	a.handle(PickShell{ID: "echoer"})
 	if id, ok := set.Shell(); !ok || id != "echoer" || a.st.ChosenShell != "echoer" {
 		t.Fatalf("kept, the settings say %q, %v", id, ok)
 	}
 	a.handle(NewTerminal{})
+	if len(a.st.Panes) != 3 {
+		t.Fatalf("a new terminal, the panes are %+v; notices %+v", a.st.Panes, a.st.Notices)
+	}
 	waitFor(t, a, "the echoer again", func() bool { return strings.Contains(a.terminal(a.st.Panes[2].ID).Text(), "i-am-the-echoer") })
 	a.handle(PickShell{})
 	if _, ok := set.Shell(); ok {

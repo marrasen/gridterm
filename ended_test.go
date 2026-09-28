@@ -46,8 +46,9 @@ func TestAPaneStaysWhenItsShellEndsAndStartsAgain(t *testing.T) {
 	if a.st.Panes[0].Ended || a.terminal(id).Exited() {
 		t.Fatal("started again, the pane still says it ended")
 	}
-	a.terminal(id).Paste("echo back-$((1+1))\r")
-	waitFor(t, a, "the new shell to answer", func() bool { return strings.Contains(a.terminal(id).Text(), "back-2") })
+	line, want := saysAnswer("back")
+	a.terminal(id).Paste(line + "\r")
+	waitFor(t, a, "the new shell to answer", func() bool { return strings.Contains(a.terminal(id).Text(), want) })
 }
 
 func TestEnterClosesAPaneWhoseShellEnded(t *testing.T) {
@@ -84,7 +85,7 @@ func TestAnAgentRestartsAPaneOnlyWhenAllowed(t *testing.T) {
 func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 	a, _ := agentApp(t)
 	id := a.st.Panes[0].ID
-	a.argvs[id] = []string{"/bin/sh", "-c", "echo the-picked-one; exec /bin/sh"}
+	a.argvs[id] = shellSaying("the-picked-one")
 	shellEnds(t, a, id, "0")
 	if err := a.startAgain(id); err != nil {
 		t.Fatal(err)

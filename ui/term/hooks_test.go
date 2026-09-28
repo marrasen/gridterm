@@ -52,6 +52,45 @@ func TestAProgramsClipboardIsHandedOn(t *testing.T) {
 	}
 }
 
+// A host that hands a title to a goroutine busy reading the screen is
+// told with the screen free. The window's loop does this: a flood of
+// titles fills its queue, and it reads a pane before it takes the next.
+func TestATitleIsToldWithTheScreenFree(t *testing.T) {
+	sess := newFakeSession()
+	titles := make(chan string)
+	term, err := New(Config{Session: sess, Size: ui.Size{Cols: 20, Rows: 3}, OnTitle: func(s string) { titles <- s }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = term.Close() }()
+	sess.out <- []byte("\x1b]0;one\x07hello")
+	read := make(chan string, 1)
+	go func() {
+		// Held until the screen has something on it, then read while
+		// the title waits to be taken.
+		for !strings.HasPrefix(term.Text(), "hello") {
+			time.Sleep(time.Millisecond)
+		}
+		read <- term.Text()
+	}()
+	select {
+	case got := <-read:
+		if !strings.HasPrefix(got, "hello") {
+			t.Fatalf("the screen read %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the screen could not be read while the title waited")
+	}
+	select {
+	case got := <-titles:
+		if got != "one" {
+			t.Fatalf("the title was %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the title was never told")
+	}
+}
+
 func TestTheMouseIsTakenWhileAProgramAsksAndShiftIsUp(t *testing.T) {
 	sess := newFakeSession()
 	said := make(chan struct{}, 4)

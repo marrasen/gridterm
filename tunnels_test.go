@@ -2,8 +2,10 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"net"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -95,6 +97,7 @@ func echoServer(t *testing.T) string {
 // would, and fails after five seconds.
 func waitFor(t *testing.T, a *app, what string, ok func() bool) {
 	t.Helper()
+	defer stuckAfter(what, 15*time.Second)()
 	deadline := time.After(5 * time.Second)
 	for !ok() {
 		select {
@@ -105,6 +108,18 @@ func waitFor(t *testing.T, a *app, what string, ok func() bool) {
 			t.Fatalf("waited five seconds for %s", what)
 		}
 	}
+}
+
+// stuckAfter ends the test run when a wait is still going after d, and
+// prints every goroutine's stack. A check that blocks never gets back
+// to the wait's own deadline, and the run would hang until go test's
+// timeout. Calling what it returns calls this off.
+func stuckAfter(what string, d time.Duration) (stop func() bool) {
+	return time.AfterFunc(d, func() {
+		stacks := make([]byte, 1<<20)
+		stacks = stacks[:runtime.Stack(stacks, true)]
+		panic(fmt.Sprintf("the wait for %s is stuck after %s\n\n%s", what, d, stacks))
+	}).Stop
 }
 
 // say writes what down c and reads the answer.

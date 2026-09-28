@@ -209,6 +209,7 @@ func TestDisconnectingHangsUpOnTheOtherWindow(t *testing.T) {
 // pumpBoth runs what both programs' goroutines send them until ok.
 func pumpBoth(t *testing.T, a, b *app, what string, ok func() bool) {
 	t.Helper()
+	defer stuckAfter(what, 20*time.Second)()
 	deadline := time.After(10 * time.Second)
 	for !ok() {
 		select {

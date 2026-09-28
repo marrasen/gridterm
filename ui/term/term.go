@@ -59,17 +59,16 @@ type Config struct {
 
 	// OnTitle is called when the program sets the window title, and
 	// OnBell on BEL. Both arrive from the goroutine reading the session,
-	// while it holds the emulator lock, so neither may call back into
-	// the terminal: the lock is not reentrant and the reader would
-	// deadlock against itself. Hand the value to the drawing goroutine
-	// and return.
+	// once it has let go of the emulator lock. One that blocks holds up
+	// the reading, and nothing else: whoever it waits on can read the
+	// screen meanwhile.
 	OnTitle func(string)
 	OnBell  func()
 
 	// OnCommandDone is called when the shell says a command finished,
 	// with its exit status, whether the shell gave one, and how long it
 	// ran. It needs a shell that marks its commands, with OSC 133 or
-	// OSC 633, and arrives as OnBell does, holding the same lock.
+	// OSC 633, and arrives as OnBell does.
 	OnCommandDone func(status int, ok bool, took time.Duration)
 
 	// OnExit is called when the shell goes, from the goroutine that
@@ -118,7 +117,7 @@ type Config struct {
 	OnOutput func()
 
 	// OnClipboard is given what a program puts on the clipboard with
-	// OSC 52. Nil ignores it. Called the same way as OnOutput.
+	// OSC 52. Nil ignores it. It arrives as OnBell does.
 	OnClipboard func(string)
 
 	// Now is the clock the cursor's hide is measured against. Nil means
@@ -166,6 +165,12 @@ type Terminal struct {
 	// commandFrom is when the running command started. Only the reader
 	// goroutine touches it, from the emulator's callbacks.
 	commandFrom time.Time
+
+	// toTell is what the host is to be told of what the reader parsed:
+	// titles, bells, finished commands and clipboards, in order. Filled
+	// under mu and run by the reader once it lets go, because the host
+	// hands them to a goroutine that may be waiting for mu itself.
+	toTell []func()
 
 	// secret is the ask the pane is waiting on, and is nil when nobody is
 	// waiting. Its own lock, because the goroutine waiting is not the one
@@ -325,24 +330,29 @@ func New(cfg Config) (*Terminal, error) {
 			kept := title
 			t.title.Store(&kept)
 			if cfg.OnTitle != nil {
-				cfg.OnTitle(title)
+				t.later(func() { cfg.OnTitle(title) })
 			}
 		},
 		Bell: func() {
 			if cfg.OnBell != nil {
-				cfg.OnBell()
+				t.later(cfg.OnBell)
 			}
 		},
 		// Device reports are produced while the reader holds the lock, so
 		// they must not touch the session directly: a program that has
 		// stopped reading would block the write and deadlock the reader
 		// against every other user of the lock.
-		Reply:        t.send,
-		ClipboardSet: cfg.OnClipboard,
+		Reply: t.send,
+		ClipboardSet: func(text string) {
+			if cfg.OnClipboard != nil {
+				t.later(func() { cfg.OnClipboard(text) })
+			}
+		},
 		CommandStart: func() { t.commandFrom = time.Now() },
 		CommandDone: func(status int, ok bool) {
 			if cfg.OnCommandDone != nil && !t.commandFrom.IsZero() {
-				cfg.OnCommandDone(status, ok, time.Since(t.commandFrom))
+				took := time.Since(t.commandFrom)
+				t.later(func() { cfg.OnCommandDone(status, ok, took) })
 			}
 		},
 	})
@@ -1575,6 +1585,10 @@ func (t *Terminal) writeLoop(r *run) {
 	}
 }
 
+// later keeps f to run once the reader lets go of the emulator lock.
+// The emulator calls back with the lock held.
+func (t *Terminal) later(f func()) { t.toTell = append(t.toTell, f) }
+
 // readLoop copies this run's session output into the emulator until it
 // ends.
 func (t *Terminal) readLoop(r *run) {
@@ -1593,7 +1607,12 @@ func (t *Terminal) readLoop(r *run) {
 		// Counted under the lock, so a reader that takes the lock sees
 		// the screen and the count from the same moment.
 		t.said.Add(1)
+		told := t.toTell
+		t.toTell = nil
 		t.mu.Unlock()
+		for _, f := range told {
+			f()
+		}
 	}}
 	for {
 		n, err := r.sess.Read(buf)

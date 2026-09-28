@@ -23,6 +23,12 @@ import (
 // An update that runs too long, or grows too large, is handed over as
 // it stands, so a program that dies part way through one cannot stop
 // the screen for good.
+//
+// A question the emulator answers, such as where the cursor is, ends
+// the hold too: what is held goes over with it, and the rest of that
+// update goes over as it comes. A program that asks inside an update
+// and waits for the answer would otherwise wait out syncLimit on every
+// frame.
 
 // An update begins with a private mode set, CSI ? ... h, and ends with
 // a reset, CSI ? ... l, whose parameters include 2026, whatever else
@@ -108,7 +114,9 @@ func (s *syncer) feed(p []byte) (wrote bool, began uint64) {
 			began = s.update
 			s.held = append(s.held[:0], data[start:i+1]...)
 			from = i + 1
-		case m == markEnd && s.on:
+		case (m == markEnd || m == markAsk) && s.on:
+			// A question ends the hold as well, so the emulator answers
+			// it now rather than once the update is over.
 			s.held = append(s.held, data[from:i+1]...)
 			s.release()
 			wrote = true
@@ -200,6 +208,11 @@ const (
 	markNone mark = iota
 	markBegin
 	markEnd
+	// markAsk ends a question the emulator answers: a report of the
+	// cursor or the device (CSI n), the device's attributes (CSI c), a
+	// mode (CSI $ p), the version (CSI > q), or a colour (OSC 4, 10
+	// and 11 with a ?).
+	markAsk
 )
 
 // Control bytes the scanner acts on.
@@ -211,12 +224,16 @@ const (
 )
 
 // scanner follows the escape sequences in a stream a byte at a time,
-// far enough to find the markers of an update and the strings they
-// could hide in. It keeps nothing of a sequence but what it needs.
+// far enough to find the markers of an update, the questions asked
+// inside one, and the strings they could hide in. It keeps nothing of
+// a sequence but what it needs.
 type scanner struct {
 	state scanState
 	// osc says the string is an OSC, which BEL ends as well as ST.
-	osc bool
+	// oscNum is the OSC's number, while oscNumber says it is being
+	// read, and oscAsk says the OSC holds a ?.
+	osc, oscNumber, oscAsk bool
+	oscNum                 int
 
 	// Of the CSI being scanned: prefix is its private marker, such as
 	// '?', and middle its last intermediate byte, zero for none. params
@@ -246,6 +263,7 @@ func (sc *scanner) step(c byte) mark {
 			sc.digits, sc.has, sc.bad = true, false, false
 		case c == ']':
 			sc.state, sc.osc = inString, true
+			sc.oscNumber, sc.oscAsk, sc.oscNum = true, false, 0
 		case c == 'P' || c == '_' || c == '^' || c == 'X':
 			sc.state, sc.osc = inString, false
 		case c >= 0x20 && c <= 0x2f:
@@ -263,17 +281,54 @@ func (sc *scanner) step(c byte) mark {
 		switch {
 		case c == esc:
 			sc.state = inStringEscape
-		case c == bel && sc.osc, c == can, c == sub:
+		case c == bel && sc.osc:
 			sc.state = inText
+			return sc.oscEnd()
+		case c == can, c == sub:
+			sc.state = inText
+		case sc.osc:
+			sc.oscByte(c)
 		}
 	case inStringEscape:
 		// ST ends the string. Any other byte after an ESC is part of it:
 		// tmux doubles each ESC it passes through.
-		if c == '\\' || c == can || c == sub {
+		switch {
+		case c == '\\':
 			sc.state = inText
-		} else {
+			if sc.osc {
+				return sc.oscEnd()
+			}
+		case c == can, c == sub:
+			sc.state = inText
+		default:
 			sc.state = inString
+			if sc.osc {
+				sc.oscByte(c)
+			}
 		}
+	}
+	return markNone
+}
+
+// oscByte takes a byte of an OSC.
+func (sc *scanner) oscByte(c byte) {
+	switch {
+	case c == '?':
+		sc.oscAsk = true
+	case !sc.oscNumber:
+	case c >= '0' && c <= '9' && sc.oscNum < 1e6:
+		sc.oscNum = sc.oscNum*10 + int(c-'0')
+	case c == ';':
+		sc.oscNumber = false
+	default:
+		sc.oscNumber, sc.oscNum = false, -1
+	}
+}
+
+// oscEnd reports what an OSC that has just ended asked.
+func (sc *scanner) oscEnd() mark {
+	if sc.oscAsk && (sc.oscNum == 4 || sc.oscNum == 10 || sc.oscNum == 11) {
+		return markAsk
 	}
 	return markNone
 }
@@ -319,6 +374,9 @@ func (sc *scanner) csi(c byte) mark {
 	case c >= 0x40 && c <= 0x7e:
 		sc.state = inText
 		sc.endParam()
+		if sc.asks(c) {
+			return markAsk
+		}
 		if sc.bad || sc.prefix != '?' || sc.middle != 0 || !sc.has {
 			return markNone
 		}
@@ -335,6 +393,20 @@ func (sc *scanner) csi(c byte) mark {
 		sc.control(c)
 	}
 	return markNone
+}
+
+// asks reports whether a CSI ending in c is a question the emulator
+// answers.
+func (sc *scanner) asks(c byte) bool {
+	switch {
+	case sc.middle == 0 && (c == 'n' || c == 'c'):
+		return true
+	case sc.middle == '$' && c == 'p':
+		return true
+	case sc.middle == 0 && sc.prefix == '>' && c == 'q':
+		return true
+	}
+	return false
 }
 
 // endParam finishes the parameter being read.

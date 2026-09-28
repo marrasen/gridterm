@@ -212,3 +212,48 @@ func TestEveryByteReachesTheEmulatorInOrder(t *testing.T) {
 		}
 	}
 }
+
+// A question the emulator answers, asked inside an update, reaches the
+// emulator at once, with the update so far: a program waiting for the
+// answer would otherwise wait out the update's time on every frame.
+// The rest of that update goes over as it comes.
+func TestAQuestionInsideAnUpdateIsAnsweredAtOnce(t *testing.T) {
+	for _, ask := range []string{
+		"\x1b[6n", "\x1b[?6n", "\x1b[5n", "\x1b[c", "\x1b[0c", "\x1b[>c",
+		"\x1b[?2026$p", "\x1b[4$p", "\x1b[>q", "\x1b[>0q",
+		"\x1b]11;?\x07", "\x1b]10;?\x1b\\", "\x1b]4;1;?\x07",
+	} {
+		for _, size := range []int{1, 3, 64} {
+			s, got := newSyncer()
+			feedAll(s, []byte("\x1b[?2026hhalf"+ask), size)
+			if s.on {
+				t.Errorf("%q in chunks of %d: the update is still held", ask, size)
+				continue
+			}
+			if all := bytes.Join(*got, nil); string(all) != "\x1b[?2026hhalf"+ask {
+				t.Errorf("%q in chunks of %d: handed over %q", ask, size, all)
+			}
+			*got = nil
+			feedAll(s, []byte("rest\x1b[?2026l"), size)
+			if all := bytes.Join(*got, nil); string(all) != "rest\x1b[?2026l" {
+				t.Errorf("%q in chunks of %d: the rest came over as %q", ask, size, all)
+			}
+		}
+	}
+}
+
+// Anything else inside an update stays held, questions of a kind the
+// emulator leaves unanswered and colours being set among them.
+func TestTheRestOfAnUpdateStaysHeld(t *testing.T) {
+	for _, say := range []string{
+		"\x1b[31m", "\x1b[2J", "\x1b[?25l", "\x1b[1;1H", "\x1b[6 q",
+		"\x1b]11;rgb:00/00/00\x07", "\x1b]0;what?\x07", "\x1bP$qm\x1b\\",
+		"\x1b]8;;http://x/?q=1\x1b\\",
+	} {
+		s, got := newSyncer()
+		feedAll(s, []byte("\x1b[?2026h"+say), 1)
+		if !s.on || len(*got) != 0 {
+			t.Errorf("%q: the update went over as %q", say, *got)
+		}
+	}
+}

@@ -39,10 +39,12 @@ const syncMode = 2026
 
 // syncLimit is the longest an update is held, and syncMost the most
 // bytes it is held to. A frame of a full-screen animation at true
-// colour is under a megabyte.
+// colour is under a megabyte. A held update is parsed in one write,
+// under the terminal's lock, so the cap also bounds how long that lock
+// is held.
 const (
 	syncLimit = 150 * time.Millisecond
-	syncMost  = 8 << 20
+	syncMost  = 1 << 20
 )
 
 // carryMost is the longest start of a sequence held back from one read
@@ -177,11 +179,17 @@ func (s *syncer) flush() bool {
 }
 
 // release hands the update over and ends it. It runs with mu held.
+// The buffer is kept for the next update, unless this one grew it past
+// syncMost. That one is dropped, so a run keeps at most syncMost
+// between updates.
 func (s *syncer) release() {
 	if len(s.held) > 0 {
 		s.write(s.held)
 	}
 	s.held, s.on = s.held[:0], false
+	if cap(s.held) > syncMost {
+		s.held = nil
+	}
 }
 
 // scanState is where a scanner is in the escape sequences of the

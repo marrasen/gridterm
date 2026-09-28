@@ -257,3 +257,20 @@ func TestTheRestOfAnUpdateStaysHeld(t *testing.T) {
 		}
 	}
 }
+
+// An update is held to a megabyte, a frame's size, and the memory an
+// unusually large one took is given back once it is handed over.
+func TestALargeUpdateIsHandedOverAndForgotten(t *testing.T) {
+	s, got := newSyncer()
+	s.feed([]byte("\x1b[?2026h"))
+	line := bytes.Repeat([]byte("x"), 64<<10)
+	for range 24 {
+		s.feed(line)
+	}
+	if s.on || len(*got) == 0 {
+		t.Fatalf("an update of 1.5 MiB is still held")
+	}
+	if c := cap(s.held); c > 1<<20 {
+		t.Fatalf("the syncer keeps %d bytes after the update went over", c)
+	}
+}

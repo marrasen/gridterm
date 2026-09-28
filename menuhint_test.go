@@ -16,9 +16,9 @@ func TestAMenuLineSaysItsFullTitleAtTheBottom(t *testing.T) {
 	if win.status.hinted != "" {
 		t.Fatalf("with nothing highlighted, the hint is %q", win.status.hinted)
 	}
-	// File's second line is Pane, under the caption Close.
-	for range 2 {
-		lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})
+	// Right goes into File, at its first line, and Down to its second, Pane, under the caption Close.
+	for _, k := range []gi.Key{gi.KeyRight, gi.KeyDown} {
+		lastWindow.Input(gi.KeyPress{Key: k})
 		frame()
 	}
 	if win.status.hinted != "Close Pane" {

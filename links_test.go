@@ -164,3 +164,74 @@ func TestAWindowsPathFromTheTopOfADriveStandsAlone(t *testing.T) {
 		}
 	}
 }
+
+// A path in a pane on a server is found and opened with no file pane
+// open there: the server's files are opened for it.
+func TestAPathOnAServerOpensWithNoFilePaneThere(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	if a.fsFor("srv") != nil {
+		t.Fatal("the server's files were open before anything asked for them")
+	}
+	file := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(file, []byte("one\ntwo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Asked again each frame, as the pointer rests on the path.
+	var at string
+	var found bool
+	waitFor(t, a, "the path to be found", func() bool {
+		at, _, found = a.findFar("srv", file, "")
+		return found
+	})
+	if at != file {
+		t.Fatalf("found %q, want %q", at, file)
+	}
+	if err := a.openPath("srv", at, false, 0); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the reader", func() bool {
+		for _, r := range a.st.Readers {
+			if r.Path == file && len(r.Lines) >= 2 {
+				return true
+			}
+		}
+		return false
+	})
+	if len(a.st.Notices) != 0 {
+		t.Fatalf("it said %+v", a.st.Notices)
+	}
+	// The connection gone, what the server said is forgotten.
+	_ = a.conns["srv"].Close()
+	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil && a.fsFor("srv") == nil })
+	a.far.mu.Lock()
+	defer a.far.mu.Unlock()
+	if len(a.far.known) != 0 {
+		t.Fatalf("after the connection went, it still knew %v", a.far.known)
+	}
+}
+
+// A path in a pane on a server that is not connected is not looked
+// for, and connecting is left to the user.
+func TestAPathOnAServerNotConnectedIsNotLookedFor(t *testing.T) {
+	a, _ := dialApp(t)
+	for range 3 {
+		if _, _, found := a.findFar("srv", "/etc/hostname", ""); found {
+			t.Fatal("found a path on a server not connected")
+		}
+		waitFor(t, a, "the ask to finish", func() bool {
+			a.far.mu.Lock()
+			defer a.far.mu.Unlock()
+			return len(a.far.asking) == 0
+		})
+	}
+	if len(a.dialing) != 0 || len(a.conns) != 0 || len(a.st.Asks) != 0 {
+		t.Fatalf("looking for a path connected: dialing %v, connections %v, asks %v", a.dialing, a.conns, a.st.Asks)
+	}
+	a.far.mu.Lock()
+	defer a.far.mu.Unlock()
+	if len(a.far.known) != 0 {
+		t.Fatalf("not knowing was remembered: %v", a.far.known)
+	}
+}

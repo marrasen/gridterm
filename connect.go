@@ -178,6 +178,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
 						delete(a.remoteFS, name)
+						a.forgetFar(name)
 					}
 					if a.letGo[name] {
 						delete(a.letGo, name)

@@ -14,6 +14,7 @@ import (
 	"sync"
 
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // Links in a terminal: Ctrl and a click on an address opens it in the
@@ -243,28 +244,67 @@ func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
 	a.far.asking[key] = true
 	go func() {
 		a.events <- func() {
-			f := a.fsFor(machine)
 			answer := func(p farPath) {
 				a.far.mu.Lock()
 				defer a.far.mu.Unlock()
 				delete(a.far.asking, key)
 				a.far.known[key] = p
 			}
-			if f == nil {
-				answer(farPath{})
+			// Not knowing is not remembered: it is asked again.
+			giveUp := func() {
+				a.far.mu.Lock()
+				defer a.far.mu.Unlock()
+				delete(a.far.asking, key)
+			}
+			look := func(f vfs.FS) {
+				go func() {
+					e, err := f.Stat(vfs.Spelled(f, at))
+					if err != nil {
+						answer(farPath{})
+						return
+					}
+					answer(farPath{at: at, isDir: e.IsDir(), found: true})
+				}()
+			}
+			if f := a.fsFor(machine); f != nil {
+				look(f)
+				return
+			}
+			// The machine's files are opened for it, quietly, over the
+			// connection there is: a path under the pointer is no reason
+			// to connect, or to say anything when the files will not
+			// open.
+			open := a.filesOpener(machine)
+			if open == nil {
+				giveUp()
 				return
 			}
 			go func() {
-				e, err := f.Stat(at)
-				if err != nil {
-					answer(farPath{})
-					return
+				f, err := open()
+				a.events <- func() {
+					if err != nil {
+						giveUp()
+						return
+					}
+					look(a.keepFiles(machine, f))
 				}
-				answer(farPath{at: at, isDir: e.IsDir(), found: true})
 			}()
 		}
 	}()
 	return "", false, false
+}
+
+// forgetFar forgets what a machine said about its paths, once the files
+// it was said through have gone: a machine reached again under the same
+// name may be another, and its files may have changed meanwhile.
+func (a *app) forgetFar(machine string) {
+	a.far.mu.Lock()
+	defer a.far.mu.Unlock()
+	for key := range a.far.known {
+		if strings.HasPrefix(key, machine+"\x00") {
+			delete(a.far.known, key)
+		}
+	}
 }
 
 // windowsAbs reports whether a path starts at the top of a Windows
@@ -281,13 +321,14 @@ func windowsAbs(p string) bool {
 // openPath opens a path a link named: a folder in a file pane, a file
 // in the reader at line.
 func (a *app) openPath(machine, at string, isDir bool, line int) error {
-	f := a.fsFor(machine)
-	if f == nil {
-		return fmt.Errorf("the files on %s are not open; open a file pane there first", machine)
-	}
-	if !isDir {
-		a.readOn(machine, f, at, false, line, placement{})
-		return nil
-	}
-	return a.openFilesOn(machine, f, at)
+	// A server's files are opened first when no file pane has yet.
+	return a.withFiles(machine, func(f vfs.FS) {
+		if !isDir {
+			a.readOn(machine, f, at, false, line, placement{})
+			return
+		}
+		if err := a.openFilesOn(machine, f, at); err != nil {
+			a.failed("Couldn't open "+at, err.Error())
+		}
+	})
 }

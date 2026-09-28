@@ -192,6 +192,7 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		if key == name || strings.HasPrefix(key, name+farSep) {
 			_ = f.Close()
 			delete(a.remoteFS, key)
+			a.forgetFar(key)
 		}
 	}
 	said := "Its panes here have ended."

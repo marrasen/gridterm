@@ -310,6 +310,12 @@ func (a *app) withFiles(machine string, then func(vfs.FS)) error {
 // withFilesOr is withFiles, running failed when the files could not be
 // opened after it returned.
 func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) error {
+	if c := a.conns[machine]; c != nil {
+		// Its files came over the connection as it was saved then.
+		if err := a.savedOtherwise(machine, c); err != nil {
+			return err
+		}
+	}
 	if f := a.fsFor(machine); f != nil {
 		then(f)
 		return nil

@@ -569,6 +569,10 @@ type app struct {
 	far pathsFar
 	// typed is what agents typed, by pane.
 	typed map[string]*typedLog
+	// restarts and endings count each pane's starts again and its ends,
+	// for a window that asked for one to hear how it went.
+	restarts map[string]int
+	endings  map[string]int
 	// linkNames are the machine each terminal pane's links go to, by
 	// pane, changed as that machine is renamed.
 	linkNames map[string]*machineName
@@ -661,6 +665,8 @@ func newApp(c gunim.Client, sh *shells) *app {
 		reads:       map[string]readSpec{},
 		following:   map[string]bool{},
 		linkNames:   map[string]*machineName{},
+		restarts:    map[string]int{},
+		endings:     map[string]int{},
 		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts:    map[string]*logs.Lines{},
 		wake:        make(chan struct{}, 1),
@@ -1642,6 +1648,8 @@ func (a *app) remove(id string) {
 	delete(a.typed, id)
 	delete(a.reads, id)
 	delete(a.linkNames, id)
+	delete(a.restarts, id)
+	delete(a.endings, id)
 	// A scrollback of it has nothing left to read again, and says so.
 	for rid, r := range a.st.Readers {
 		if r.Of == id && rid != id {

@@ -311,7 +311,9 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 	}
 	d.OnAccept = func() gunim.Intent {
 		// Asked again, with what was typed, if it cannot be gone to.
-		b.asks++
+		// Past any the program has answered, for a pane made again in
+		// another window.
+		b.asks = max(b.asks, b.st.WentTo) + 1
 		b.goingTo, b.goToAsk = path.Text(), b.asks
 		return GoTo{Pane: b.id, Path: path.Text(), Ask: b.asks}
 	}

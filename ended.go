@@ -28,6 +28,7 @@ import (
 // The terminal says so twice, once as the program's output ends and
 // again once its exit status is in.
 func (a *app) paneEnded(id string) {
+	a.endings[id]++
 	t := a.terminal(id)
 	switch {
 	case t == nil:
@@ -143,7 +144,11 @@ func (a *app) startAgain(id string) error {
 				}
 			}
 			if sess == nil && err == nil {
+				moved := farID != "" && a.farHostOf(id) != ""
 				sess, err = w.win.Open(size.Cols, size.Rows, func(n serve.Attached) {
+					if moved {
+						go func() { a.events <- func() { a.onWindowsOwn(id) } }()
+					}
 					go func() { a.events <- func() { a.bindFar(w, n.ID, id) } }()
 				})
 			}
@@ -164,6 +169,8 @@ func (a *app) startAgain(id string) error {
 	}
 	conn, ok, err := a.connOf(machine)
 	if err != nil {
+		// Said, and asked again once it can be.
+		a.paneEnded(id)
 		return err
 	}
 	if !ok {
@@ -188,6 +195,10 @@ func (a *app) startAgain(id string) error {
 			}
 			if err != nil {
 				a.failed("Couldn't start it again", err.Error())
+				// The question goes back up, to be answered again.
+				if a.terminal(id) == t {
+					a.paneEnded(id)
+				}
 			}
 		}
 	}()
@@ -213,6 +224,7 @@ func (a *app) restarted(id string, t *uiterm.Terminal, sess session.Session) err
 		return errors.Join(err, sess.Close())
 	}
 	a.setPane(id, func(p *Pane) { p.Ended = false })
+	a.restarts[id]++
 	return nil
 }
 
@@ -324,4 +336,20 @@ func (a *app) bindFar(w *remoteWin, farID, pane string) {
 	}
 	w.bound[farID] = pane
 	a.showWindows()
+}
+
+// farHostOf is the machine beyond a window pane id ran on, "" for the
+// window's own. Read on the program's goroutine only.
+func (a *app) farHostOf(id string) string { return a.farHost[id] }
+
+// onWindowsOwn marks pane id as on its window's own machine now, having
+// started again there in place of one on a machine beyond it, which
+// had closed: its files and links go there, and it says so.
+func (a *app) onWindowsOwn(id string) {
+	was := a.farHost[id]
+	delete(a.farHost, id)
+	a.setPane(id, func(p *Pane) { p.On = "" })
+	if t := a.terminal(id); t != nil && was != "" {
+		t.Say("It ran on " + was + ", where it is not open any more: this one is on the window's own machine.")
+	}
 }

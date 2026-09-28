@@ -658,7 +658,7 @@ func (a *app) nameOfConn(conn *remote.Conn, was string) string {
 // name.
 func (a *app) canRename(old, name string) error {
 	for dialled, route := range a.dialRoutes {
-		if slices.Contains(route, old) {
+		if dialled != old && slices.Contains(route, old) {
 			return fmt.Errorf("%s is being gone through to reach %s. Rename it once that is over", old, dialled)
 		}
 	}
@@ -667,9 +667,6 @@ func (a *app) canRename(old, name string) error {
 		return fmt.Errorf("%s is being connected to. Rename it once that is over", old)
 	case a.windows[old] != nil:
 		return fmt.Errorf("the window %s is connected to. Disconnect it first, then rename it", old)
-	case strings.EqualFold(old, name):
-		// Only the letter case: the same one, whatever it holds.
-		return nil
 	case slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == name }),
 		slices.ContainsFunc(a.st.Tunnels, func(t Tunnel) bool { return t.Machine == name }):
 		return fmt.Errorf("something is still open on %s, and something else cannot take its name. Close it first", name)

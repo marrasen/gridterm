@@ -104,12 +104,9 @@ func TestNothingOpensOnAServerChangedSinceItConnected(t *testing.T) {
 	if err := a.runCommand(RunCommand{Machine: "srv", Line: "true"}); err == nil || !strings.Contains(err.Error(), "Disconnect it first") {
 		t.Fatalf("a command on it said %v", err)
 	}
-	if err := a.withFiles("srv", func(vfs.FS) {}); err != nil {
-		t.Fatal(err)
+	if err := a.withFiles("srv", func(vfs.FS) {}); err == nil || !strings.Contains(err.Error(), "Disconnect it first") {
+		t.Fatalf("its files said %v", err)
 	}
-	waitFor(t, a, "the files to be refused", func() bool {
-		return slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "Disconnect it first") })
-	})
 	if len(a.st.Panes) != panes {
 		t.Fatal("something opened through the connection as it was")
 	}

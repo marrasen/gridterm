@@ -247,7 +247,8 @@ func (a *app) clientWent(c *serve.Client, why error) {
 
 // showServing publishes the serving.
 func (a *app) showServing() {
-	s := Serving{Port: remote.ServePort}
+	// The count of tries goes on, for the windows waiting on theirs.
+	s := Serving{Port: remote.ServePort, Tries: a.st.Serving.Tries}
 	if a.settings != nil {
 		if port, ok := a.settings.ServePort(); ok {
 			s.Port = port
@@ -360,32 +361,37 @@ func (a *app) openFor(cols, rows int) (session.Session, serve.Attached, error) {
 // startAgainFor starts again a pane's program, for a connected window
 // working in it.
 func (a *app) startAgainFor(want serve.Attached) error {
-	if _, err := onApp(a, func() (struct{}, error) {
+	type count struct{ restarts, endings int }
+	was, err := onApp(a, func() (count, error) {
 		if a.terminal(want.ID) == nil {
 			// Closed here: the other window opens one of its own.
-			return struct{}{}, serve.ErrNotOpen
+			return count{}, serve.ErrNotOpen
 		}
-		return struct{}{}, a.startAgain(want.ID)
-	}); err != nil {
+		c := count{a.restarts[want.ID], a.endings[want.ID]}
+		return c, a.startAgain(want.ID)
+	})
+	if err != nil {
 		return err
 	}
-	// Answered once it runs again, so what attaches to it next finds it
-	// running: a shell on a server beyond this window comes back a
-	// moment later, after a password asked here, maybe.
+	// Answered once it has started again, so what attaches to it next
+	// finds it: a shell on a server beyond this window comes back a
+	// moment later, after a password asked here, maybe. One that could
+	// not start ends again, asking again, and says so.
 	deadline := time.Now().Add(startAgainWait)
 	for {
-		running, err := onApp(a, func() (bool, error) {
-			t := a.terminal(want.ID)
-			if t == nil {
-				return false, errors.New("that pane is no longer open")
+		now, err := onApp(a, func() (count, error) {
+			if a.terminal(want.ID) == nil {
+				return count{}, serve.ErrNotOpen
 			}
-			return !t.Exited(), nil
+			return count{a.restarts[want.ID], a.endings[want.ID]}, nil
 		})
 		switch {
 		case err != nil:
 			return err
-		case running:
+		case now.restarts > was.restarts:
 			return nil
+		case now.endings > was.endings:
+			return errors.New("it could not start again")
 		case time.Now().After(deadline):
 			return errors.New("it did not start again in time")
 		}

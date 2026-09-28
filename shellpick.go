@@ -2,6 +2,7 @@ package main
 
 import (
 	"slices"
+	"strings"
 
 	shellfind "github.com/marrasen/kakel/shells"
 )
@@ -93,4 +94,48 @@ func (a *app) pickShell(id string) error {
 		return a.settings.ForgetShell()
 	}
 	return a.settings.PutShell(id)
+}
+
+// likeHere has the next terminal here start the shell the focused pane
+// runs, in its folder: another Command Prompt from a Command Prompt, the
+// same WSL distribution from a WSL shell. A shell picked for it already,
+// a pane on a server, and one running a command rather than a shell
+// leave it as it is.
+func (a *app) likeHere() {
+	id := a.st.Focus
+	if a.nextShell != nil || a.machineOf(id) != "" {
+		return
+	}
+	if _, ok := a.commands[id]; ok {
+		return
+	}
+	argv := a.argvs[id]
+	if len(argv) == 0 {
+		return
+	}
+	if s, ok := shellfind.Running(a.found, argv); ok {
+		a.nextShell = s.Command(a.dirHere())
+	}
+}
+
+// shellTitle is the title a pane's program gave, with the program's own
+// path, which the Command Prompt and PowerShell name themselves by,
+// given as the shell's name: "Command Prompt", and "Command Prompt -
+// ping host" while that runs.
+func (a *app) shellTitle(id, title string) string {
+	argv := a.argvs[id]
+	if len(argv) == 0 {
+		return title
+	}
+	s, ok := shellfind.Running(a.found, argv)
+	if !ok || s.Path == "" {
+		return title
+	}
+	switch {
+	case strings.EqualFold(title, s.Path):
+		return s.Title
+	case len(title) > len(s.Path) && strings.EqualFold(title[:len(s.Path)], s.Path) && strings.HasPrefix(title[len(s.Path):], " - "):
+		return s.Title + title[len(s.Path):]
+	}
+	return title
 }

@@ -1358,8 +1358,11 @@ func (a *app) machineOf(id string) string {
 }
 
 // openTerminal opens a shell where the focused pane is, on a stage of
-// its own.
-func (a *app) openTerminal() error { return a.open(a.machineOf(a.st.Focus), placement{}) }
+// its own: on this computer, the one the focused pane runs.
+func (a *app) openTerminal() error {
+	a.likeHere()
+	return a.open(a.machineOf(a.st.Focus), placement{})
+}
 
 // split opens a shell beside the focused pane, on its machine.
 func (a *app) split(in SplitPane) error {
@@ -1373,6 +1376,8 @@ func (a *app) split(in SplitPane) error {
 			return fmt.Errorf("this machine has no shell called %q", in.Shell)
 		}
 		a.nextShell, machine = argv, ""
+	} else if machine == a.machineOf(a.st.Focus) {
+		a.likeHere()
 	}
 	return a.open(machine, placement{beside: a.st.Focus, vertical: in.Vertical})
 }
@@ -1540,6 +1545,7 @@ func (a *app) popOut() {
 }
 
 func (a *app) retitle(id, title string) {
+	title = a.shellTitle(id, title)
 	for i := range a.st.Panes {
 		if p := &a.st.Panes[i]; p.ID == id && title != "" {
 			p.shell = title

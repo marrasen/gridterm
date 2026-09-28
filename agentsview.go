@@ -38,6 +38,8 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 	host.Selected = max(0, slices.Index(agentHostNames(), st.Host))
 	hostName := func() string { return agentHostNames()[max(0, min(host.Selected, len(agentHosts)-1))] }
 	code := widget.NewLabel(st.Code)
+	// Picked out and copied as it is, for an agent set up by hand.
+	code.Selectable = true
 	form := widget.NewForm().
 		Add("", widget.NewLabel("An agent with this code can read and type in the ticked panes, and reaches nothing else. Copy Prompt puts the code on the clipboard with how to use it.")).
 		Add("Code", code).
@@ -69,6 +71,10 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 	d.Body = form
 	d.SetButtons("Done", "")
 	d.AddAction("Copy Prompt", func(u *gunim.UI) { u.Send(w, CopyAgentPrompt{Host: hostName()}) })
+	d.AddAction("Copy Code", func(u *gunim.UI) {
+		u.SetClipboard(st.Code)
+		w.toasts.Show(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
+	})
 	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(hostNamed(hostName()), u) })
 	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, WriteSkill{Host: hostName()}) })
 	d.AddButton("Stop Sharing", func() gunim.Intent { return StopSharing{} })

@@ -22,6 +22,10 @@ import (
 type RunCommand struct {
 	Machine, Line, Dir string
 	Keep               bool
+	// Beside puts its pane in a split beside that pane, below it with
+	// Vertical, rather than on a stage of its own.
+	Beside   string
+	Vertical bool
 	// Forget is a saved command picked and then unticked, which is how
 	// the user says to forget it.
 	Forget string
@@ -73,7 +77,7 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	title := strings.Join(argv, " ")
 	return a.startCommand(in.Machine, cmd, commandStart{then: func(sess session.Session) {
-		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Machine)), placement{})
+		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), in.Machine)), placement{beside: in.Beside, vertical: in.Vertical})
 	}})
 }
 

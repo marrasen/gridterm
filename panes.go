@@ -50,9 +50,13 @@ type browser struct {
 	keys    *keyBar
 	problem *errLine
 	// goTo is Go To's field while it is open, and asked the folder whose
-	// names were last asked for, to complete from.
-	goTo  *widget.TextField
-	asked string
+	// names were last asked for, to complete from. goingTo is what Go To
+	// went to, until the program says how that went, and failedAt the
+	// failures counted before it.
+	goTo     *widget.TextField
+	asked    string
+	goingTo  string
+	failedAt int
 }
 
 func newBrowser(w *window, id string) *browser {
@@ -265,9 +269,13 @@ func (b *browser) askRename(u *gunim.UI) {
 }
 
 // askGoTo asks for a folder to show.
-func (b *browser) askGoTo(u *gunim.UI) {
+func (b *browser) askGoTo(u *gunim.UI) { b.askGoToWith(b.st.Path, "", u) }
+
+// askGoToWith asks for a folder to show, starting from text, and saying
+// why the last one typed could not be gone to when why is set.
+func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 	path := widget.NewTextField()
-	path.SetText(b.st.Path)
+	path.SetText(text)
 	// The rest of a folder's name, suggested as it is typed, from the
 	// folder the text is in.
 	path.OnEdit = func(text string, u *gunim.UI) { b.complete(text, u) }
@@ -286,6 +294,11 @@ func (b *browser) askGoTo(u *gunim.UI) {
 		form.Add("Places", places)
 	}
 	form.Add("Folder", path)
+	if why != "" {
+		said := widget.NewLabel("Couldn't go there: " + why)
+		said.Color = widget.ButtonDangerFill
+		form.Add("", said)
+	}
 	d := widget.NewDialog("Go to a folder")
 	d.Body = form
 	d.SetButtons("Go", "Cancel")
@@ -295,9 +308,29 @@ func (b *browser) askGoTo(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return GoTo{Pane: b.id, Path: path.Text()} }
+	d.OnAccept = func() gunim.Intent {
+		// Asked again, with what was typed, if it cannot be gone to.
+		b.goingTo, b.failedAt = path.Text(), b.st.Failed
+		return GoTo{Pane: b.id, Path: path.Text()}
+	}
 	d.Dismiss = DialogClosed{}
 	b.w.openDialog(d, u)
+}
+
+// wentTo hears how a Go To went, once the program has said: one that
+// failed is asked again, with what was typed and why.
+func (b *browser) wentTo(st Browser, u *gunim.UI) {
+	if b.goingTo == "" {
+		return
+	}
+	switch {
+	case st.Failed > b.failedAt:
+		typed := b.goingTo
+		b.goingTo = ""
+		b.askGoToWith(typed, st.Err, u)
+	case st.Seq != b.shown:
+		b.goingTo = ""
+	}
 }
 
 func (b *browser) askFolder(u *gunim.UI) {
@@ -318,6 +351,7 @@ func (b *browser) askFolder(u *gunim.UI) {
 
 // show takes the program's state for the pane.
 func (b *browser) show(st Browser, u *gunim.UI) {
+	b.wentTo(st, u)
 	listed := st.Listed.Dir != b.st.Listed.Dir || !slices.Equal(st.Listed.Folders, b.st.Listed.Folders)
 	b.st = st
 	b.problem.label.SetText("")

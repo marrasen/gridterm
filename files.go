@@ -31,8 +31,11 @@ type Browser struct {
 	// Land names the entry the cursor goes to once the folder shows,
 	// as the folder just left, going up.
 	Land string
-	// Err says why the folder could not be read.
-	Err string
+	// Err says why the folder could not be read, and Failed counts the
+	// listings that failed, so the window knows a new failure from the
+	// same one said again.
+	Err    string
+	Failed int
 	// Seq counts the listings, so the window knows a new one, and Top
 	// says Path is the top of its filesystem.
 	Seq int
@@ -427,12 +430,13 @@ func (a *app) browse(in Browse) {
 			b := a.st.Browsers[in.Pane]
 			if err != nil {
 				b.Err = err.Error()
+				b.Failed++
 				a.setBrowser(in.Pane, b)
 				return
 			}
 			order(entries)
 			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed})
+				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, Failed: b.Failed})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

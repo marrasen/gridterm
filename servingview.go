@@ -48,7 +48,12 @@ func (w *window) servingDialog(s Serving, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return StartServing{Port: port.Text(), Anywhere: where.Selected == 1} }
+	d.OnAccept = func() gunim.Intent {
+		// Shown once it is served: the host key, to check from the
+		// other end.
+		w.servingAsked = true
+		return StartServing{Port: port.Text(), Anywhere: where.Selected == 1}
+	}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)
 }
@@ -58,24 +63,62 @@ func (w *window) servedDialog(s Serving, u *gunim.UI) {
 	form := widget.NewForm().
 		Add("Address", widget.NewLabel(s.Addr)).
 		Add("Host key", widget.NewLabel(s.Fingerprint))
-	connected := "Nobody yet."
-	if len(s.Clients) > 0 {
-		var lines []string
-		for _, c := range s.Clients {
-			lines = append(lines, c.Name+", from "+c.From)
-		}
-		connected = strings.Join(lines, "\n")
-	}
-	form.Add("Connected", widget.NewLabel(connected))
+	who := widget.NewLabel(connectedSays(s))
+	form.Add("Connected", who)
 	d := widget.NewDialog("Serving This Window")
 	d.Body = form
 	d.SetButtons("Done", "")
-	if len(s.Clients) > 0 {
-		d.AddButton("Disconnect All", func() gunim.Intent { return DisconnectClients{} })
-	}
+	d.AddButton("Disconnect All", func() gunim.Intent { return DisconnectClients{} })
 	d.AddButton("Stop Serving", func() gunim.Intent { return StopServing{} })
 	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	w.served = &servedShown{d: d, who: who}
 	w.openDialog(d, u)
+}
+
+// connectedSays is who is connected to the window served, one a line.
+func connectedSays(s Serving) string {
+	if len(s.Clients) == 0 {
+		return "Nobody yet."
+	}
+	var lines []string
+	for _, c := range s.Clients {
+		lines = append(lines, c.Name+", from "+c.From)
+	}
+	return strings.Join(lines, "\n")
+}
+
+// servedShown is the dialog saying the window is served, while it is
+// open, and its line of who is connected.
+type servedShown struct {
+	d   *widget.Dialog
+	who *widget.Label
+}
+
+// showServed keeps the dialog saying the window is served up to date
+// as windows connect and go, closes it once serving stops, and opens
+// it once serving asked for has started.
+func (w *window) showServed(s Serving, u *gunim.UI) {
+	if sh := w.served; sh != nil {
+		switch {
+		case u.Presence(sh.d) == gunim.Exiting || w.dialog != sh.d:
+			w.served = nil
+		case !s.On:
+			w.served = nil
+			sh.d.Close(u)
+		default:
+			sh.who.SetText(connectedSays(s))
+			u.Invalidate()
+		}
+	}
+	if w.servingAsked && s.On {
+		w.servingAsked = false
+		if w.dialog == nil {
+			w.servedDialog(s, u)
+		}
+	}
+	if s.Problem != "" {
+		w.servingAsked = false
+	}
 }
 
 // connectWindowDialog asks for a served window to connect to.

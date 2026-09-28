@@ -16,6 +16,12 @@ func (w *window) commandDialog(u *gunim.UI) { w.commandDialogOn(w.machineOf(w.fo
 
 // commandDialogOn asks for a command to run on machine.
 func (w *window) commandDialogOn(machine string, u *gunim.UI) {
+	w.commandDialogAt(machine, placement{}, u)
+}
+
+// commandDialogAt asks for a command to run on machine, its pane put
+// where at says.
+func (w *window) commandDialogAt(machine string, at placement, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
 			w.toasts.Show(widget.Toast{Title: machine + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
@@ -72,7 +78,7 @@ func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 		if !keep.On && picked != "" && line.Text() == picked {
 			forget = picked
 		}
-		return RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget}
+		return RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.beside, Vertical: at.vertical}
 	}
 	d.Dismiss = DialogClosed{}
 	w.openDialog(d, u)

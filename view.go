@@ -115,9 +115,11 @@ type window struct {
 	focused  string
 	palette  *widget.Palette
 	// splitter asks what goes in the new half of a split, and splitWith
-	// is what each of its lines asks the program for.
-	splitter  *widget.Palette
-	splitWith []gunim.Intent
+	// is what each of its lines asks the program for; nil is a command,
+	// asked for on splitCommand's machine and put where it says.
+	splitter     *widget.Palette
+	splitWith    []gunim.Intent
+	splitCommand commandAt
 	// drawings keep what each pane's node drew last, by pane, and drawn
 	// is that node, for the switcher to show a pane of any kind, and one
 	// off the stage as it was last seen.
@@ -160,6 +162,10 @@ type window struct {
 	// permsAfter is a pane whose permissions open once it is shared.
 	permsAfter string
 	size       geom.Size
+	// servingAsked says Serve was pressed and the window is not served
+	// yet, and served is the dialog saying it is, while that is open.
+	servingAsked bool
+	served       *servedShown
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
 	panes     []Pane
@@ -1278,6 +1284,12 @@ func (w *window) rename(u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
+// commandAt is a machine to run a command on, and where its pane goes.
+type commandAt struct {
+	machine string
+	at      placement
+}
+
 // paneInSidebar is the pane after the focused one in the sidebar, or
 // the one before with back, going round.
 func (w *window) paneInSidebar(back bool) string {
@@ -1515,6 +1527,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		clear(w.splits)
 	}
 	w.serving = st.Serving
+	w.showServed(st.Serving, u)
 	if w.sharing && st.Share.Code != "" {
 		w.sharing = false
 		if w.dialog == nil {
@@ -2629,7 +2642,11 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 	}
 	if w.splitter == nil {
 		w.splitter = &widget.Palette{Placeholder: "Split with", Pick: func(i int, u *gunim.UI) {
-			if i < len(w.splitWith) {
+			switch {
+			case i >= len(w.splitWith):
+			case w.splitWith[i] == nil:
+				w.commandDialogAt(w.splitCommand.machine, w.splitCommand.at, u)
+			default:
 				u.Send(w, w.splitWith[i])
 			}
 		}}
@@ -2656,11 +2673,21 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 			here = p.Machine
 		}
 	}
-	for _, m := range w.machines() {
+	machines := w.machines()
+	for _, m := range machines {
 		if m != here {
 			add("Terminal on "+placeName(m), "", SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
 		}
 	}
+	// The saved servers not connected to, which cost a sign-in first.
+	for _, h := range w.saved {
+		if !h.Window && !slices.Contains(machines, h.Name) {
+			add("Terminal on "+h.Name+", connecting first", h.Address, SplitPane{Vertical: vertical, Machine: h.Name, Elsewhere: true})
+		}
+	}
+	// A command beside it, asked for once picked.
+	add("Run a Command…", "program execute", nil)
+	w.splitCommand = commandAt{machine: here, at: placement{beside: focus, vertical: vertical}}
 	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 

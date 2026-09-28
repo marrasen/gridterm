@@ -13,10 +13,6 @@ import (
 	"github.com/marrasen/kakel/settings"
 )
 
-// The tests run in a home of their own, so a test that writes a
-// setting, a key or a skill writes it there.
-func TestMain(m *testing.M) { testhome.Main(m) }
-
 // Every place kakel keeps the user's files is in the tests' home. On
 // Windows a test once wrote a skill into the real home, because it
 // moved HOME and Windows reads USERPROFILE.

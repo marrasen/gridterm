@@ -303,8 +303,9 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	}
 }
 
-// A window's form greys out what a window has none of, and a server's
-// key is kept to be offered next time.
+// A window's form greys out what a window has none of, calls a window
+// what the message about one does, and keeps a server's key to offer
+// next time.
 func TestTheServerFormFitsItsType(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Window: true}
@@ -317,14 +318,17 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	if !ok {
 		t.Fatalf("the form is a %T", win.dialog.Body)
 	}
-	var via *widget.Dropdown
+	var via, kind *widget.Dropdown
 	var forward *widget.Checkbox
 	// Every field, the ones greyed out too, which take no focus.
 	for _, f := range form.Children() {
 		switch f := f.(type) {
 		case *widget.Dropdown:
-			if f.Label == "Through" {
+			switch f.Label {
+			case "Through":
 				via = f
+			case "Type":
+				kind = f
 			}
 		case *widget.Checkbox:
 			if strings.Contains(f.Label, "agent") {
@@ -334,6 +338,12 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	}
 	if via == nil || forward == nil || !via.Disabled || !forward.Disabled {
 		t.Fatalf("for a window, Through is %+v and the agent box %+v", via, forward)
+	}
+	if kind == nil {
+		t.Fatal("the form has no Type drop-down")
+	}
+	if kind.Selected != 1 || kind.Items[1] != remote.WindowKind {
+		t.Fatalf("the Type drop-down offers %q with %d chosen, want %q chosen", kind.Items, kind.Selected, remote.WindowKind)
 	}
 
 	a := fontApp(t)

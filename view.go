@@ -989,7 +989,7 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	}
 	via := widget.NewDropdown(through...)
 	via.Label = "Through"
-	kind := widget.NewDropdown("Server", "gridterm window")
+	kind := widget.NewDropdown("Server", remote.WindowKind)
 	kind.Label = "Type"
 	folders := widget.NewTextField()
 	folders.Placeholder = "optional: paths to open files at, with commas"

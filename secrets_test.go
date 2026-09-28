@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -282,7 +283,10 @@ func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("exported, the file: %v", err)
 	}
-	if info.Mode().Perm() != 0o600 {
+	// On Windows the mode shows only whether the file is read-only.
+	// Who may read it is the folder's access list, which in the user's
+	// profile is the user's alone.
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("the file can be read by others: %v", info.Mode())
 	}
 	notices := len(a.st.Notices)

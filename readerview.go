@@ -51,6 +51,13 @@ type reader struct {
 	saves    int
 	// findAgain is the last ask to open the find bar again.
 	findAgain int
+	// waiting says the first read is on its way unasked, as the reader
+	// opens; saveAs, follow and gone are what the program said last of
+	// where to save, following, and a scrollback whose pane has gone.
+	waiting bool
+	saveAs  string
+	follow  bool
+	gone    bool
 	// send asks the program for something, from the update the reader
 	// was last brought up to date in.
 	send func(gunim.Intent)
@@ -93,6 +100,28 @@ func (rd *reader) show(st Reader, u *gunim.UI) {
 		if rd.r != nil {
 			rd.r.AskFind()
 			rd.sync()
+		}
+	}
+	if rd.r == nil && st.Seq == 0 && st.Path != "" {
+		// Made before the first read has come, which is on its way, so
+		// how far it has got shows.
+		rd.make(st)
+		rd.waiting = true
+		rd.r.Open()
+	}
+	if rd.r != nil {
+		rd.r.Expect = st.Expect
+		if st.SaveAs != "" && st.SaveAs != rd.saveAs {
+			rd.saveAs = st.SaveAs
+			rd.r.SaveAs = st.SaveAs
+		}
+		if st.Follow != rd.follow {
+			rd.follow = st.Follow
+			rd.r.Follow(st.Follow)
+		}
+		if st.Gone != "" && !rd.gone {
+			rd.gone = true
+			rd.r.Gone(st.Gone)
 		}
 	}
 	if st.Seq == 0 || st.Seq == rd.seq {
@@ -139,7 +168,12 @@ func (rd *reader) make(st Reader) {
 			return
 		}
 		rd.then = then
-		rd.send(ReadAgain{Pane: rd.id})
+		if rd.waiting {
+			rd.waiting = false
+			return
+		}
+		// Lines asked of a file named as a picture: it was not one.
+		rd.send(ReadAgain{Pane: rd.id, Text: files.IsPicture(name)})
 	}
 	r.ReadPic = func(then func(files.Pic, error)) {
 		if rd.fresh != nil {
@@ -147,7 +181,15 @@ func (rd *reader) make(st Reader) {
 			return
 		}
 		rd.thenPic = then
+		if rd.waiting {
+			rd.waiting = false
+			return
+		}
 		rd.send(ReadAgain{Pane: rd.id})
+	}
+	r.OnFollow = func(on bool) {
+		rd.follow = on
+		rd.send(FollowFile{Pane: rd.id, On: on})
 	}
 	r.OnCopy = func(text string) { rd.ui.SetClipboard(text) }
 	r.OnClose = func() { rd.send(ClosePane{Pane: rd.id}) }
@@ -156,9 +198,12 @@ func (rd *reader) make(st Reader) {
 		rd.send(SaveLines{Pane: rd.id, Path: at, Lines: lines})
 	}
 	r.SaveAs = cmp.Or(st.SaveAs, filepath.Join("~", name))
+	rd.saveAs = st.SaveAs
+	r.Expect = st.Expect
 	r.Scrolls = []string{"view.scrollUp", "view.scrollDown"}
 	rd.r = r
 	r.Follow(st.Follow)
+	rd.follow = st.Follow
 	if st.Find {
 		defer r.AskFind()
 	}

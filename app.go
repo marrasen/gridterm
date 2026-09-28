@@ -559,8 +559,10 @@ type app struct {
 	far pathsFar
 	// typed is what agents typed, by pane.
 	typed map[string]*typedLog
-	// reads are what each reader pane reads, to read it again.
-	reads map[string]readSpec
+	// reads are what each reader pane reads, to read it again, and
+	// following the readers with a follow loop running.
+	reads     map[string]readSpec
+	following map[string]bool
 	// nextShell is the command the next terminal here starts, once.
 	nextShell []string
 	// found are the shells on this machine.
@@ -643,6 +645,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		farHost:     map[string]string{},
 		typed:       map[string]*typedLog{},
 		reads:       map[string]readSpec{},
+		following:   map[string]bool{},
 		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		accounts:    map[string]*logs.Lines{},
 		wake:        make(chan struct{}, 1),
@@ -1097,7 +1100,11 @@ func (a *app) handle(in gunim.Intent) {
 	case ShowCopies:
 		a.showCopies()
 	case ReadAgain:
-		if _, ok := a.reads[in.Pane]; ok {
+		if spec, ok := a.reads[in.Pane]; ok {
+			if in.Text {
+				spec.text = true
+				a.reads[in.Pane] = spec
+			}
 			a.readOnce(in.Pane)
 		} else if r, ok := a.st.Readers[in.Pane]; ok {
 			// A scrollback is read off its pane again, as it stands now,
@@ -1108,6 +1115,8 @@ func (a *app) handle(in gunim.Intent) {
 			r.Seq++
 			a.setReader(in.Pane, r)
 		}
+	case FollowFile:
+		a.followReader(in.Pane, in.On)
 	case SaveLines:
 		a.saveLines(in)
 	case DropFileClip:
@@ -1488,6 +1497,13 @@ func (a *app) remove(id string) {
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)
+	// A scrollback of it has nothing left to read again, and says so.
+	for rid, r := range a.st.Readers {
+		if r.Of == id && rid != id {
+			r.Gone = "closed"
+			a.setReader(rid, r)
+		}
+	}
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}

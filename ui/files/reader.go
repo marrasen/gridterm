@@ -55,6 +55,11 @@ type Reader struct {
 	// business, not this package's.
 	OnClose func()
 
+	// OnFollow is called when the user turns following on or off, with
+	// whether it is on now, for whatever reads the file to read it again
+	// as it changes, or to stop.
+	OnFollow func(on bool)
+
 	// OnCopy is called with the selected text when the user copies. A
 	// nil one leaves the key doing nothing: the clipboard is the
 	// window's, not this package's.
@@ -751,6 +756,9 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		r.Open()
 	case ev.Key == input.KeyF && plainCtrl(ev):
 		r.Follow(!r.follow)
+		if r.OnFollow != nil {
+			r.OnFollow(r.follow)
+		}
 	case ev.Key == input.KeyH && plainCtrl(ev):
 		r.Hex(!r.hex)
 	case ev.Key == input.KeyD && plainCtrl(ev), ev.Key == input.KeyQ:

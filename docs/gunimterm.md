@@ -1,5 +1,11 @@
 # gunimterm: a spike
 
+This is history. It records how gridterm's window moved onto gunim,
+as a spike called gunimterm, in September 2026. The spike became
+kakel's window, and kakel is the program at the root of this
+repository. The commands and variables below are kakel's; the
+measurements and lists are as they stood then.
+
 One gridterm terminal in a [gunim](https://github.com/marrasen/gunim)
 window. It runs your shell through gridterm's own session, VT parser and
 key encoder, and draws the screen with gunim's `CellGrid`. It is here to
@@ -8,25 +14,20 @@ moves over.
 
 ## Running it
 
-gunim is a private module, so tell Go where to fetch it:
+From the root of the repository:
 
-    $env:GOPRIVATE="github.com/marrasen"; $env:CGO_ENABLED=0; go run ./cmd/gunimterm
+    go run .
 
-On Linux:
+[BUILDING.md](../BUILDING.md) has the rest, such as working on gunim at
+the same time.
 
-    GOPRIVATE=github.com/marrasen CGO_ENABLED=0 go run ./cmd/gunimterm
-
-To work on gunim at the same time, clone it next to gridterm and run
-`go work init . ../gunim`. The `go.work` file stays out of git.
-
-- It takes gridterm's flags; `-h` lists them. `-stats`, or
-  `GUNIMTERM_STATS=1`, prints each second the frames drawn and the
-  screen updates merged into them.
+- `-h` lists the flags. `-stats`, or `KAKEL_STATS=1`, prints each
+  second the frames drawn and the screen updates merged into them.
 - `-shot` drives the window through a script and writes PNGs, as in
   gridterm, such as
   `-shot 'until:$ wait:1500 type:make key:Enter until:done shot:built.png'`.
   The wait lets shell setup finish before typing.
-- `GUNIMTERM_PROFILE=file` writes a CPU profile until the window closes.
+- `KAKEL_PROFILE=file` writes a CPU profile until the window closes.
 - Ctrl+Shift+V pastes. The wheel scrolls back through history.
 
 ## The echo

@@ -422,8 +422,14 @@ type app struct {
 	intents    chan windowIn
 	openWindow windowOpener
 	opening    int
-	shells     *shells
-	st         State
+	// starting counts the panes on their way, a shell on a server being
+	// started, which keep an empty window open for them; stayEmpty keeps
+	// it open with none, as when the first pane could not be opened,
+	// until one is.
+	starting  int
+	stayEmpty bool
+	shells    *shells
+	st        State
 	// groups holds each group's arrangement, and groupOf each pane's
 	// group.
 	groups  map[int]*Box
@@ -723,9 +729,7 @@ func (a *app) run(ctx context.Context) error {
 	if err := a.applyOptions(); err != nil {
 		return err
 	}
-	if err := a.openFirst(); err != nil {
-		return err
-	}
+	a.openFirstOrSay()
 	a.publish()
 	if a.opts.shot != "" {
 		list, err := parseShot(a.opts.shot)
@@ -765,7 +769,7 @@ func (a *app) run(ctx context.Context) error {
 		}
 		// Empty, and connecting to nothing that would open a pane: the
 		// window leaves, and the last one takes the program with it.
-		if len(a.st.Panes) == 0 && len(a.dialing) == 0 && a.opening == 0 {
+		if a.emptyAndIdle() {
 			a.leave()
 		}
 		a.leaveEmpty()
@@ -782,6 +786,24 @@ func (a *app) run(ctx context.Context) error {
 		a.setPane(a.st.Focus, func(p *Pane) { p.Rang = false })
 		a.publish()
 	}
+}
+
+// openFirstOrSay opens the first pane. One that cannot be opened
+// leaves the window there, saying why, for a pane to be opened another
+// way: started from a desktop icon, a program that closed at once would
+// say nothing at all.
+func (a *app) openFirstOrSay() {
+	if err := a.openFirst(); err != nil {
+		a.failed("Couldn't open the first pane", err.Error())
+		a.stayEmpty = true
+	}
+}
+
+// emptyAndIdle reports whether the program has no pane and none on its
+// way, and so leaves: nothing connecting, no window or shell opening,
+// and not kept open, as after the first pane failed.
+func (a *app) emptyAndIdle() bool {
+	return len(a.st.Panes) == 0 && len(a.dialing) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
 }
 
 func (a *app) publish() {
@@ -1294,9 +1316,11 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	if !ok {
 		return fmt.Errorf("kakel: %s is not connected", machine)
 	}
+	a.starting++
 	go func() {
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: shellCols, Rows: shellRows})
 		a.events <- func() {
+			a.starting--
 			if err != nil {
 				a.failed("Couldn't open a shell on "+machine, err.Error())
 				a.problem()
@@ -1323,6 +1347,7 @@ func (a *app) addPane(p Pane, sh *shell, at placement) {
 		a.front(w)
 	}
 	a.st.Panes = append(a.st.Panes, p)
+	a.stayEmpty = false
 	a.winOf[p.ID] = a.frontID()
 	a.place(p.ID, at)
 	a.st.Focus = p.ID

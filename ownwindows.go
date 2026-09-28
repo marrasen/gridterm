@@ -328,7 +328,7 @@ func (a *app) windowClosed(w *ownWin) {
 // stays open.
 func (a *app) leaveEmpty() {
 	for _, w := range a.liveWins() {
-		if len(a.liveWins()) > 1 && len(a.panesIn(w)) == 0 && !(w == a.cur && (len(a.dialing) > 0 || a.opening > 0)) {
+		if len(a.liveWins()) > 1 && len(a.panesIn(w)) == 0 && !(w == a.cur && (len(a.dialing) > 0 || a.opening > 0 || a.starting > 0)) {
 			a.letWindowGo(w)
 		}
 	}

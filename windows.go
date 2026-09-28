@@ -272,6 +272,7 @@ func (a *app) showWindows() {
 // openOnWindow opens a shell on a window, in a pane here.
 func (a *app) openOnWindow(name, id, title string, at placement, then func(string, error)) error {
 	w := a.windows[name]
+	a.starting++
 	go func() {
 		// What the window calls the shell arrives on a goroutine of the
 		// connection's, and is written down on the program's.
@@ -286,6 +287,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 			}()
 		})
 		a.events <- func() {
+			a.starting--
 			if err != nil {
 				a.failed("Couldn't open a shell on "+name, err.Error())
 				then("", err)

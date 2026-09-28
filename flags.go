@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/marrasen/kakel/remote"
 	"io"
 	"os"
 	"strings"
@@ -168,11 +169,28 @@ func (a *app) applyOptions() error {
 func (a *app) openFirst() error {
 	switch {
 	case a.opts.ssh != "":
-		return a.connect(ConnectTo{Target: a.opts.ssh})
+		in := ConnectTo{Target: a.opts.ssh}
+		line := strings.TrimSpace(a.opts.command)
+		if line == "" {
+			return a.connect(in)
+		}
+		// -e with -ssh runs the command there, once connected.
+		cfg, err := remote.ParseTarget(strings.TrimSpace(a.opts.ssh))
+		if err != nil {
+			return err
+		}
+		machine := cfg.Target()
+		return a.connectThen(in, func(err error) {
+			if err != nil {
+				return
+			}
+			if err := a.runCommand(RunCommand{Machine: machine, Line: line}); err != nil {
+				a.failed("Couldn't run "+line+" on "+machine, err.Error())
+			}
+		})
 	case strings.TrimSpace(a.opts.command) != "":
-		a.handle(RunCommand{Line: a.opts.command})
-		if len(a.st.Panes) == 0 {
-			return fmt.Errorf("-e %q: the command did not start", a.opts.command)
+		if err := a.runCommand(RunCommand{Line: a.opts.command}); err != nil {
+			return fmt.Errorf("-e %q: %w", a.opts.command, err)
 		}
 		return nil
 	}

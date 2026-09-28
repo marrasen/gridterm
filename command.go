@@ -97,9 +97,11 @@ func (a *app) startCommand(machine string, cmd command, then func(session.Sessio
 	if !ok {
 		return fmt.Errorf("this window is not connected to %s", machine)
 	}
+	a.starting++
 	go func() {
 		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Command: cmd.argv, Dir: cmd.dir, Cols: shellCols, Rows: shellRows})
 		a.events <- func() {
+			a.starting--
 			if err != nil {
 				a.failed("Couldn't run "+strings.Join(cmd.argv, " ")+" on "+machine, err.Error())
 				a.problem()

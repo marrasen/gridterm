@@ -14,6 +14,13 @@ under a "Split" header -- and the row says "Split Right…". It is a row
 borrowed for the moment a menu is up, not a bar that costs a row of
 every pane. The palette uses the whole title too.
 
+The menus sit behind one button at the start of the title bar, after
+kakel's icon. A click on it lists the menus below, and each one opens
+beside the list as the pointer or the arrow keys come to it: Right goes
+into it and Left back out to the list. F10 opens File with the keys in
+it. The rest of the title bar says "kakel" and the pane in front, and
+moves the window.
+
 ---
 
 ## Menu bar order
@@ -167,8 +174,8 @@ machine's row in the sidebar.
 
 # On no menu
 
-- `[id: menu.open]` Show the menu bar — `F10`. A menu row that opens
-  the menu bar would be circular, and the bar can be hidden.
+- `[id: menu.open]` Open the menus — `F10`. A menu row that opens the
+  menus would be circular.
 - `[id: shell.default]` New terminal on the default shell. Not the
   same as New Terminal: it opens on the machine's default **and
   forgets the shell you picked**, permanently. It is a reset, and it

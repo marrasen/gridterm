@@ -94,7 +94,7 @@ capped, it says how many of the oldest lines it has dropped, and it goes
 when the pane closes.
 
 "Show the share…" on the same menu, or the "Sharing with an agent" chip
-on the menu bar, opens the share itself: the one code, a row per pane
+on the title bar, opens the share itself: the one code, a row per pane
 that takes it out and puts it back, and what to give the agent. It asks
 which agent it is for -- Claude Code, Codex, Cursor, or another host
 that takes a JSON MCP config -- and remembers the answer for next time.

@@ -73,8 +73,8 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	}
 }
 
-func TestTheWindowIsNamedAfterTheFocusedTerminal(t *testing.T) {
-	_, sh, publish := windowStage(t)
+func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
+	win, sh, publish := windowStage(t)
 	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte("\x1b]2;vim notes.txt\x07")}
 	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
 	sh.set("p1", openShell(s, vt.DefaultPalette(), quiet))
@@ -91,9 +91,18 @@ func TestTheWindowIsNamedAfterTheFocusedTerminal(t *testing.T) {
 	if got := lastWindow.Offscreen().Title(); got != "kakel — vim notes.txt" {
 		t.Fatalf("the window is called %q", got)
 	}
-	// A pane that is no terminal leaves the window its own name.
+	if win.bar.Title != "kakel" || win.bar.Subtitle != "vim notes.txt" {
+		t.Fatalf("the title bar says %q and %q", win.bar.Title, win.bar.Subtitle)
+	}
+	// A pane that is no terminal goes by its own title.
 	publish(State{Panes: panes, Stage: &Box{Pane: "p2"}, Focus: "p2"})
-	if got := lastWindow.Offscreen().Title(); got != "kakel" {
+	if got := lastWindow.Offscreen().Title(); got != "kakel — files" {
 		t.Fatalf("on a file pane, the window is called %q", got)
+	}
+	// A terminal the user named goes by that name.
+	panes[0].Named = true
+	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	if got := lastWindow.Offscreen().Title(); got != "kakel — Terminal 1" {
+		t.Fatalf("on a named terminal, the window is called %q", got)
 	}
 }

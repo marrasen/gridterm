@@ -11,6 +11,11 @@ change how something behaves.
 
 ### Added
 
+**The menus behind one button.** The title bar reads kakel's icon, a
+menu button, "kakel" and the pane in front. The button lists the menus,
+and each opens beside the list. Everything else on the title bar moves
+the window, so a window mostly off the screen can still be dragged back.
+
 **More than one window.** In the grid of every pane (`Ctrl+Shift+A`), a
 pane dragged onto another kakel window moves there, and one let go
 outside every window opens a window of its own. Each window has its own

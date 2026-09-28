@@ -224,6 +224,9 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	w.outer.SetShare(220, nil)
 	w.outer.OnMove = func(v float32) gunim.Intent { return SidebarMoved{Width: v} }
 	w.bar = widget.NewMenubar()
+	// The menus behind one button, leaving the bar to move the window.
+	w.bar.Compact = true
+	w.bar.Title = programName
 	for _, m := range menus {
 		bm := widget.BarMenu{Title: m.title}
 		for i, it := range m.items {
@@ -273,7 +276,7 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 	}
 	w.toasts = &widget.Toasts{}
 	w.chips = newChipBar()
-	bar := widget.Row(w.bar, w.chips, widget.NewWindowControls()).Grow(w.bar, 1)
+	bar := widget.Row(newAppMark(), w.bar, w.chips, widget.NewWindowControls()).Grow(w.bar, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
 	w.barShade = newShade(bar)
 	w.top = widget.Column(w.barShade, w.outer).Grow(w.outer, 1)
@@ -568,21 +571,30 @@ func (w *window) showFonts(st State) {
 // terminal's title.
 const programName = "kakel"
 
-// showTitle names the window after the focused terminal's title, as
-// its program sets it. Read from the focused one only: a build running
-// in a pane out of sight does not rename the window.
+// showTitle names the window after the pane in front: "kakel" and the
+// pane's title on the window's own title bar, and the two together for
+// the taskbar. A terminal the user has not named goes by what its
+// program calls it now.
 func (w *window) showTitle(st State, u *gunim.UI) {
-	title := programName
-	if t, ok := w.terms[st.Focus]; ok {
-		if program := t.sh.t.Title(); program != "" {
-			title = programName + " — " + program
+	pane := ""
+	for _, p := range st.Panes {
+		if p.ID == st.Focus {
+			pane = p.Title
+			if t, ok := w.terms[p.ID]; ok && !p.Named {
+				if program := t.sh.t.Title(); program != "" {
+					pane = program
+				}
+			}
 		}
+	}
+	title := programName
+	if pane != "" {
+		title = programName + " — " + pane
 	}
 	if title != w.title {
 		w.title = title
 		u.SetTitle(title)
-		// And on the window's own title bar, where it draws one.
-		w.bar.Title = title
+		w.bar.Subtitle = pane
 		u.Invalidate()
 	}
 }

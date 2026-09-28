@@ -112,8 +112,39 @@ func (a *app) startAgain(id string) error {
 	}
 	size := t.Size()
 	if w, ok := a.windows[machine]; ok {
+		// The window started it: it is asked to start it again, in its
+		// own pane, what ran there, and the pane here watches that as
+		// before. A window that cannot, or a pane it no longer knows,
+		// gets a shell of its own there.
+		farID := ""
+		for fid, pane := range w.bound {
+			if pane == id {
+				farID = fid
+			}
+		}
 		go func() {
-			sess, err := w.win.Open(size.Cols, size.Rows, func(serve.Attached) {})
+			var sess session.Session
+			var err error
+			open, ok := w.win.OpenNamed(farID)
+			if !ok && farID != "" {
+				// Ended, it is no longer listed, and is asked for by the
+				// ID the window gave it: a terminal on its own machine.
+				open, ok = serve.Open{ID: farID, Kind: "Terminal"}, true
+			}
+			if ok {
+				err = w.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
+				if err == nil {
+					sess, err = w.win.Attach(open, size.Cols, size.Rows)
+				}
+				if errors.Is(err, serve.ErrCannotStartAgain) {
+					err = nil
+				}
+			}
+			if sess == nil && err == nil {
+				sess, err = w.win.Open(size.Cols, size.Rows, func(n serve.Attached) {
+					go func() { a.events <- func() { a.bindFar(w, n.ID, id) } }()
+				})
+			}
 			a.events <- func() {
 				if err == nil {
 					err = a.restarted(id, t, sess)
@@ -268,4 +299,20 @@ func (a *app) reloadServers() error {
 	a.giveSavedIDs()
 	a.worked("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
 	return nil
+}
+
+// bindFar has pane watch what window w calls farID, so the sidebar does
+// not list it under w as well.
+func (a *app) bindFar(w *remoteWin, farID, pane string) {
+	if farID == "" || !a.has(pane) {
+		return
+	}
+	// What it watched before is not this pane's any more.
+	for f, p := range w.bound {
+		if p == pane {
+			delete(w.bound, f)
+		}
+	}
+	w.bound[farID] = pane
+	a.showWindows()
 }

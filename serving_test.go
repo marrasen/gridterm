@@ -364,3 +364,32 @@ func TestServeAgainCanBeToldNotToAsk(t *testing.T) {
 	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"Don't Ask Again"}})
 	waitFor(t, a, "the setting", func() bool { return !a.settings.ServeOn() })
 }
+
+// Starting a terminal on a served window again starts it again there,
+// in the pane it had, rather than opening another.
+func TestAPaneOnAServedWindowStartsAgainThere(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	b, keyFile := clientOf(t, a)
+	addr := a.st.Serving.Addr
+	b.handle(ConnectWindow{Addr: addr, KeyFile: keyFile})
+	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
+	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
+	pumpBoth(t, a, b, "its pane on the first window", func() bool { return len(a.st.Panes) == 2 })
+	here, there := b.st.Panes[0].ID, a.st.Panes[1].ID
+	b.terminal(here).Paste("exit\r")
+	pumpBoth(t, a, b, "the shell to end", func() bool { return b.terminal(here).Exited() })
+	if err := b.startAgain(here); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "it to start again", func() bool { return !b.terminal(here).Exited() })
+	if len(a.st.Panes) != 2 {
+		t.Fatalf("started again, the first window has %d panes, want its 2", len(a.st.Panes))
+	}
+	pumpBoth(t, a, b, "it to run there again", func() bool {
+		tt := a.terminal(there)
+		return tt != nil && !tt.Exited()
+	})
+}

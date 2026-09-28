@@ -50,8 +50,8 @@ func (w *window) servingDialog(s Serving, u *gunim.UI) {
 	}
 	d.OnAccept = func() gunim.Intent {
 		// Shown once it is served: the host key, to check from the
-		// other end.
-		w.servingAsked = true
+		// other end. Nothing, if serving did not start.
+		w.servingAsked, w.servingTries = true, s.Tries
 		return StartServing{Port: port.Text(), Anywhere: where.Selected == 1}
 	}
 	d.Dismiss = DialogClosed{}
@@ -110,14 +110,15 @@ func (w *window) showServed(s Serving, u *gunim.UI) {
 			u.Invalidate()
 		}
 	}
-	if w.servingAsked && s.On {
-		w.servingAsked = false
-		if w.dialog == nil {
+	// The one asked for, once it has been tried: shown if it started,
+	// once the dialog that asked has gone.
+	if w.servingAsked && s.Tries > w.servingTries {
+		if !s.On {
+			w.servingAsked = false
+		} else if w.dialog == nil || u.Presence(w.dialog) == gunim.Exiting {
+			w.servingAsked = false
 			w.servedDialog(s, u)
 		}
-	}
-	if s.Problem != "" {
-		w.servingAsked = false
 	}
 }
 

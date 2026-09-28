@@ -393,3 +393,27 @@ func TestAPaneOnAServedWindowStartsAgainThere(t *testing.T) {
 		return tt != nil && !tt.Exited()
 	})
 }
+
+// A pane closed on the served window, started again from here, opens a
+// shell of its own there, rather than failing.
+func TestAPaneClosedOnTheServedWindowStartsAgainAsAShell(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	b, keyFile := clientOf(t, a)
+	addr := a.st.Serving.Addr
+	b.handle(ConnectWindow{Addr: addr, KeyFile: keyFile})
+	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
+	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
+	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
+	pumpBoth(t, a, b, "its pane on the first window", func() bool { return len(a.st.Panes) == 2 })
+	here, there := b.st.Panes[0].ID, a.st.Panes[1].ID
+	a.remove(there)
+	pumpBoth(t, a, b, "the shell to end here", func() bool { return b.terminal(here).Exited() })
+	if err := b.startAgain(here); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "a shell there in its place", func() bool {
+		return !b.terminal(here).Exited() && len(a.st.Panes) == 2
+	})
+}

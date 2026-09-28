@@ -398,6 +398,10 @@ func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, er
 // does not know how: a build from before it could.
 var ErrCannotStartAgain = errors.New("serve: that window cannot start things again")
 
+// ErrNotOpen is what StartAgain says when the other window no longer
+// has what was asked for open: closed there, it cannot start again.
+var ErrNotOpen = errors.New("serve: that is not open in that window any more")
+
 // StartAgain asks the other window to start again, in the same pane, the
 // program of something it has open whose program has ended. Attach to it
 // afterwards to watch what it starts.
@@ -413,6 +417,8 @@ func (w *Window) StartAgain(what Attached) error {
 		return nil
 	case len(reply) == 0:
 		return ErrCannotStartAgain
+	case string(reply) == ErrNotOpen.Error():
+		return ErrNotOpen
 	}
 	return errors.New(Plain(string(reply)))
 }

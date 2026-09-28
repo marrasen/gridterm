@@ -52,7 +52,7 @@ func TestGoToAsksAgainWhenTheFolderCannotBeRead(t *testing.T) {
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/", Seq: 1, Err: "no such folder", Failed: 1}}
+	st.Browsers = map[string]Browser{"p1": {Path: "/", Seq: 1, Err: "no such folder", WentTo: went.Ask, GoToErr: "no such folder"}}
 	publish(st)
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
@@ -68,9 +68,18 @@ func TestTheServingDialogKeepsUp(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := State{Serving: Serving{Allowed: []string{"laptop"}}}
 	publish(st)
-	win.servingAsked = true
-	st.Serving = Serving{On: true, Addr: "0.0.0.0:7777", Fingerprint: "SHA256:x", Allowed: []string{"laptop"}}
+	// Serve pressed, as a user does.
+	win.servingDialog(st.Serving, lastUI)
+	for range 20 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	lastWindow.Frame(time.Second / 60)
+	st.Serving = Serving{On: true, Addr: "0.0.0.0:7777", Fingerprint: "SHA256:x", Allowed: []string{"laptop"}, Tries: 1}
 	publish(st)
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
 	if win.served == nil {
 		t.Fatal("serving began, and the dialog saying so did not open")
 	}
@@ -79,9 +88,33 @@ func TestTheServingDialogKeepsUp(t *testing.T) {
 	if got := win.served.who.Text; !strings.Contains(got, "laptop") {
 		t.Fatalf("a window connected, and the dialog says %q", got)
 	}
-	st.Serving = Serving{Allowed: []string{"laptop"}}
+	st.Serving = Serving{Allowed: []string{"laptop"}, Tries: 1}
 	publish(st)
 	if win.served != nil {
 		t.Fatal("serving stopped, and the dialog stays")
+	}
+}
+
+// Serve that did not start opens nothing, then or later.
+func TestAServeThatFailedOpensNothingLater(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := State{Serving: Serving{Allowed: []string{"laptop"}}}
+	publish(st)
+	win.servingDialog(st.Serving, lastUI)
+	for range 20 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	lastWindow.Frame(time.Second / 60)
+	st.Serving.Tries = 1
+	publish(st)
+	// Served later, from another window.
+	st.Serving = Serving{On: true, Addr: "0.0.0.0:7777", Allowed: []string{"laptop"}, Tries: 2}
+	publish(st)
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if win.served != nil {
+		t.Fatal("a Serve that failed opened the dialog when serving started later")
 	}
 }

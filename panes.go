@@ -51,12 +51,13 @@ type browser struct {
 	problem *errLine
 	// goTo is Go To's field while it is open, and asked the folder whose
 	// names were last asked for, to complete from. goingTo is what Go To
-	// went to, until the program says how that went, and failedAt the
-	// failures counted before it.
-	goTo     *widget.TextField
-	asked    string
-	goingTo  string
-	failedAt int
+	// went to, until the program says how that went, goToAsk its number,
+	// and asks the Go Tos numbered.
+	goTo    *widget.TextField
+	asked   string
+	goingTo string
+	goToAsk int
+	asks    int
 }
 
 func newBrowser(w *window, id string) *browser {
@@ -310,8 +311,9 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 	}
 	d.OnAccept = func() gunim.Intent {
 		// Asked again, with what was typed, if it cannot be gone to.
-		b.goingTo, b.failedAt = path.Text(), b.st.Failed
-		return GoTo{Pane: b.id, Path: path.Text()}
+		b.asks++
+		b.goingTo, b.goToAsk = path.Text(), b.asks
+		return GoTo{Pane: b.id, Path: path.Text(), Ask: b.asks}
 	}
 	d.Dismiss = DialogClosed{}
 	b.w.openDialog(d, u)
@@ -320,16 +322,14 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 // wentTo hears how a Go To went, once the program has said: one that
 // failed is asked again, with what was typed and why.
 func (b *browser) wentTo(st Browser, u *gunim.UI) {
-	if b.goingTo == "" {
+	if b.goingTo == "" || st.WentTo < b.goToAsk {
 		return
 	}
-	switch {
-	case st.Failed > b.failedAt:
-		typed := b.goingTo
-		b.goingTo = ""
-		b.askGoToWith(typed, st.Err, u)
-	case st.Seq != b.shown:
-		b.goingTo = ""
+	typed := b.goingTo
+	b.goingTo = ""
+	// Its own answer, and only while nothing else is being asked.
+	if st.WentTo == b.goToAsk && st.GoToErr != "" && (b.w.dialog == nil || u.Presence(b.w.dialog) == gunim.Exiting) {
+		b.askGoToWith(typed, st.GoToErr, u)
 	}
 }
 

@@ -165,6 +165,7 @@ type window struct {
 	// servingAsked says Serve was pressed and the window is not served
 	// yet, and served is the dialog saying it is, while that is open.
 	servingAsked bool
+	servingTries uint64
 	served       *servedShown
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
@@ -498,6 +499,16 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	// them: copying, pasting, scrolling back.
 	if t, ok := w.terms[w.focused]; ok {
 		return t.command(id, u)
+	}
+	if rd, ok := w.readers[w.focused]; ok && rd.r != nil && (id == "view.scrollUp" || id == "view.scrollDown") {
+		page := -1
+		if id == "view.scrollDown" {
+			page = 1
+		}
+		rd.r.ScrollPages(page)
+		rd.sync()
+		u.Invalidate()
+		return true
 	}
 	return false
 }
@@ -1448,7 +1459,8 @@ func (w *window) update(st State, u *gunim.UI) {
 	rows = w.markRows(rows, st)
 	w.sideOrder = w.sideOrder[:0]
 	for _, r := range rows {
-		if r.pane != "" && !r.heading {
+		// This window's own: a tunnel's row may name a pane in another.
+		if r.pane != "" && !r.heading && slices.ContainsFunc(st.Panes, func(p Pane) bool { return p.ID == r.pane }) {
 			w.sideOrder = append(w.sideOrder, r.pane)
 		}
 	}
@@ -2685,9 +2697,12 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 			add("Terminal on "+h.Name+", connecting first", h.Address, SplitPane{Vertical: vertical, Machine: h.Name, Elsewhere: true})
 		}
 	}
-	// A command beside it, asked for once picked.
-	add("Run a Command…", "program execute", nil)
-	w.splitCommand = commandAt{machine: here, at: placement{beside: focus, vertical: vertical}}
+	// A command beside it, asked for once picked: not on a kakel
+	// window, which has no shell to run one in.
+	if !slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == here }) {
+		add("Run a Command…", "program execute", nil)
+		w.splitCommand = commandAt{machine: here, at: placement{beside: focus, vertical: vertical}}
+	}
 	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 

@@ -125,18 +125,20 @@ func (a *app) startAgain(id string) error {
 		go func() {
 			var sess session.Session
 			var err error
-			open, ok := w.win.OpenNamed(farID)
-			if !ok && farID != "" {
-				// Ended, it is no longer listed, and is asked for by the
-				// ID the window gave it: a terminal on its own machine.
-				open, ok = serve.Open{ID: farID, Kind: "Terminal"}, true
-			}
-			if ok {
+			if farID != "" {
+				// Ended, it is not listed there, and is asked for by the
+				// ID the window gave it; one on a machine beyond it is.
+				open, ok := w.win.OpenNamed(farID)
+				if !ok {
+					open = serve.Open{ID: farID, Kind: "Terminal"}
+				}
 				err = w.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
 				if err == nil {
 					sess, err = w.win.Attach(open, size.Cols, size.Rows)
 				}
-				if errors.Is(err, serve.ErrCannotStartAgain) {
+				// A window that cannot, or one that closed it: a shell of
+				// its own there, in its place.
+				if errors.Is(err, serve.ErrCannotStartAgain) || errors.Is(err, serve.ErrNotOpen) {
 					err = nil
 				}
 			}
@@ -151,6 +153,10 @@ func (a *app) startAgain(id string) error {
 				}
 				if err != nil {
 					a.failed("Couldn't start it again", err.Error())
+					// The question goes back up, to be answered again.
+					if a.terminal(id) == t {
+						a.paneEnded(id)
+					}
 				}
 			}
 		}()

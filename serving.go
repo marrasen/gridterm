@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/sftp"
 
@@ -48,6 +49,9 @@ type Serving struct {
 	Allowed   []string
 	AllowedAt string
 	Problem   string
+	// Tries counts the times serving was asked to start, which worked
+	// or did not, for the window that asked to hear how it went.
+	Tries uint64
 }
 
 // ServedClient is a window connected to this one.
@@ -356,9 +360,42 @@ func (a *app) openFor(cols, rows int) (session.Session, serve.Attached, error) {
 // startAgainFor starts again a pane's program, for a connected window
 // working in it.
 func (a *app) startAgainFor(want serve.Attached) error {
-	_, err := onApp(a, func() (struct{}, error) { return struct{}{}, a.startAgain(want.ID) })
-	return err
+	if _, err := onApp(a, func() (struct{}, error) {
+		if a.terminal(want.ID) == nil {
+			// Closed here: the other window opens one of its own.
+			return struct{}{}, serve.ErrNotOpen
+		}
+		return struct{}{}, a.startAgain(want.ID)
+	}); err != nil {
+		return err
+	}
+	// Answered once it runs again, so what attaches to it next finds it
+	// running: a shell on a server beyond this window comes back a
+	// moment later, after a password asked here, maybe.
+	deadline := time.Now().Add(startAgainWait)
+	for {
+		running, err := onApp(a, func() (bool, error) {
+			t := a.terminal(want.ID)
+			if t == nil {
+				return false, errors.New("that pane is no longer open")
+			}
+			return !t.Exited(), nil
+		})
+		switch {
+		case err != nil:
+			return err
+		case running:
+			return nil
+		case time.Now().After(deadline):
+			return errors.New("it did not start again in time")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }
+
+// startAgainWait is the longest a window asking for a pane to start
+// again waits for it: long enough for a password to be typed.
+const startAgainWait = 2 * time.Minute
 
 // serveFiles gives a connected window the files of this machine, or
 // of a server this window is connected to, carried over its

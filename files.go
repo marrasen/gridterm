@@ -31,11 +31,12 @@ type Browser struct {
 	// Land names the entry the cursor goes to once the folder shows,
 	// as the folder just left, going up.
 	Land string
-	// Err says why the folder could not be read, and Failed counts the
-	// listings that failed, so the window knows a new failure from the
-	// same one said again.
-	Err    string
-	Failed int
+	// Err says why the folder could not be read.
+	Err string
+	// WentTo is the last Go To answered, and GoToErr why it could not
+	// go there, empty when it went.
+	WentTo  int
+	GoToErr string
 	// Seq counts the listings, so the window knows a new one, and Top
 	// says Path is the top of its filesystem.
 	Seq int
@@ -115,7 +116,11 @@ type (
 	// OpenFiles opens a file pane where the focused pane is, at home.
 	OpenFiles struct{}
 	// Browse shows path in a file pane, with the cursor on land.
-	Browse struct{ Pane, Path, Land string }
+	Browse struct {
+		Pane, Path, Land string
+		// GoTo is the Go To it answers, and 0 for none.
+		GoTo int
+	}
 	// ReadFile opens path in a reader beside the file pane, following
 	// it as it grows with Follow.
 	ReadFile struct {
@@ -129,7 +134,11 @@ type (
 	// one it came from.
 	GoUp struct{ Pane string }
 	// GoTo shows a folder typed as a path, ~ standing for home.
-	GoTo struct{ Pane, Path string }
+	GoTo struct {
+		Pane, Path string
+		// Ask numbers it, for the pane to hear how it went.
+		Ask int
+	}
 	// ViewFile reads the file named in a file pane's folder, following
 	// it as it grows with Follow.
 	ViewFile struct {
@@ -158,12 +167,14 @@ func (a *app) goTo(in GoTo) {
 	if rest, ok := strings.CutPrefix(path, "~"); ok && (rest == "" || rest[0] == '/' || rest[0] == f.Sep()) {
 		home, err := f.Home()
 		if err != nil {
-			a.failed("Couldn't find home", err.Error())
+			b := a.st.Browsers[in.Pane]
+			b.WentTo, b.GoToErr = in.Ask, "couldn't find home: "+err.Error()
+			a.setBrowser(in.Pane, b)
 			return
 		}
 		path = home + rest
 	}
-	a.browse(Browse{Pane: in.Pane, Path: path})
+	a.browse(Browse{Pane: in.Pane, Path: path, GoTo: in.Ask})
 }
 
 // enter goes into the folder named name, or reads the file.
@@ -433,13 +444,15 @@ func (a *app) browse(in Browse) {
 			b := a.st.Browsers[in.Pane]
 			if err != nil {
 				b.Err = err.Error()
-				b.Failed++
+				if in.GoTo != 0 {
+					b.WentTo, b.GoToErr = in.GoTo, err.Error()
+				}
 				a.setBrowser(in.Pane, b)
 				return
 			}
 			order(entries)
 			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, Failed: b.Failed})
+				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

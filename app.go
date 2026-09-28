@@ -1129,6 +1129,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.copyAgentSetup(in.Host)
 	case StartServing:
 		err = a.startServing(in)
+		a.st.Serving.Tries++
 	case StopServing:
 		err = a.stopServing()
 	case DisconnectClients:

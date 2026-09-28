@@ -127,11 +127,6 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 	o.Icons = appicon.Images()
 	// The close button asks first, as Exit does for the last window.
 	o.AskToClose = CloseWindow{}
-	// The title bar is the window's own: the menus, the title and the
-	// window's buttons in one row. It comes in as it opens, as it leaves
-	// as it quits.
-	o.Chromeless = true
-	o.Arrive = true
 	w, err := ws.app.NewWindow(o)
 	if err != nil {
 		return nil, gunim.Client{}, fmt.Errorf("kakel: %w", err)

@@ -60,6 +60,13 @@ func (r *Reader) AsBytes() {
 	r.Open()
 }
 
+// NotAPicture has a reader of a file named as a picture show it as
+// lines from the start, as one that already found it was not one does.
+// It reads nothing: the first read reads the lines.
+func (r *Reader) NotAPicture() {
+	r.isPic, r.pic = false, Pic{}
+}
+
 // PictureKeys is what the bar offers for a picture. Fewer than a file of
 // lines has: there is nothing to search and nowhere to scroll.
 func PictureKeys() []Key {

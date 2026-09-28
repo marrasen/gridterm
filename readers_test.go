@@ -258,3 +258,59 @@ func TestAReaderOnAServerReadsAgainAfterTheConnectionWent(t *testing.T) {
 		return r.Err == "" && slices.Contains(r.Lines, "two")
 	})
 }
+
+// A followed file that cannot be looked at says so once, not once a
+// look.
+func TestAFileThatCannotBeLookedAtIsSaidOnce(t *testing.T) {
+	a, file, id := readerApp(t, true)
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the reader to say so", func() bool { return a.st.Readers[id].Err != "" })
+	seq := a.st.Readers[id].Seq
+	pumpFor(a, 3*followEvery)
+	if got := a.st.Readers[id].Seq; got != seq {
+		t.Fatalf("said again and again: the reads went from %d to %d", seq, got)
+	}
+}
+
+// A reader with nothing to read again does not follow.
+func TestAReaderWithNothingToFollowDoesNot(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a.ctx = t.Context()
+	a.addPane(Pane{ID: "p1", Title: "Typing History", Kind: kindReader}, nil, placement{})
+	a.setReader("p1", Reader{Path: "Typing History", Lines: []string{"x"}, Seq: 1})
+	a.handle(FollowFile{Pane: "p1", On: true})
+	if a.st.Readers["p1"].Follow || a.following["p1"] || strings.HasSuffix(paneTitle(a, "p1"), followTitle) {
+		t.Fatal("a reader with nothing to read again follows")
+	}
+}
+
+// Following turned off and straight back on reads the file again.
+func TestFollowingBackOnReadsAgain(t *testing.T) {
+	a, _, id := readerApp(t, true)
+	seq := a.st.Readers[id].Seq
+	a.handle(FollowFile{Pane: id, On: false})
+	a.handle(FollowFile{Pane: id, On: true})
+	waitFor(t, a, "the file read again", func() bool { return a.st.Readers[id].Seq > seq })
+}
+
+// A reader on another window whose connection went is never read by
+// signing in at its address: the window is connected to again from the
+// sidebar.
+func TestAReaderOnAWindowThatWentDoesNotDial(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a.ctx = t.Context()
+	a.addPane(Pane{ID: "p1", Title: "notes.txt", Kind: kindReader, Machine: "box:7777"}, nil, placement{})
+	a.reads["p1"] = readSpec{machine: "box:7777", window: true, path: "/notes.txt", name: "notes.txt"}
+	a.setReader("p1", Reader{Path: "/notes.txt", Name: "notes.txt", Lines: []string{"x"}, Seq: 1})
+	a.handle(ReadAgain{Pane: "p1"})
+	if len(a.dialing) != 0 || len(a.conns) != 0 {
+		t.Fatalf("reading again dialled: %v", a.dialing)
+	}
+	if r := a.st.Readers["p1"]; !strings.Contains(r.Err, "Connect to it again") {
+		t.Fatalf("the reader says %q", r.Err)
+	}
+}

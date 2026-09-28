@@ -80,6 +80,9 @@ type Reader struct {
 	// Gone says why a scrollback's reader has nothing left to read
 	// again, its pane having closed.
 	Gone string
+	// Text says a file named as a picture is read as lines: it was not
+	// one.
+	Text bool
 }
 
 // Intents for readers.
@@ -477,7 +480,9 @@ func (a *app) readOn(machine string, f vfs.FS, path string, follow bool, line in
 	name := vfs.Base(f, path)
 	a.addPane(a.paneOn(machine, Pane{ID: id, Title: name, Kind: kindReader}), nil, at)
 	under := a.fsFor(machine)
-	a.reads[id] = readSpec{f: f, under: under, machine: machine, archives: f != under, path: path, name: name, line: line}
+	_, window := a.windows[machine]
+	window = window || strings.Contains(machine, farSep)
+	a.reads[id] = readSpec{f: f, under: under, machine: machine, window: window, archives: f != under, path: path, name: name, line: line}
 	// There before the first read, so how far that read has got shows.
 	a.setReader(id, Reader{Path: path, Name: name, Line: line})
 	a.readOnce(id)
@@ -501,6 +506,10 @@ type readSpec struct {
 	machine  string
 	under    vfs.FS
 	archives bool
+	// window says machine is another kakel window, or a machine it
+	// reaches, which is connected to again from the sidebar, never by a
+	// read: its name may be an address, and not one to sign in at.
+	window bool
 	// text reads a file named as a picture as lines, asked for once it
 	// was not one.
 	text bool
@@ -532,6 +541,10 @@ func (a *app) readerFiles(id string, dial bool, then func(vfs.FS)) {
 	}
 	lost := func() {
 		a.readerSays(id, "The connection to "+placeName(spec.machine)+" went. Ctrl+R connects again.")
+	}
+	if spec.window && a.fsFor(spec.machine) == nil {
+		a.readerSays(id, "The connection to "+placeName(spec.machine)+" went. Connect to it again, then Ctrl+R.")
+		return
 	}
 	if !dial && a.fsFor(spec.machine) == nil {
 		lost()
@@ -573,7 +586,7 @@ func (a *app) readWith(id string, f vfs.FS) {
 		}
 	}
 	go func() {
-		r := Reader{Path: spec.path, Name: spec.name, Line: spec.line}
+		r := Reader{Path: spec.path, Name: spec.name, Line: spec.line, Text: spec.text}
 		var err error
 		if files.IsPicture(spec.name) && !spec.text {
 			var pic files.Pic
@@ -608,7 +621,9 @@ func (a *app) readWith(id string, f vfs.FS) {
 func (a *app) readerSays(id, why string) {
 	spec, ok := a.reads[id]
 	r, shown := a.st.Readers[id]
-	if !ok || !shown {
+	if !ok || !shown || r.Err == why {
+		// Said already: once is enough, and a read on its way is not
+		// answered with it.
 		return
 	}
 	spec.seq++
@@ -638,6 +653,14 @@ func (a *app) followReader(id string, on bool) {
 	if !ok {
 		return
 	}
+	if on && !a.followable(id) {
+		// Nothing to read again: typed history, or a scrollback whose
+		// pane has gone. The reader is told it does not follow.
+		r.Follow = false
+		a.setReader(id, r)
+		return
+	}
+	was := r.Follow
 	r.Follow = on
 	a.setReader(id, r)
 	for i := range a.st.Panes {
@@ -648,15 +671,25 @@ func (a *app) followReader(id string, on bool) {
 			}
 		}
 	}
+	if on && !was && r.Seq > 0 {
+		// What it shows may be from long ago: read again now, and
+		// followed from there.
+		a.readOnce(id)
+	}
 	if on && !a.following[id] {
 		a.following[id] = true
-		if r.Seq > 0 {
-			// What it shows may be from long ago: read again now, and
-			// followed from there.
-			a.readOnce(id)
-		}
 		go a.followLoop(id)
 	}
+}
+
+// followable reports whether reader id has something to follow: a
+// file, or the scrollback of a pane still open.
+func (a *app) followable(id string) bool {
+	if _, ok := a.reads[id]; ok {
+		return true
+	}
+	r := a.st.Readers[id]
+	return r.Of != "" && r.Gone == "" && a.has(r.Of)
 }
 
 // followStep is what a follow loop does next.
@@ -673,7 +706,7 @@ type followStep struct {
 // program's goroutine. A loop told to stop has stopped.
 func (a *app) nextFollow(id string) followStep {
 	r, ok := a.st.Readers[id]
-	if !a.has(id) || !ok || !r.Follow {
+	if !a.has(id) || !ok || !r.Follow || !a.followable(id) {
 		delete(a.following, id)
 		return followStep{stop: true}
 	}
@@ -712,8 +745,17 @@ func (a *app) followLoop(id string) {
 			}
 		}
 		step := make(chan followStep, 1)
-		a.events <- func() { step <- a.nextFollow(id) }
-		s := <-step
+		var s followStep
+		select {
+		case a.events <- func() { step <- a.nextFollow(id) }:
+		case <-a.ctx.Done():
+			return
+		}
+		select {
+		case s = <-step:
+		case <-a.ctx.Done():
+			return
+		}
 		switch {
 		case s.stop:
 			return

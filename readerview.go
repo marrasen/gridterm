@@ -202,8 +202,15 @@ func (rd *reader) make(st Reader) {
 	r.Expect = st.Expect
 	r.Scrolls = []string{"view.scrollUp", "view.scrollDown"}
 	rd.r = r
+	if st.Text {
+		r.NotAPicture()
+	}
 	r.Follow(st.Follow)
 	rd.follow = st.Follow
+	if st.Gone != "" {
+		rd.gone = true
+		r.Gone(st.Gone)
+	}
 	if st.Find {
 		defer r.AskFind()
 	}

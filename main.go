@@ -15,10 +15,13 @@ import (
 	"os"
 	"os/signal"
 	"runtime/pprof"
+	"slices"
+	"sync"
 	"time"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
+	"github.com/marrasen/gunim/geom"
 
 	"github.com/marrasen/kakel/appicon"
 	"github.com/marrasen/kakel/mcp"
@@ -81,39 +84,23 @@ func run() error {
 		return defaultFontSize
 	}
 	err = gunim.Main(ctx, func(a *gunim.App) error {
-		w, err := a.NewWindow(gunim.WindowOptions{
-			Title: programName,
-			Size:  firstSize(keptFontSize(), 220),
-			Icons: appicon.Images(),
-			// The close button asks first, as Exit does.
-			AskToClose: Exit{},
-			// The title bar is the window's own: the menus, the title
-			// and the window's buttons in one row. It comes in as it
-			// opens, as it leaves as it quits.
-			Chromeless: true,
-			Arrive:     true,
-		})
-		if err != nil {
-			return fmt.Errorf("kakel: %w", err)
-		}
-		c := w.Client()
 		sh := &shells{m: map[string]*shell{}}
-		keys := shortcuts()
 		all, trouble := loadThemesSaying()
-		registerThemes(w, all)
-		gunim.RegisterView(w, "window", func(State) *window { return newWindow(sh, keys, all) },
-			func(win *window, st State, u *gunim.UI) { win.update(st, u) })
-		if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
+		ws := &ownWindows{app: a, sh: sh, all: all}
+		w, c, err := ws.open(gunim.WindowOptions{Size: firstSize(keptFontSize(), 220)})
+		if err != nil {
 			return err
 		}
 		if opts.stats {
 			go logStats(ctx, w)
 		}
 		prog := newApp(c, sh)
+		prog.wins[0].gw = w
+		prog.openWindow = ws.openFrom
 		prog.opts = opts
 		prog.themes = all
 		prog.themeTrouble = trouble
-		prog.registerThemes = func(all []themed) { registerThemes(w, all) }
+		prog.registerThemes = ws.registerThemes
 		defer closeToaster()
 		return errors.Join(prog.run(ctx), prog.shotErr)
 	})
@@ -122,6 +109,65 @@ func run() error {
 		return nil
 	}
 	return err
+}
+
+// ownWindows opens kakel's windows, each with the window's view
+// mounted, and names the themes to every one of them.
+type ownWindows struct {
+	app *gunim.App
+	sh  *shells
+	mu  sync.Mutex
+	all []themed
+	win []*gunim.Window
+}
+
+// open opens a window with o's size and place.
+func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, error) {
+	o.Title = programName
+	o.Icons = appicon.Images()
+	// The close button asks first, as Exit does for the last window.
+	o.AskToClose = CloseWindow{}
+	// The title bar is the window's own: the menus, the title and the
+	// window's buttons in one row. It comes in as it opens, as it leaves
+	// as it quits.
+	o.Chromeless = true
+	o.Arrive = true
+	w, err := ws.app.NewWindow(o)
+	if err != nil {
+		return nil, gunim.Client{}, fmt.Errorf("kakel: %w", err)
+	}
+	c := w.Client()
+	ws.mu.Lock()
+	all := ws.all
+	ws.win = append(ws.win, w)
+	ws.mu.Unlock()
+	registerThemes(w, all)
+	// Each window its own keys, which the shortcuts file changes there.
+	keys := shortcuts()
+	gunim.RegisterView(w, "window", func(State) *window { return newWindow(ws.sh, keys, all) },
+		func(win *window, st State, u *gunim.UI) { win.update(st, u) })
+	if err := c.Mount(gunim.Root, "window", "window", State{}, windowTopic); err != nil {
+		return nil, gunim.Client{}, err
+	}
+	return w, c, nil
+}
+
+// openFrom opens a window size large, its top left corner at at in
+// from's space.
+func (ws *ownWindows) openFrom(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error) {
+	w, c, err := ws.open(gunim.WindowOptions{Size: size, Parent: from, Anchor: at})
+	return c, w, err
+}
+
+// registerThemes names all to every window, and to those opened later.
+func (ws *ownWindows) registerThemes(all []themed) {
+	ws.mu.Lock()
+	ws.all = all
+	list := slices.Clone(ws.win)
+	ws.mu.Unlock()
+	for _, w := range list {
+		registerThemes(w, all)
+	}
 }
 
 // logStats prints, each second, how many frames the window drew and

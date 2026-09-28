@@ -339,7 +339,7 @@ func (a *app) showTunnel(id string) {
 	}
 	t := a.st.Tunnels[i]
 	if t.Pane != "" && a.has(t.Pane) {
-		a.st.Focus = t.Pane
+		a.bringHere(t.Pane)
 		return
 	}
 	open, ok := a.tunnels[id]

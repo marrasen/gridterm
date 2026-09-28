@@ -65,6 +65,7 @@ func (a *app) askThen(ctx context.Context, q Ask, then func(AskAnswered)) {
 	q.ID = a.askIDs.Add(1)
 	reply := make(chan AskAnswered, 1)
 	a.replies[q.ID] = reply
+	q.win = a.frontID()
 	a.st.Asks = append(a.st.Asks, q)
 	go func() {
 		select {

@@ -464,7 +464,7 @@ func (a *app) showSecretsPane() {
 	a.withSecrets("Couldn't open the secrets", func(*secrets.Vault) error {
 		for _, p := range a.st.Panes {
 			if p.Kind == kindSecrets {
-				a.st.Focus = p.ID
+				a.bringHere(p.ID)
 				return nil
 			}
 		}
@@ -567,7 +567,7 @@ func (a *app) typeSecret(id string) {
 			value += "\r"
 		}
 		sh.t.Paste(value)
-		a.st.Focus = a.lastTerminal
+		a.focus(a.lastTerminal)
 	})
 }
 

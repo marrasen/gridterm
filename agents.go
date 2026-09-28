@@ -684,7 +684,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		return struct{}{}, w.a.openThen(machine, placement{beside: h.pane}, func(pane string, err error) {
 			// The user keeps the keyboard where it was.
 			if w.a.has(focus) {
-				w.a.st.Focus = focus
+				w.a.focus(focus)
 			}
 			if err != nil {
 				failed <- err

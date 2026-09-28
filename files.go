@@ -604,7 +604,7 @@ func (a *app) showScrollback(pane string) error {
 		if r.Of == pane && slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }) {
 			r.FindAgain++
 			a.setReader(id, r)
-			a.st.Focus = id
+			a.bringHere(id)
 			return nil
 		}
 	}

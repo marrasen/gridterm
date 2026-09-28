@@ -3,6 +3,7 @@ package main
 import (
 	"image/color"
 	"math"
+	"slices"
 	"time"
 
 	"github.com/marrasen/gunim"
@@ -47,6 +48,13 @@ type switcher struct {
 	// stageAt is where the stage stood then.
 	stageDrawn *gunim.Drawing
 	stageAt    geom.Rect
+	// pressed is the tile the pointer went down on, at pressAt, which
+	// is picked when the pointer comes up there, and carried is the
+	// tile dragged out of it, held grab from its top left corner.
+	pressed *tile
+	pressAt geom.Point
+	carried *tile
+	grab    geom.Point
 }
 
 type tile struct {
@@ -191,7 +199,9 @@ func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) 
 				t.box.Jump(geom.Rect{Min: r.Center(), Max: r.Center()}.Inset(geom.Uniform(-min(r.Size().W, r.Size().H) * 0.45)))
 			}
 			t.box.Animate(r, motion)
-			t.fade.Animate(1, motion)
+			if t != s.carried {
+				t.fade.Animate(1, motion)
+			}
 		}
 		s.laid = true
 	}
@@ -232,9 +242,22 @@ func (s *switcher) paintTile(p *paint.Painter, f gunim.Frame, tl *tile, t float3
 		return
 	}
 	alpha := min(max(tl.fade.Value(), 0), 1)
+	s.paintPane(p, f, tl, r, alpha, t, tl.ring.Value())
+	if s.picked < 0 {
+		ink := widget.Ink.Get(th)
+		ink.A = uint8(float32(ink.A) * t)
+		ink.A = uint8(float32(ink.A) * alpha)
+		tl.label.Paint(p, geom.Pt(r.Min.X, r.Min.Y-tl.label.Height()-6), ink)
+	}
+}
+
+// paintPane draws tile tl's pane shrunk into r, at alpha, with a
+// shadow as dark as shadow says and the ring as lit as ring says.
+func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.Rect, alpha, shadow, ring float32) {
+	th := f.Theme
 	close := p.Layer(paint.LayerOpts{Bounds: r.Inset(geom.Uniform(-30)), Opacity: alpha})
 	defer close()
-	p.ShadowRRect(r, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * t)}})
+	p.ShadowRRect(r, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
 	// A terminal live, and any other pane as it was last drawn.
 	term, live := s.w.terms[tl.id]
 	d := s.w.drawings[tl.id]
@@ -251,16 +274,11 @@ func (s *switcher) paintTile(p *paint.Painter, f gunim.Frame, tl *tile, t float3
 			}
 		}()
 	}
-	if on := min(max(tl.ring.Value(), 0), 1); on > 0.01 {
-		ring := switcherRing.Get(th)
-		ring.A = uint8(float32(ring.A) * on)
+	if on := min(max(ring, 0), 1); on > 0.01 {
+		c := switcherRing.Get(th)
+		c.A = uint8(float32(c.A) * on)
 		grow := 3 * on
-		p.RRectStroke(r.Inset(geom.Uniform(-grow)), 6+grow, paint.Fill{}, paint.Stroke{Width: 2, Color: ring})
-	}
-	if s.picked < 0 {
-		ink := widget.Ink.Get(th)
-		ink.A = uint8(float32(ink.A) * t)
-		tl.label.Paint(p, geom.Pt(r.Min.X, r.Min.Y-tl.label.Height()-6), ink)
+		p.RRectStroke(r.Inset(geom.Uniform(-grow)), 6+grow, paint.Fill{}, paint.Stroke{Width: 2, Color: c})
 	}
 }
 
@@ -353,18 +371,34 @@ func (s *switcher) Handle(e input.Event, u *gunim.UI) bool {
 		}
 		return true
 	case input.PointerMove:
+		if s.pressed != nil && s.carried == nil && moved(e.Pos, s.pressAt) {
+			s.carry(e.Pos, u)
+			return true
+		}
 		if i := s.tileAt(e.Pos); i >= 0 && i != s.hot {
 			s.light(i, u)
 		}
 		return true
 	case input.PointerDown:
-		if i := s.tileAt(e.Pos); i >= 0 {
-			s.pick(i, u)
-		} else {
+		if i := s.tileAt(e.Pos); i >= 0 && e.Button == input.ButtonPrimary {
+			// Picked as the pointer comes up, unless it drags the pane
+			// away first.
+			s.pressed, s.pressAt = s.tiles[i], e.Pos
+		} else if i < 0 {
 			s.cancel(u)
 		}
 		return true
-	case input.TextInput, input.KeyRelease, input.PointerUp:
+	case input.PointerUp:
+		t := s.pressed
+		s.pressed = nil
+		if t != nil && s.carried == nil && s.tileAt(e.Pos) == slices.Index(s.tiles, t) {
+			s.pick(slices.Index(s.tiles, t), u)
+		}
+		return true
+	case input.DragEnd:
+		s.dragEnded(e, u)
+		return true
+	case input.TextInput, input.KeyRelease:
 		return true
 	}
 	return false

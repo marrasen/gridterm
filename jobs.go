@@ -397,7 +397,7 @@ func (a *app) clearJobs(all bool) {
 func (a *app) showJobsPane() {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindJobs {
-			a.st.Focus = p.ID
+			a.bringHere(p.ID)
 			return
 		}
 	}

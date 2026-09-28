@@ -56,7 +56,7 @@ const (
 func (a *app) showLog(machine string) {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
-			a.st.Focus = p.ID
+			a.bringHere(p.ID)
 			return
 		}
 	}
@@ -81,7 +81,7 @@ func (a *app) showLog(machine string) {
 func (a *app) watchDial(machine string) string {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
-			a.st.Focus = p.ID
+			a.bringHere(p.ID)
 			return ""
 		}
 	}

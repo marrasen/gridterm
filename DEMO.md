@@ -86,6 +86,10 @@ Worth a minute with an engineering audience.
 - [ ] **Show every pane at once.** `Ctrl+Shift+A` draws every pane on a
       grid, each one live and shrunk by the GPU. Arrows walk them,
       Enter goes, Escape leaves you where you were.
+- [ ] **Drag a pane into a window of its own.** In that grid, drag a
+      pane off the window and let it go on the desktop: it opens a new
+      window there. Drag another onto that window: it lights up, and
+      the pane moves in.
 - [ ] **Splits.** Split right, split down, and take a pane back out of
       its split.
 - [ ] **A menu bar of nine menus**, ordered from the smallest thing a

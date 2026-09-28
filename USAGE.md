@@ -56,6 +56,19 @@ click goes straight there. The pictures are shrunk by the GPU rather
 than cell by cell, and a window with nothing happening in it still skips
 the frames it would have skipped anyway.
 
+## More than one window
+
+Drag a pane out of the grid to put it in another window. Let it go over
+another kakel window and it moves there; that window lights up while
+the pane is over it. Let it go outside every window and it opens a
+window of its own, where you let it go. A window's only pane stays
+where it is.
+
+Each window has its own panes, its own sidebar list and its own pane in
+front. Questions and notices show in the window you last worked in. A
+window whose last pane moves away closes. Its close button asks before
+closing the panes still in it, and the last window's asks as Exit does.
+
 ## Sharing a pane with an agent
 
 Sharing a pane with an agent is on the Servers menu and on the plus on

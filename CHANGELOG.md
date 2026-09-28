@@ -11,6 +11,12 @@ change how something behaves.
 
 ### Added
 
+**More than one window.** In the grid of every pane (`Ctrl+Shift+A`), a
+pane dragged onto another kakel window moves there, and one let go
+outside every window opens a window of its own. Each window has its own
+panes and sidebar. A window left empty closes, and closing a window with
+panes in it asks first.
+
 **Icons, from Lucide.** The sidebar's rows, its close cross and its plus
 are drawn with Lucide's icons, in place of pictures built from rounded
 rectangles. The menus and the command palette show an icon beside each

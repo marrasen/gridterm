@@ -138,6 +138,12 @@ func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
 	g.Background = termBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
 	t.Add(t.settle)
+	// The whole screen, not just the rows changed since the last pane
+	// drew it: this one may be in a window the pane has just moved to.
+	sh.draw()
+	sh.mu.Lock()
+	sh.view.MarkAllDirty()
+	sh.mu.Unlock()
 	t.sync()
 	return t
 }

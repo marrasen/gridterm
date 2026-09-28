@@ -306,7 +306,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 		return fmt.Errorf("this window is not connected to %s any more", in.Window)
 	}
 	if pane, ok := w.bound[in.ID]; ok && a.has(pane) {
-		a.st.Focus = pane
+		a.bringHere(pane)
 		return nil
 	}
 	open, ok := w.win.OpenNamed(in.ID)

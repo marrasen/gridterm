@@ -42,15 +42,19 @@ func (a *app) exitNow() {
 	a.leave()
 }
 
-// leave lets the window animate out with what it shows, and closes
-// the panes once it has gone: see the run loop. Nothing is published
-// meanwhile, so the window leaves as the user last saw it.
+// leave lets every window animate out with what it shows, and closes
+// the panes once they have gone: see the run loop. Nothing is
+// published meanwhile, so each window leaves as the user last saw it.
 func (a *app) leave() {
 	if a.gone {
 		return
 	}
 	a.gone = true
-	a.c.Leave()
+	for _, w := range a.wins {
+		if !w.gone {
+			w.c.Leave()
+		}
+	}
 }
 
 // closeAll closes every pane, as the window goes.

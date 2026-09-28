@@ -41,6 +41,8 @@ type Ask struct {
 	// button so. Careful opens on Cancel without the colour. Plain has
 	// Yes alone, for something only told.
 	Danger, Careful, Plain bool
+	// win is the window it is asked in.
+	win int
 	// Icon is the Lucide name of the icon before the title, one of
 	// askIcons, or empty for none; a Danger question shows a warning.
 	Icon string
@@ -237,6 +239,7 @@ func (a *app) ask(ctx context.Context, q Ask) (AskAnswered, error) {
 	reply := make(chan AskAnswered, 1)
 	a.events <- func() {
 		a.replies[q.ID] = reply
+		q.win = a.frontID()
 		a.st.Asks = append(a.st.Asks, q)
 	}
 	select {

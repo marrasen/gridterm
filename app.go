@@ -35,6 +35,11 @@ import (
 
 // State is what the window shows.
 type State struct {
+	// Window numbers the window, among kakel's own, and Behind says
+	// another is in front, which sends the echoes and asks for the
+	// user's attention in its place.
+	Window int
+	Behind bool
 	// Panes are the open panes, in the sidebar's order.
 	Panes []Pane
 	// Stage is the arrangement on screen: the group of panes the
@@ -186,6 +191,8 @@ type Notice struct {
 	// Forget has the window take Clipboard back off the clipboard in
 	// half a minute, unless something else was copied since.
 	Forget bool
+	// win is the window it shows in.
+	win int
 }
 
 // NoticeKind is what a notice tells of, which picks its icon.
@@ -402,9 +409,21 @@ type (
 // app is the program side's state. It belongs to the goroutine running
 // run.
 type app struct {
-	c      gunim.Client
-	shells *shells
-	st     State
+	// c is the first window's client.
+	c gunim.Client
+	// wins are kakel's windows, cur the one in front, nextWin numbers
+	// them, and winOf is the window each pane is in. intents carries
+	// what each window asks for. openWindow opens another, and opening
+	// counts those on their way.
+	wins       []*ownWin
+	cur        *ownWin
+	nextWin    int
+	winOf      map[string]int
+	intents    chan windowIn
+	openWindow windowOpener
+	opening    int
+	shells     *shells
+	st         State
 	// groups holds each group's arrangement, and groupOf each pane's
 	// group.
 	groups  map[int]*Box
@@ -583,7 +602,7 @@ func (s *shells) set(id string, sh *shell) {
 }
 
 func newApp(c gunim.Client, sh *shells) *app {
-	return &app{
+	a := &app{
 		c:           c,
 		shells:      sh,
 		st:          State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
@@ -616,7 +635,11 @@ func newApp(c gunim.Client, sh *shells) *app {
 		accounts:    map[string]*logs.Lines{},
 		wake:        make(chan struct{}, 1),
 		events:      make(chan func(), 64),
+		winOf:       map[string]int{},
+		intents:     make(chan windowIn, 64),
 	}
+	a.addWindow(c, nil)
+	return a
 }
 
 // run serves the window until it closes or ctx ends.
@@ -696,32 +719,40 @@ func (a *app) run(ctx context.Context) error {
 		}
 		go a.runShot(list)
 	}
-	intents := a.c.Intents()
+	for _, w := range a.wins {
+		a.serveWin(w)
+	}
 	for {
 		select {
 		case <-ctx.Done():
 			a.takeSecretBack()
 			return nil
-		case env, ok := <-intents:
-			if !ok {
-				a.closeAll()
-				return a.c.Err()
+		case in := <-a.intents:
+			if in.closed {
+				a.windowClosed(in.w)
+				if len(a.wins) == 0 {
+					a.closeAll()
+					return a.c.Err()
+				}
+				break
 			}
-			if a.gone {
+			if a.gone || in.w.gone {
 				// On its way out: nothing more is done.
 				continue
 			}
-			a.handle(env.Intent)
+			a.front(in.w)
+			a.handle(in.env.Intent)
 		case <-a.wake:
 			a.st.Output++
 		case f := <-a.events:
 			f()
 		}
 		// Empty, and connecting to nothing that would open a pane: the
-		// window leaves.
-		if len(a.st.Panes) == 0 && len(a.dialing) == 0 {
+		// window leaves, and the last one takes the program with it.
+		if len(a.st.Panes) == 0 && len(a.dialing) == 0 && a.opening == 0 {
 			a.leave()
 		}
+		a.leaveEmpty()
 		if a.gone {
 			continue
 		}
@@ -766,7 +797,11 @@ func (a *app) publish() {
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	st.Secrets.Waiting = a.waitingForSecret()
-	_ = a.c.Publish(windowTopic, st)
+	for _, w := range a.wins {
+		if !w.gone {
+			_ = w.c.Publish(windowTopic, a.stateFor(w, st))
+		}
+	}
 	// A split opens once; after that it is only a split.
 	for _, g := range a.groups {
 		clearOpening(g)
@@ -802,8 +837,16 @@ func (a *app) handle(in gunim.Intent) {
 		a.closePane(id)
 	case FocusPane:
 		if a.has(in.Pane) {
-			a.st.Focus = in.Pane
+			a.focus(in.Pane)
 		}
+	case WindowFocused:
+		// In front already, as it asked.
+	case CloseWindow:
+		a.closeWindow(a.cur)
+	case PaneToWindow:
+		a.moveToWindow(in.Pane, a.cur)
+	case PaneToNewWindow:
+		a.paneToNewWindow(in)
 	case NextPane:
 		a.nextPane(in.Back)
 	case PopOut:
@@ -1105,7 +1148,7 @@ func (a *app) notice(kind NoticeKind, title, body, clip string) {
 		log.Print(title)
 	}
 	a.notices++
-	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Kind: kind, Clipboard: clip})
+	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Kind: kind, Clipboard: clip, win: a.frontID()})
 	// The window has shown all but the newest few by now.
 	if n := len(a.st.Notices); n > 8 {
 		a.st.Notices = slices.Delete(a.st.Notices, 0, n-8)
@@ -1158,7 +1201,7 @@ func (a *app) hooks(id string) shellHooks {
 		bell: func() {
 			a.events <- func() {
 				a.st.Bells++
-				if a.st.Focus != id {
+				if w := a.ownerOf(id); w == nil || a.focusIn(w) != id {
 					a.setPane(id, func(p *Pane) { p.Rang = true })
 					a.st.Pings.Calls++
 				}
@@ -1253,7 +1296,12 @@ func (a *app) addPane(p Pane, sh *shell, at placement) {
 	if sh != nil {
 		a.shells.set(p.ID, sh)
 	}
+	// Into the window of the pane it goes beside, or the one in front.
+	if w := a.ownerOf(at.beside); w != nil && !w.gone {
+		a.front(w)
+	}
 	a.st.Panes = append(a.st.Panes, p)
+	a.winOf[p.ID] = a.frontID()
 	a.place(p.ID, at)
 	a.st.Focus = p.ID
 }
@@ -1314,9 +1362,15 @@ func (a *app) movePane(in MovePane) {
 	if in.Pane == in.Beside || !a.has(in.Pane) || !a.has(in.Beside) {
 		return
 	}
-	a.take(in.Pane)
+	from, to := a.ownerOf(in.Pane), a.ownerOf(in.Beside)
+	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == in.Pane })
+	next := a.take(in.Pane)
+	if from != to {
+		a.winOf[in.Pane] = to.id
+		a.refocus(from, in.Pane, next, i)
+	}
 	a.place(in.Pane, placement{beside: in.Beside, vertical: in.Vertical})
-	a.st.Focus = in.Pane
+	a.focus(in.Pane)
 }
 
 // take takes a pane out of its group's arrangement, and reports the
@@ -1355,9 +1409,9 @@ func (a *app) closePane(id string) {
 		return
 	}
 	a.closing[id] = true
-	if a.st.Focus == id {
+	if w := a.ownerOf(id); w != nil && a.focusIn(w) == id {
 		if next := a.groups[g].beside(id); next != "" {
-			a.st.Focus = next
+			a.setFocusIn(w, next)
 		}
 	}
 	if sh := a.shells.get(id); sh != nil {
@@ -1425,30 +1479,23 @@ func (a *app) remove(id string) {
 		_ = a.unsharePane(id)
 	}
 	next := a.take(id)
+	a.refocus(a.ownerOf(id), id, next, i)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
-	if a.st.Focus == id {
-		switch {
-		case next != "":
-			a.st.Focus = next
-		case len(a.st.Panes) > 0:
-			a.st.Focus = a.st.Panes[max(0, i-1)].ID
-		default:
-			a.st.Focus = ""
-		}
-	}
+	delete(a.winOf, id)
 }
 
 func (a *app) nextPane(back bool) {
-	n := len(a.st.Panes)
+	panes := a.panesIn(a.cur)
+	n := len(panes)
 	if n == 0 {
 		return
 	}
-	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == a.st.Focus })
+	i := slices.IndexFunc(panes, func(p Pane) bool { return p.ID == a.st.Focus })
 	step := 1
 	if back {
 		step = n - 1
 	}
-	a.st.Focus = a.st.Panes[(i+step)%n].ID
+	a.st.Focus = panes[(i+step)%n].ID
 }
 
 // popOut moves the focused pane onto a stage of its own.
@@ -1503,7 +1550,9 @@ func (a *app) pickTheme(name string) bool {
 		for _, sh := range a.shells.all() {
 			sh.setPalette(t.palette)
 		}
-		_ = a.c.SetTheme(name)
+		for _, w := range a.wins {
+			_ = w.c.SetTheme(name)
+		}
 		return true
 	}
 	return false

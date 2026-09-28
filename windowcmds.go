@@ -190,7 +190,7 @@ func (a *app) offerRelease(title, have string, newest update.Release) {
 func (a *app) showHelp() {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindHelp {
-			a.st.Focus = p.ID
+			a.bringHere(p.ID)
 			return
 		}
 	}

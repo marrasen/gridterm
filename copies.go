@@ -187,7 +187,7 @@ func (a *app) forgetCopy(c settings.SavedCopy) error {
 func (a *app) showCopies() {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindCopies {
-			a.st.Focus = p.ID
+			a.bringHere(p.ID)
 			return
 		}
 	}

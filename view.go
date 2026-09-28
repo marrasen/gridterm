@@ -40,6 +40,7 @@ var (
 
 // window is the view the program's state drives.
 type window struct {
+	anim.Group
 	top    *widget.Flex
 	bar    *widget.Menubar
 	outer  *widget.Split
@@ -163,6 +164,12 @@ type window struct {
 	// it is open.
 	panes []Pane
 	sw    *switcher
+	// winID numbers the window among kakel's own, and behind says
+	// another is in front. dropLit is how lit the window is for a pane
+	// dragged over it from another window.
+	winID   int
+	behind  bool
+	dropLit *anim.Float
 	// toasts shows the program's notices, and shown is the last one
 	// shown.
 	toasts *widget.Toasts
@@ -202,7 +209,9 @@ func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
 		tunnelPanes: map[string]*tunnelPane{},
 		splits:      map[string]*widget.Split{},
 		captions:    map[string]*captioned{},
+		dropLit:     anim.NewFloat(0),
 	}
+	w.Add(w.dropLit)
 	side := widget.Column(w.list)
 	side.Cross = widget.CrossStretch
 	w.status = newStatusLine()
@@ -493,10 +502,11 @@ func (w *window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children)
 }
 
 // Paint implements [gunim.Node].
-func (w *window) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+func (w *window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	for k := range kids.All {
 		k.Paint(p)
 	}
+	w.paintDropLit(p, f, box)
 }
 
 // openDialog shows d over the window, with the keyboard, until it
@@ -1289,6 +1299,9 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 		w.zoom(s, u)
 		return true
 	}
+	if w.paneDrop(e, u) {
+		return true
+	}
 	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
 		// Dropped somewhere that is no terminal: the sidebar, a file
 		// pane, the menu bar. The focused pane is what the user is
@@ -1301,6 +1314,9 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	switch k := e.(type) {
 	case input.WindowFocusGained:
 		w.away = false
+		if w.behind {
+			u.Send(w, WindowFocused{})
+		}
 	case input.WindowFocusLost:
 		w.away = true
 		// Another program took the keyboard, as a screenshot tool does,
@@ -1341,6 +1357,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 // update shows st.
 func (w *window) update(st State, u *gunim.UI) {
 	w.panes = st.Panes
+	w.winID, w.behind = st.Window, st.Behind
 	if st.Theme != w.themeNow {
 		if c, ok := w.contents[st.Theme]; ok {
 			w.onStage.Use(c)
@@ -1440,7 +1457,9 @@ func (w *window) update(st State, u *gunim.UI) {
 	w.echoFor(st, u)
 	if st.Bells > w.bells {
 		w.bells = st.Bells
-		u.RequestAttention()
+		if !st.Behind {
+			u.RequestAttention()
+		}
 	}
 	if st.PaneTitles != w.titles {
 		w.titles = st.PaneTitles
@@ -1544,7 +1563,9 @@ func (w *window) update(st State, u *gunim.UI) {
 		p.bar.show(t, ok, u)
 	}
 	for id, t := range w.terms {
-		if w.shells.get(id) == nil {
+		if w.shells.get(id) == nil || !open[id] {
+			// Ended, or moved to another window, which draws it from
+			// now on.
 			delete(w.terms, id)
 			continue
 		}
@@ -2672,6 +2693,10 @@ func (w *window) madeNode(id string) gunim.Node {
 func (w *window) echoFor(st State, u *gunim.UI) {
 	was := w.pings
 	w.pings = st.Pings
+	if st.Behind {
+		// The window in front sends them; this one only keeps count.
+		was = st.Pings
+	}
 	if st.Pings.Problems > was.Problems || st.Pings.FrontProblems > was.FrontProblems && w.away {
 		w.echo.Ping(u, widget.EchoProblem)
 	}

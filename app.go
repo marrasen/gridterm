@@ -670,22 +670,7 @@ func (a *app) run(ctx context.Context) error {
 	for _, t := range a.themes {
 		a.st.Themes = append(a.st.Themes, t.name)
 	}
-	if path, err := settings.Path(); err == nil {
-		if s, err := settings.Load(path); err == nil {
-			a.settings = s
-			a.st.SavedTunnels = s.Tunnels()
-			a.st.PaneTitles = s.PaneTitles()
-			a.st.SavedCommands = s.Commands()
-			a.st.ChosenShell, _ = s.Shell()
-			a.st.ShellSetup = s.ShellSetup()
-			a.st.TermProgram = s.TermProgram()
-			a.st.SavedCopies = s.Copies()
-			a.st.KeyFiles = s.Keys()
-			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
-				a.st.FontSize = min(max(float32(size), 8), 40)
-			}
-		}
-	}
+	a.loadSettings()
 	// The theme picked last time, or the first.
 	if len(a.themes) > 0 {
 		name := a.themes[0].name
@@ -716,13 +701,7 @@ func (a *app) run(ctx context.Context) error {
 	if a.settings != nil && a.settings.ServeOn() {
 		go a.offerToServeAgain()
 	}
-	if path, err := remote.BookPath(); err == nil {
-		if b, err := remote.LoadBook(path); err == nil {
-			a.book = b
-			a.st.Saved = b.Hosts()
-			a.giveSavedIDs()
-		}
-	}
+	a.loadBook()
 	if a.themeTrouble != nil {
 		a.failed("Couldn't read all the themes", a.themeTrouble.Error())
 	}
@@ -785,6 +764,55 @@ func (a *app) run(ctx context.Context) error {
 		}
 		a.setPane(a.st.Focus, func(p *Pane) { p.Rang = false })
 		a.publish()
+	}
+}
+
+// loadSettings reads kakel's settings, and takes what they keep.
+func (a *app) loadSettings() {
+	if path, err := settings.Path(); err == nil {
+		if s, err := settings.Load(path); err == nil {
+			a.settings = s
+			a.st.SavedTunnels = s.Tunnels()
+			a.st.PaneTitles = s.PaneTitles()
+			a.st.SavedCommands = s.Commands()
+			a.st.ChosenShell, _ = s.Shell()
+			a.st.ShellSetup = s.ShellSetup()
+			a.st.TermProgram = s.TermProgram()
+			a.st.SavedCopies = s.Copies()
+			a.st.KeyFiles = s.Keys()
+			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
+				a.st.FontSize = min(max(float32(size), 8), 40)
+			}
+		} else {
+			a.unreadable("the settings", path, err)
+		}
+	}
+}
+
+// loadBook reads the saved servers.
+func (a *app) loadBook() {
+	if path, err := remote.BookPath(); err == nil {
+		if b, err := remote.LoadBook(path); err == nil {
+			a.book = b
+			a.st.Saved = b.Hosts()
+			a.giveSavedIDs()
+		} else {
+			a.unreadable("the server list", path, err)
+		}
+	}
+}
+
+// unreadable says that what, a file of kakel's at path, could not be
+// read, and that nothing is written to it until it is repaired: a file
+// kakel cannot read is not one to write over.
+func (a *app) unreadable(what, path string, err error) {
+	a.failed("Couldn't read "+what, err.Error()+"\n\nNothing changed is kept until "+path+" is repaired or removed.")
+}
+
+// keep says when something could not be kept for next time.
+func (a *app) keep(what string, err error) {
+	if err != nil {
+		a.failed("Couldn't keep "+what+" for next time", err.Error())
 	}
 }
 

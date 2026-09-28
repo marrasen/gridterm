@@ -255,7 +255,7 @@ func (a *app) setAgentMay(in SetAgentMay) {
 	}
 	h.may = in.May
 	if a.settings != nil {
-		_ = a.settings.PutAgentMay(in.May)
+		a.keep("what the agent may do", a.settings.PutAgentMay(in.May))
 	}
 	a.showShare()
 }
@@ -300,7 +300,7 @@ func (a *app) copyAgentPrompt(name string) {
 	}
 	host := hostNamed(name)
 	if a.settings != nil {
-		_ = a.settings.PutAgentHost(host.name)
+		a.keep("the agent picked", a.settings.PutAgentHost(host.name))
 	}
 	a.worked("Prompt copied", "Paste it into "+host.called+". It carries the share's code.", handoverPrompt(host, sh.code, exePath()))
 	if _, ok := exeKnown(); !ok {
@@ -315,7 +315,7 @@ func (a *app) copyAgentPrompt(name string) {
 func (a *app) copyAgentSetup(name string) {
 	host := hostNamed(name)
 	if a.settings != nil {
-		_ = a.settings.PutAgentHost(host.name)
+		a.keep("the agent picked", a.settings.PutAgentHost(host.name))
 	}
 	what := "the command"
 	if host.cmd == "" {

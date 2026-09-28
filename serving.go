@@ -174,8 +174,8 @@ func (a *app) startServing(in StartServing) error {
 		if in.Anywhere {
 			reach = settings.ReachAnywhere
 		}
-		_ = a.settings.PutServe(port, reach)
-		_ = a.settings.PutServeOn(true)
+		a.keep("what is served", a.settings.PutServe(port, reach))
+		a.keep("that this window is served", a.settings.PutServeOn(true))
 	}
 	a.tellServed()
 	a.showServing()
@@ -190,7 +190,7 @@ func (a *app) stopServing() error {
 	}
 	a.serving.server, a.serving.clients = nil, nil
 	if a.settings != nil {
-		_ = a.settings.PutServeOn(false)
+		a.keep("that this window is not served", a.settings.PutServeOn(false))
 	}
 	a.showServing()
 	return srv.Close()

@@ -160,10 +160,11 @@ type window struct {
 	// permsAfter is a pane whose permissions open once it is shared.
 	permsAfter string
 	size       geom.Size
-	// panes are the panes as last published, and sw the switcher while
-	// it is open.
-	panes []Pane
-	sw    *switcher
+	// panes are the panes as last published, sideOrder them as the
+	// sidebar lists them, and sw the switcher while it is open.
+	panes     []Pane
+	sideOrder []string
+	sw        *switcher
 	// winID numbers the window among kakel's own, and behind says
 	// another is in front. dropLit is how lit the window is for a pane
 	// dragged over it from another window.
@@ -314,6 +315,13 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.switcher":
 		w.openSwitcher(u)
+		return true
+	case "pane.nextInSidebar", "pane.previousInSidebar":
+		// In the sidebar's own order, which the window has: grouped by
+		// machine, as the rows are read.
+		if next := w.paneInSidebar(id == "pane.previousInSidebar"); next != "" {
+			u.Send(w, FocusPane{Pane: next})
+		}
 		return true
 	case "pane.next", "pane.previous":
 		step := 1
@@ -479,6 +487,11 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	if in, ok := commandIntent(id); ok {
 		u.Send(w, in)
 		return true
+	}
+	// The terminal in front's own, as the palette and the menus run
+	// them: copying, pasting, scrolling back.
+	if t, ok := w.terms[w.focused]; ok {
+		return t.command(id, u)
 	}
 	return false
 }
@@ -808,7 +821,7 @@ func (w *window) servers(saved []remote.Host) {
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
-		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Icon: commandIcons[c.id], Hint: hint(c.id)})
+		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Icon: commandIcons[c.id], Hint: hint(c.id), Also: commandAlso[c.id]})
 		w.paletteIDs = append(w.paletteIDs, c.id)
 	}
 	for _, h := range saved {
@@ -1265,6 +1278,23 @@ func (w *window) rename(u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
+// paneInSidebar is the pane after the focused one in the sidebar, or
+// the one before with back, going round.
+func (w *window) paneInSidebar(back bool) string {
+	n := len(w.sideOrder)
+	if n == 0 {
+		return ""
+	}
+	i := slices.Index(w.sideOrder, w.focused)
+	switch {
+	case i < 0:
+		return w.sideOrder[0]
+	case back:
+		return w.sideOrder[(i+n-1)%n]
+	}
+	return w.sideOrder[(i+1)%n]
+}
+
 // openSwitcher shows every pane, shrunk into a grid over the window.
 func (w *window) openSwitcher(u *gunim.UI) {
 	if w.sw != nil || len(w.panes) == 0 {
@@ -1404,6 +1434,12 @@ func (w *window) update(st State, u *gunim.UI) {
 		rows = slices.Insert(rows, at, item)
 	}
 	rows = w.markRows(rows, st)
+	w.sideOrder = w.sideOrder[:0]
+	for _, r := range rows {
+		if r.pane != "" && !r.heading {
+			w.sideOrder = append(w.sideOrder, r.pane)
+		}
+	}
 	// At the foot, the way to a machine not yet listed.
 	rows = append(rows, sideItem{key: "connect:new", text: "+ Connect to server…", local: w.connectDialog})
 	widget.Sync(w.list, u, rows,

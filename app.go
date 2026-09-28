@@ -817,6 +817,61 @@ func (a *app) keep(what string, err error) {
 	}
 }
 
+// failedTitle heads what is said when in could not be done, with what
+// was being done: "Couldn't change the theme" says more than that
+// something did not work.
+func failedTitle(in gunim.Intent) string {
+	switch in.(type) {
+	case NewTerminal, OpenOn, OpenShellNamed, OpenDefaultShell:
+		return "Couldn't open a terminal"
+	case SplitPane:
+		return "Couldn't split the pane"
+	case PickTheme:
+		return "Couldn't change the theme"
+	case PickFont:
+		return "Couldn't change the font"
+	case ConnectTo:
+		return "Couldn't connect"
+	case ConnectWindow, AttachWindow:
+		return "Couldn't connect to the window"
+	case Disconnect, DisconnectWindow:
+		return "Couldn't disconnect"
+	case OpenFiles, FilesOn:
+		return "Couldn't open the files"
+	case PasteFiles:
+		return "Couldn't paste the files"
+	case DropFiles:
+		return "Couldn't take the files dropped"
+	case PasteImage, PastePicture:
+		return "Couldn't paste the picture"
+	case SaveServer:
+		return "Couldn't save the server"
+	case RemoveServer:
+		return "Couldn't remove the server"
+	case OpenTunnel, OpenSavedTunnel:
+		return "Couldn't open the tunnel"
+	case CloseTunnel:
+		return "Couldn't close the tunnel"
+	case RunCommand, RunSavedCommand:
+		return "Couldn't run the command"
+	case StartServing:
+		return "Couldn't serve this window"
+	case StopServing:
+		return "Couldn't stop serving this window"
+	case SharePane, UnsharePane, StopSharing:
+		return "Couldn't change what is shared"
+	case WriteSkill:
+		return "Couldn't write the skill"
+	case ShowScrollback:
+		return "Couldn't show the scrollback"
+	case MakeKey:
+		return "Couldn't make the key"
+	case RunSavedCopy, RepeatJob:
+		return "Couldn't copy"
+	}
+	return "That didn't work"
+}
+
 // stayIfEmpty keeps an empty window open, for what went wrong opening
 // its pane to be read: the log that was its one pane closed as the
 // connection was made.
@@ -1207,7 +1262,7 @@ func (a *app) handle(in gunim.Intent) {
 	case DialogClosed:
 	}
 	if err != nil {
-		a.failed("That didn't work", err.Error())
+		a.failed(failedTitle(in), err.Error())
 	}
 }
 

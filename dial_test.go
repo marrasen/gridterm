@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/remote"
 )
 
@@ -20,7 +21,7 @@ import (
 // with a way to answer what connecting asks.
 func dialApp(t *testing.T) (a *app, answering func()) {
 	t.Helper()
-	t.Setenv("HOME", t.TempDir())
+	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	s := sshtest.New(t)
 	host, port := s.Host()

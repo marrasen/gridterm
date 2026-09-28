@@ -6,7 +6,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -16,6 +15,7 @@ import (
 	"golang.org/x/crypto/ssh/agent"
 
 	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/internal/testhome"
 )
 
 // takeOver builds the ladder taking over a window climbs, through the
@@ -187,11 +187,7 @@ func homeWith(t *testing.T, name, from string) {
 			t.Fatalf("write the key: %v", err)
 		}
 	}
-	if runtime.GOOS == "windows" {
-		t.Setenv("USERPROFILE", home)
-		return
-	}
-	t.Setenv("HOME", home)
+	testhome.At(t, home)
 }
 
 // Taking over a window offers the key files in the usual places.

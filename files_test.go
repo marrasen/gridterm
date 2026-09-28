@@ -13,11 +13,11 @@ import (
 	"github.com/marrasen/gunim/geom"
 
 	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/internal/testhome"
 )
 
 func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testhome.New(t)
 	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.setReader("p1", Reader{Path: "/x/notes.txt", Seq: 1})
@@ -42,7 +42,7 @@ func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
 // A file pane whose connection dropped opens its files again on the
 // next thing asked of it, connecting again first.
 func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	t.Chdir(t.TempDir())
 	s := sshtest.New(t)

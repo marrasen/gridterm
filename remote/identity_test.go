@@ -7,16 +7,14 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/internal/testhome"
 )
 
 // homeAt makes the usual key files look for their keys in a directory
 // the test owns.
 func homeAt(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
-	// Windows reads one of these and everything else reads the other.
-	t.Setenv("HOME", home)
-	t.Setenv("USERPROFILE", home)
+	home := testhome.New(t)
 	if err := os.MkdirAll(filepath.Join(home, ".ssh"), 0o700); err != nil {
 		t.Fatalf("make .ssh: %v", err)
 	}

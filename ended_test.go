@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/kakel/agent"
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/internal/sshtest"
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/settings"
 )
 
@@ -95,7 +96,7 @@ func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 // started again, and says so when the server is at another address
 // than the pane was opened at.
 func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	s := sshtest.New(t)
 	host, port := s.Host()

@@ -13,6 +13,7 @@ import (
 
 	"github.com/marrasen/kakel/agent"
 	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/settings"
 )
 
@@ -21,8 +22,7 @@ import (
 func agentApp(t *testing.T) (a *app, code string) {
 	t.Helper()
 	t.Setenv("SHELL", "/bin/sh")
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testhome.New(t)
 	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
@@ -282,8 +282,7 @@ func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
 
 // A relative directory in an agent program's setting is read from home.
 func TestASkillDirectoryIsReadFromHome(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testhome.New(t)
 	got, err := fromHome("conf/claude")
 	if err != nil || got != filepath.Join(home, "conf", "claude") {
 		t.Fatalf("read %q, %v", got, err)

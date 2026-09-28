@@ -10,6 +10,7 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/text"
 
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/themes"
 	"github.com/marrasen/kakel/vt"
@@ -157,8 +158,7 @@ func TestAnotherThemesFaceWinsOverOnePickedBefore(t *testing.T) {
 }
 
 func TestAThemesFileThatCannotBeReadIsSaid(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	testhome.New(t)
 	dir, err := settings.Dir()
 	if err != nil {
 		t.Fatal(err)

@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/secrets"
 )
@@ -25,10 +26,8 @@ import (
 // ed25519 key at ~/.ssh/id_ed25519 and no vault yet.
 func secretsApp(t *testing.T) (a *app, keyFile string) {
 	t.Helper()
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	home := testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
 	keyFile = filepath.Join(home, ".ssh", "id_ed25519")
 	writeKey(t, keyFile)
 	w := gunim.NewOffscreen(geom.Sz(400, 300), nil)

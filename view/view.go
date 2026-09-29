@@ -683,16 +683,8 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 	}
 }
 
-// choose offers titles in a palette, and runs then with the one picked.
-func (w *Window) choose(placeholder string, titles []string, then func(i int, u *gunim.UI), u *gunim.UI) {
-	items := make([]widget.PaletteItem, len(titles))
-	for i, t := range titles {
-		items[i] = widget.PaletteItem{Title: t}
-	}
-	w.chooseFrom(placeholder, items, then, u)
-}
-
-// chooseFrom is choose with items that say more than their titles.
+// chooseFrom offers items in a palette, and runs then with the one
+// picked.
 func (w *Window) chooseFrom(placeholder string, items []widget.PaletteItem, then func(i int, u *gunim.UI), u *gunim.UI) {
 	p := &widget.Palette{Placeholder: placeholder, Pick: then, Items: items}
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
@@ -1148,7 +1140,11 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
 		h.Window = kind.Selected == 1
 		h.Folders = remote.FoldersFrom(folders.Text())
-		h.Setup, h.ForwardAgent = setup.On, forward.On && !h.Window
+		// A window keeps the agent tick it had, unused, so switching it
+		// back to a server brings it back. Not its route: a window
+		// naming a jump host would keep that host from being removed,
+		// for a route it never takes.
+		h.Setup, h.ForwardAgent = setup.On, forward.On
 		if h.Window {
 			h.Via = ""
 		}

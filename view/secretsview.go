@@ -461,7 +461,6 @@ func (w *Window) serverNames() []string {
 	return out
 }
 
-
 // completesPaths has a field that takes a path on this machine offer
 // the rest of a file's or folder's name as it is typed, as Go To does.
 func completesPaths(f *widget.TextField) {

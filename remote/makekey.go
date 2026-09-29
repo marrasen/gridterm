@@ -93,10 +93,6 @@ func MakeKey(path, comment, passphrase string) (NewKey, error) {
 	return NewKey{Path: path, Pub: pub, Line: line}, nil
 }
 
-// free reports that nothing is at a path, or says what is.
-//
-// A key file that is already there is one somebody is using, and the
-// private half cannot be got back.
 // KeyPathProblem is why a key cannot be made at path, as MakeKey would
 // say it, or nil: no path, one that is not full, or a key or its public
 // half already there. A dialog asks it before it closes, so what was
@@ -114,6 +110,10 @@ func KeyPathProblem(path string) error {
 	return errors.Join(free(path), free(path+".pub"))
 }
 
+// free reports that nothing is at a path, or says what is.
+//
+// A key file that is already there is one somebody is using, and the
+// private half cannot be got back.
 func free(path string) error {
 	switch _, err := os.Lstat(path); {
 	case errors.Is(err, os.ErrNotExist):

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/pkg/sftp"
@@ -811,7 +812,7 @@ func (a *app) followLoop(id string) {
 
 // saveLines writes what a reader shows to a file on this machine.
 func (a *app) saveLines(in SaveLines) {
-	at, err := expandHome(in.Path)
+	at, err := conf.ExpandHome(in.Path)
 	if err == nil {
 		err = createNew(at, func(w io.Writer) error {
 			_, err := io.WriteString(w, strings.Join(in.Lines, "\n")+"\n")
@@ -873,7 +874,7 @@ func freeName(typed string) string {
 	stem := strings.TrimSuffix(typed, ext)
 	for n := 2; n < 1000; n++ {
 		try := fmt.Sprintf("%s %d%s", stem, n, ext)
-		at, err := expandHome(try)
+		at, err := conf.ExpandHome(try)
 		if err != nil {
 			return typed
 		}

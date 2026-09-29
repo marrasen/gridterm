@@ -1,9 +1,13 @@
 package view
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim/widget"
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/secrets"
 )
@@ -42,8 +46,8 @@ func TestTheSecretsPaneFindsAndShowsWholly(t *testing.T) {
 // Typed into who a secret is for, a server's name completes.
 func TestAServersNameCompletes(t *testing.T) {
 	names := []string{"prod-db", "prod-web", "desk"}
-	for typed, want := range map[string]string{"de": "sk", "prod-d": "b", "prod": "", "": "", "x": ""} {
-		if got := restOfName(names, typed); got != want {
+	for typed, want := range map[string]string{"de": "sk", "prod-d": "b", "prod": "-", "PROD-W": "eb", "x": ""} {
+		if got := restOf(true, names, typed); got != want {
 			t.Errorf("%q completes with %q, want %q", typed, got, want)
 		}
 	}
@@ -67,4 +71,56 @@ func TestACopyAgainHasItsOwnTime(t *testing.T) {
 		t.Fatalf("the second copy's time up, the clipboard holds %q", got)
 	}
 	_ = win
+}
+
+// A path on this machine completes as it is typed: a file's name, and a
+// folder's with its separator.
+func TestAPathCompletes(t *testing.T) {
+	dir := t.TempDir()
+	for _, f := range []string{"secrets.csv", "second.txt"} {
+		if err := os.WriteFile(filepath.Join(dir, f), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.Mkdir(filepath.Join(dir, "keys"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	sep := string(filepath.Separator)
+	for typed, want := range map[string]string{
+		filepath.Join(dir, "secr"): "ets.csv",
+		filepath.Join(dir, "se"):   "c",
+		filepath.Join(dir, "k"):    "eys" + sep,
+		filepath.Join(dir, "x"):    "",
+		dir + sep:                  "",
+	} {
+		if got := restOfPath(typed); got != want {
+			t.Errorf("%q completes with %q, want %q", typed, got, want)
+		}
+	}
+}
+
+// The New SSH Key dialog refuses a path where a key is already, while
+// it is open, so what was typed is not lost to a failure after.
+func TestANewKeyWhereOneIsStaysOpenSayingSo(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{})
+	at := filepath.Join(t.TempDir(), "id_ed25519")
+	if err := os.WriteFile(at, []byte("a key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	win.makeKeyDialog(lastUI)
+	var path *widget.TextField
+	for _, c := range win.dialog.Body.(*widget.Form).Children() {
+		if f, ok := c.(*widget.TextField); ok && path == nil {
+			path = f
+		}
+	}
+	path.SetText(at)
+	if said := win.dialog.Check(); !strings.Contains(said, "is already there") {
+		t.Fatalf("with a key there, the dialog says %q", said)
+	}
+	path.SetText(filepath.Join(t.TempDir(), "new_ed25519"))
+	if said := win.dialog.Check(); said != "" {
+		t.Fatalf("with nothing there, the dialog says %q", said)
+	}
 }

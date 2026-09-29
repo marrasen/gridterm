@@ -505,7 +505,9 @@ func (a *app) revealSecret(id string) {
 		}
 		// As it was written: a recovery code in columns is read wrong
 		// when rewrapped to fit.
-		go func() { _, _ = a.ask(a.ctx, Ask{Title: it.Name, Text: value, Yes: "Done", Plain: true, Preformatted: true}) }()
+		go func() {
+			_, _ = a.ask(a.ctx, Ask{Title: it.Name, Text: value, Yes: "Done", Plain: true, Preformatted: true})
+		}()
 	})
 }
 

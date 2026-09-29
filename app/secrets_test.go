@@ -262,6 +262,13 @@ func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
 	a.handle(PutSecret{Name: "codes", Kind: secrets.Note, Value: "1234\n5678"})
 	a.handle(ExportSecrets{Path: "~/out.csv"})
 	at := filepath.Join(os.Getenv("HOME"), "out.csv")
+	// Asked first, naming the file, and on Cancel until answered.
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	if q := a.st.Asks[0]; q.Title != "Export every secret to "+at+"?" || !q.Careful {
+		t.Fatalf("the question is %+v", q)
+	}
+	answer(t, a, "Export every secret to "+at+"?", true)
+	waitFor(t, a, "the file", func() bool { _, err := os.Stat(at); return err == nil })
 	info, err := os.Stat(at)
 	if err != nil {
 		t.Fatalf("exported, the file: %v", err)
@@ -274,6 +281,8 @@ func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
 	}
 	notices := len(a.st.Notices)
 	a.handle(ExportSecrets{Path: at})
+	answer(t, a, "Export every secret to "+at+"?", true)
+	waitFor(t, a, "the refusal", func() bool { return len(a.st.Notices) > notices })
 	if last := a.st.Notices[len(a.st.Notices)-1]; len(a.st.Notices) != notices+1 || !strings.Contains(last.Body, "already there") {
 		t.Fatalf("exporting over the file said %+v", last)
 	}

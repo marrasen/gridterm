@@ -1,11 +1,15 @@
 package view
 
 import (
+	"os"
+	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
@@ -201,7 +205,7 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 	}
 	// Who or what it is for, completed from the servers' names.
 	servers := w.serverNames()
-	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOfName(servers, text) }
+	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOf(true, servers, text) }
 	form := widget.NewForm().Add("", widget.NewLabel("Only your key opens the secrets.")).Add("Name", name).Add("For", user).Add(label, value)
 	d := widget.NewDialog(title)
 	if kind != secrets.Note {
@@ -305,14 +309,17 @@ func (w *Window) confirmRemoveKey(st app.Secrets, k app.SecretKey, u *gunim.UI) 
 // exportForm asks where to write the secrets, in plain text, for
 // another manager to read.
 func (w *Window) exportForm(u *gunim.UI) {
+	// Nothing filled in: that there is no path until one is typed is
+	// what keeps this from happening by accident. A question naming the
+	// file follows.
 	path := widget.NewTextField()
-	path.SetText("~/secrets.csv")
+	path.Placeholder = "a new CSV file, such as ~/secrets.csv"
+	completesPaths(path)
 	d := widget.NewDialog("Export Secrets")
 	d.Body = widget.NewForm().
 		Add("", widget.NewLabel("Every secret goes into the file in plain text. Anyone who can read the file can read them all.")).
 		Add("File", path)
-	d.SetButtons("Export", "Cancel")
-	d.Danger = true
+	d.SetButtons("Export…", "Cancel")
 	d.Check = func() string {
 		if strings.TrimSpace(path.Text()) == "" {
 			return "Type where the file goes."
@@ -329,6 +336,7 @@ func (w *Window) exportForm(u *gunim.UI) {
 func (w *Window) importForm(u *gunim.UI) {
 	path := widget.NewTextField()
 	path.Placeholder = "a CSV file, such as ~/Downloads/passwords.csv"
+	completesPaths(path)
 	dup := widget.NewDropdown(app.KeepBoth, app.SkipThem, app.Replace)
 	dup.Label = "One already here"
 	d := widget.NewDialog("Import Secrets")
@@ -355,6 +363,7 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 	if at, err := remote.DefaultKeyPath(); err == nil {
 		path.SetText(at)
 	}
+	completesPaths(path)
 	comment.Placeholder, pass.Placeholder = "optional", "optional"
 	pass.Secret, again.Secret = true, true
 	form := widget.NewForm().
@@ -363,6 +372,18 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 	var generate *widget.Checkbox
 	if w.secretsExist {
 		generate = widget.NewCheckbox("Make up a passphrase and keep it in the secrets")
+		// Ticked, the passphrase fields are not used: said in them, and
+		// emptied, rather than what is typed there quietly ignored.
+		generate.OnFlip(func(on bool, u *gunim.UI) {
+			if on {
+				pass.SetText("")
+				again.SetText("")
+				pass.Placeholder, again.Placeholder = "not used: one is made up", ""
+			} else {
+				pass.Placeholder, again.Placeholder = "optional", ""
+			}
+			u.Invalidate()
+		})
 		form.Add("", generate)
 	}
 	form.Add("Passphrase", pass).Add("Again", again)
@@ -374,8 +395,19 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 		switch {
 		case strings.TrimSpace(path.Text()) == "":
 			return "Type where the key goes."
+		case made() && (pass.Text() != "" || again.Text() != ""):
+			return "A passphrase is made up for it: untick that to use the one typed."
 		case !made() && pass.Text() != again.Text():
 			return "The two passphrases differ."
+		}
+		// What would make it fail, said now, while what was typed is
+		// still here to change.
+		at, err := conf.ExpandHome(path.Text())
+		if err == nil {
+			err = remote.KeyPathProblem(at)
+		}
+		if err != nil {
+			return words.UpperFirst(err.Error()) + "."
 		}
 		return ""
 	}
@@ -429,21 +461,39 @@ func (w *Window) serverNames() []string {
 	return out
 }
 
-// restOfName is what completes typed into one of names, "" for none or
-// for several that go on differently.
-func restOfName(names []string, typed string) string {
-	if typed == "" {
+
+// completesPaths has a field that takes a path on this machine offer
+// the rest of a file's or folder's name as it is typed, as Go To does.
+func completesPaths(f *widget.TextField) {
+	f.OnEdit = func(text string, _ *gunim.UI) { f.Ghost = restOfPath(text) }
+}
+
+// restOfPath is what completes typed into a path on this machine, ""
+// for none: the rest of the one name in its folder that starts so, or
+// of the part the names that do share.
+func restOfPath(typed string) string {
+	at, err := conf.ExpandHome(typed)
+	if err != nil || typed == "" {
 		return ""
 	}
-	rest, found := "", false
-	for _, n := range names {
-		if len(n) <= len(typed) || !strings.EqualFold(n[:len(typed)], typed) {
-			continue
-		}
-		if found && rest != n[len(typed):] {
-			return ""
-		}
-		rest, found = n[len(typed):], true
+	dir, leaf := filepath.Split(at)
+	if strings.HasSuffix(typed, string(filepath.Separator)) || strings.HasSuffix(typed, "/") {
+		dir, leaf = at, ""
 	}
-	return rest
+	if leaf == "" {
+		return ""
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return ""
+	}
+	var names []string
+	for _, e := range entries {
+		n := e.Name()
+		if e.IsDir() {
+			n += string(filepath.Separator)
+		}
+		names = append(names, n)
+	}
+	return restOf(runtime.GOOS == "windows", names, leaf)
 }

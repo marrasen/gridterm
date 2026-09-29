@@ -51,20 +51,12 @@ type NewKey struct {
 // does when the user presses return at the prompt.
 func MakeKey(path, comment, passphrase string) (NewKey, error) {
 	path = strings.TrimSpace(path)
-	switch {
-	case path == "":
-		return NewKey{}, errors.New("the key needs somewhere to be written")
-	case !filepath.IsAbs(path):
-		return NewKey{}, fmt.Errorf(
-			"%s is not a full path. A key needs one, because where it sits is"+
-				" part of what keeps it private", path)
-	}
-	pub := path + ".pub"
 	// Before the key is made: locking a passphrase takes a moment, and
 	// the likeliest answer is that one of the two files is already there.
-	if err := errors.Join(free(path), free(pub)); err != nil {
+	if err := KeyPathProblem(path); err != nil {
 		return NewKey{}, err
 	}
+	pub := path + ".pub"
 
 	pubKey, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
@@ -105,6 +97,23 @@ func MakeKey(path, comment, passphrase string) (NewKey, error) {
 //
 // A key file that is already there is one somebody is using, and the
 // private half cannot be got back.
+// KeyPathProblem is why a key cannot be made at path, as MakeKey would
+// say it, or nil: no path, one that is not full, or a key or its public
+// half already there. A dialog asks it before it closes, so what was
+// typed is not lost to a failure.
+func KeyPathProblem(path string) error {
+	path = strings.TrimSpace(path)
+	switch {
+	case path == "":
+		return errors.New("the key needs somewhere to be written")
+	case !filepath.IsAbs(path):
+		return fmt.Errorf(
+			"%s is not a full path. A key needs one, because where it sits is"+
+				" part of what keeps it private", path)
+	}
+	return errors.Join(free(path), free(path+".pub"))
+}
+
 func free(path string) error {
 	switch _, err := os.Lstat(path); {
 	case errors.Is(err, os.ErrNotExist):

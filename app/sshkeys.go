@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/serve"
@@ -35,7 +36,7 @@ const mostKeptKeys = 20
 
 // makeKey writes a new key pair.
 func (a *app) makeKey(in MakeKey) error {
-	at, err := expandHome(in.Path)
+	at, err := conf.ExpandHome(in.Path)
 	if err != nil {
 		return err
 	}

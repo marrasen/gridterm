@@ -5,9 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"strings"
 
+	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/words"
 )
@@ -33,27 +32,28 @@ const (
 	Replace  = "Replace"
 )
 
-// expandHome reads a path the way a shell does, with ~ for home.
-func expandHome(path string) (string, error) {
-	path = strings.TrimSpace(path)
-	if path == "~" || strings.HasPrefix(path, "~/") {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		path = filepath.Join(home, path[1:])
-	}
-	return filepath.Abs(path)
-}
-
 // exportSecrets writes the secrets to a new file, readable by its
 // owner alone, and never over one already there.
 func (a *app) exportSecrets(in ExportSecrets) {
-	a.withSecrets("Couldn't export the secrets", func(v *secrets.Vault) error {
-		at, err := expandHome(in.Path)
-		if err != nil {
-			return err
+	at, err := conf.ExpandHome(in.Path)
+	if err != nil {
+		a.failed("Couldn't export the secrets", err.Error())
+		return
+	}
+	// Asked, naming the file, and opening on Cancel: this is the one
+	// thing that takes every secret out of what keeps them.
+	go func() {
+		ans, err := a.ask(a.ctx, Ask{Title: "Export every secret to " + at + "?", Text: "Anyone who can read the file can read them all.", Yes: "Export", Careful: true})
+		if err != nil || !ans.Yes {
+			return
 		}
+		a.events <- func() { a.exportSecretsTo(at) }
+	}()
+}
+
+// exportSecretsTo writes every secret to at, a file that is not there.
+func (a *app) exportSecretsTo(at string) {
+	a.withSecrets("Couldn't export the secrets", func(v *secrets.Vault) error {
 		out, err := v.Everything()
 		if err != nil {
 			return err
@@ -73,7 +73,7 @@ func (a *app) exportSecrets(in ExportSecrets) {
 // importSecrets reads the secrets in a file another manager wrote.
 func (a *app) importSecrets(in ImportSecrets) {
 	a.withSecrets("Couldn't import the secrets", func(v *secrets.Vault) error {
-		at, err := expandHome(in.Path)
+		at, err := conf.ExpandHome(in.Path)
 		if err != nil {
 			return err
 		}

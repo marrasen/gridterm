@@ -1,3 +1,7 @@
+// Package app is kakel's program side: what the windows show, as State,
+// and what happens when they ask for something, as intents. It owns
+// the panes' programs, the connections, the files and everything else
+// the windows draw, and runs on one goroutine of its own.
 package app
 
 import (

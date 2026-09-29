@@ -1,3 +1,5 @@
+// Package view is kakel's window: it draws the State the program side
+// publishes, and turns what the user does into intents for it.
 package view
 
 import (
@@ -43,7 +45,7 @@ var (
 	smallText = theme.Length("kakel.small", 12)
 )
 
-// window is the view the program's state drives.
+// Window is the view the program's state drives.
 type Window struct {
 	anim.Group
 	top    *widget.Flex
@@ -1507,7 +1509,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 	return w.run(id, u)
 }
 
-// update shows st.
+// Update shows st.
 func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
 	w.machineList = st.Machines

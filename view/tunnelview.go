@@ -121,18 +121,6 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
-// savedTunnelOn is the machine a saved tunnel runs over: the saved
-// server it was kept for, under its name now, or the name it was kept
-// under.
-func (w *Window) savedTunnelOn(t settings.SavedTunnel) string {
-	for _, h := range w.saved {
-		if t.HostID != "" && h.ID == t.HostID {
-			return h.Name
-		}
-	}
-	return t.Host
-}
-
 // machineOf returns the server pane id is on, "" for this computer.
 func (w *Window) machineOf(id string) machines.ID {
 	for _, p := range w.panes {

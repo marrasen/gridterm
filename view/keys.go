@@ -17,7 +17,7 @@ import (
 // window has so far. Each is Ctrl+Shift and a key, or Ctrl with a key
 // no shell reads, so the shell keeps the rest.
 
-// shortcuts returns the chords the window takes, by command.
+// Shortcuts returns the chords the window takes, by command.
 func Shortcuts() *ui.Keymap {
 	keys := ui.NewKeymap()
 	keys.MustBind(map[ui.Chord]string{

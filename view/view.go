@@ -142,7 +142,9 @@ type Window struct {
 	// off the stage as it was last seen.
 	drawings    map[string]*gunim.Drawing
 	themePicker *widget.Palette
-	drawn       map[string]gunim.Node
+	// keyPicker lists the kept keys, to forget one.
+	keyPicker *widget.Palette
+	drawn     map[string]gunim.Node
 	// vault is the secrets as last published, and afterUnlock a command
 	// waiting for them to open.
 	vault       app.Secrets
@@ -462,6 +464,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "sshkey.make":
 		w.makeKeyDialog(u)
+		return true
+	case "sshkey.forget":
+		w.forgetKey(u)
 		return true
 	case "help.shortcuts":
 		u.Send(w, app.ShowHelp{})
@@ -809,6 +814,23 @@ func (w *Window) pickTheme(u *gunim.UI) {
 	}
 	p.Cancel = func(u *gunim.UI) { u.Send(w, app.PreviewTheme{}) }
 	w.themePicker = p
+	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+}
+
+// forgetKey offers the kept key files, to take one off the list the
+// server form offers.
+func (w *Window) forgetKey(u *gunim.UI) {
+	if len(w.keyFiles) == 0 {
+		w.toasts.Show(widget.Toast{Title: "No keys are kept", Body: "A key is kept once it is made here or used for a server."}, u)
+		return
+	}
+	p := &widget.Palette{Placeholder: "Forget which key? The file stays where it is"}
+	files := slices.Clone(w.keyFiles)
+	for _, f := range files {
+		p.Items = append(p.Items, widget.PaletteItem{Title: f, Icon: icon.KeyRound})
+	}
+	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.ForgetKey{Path: files[i]}) }
+	w.keyPicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 

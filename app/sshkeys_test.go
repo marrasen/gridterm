@@ -80,3 +80,18 @@ func TestTheSecretsSayWhenATerminalIsWaitingForOne(t *testing.T) {
 		t.Fatalf("waiting, the secrets name %q", got)
 	}
 }
+
+// A kept key file can be forgotten: it leaves the list the server form
+// offers, and the file itself stays.
+func TestAKeptKeyCanBeForgotten(t *testing.T) {
+	a := fontApp(t)
+	for _, k := range []string{"/keys/one", "/keys/two"} {
+		if err := a.settings.KeepKey(k, mostKeptKeys); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.handle(ForgetKey{Path: "/keys/one"})
+	if len(a.st.Notices) != 0 || !slices.Equal(a.st.KeyFiles, []string{"/keys/two"}) || !slices.Equal(a.settings.Keys(), []string{"/keys/two"}) {
+		t.Fatalf("the list is %q, kept %q, notices %+v", a.st.KeyFiles, a.settings.Keys(), a.st.Notices)
+	}
+}

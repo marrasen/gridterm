@@ -897,6 +897,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't show the scrollback"
 	case MakeKey:
 		return "Couldn't make the key"
+	case ForgetKey:
+		return "Couldn't forget the key"
 	case RunSavedCopy, RepeatJob:
 		return "Couldn't copy"
 	}
@@ -1238,6 +1240,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.makeKey(in)
 	case LockKeys:
 		a.lockKeys()
+	case ForgetKey:
+		err = a.forgetKey(in.Path)
 	case ShowTyped:
 		err = a.showTyped(in.Pane)
 	case RepeatJob:

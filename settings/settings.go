@@ -786,6 +786,12 @@ func (s *Settings) KeepKey(path string, most int) error {
 	})
 }
 
+// ForgetKey takes a key file off the list and saves. The file itself is
+// left where it is.
+func (s *Settings) ForgetKey(path string) error {
+	return s.putKeys(func(have []string) []string { return dropKey(have, path) })
+}
+
 // putKeys rereads the file, edits the list it holds and saves.
 func (s *Settings) putKeys(edit func([]string) []string) error {
 	s.mu.Lock()

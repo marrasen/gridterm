@@ -308,3 +308,27 @@ func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
 		t.Fatalf("saved untouched, the window is %+v", in.Host)
 	}
 }
+
+// Forget a Kept Key lists the kept keys, and picking one asks the
+// program to take it off the list; with none kept, it says so.
+func TestForgetAKeptKeyListsThem(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{})
+	win.run("sshkey.forget", lastUI)
+	if win.keyPicker != nil {
+		t.Fatal("with no keys kept, a list opened")
+	}
+	publish(app.State{KeyFiles: []string{"/keys/one", "/keys/two"}})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	win.run("sshkey.forget", lastUI)
+	p := win.keyPicker
+	if p == nil || len(p.Items) != 2 || p.Items[1].Title != "/keys/two" {
+		t.Fatalf("the list is %+v", p)
+	}
+	p.Pick(1, lastUI)
+	if in, ok := nextIntent(t).(app.ForgetKey); !ok || in.Path != "/keys/two" {
+		t.Fatalf("picking the second key sent %#v", in)
+	}
+}

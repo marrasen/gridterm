@@ -64,3 +64,17 @@ func TestTheSkillIsNotPrintedWithNoPathToKakel(t *testing.T) {
 		t.Fatalf("it did %v, and said %v", did, err)
 	}
 }
+
+// Font sizes run from 8 to 96 logical pixels, 6 to 72 points, as the
+// old app took.
+func TestFontSizesRunFrom8To96(t *testing.T) {
+	for _, c := range []struct{ asked, got float32 }{{4, 8}, {15, 15}, {72, 72}, {96, 96}, {200, 96}} {
+		if got := fontSizeIn(c.asked); got != c.got {
+			t.Errorf("%v became %v, want %v", c.asked, got, c.got)
+		}
+	}
+	o, err := ParseOptions([]string{"-font-size", "80"})
+	if err != nil || o.fontSize != 80 {
+		t.Fatalf("-font-size 80 read as %v, %v", o.fontSize, err)
+	}
+}

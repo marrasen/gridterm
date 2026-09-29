@@ -171,3 +171,25 @@ func TestARenameOfCaseAloneWritesOverNothing(t *testing.T) {
 		return len(entries) == 1 && entries[0].Name() == "Readme"
 	})
 }
+
+// Files on a server with one folder saved open at that folder, however
+// they are asked for; with more than one, or none, at home.
+func TestFilesOnAServerWithOneSavedFolderOpenThere(t *testing.T) {
+	a, answering := dialApp(t)
+	there := t.TempDir()
+	h, _ := a.book.Lookup("srv")
+	h.Folders = []string{there}
+	if err := a.book.Put(h, "srv"); err != nil {
+		t.Fatal(err)
+	}
+	a.st.Saved = a.book.Hosts()
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	a.handle(OpenFiles{})
+	waitFor(t, a, "the files", func() bool {
+		return len(a.st.Panes) == 2 && a.st.Browsers[a.st.Panes[1].ID].Seq > 0
+	})
+	if got := a.st.Browsers[a.st.Panes[1].ID].Path; got != there {
+		t.Fatalf("the files opened at %q, want the saved folder %q", got, there)
+	}
+}

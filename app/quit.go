@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/words"
 )
 
@@ -54,6 +55,7 @@ func (a *app) leave() {
 		return
 	}
 	a.gone = true
+	a.keepWindowPlace()
 	for _, w := range a.wins {
 		if !w.gone {
 			w.c.Leave()
@@ -149,4 +151,19 @@ func listOf(what []string) string {
 		return what[0]
 	}
 	return strings.Join(what[:len(what)-1], ", ") + " and " + what[len(what)-1]
+}
+
+// keepWindowPlace writes down where the window in front is, and how
+// big, and whether it is maximized, for the next start to open it
+// there. A minimized one is kept as it was before.
+func (a *app) keepWindowPlace() {
+	if a.settings == nil || a.cur == nil || a.cur.gw == nil {
+		return
+	}
+	p, ok := a.cur.gw.Placement()
+	if !ok || p.Bounds.Empty() {
+		return
+	}
+	b := p.Bounds
+	a.keep("where the window is", a.settings.PutWindow(settings.WindowPlace{X: b.Min.X, Y: b.Min.Y, W: b.Size().W, H: b.Size().H, Maximized: p.Maximized}))
 }

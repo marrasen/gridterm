@@ -4,9 +4,11 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"strings"
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/look"
 
@@ -482,9 +484,13 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		return true
 	case e.Button == gi.ButtonMiddle && !t.sh.T.MouseTaken(mods):
 		// Text alone, the X11 way: a picture is pasted with the key.
-		if s := u.Clipboard(); s != "" {
+		s, err := u.ReadClipboard()
+		switch {
+		case err != nil:
+			u.Send(t, app.ClipboardUnreadable{Why: clipboardWhy(err)})
+		case s != "":
 			t.paste(s)
-		} else {
+		default:
 			u.Send(t, app.NoTextToPaste{})
 		}
 		return true
@@ -567,16 +573,27 @@ func (t *term) key(ev input.Event) {
 
 func (t *term) paste(s string) { t.sh.T.Paste(s) }
 
+// clipboardWhy is why the clipboard could not be read, as a sentence
+// for the user: the library's name taken off the front.
+func clipboardWhy(err error) string {
+	return words.UpperFirst(strings.TrimPrefix(err.Error(), "glfw: ")) + "."
+}
+
 // pasteClipboard pastes the text on the clipboard, and with no text
 // there, asks the program to hand over the picture that may be there
 // instead. A clipboard holding both is text: copying from a browser
 // leaves both, and the words are what was meant.
 func (t *term) pasteClipboard(u *gunim.UI) {
-	if s := u.Clipboard(); s != "" {
+	s, err := u.ReadClipboard()
+	switch {
+	case err != nil:
+		// Said, rather than taken for a clipboard with nothing on it.
+		u.Send(t, app.ClipboardUnreadable{Why: clipboardWhy(err)})
+	case s != "":
 		t.paste(s)
-		return
+	default:
+		u.Send(t, app.PastePicture{Pane: t.id})
 	}
-	u.Send(t, app.PastePicture{Pane: t.id})
 }
 
 // scroll hands the terminal a wheel notch at a time, which it takes as

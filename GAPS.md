@@ -21,10 +21,6 @@ something.
   rest of the cluster is dropped rather than stacked in one cell.
 - **OSC 52 clipboard reads** are never answered: replying would let any
   program that can write to the terminal read the clipboard out.
-- **File panes share the width evenly, and the split cannot be dragged.**
-  Five panes in an eighty-column window are sixteen columns each. Closing
-  one gives its width back to the rest, but there is no way to make one
-  pane wider than another.
 - **A watched pane is not resized to suit the watcher.** The screen is
   drawn on the machine it is running on as well, and shrinking somebody
   else's shell to fit a pane they are not looking at would reach further

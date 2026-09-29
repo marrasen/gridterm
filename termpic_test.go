@@ -8,6 +8,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/geom"
@@ -16,24 +19,6 @@ import (
 	"github.com/marrasen/kakel/vt"
 )
 
-// printed is a session whose program prints once and then waits.
-type printed struct {
-	typed
-	out []byte
-}
-
-func (s *printed) Read(p []byte) (int, error) {
-	s.mu.Lock()
-	if len(s.out) > 0 {
-		n := copy(p, s.out)
-		s.out = s.out[n:]
-		s.mu.Unlock()
-		return n, nil
-	}
-	s.mu.Unlock()
-	return s.typed.Read(p)
-}
-
 func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	var file bytes.Buffer
@@ -41,11 +26,11 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := "before\r\n\x1b]1337;File=inline=1;width=4;height=2:" + base64.StdEncoding.EncodeToString(file.Bytes()) + "\x07after\r\n"
-	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte(out)}
+	s := sessiontest.NewPrinted([]byte(out))
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 
 	deadline := time.Now().Add(5 * time.Second)
 	for len(sh.Get("p1").T.Pictures()) == 0 {
@@ -77,7 +62,7 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 
 func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte("\x1b]2;vim notes.txt\x07")}
+	s := sessiontest.NewPrinted([]byte("\x1b]2;vim notes.txt\x07"))
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
@@ -88,8 +73,8 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	panes := []Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "files", Kind: kindFiles}}
-	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	panes := []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "files", Kind: app.KindFiles}}
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — vim notes.txt" {
 		t.Fatalf("the window is called %q", got)
 	}
@@ -97,13 +82,13 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 		t.Fatalf("the title bar says %q and %q", win.bar.Title, win.bar.Subtitle)
 	}
 	// A pane that is no terminal goes by its own title.
-	publish(State{Panes: panes, Stage: &Box{Pane: "p2"}, Focus: "p2"})
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — files" {
 		t.Fatalf("on a file pane, the window is called %q", got)
 	}
 	// A terminal the user named goes by that name.
 	panes[0].Named = true
-	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — Terminal 1" {
 		t.Fatalf("on a named terminal, the window is called %q", got)
 	}

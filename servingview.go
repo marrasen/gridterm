@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
 
@@ -13,7 +15,7 @@ import (
 
 // servingDialog serves the window, or, while it is served, says where
 // and to whom.
-func (w *window) servingDialog(s Serving, u *gunim.UI) {
+func (w *window) servingDialog(s app.Serving, u *gunim.UI) {
 	if s.On {
 		w.servedDialog(s, u)
 		return
@@ -53,14 +55,14 @@ func (w *window) servingDialog(s Serving, u *gunim.UI) {
 		// Shown once it is served: the host key, to check from the
 		// other end. Nothing, if serving did not start.
 		w.servingAsked, w.servingTries = true, s.Tries
-		return StartServing{Port: port.Text(), Anywhere: where.Selected == 1}
+		return app.StartServing{Port: port.Text(), Anywhere: where.Selected == 1}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // servedDialog says where the window is served and who is connected.
-func (w *window) servedDialog(s Serving, u *gunim.UI) {
+func (w *window) servedDialog(s app.Serving, u *gunim.UI) {
 	form := widget.NewForm().
 		Add("Address", widget.NewLabel(s.Addr)).
 		Add("Host key", widget.NewLabel(s.Fingerprint))
@@ -69,15 +71,15 @@ func (w *window) servedDialog(s Serving, u *gunim.UI) {
 	d := widget.NewDialog("Serving This Window")
 	d.Body = form
 	d.SetButtons("Done", "")
-	d.AddButton("Disconnect All", func() gunim.Intent { return DisconnectClients{} })
-	d.AddButton("Stop Serving", func() gunim.Intent { return StopServing{} })
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.AddButton("Disconnect All", func() gunim.Intent { return app.DisconnectClients{} })
+	d.AddButton("Stop Serving", func() gunim.Intent { return app.StopServing{} })
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.served = &servedShown{d: d, who: who}
 	w.openDialog(d, u)
 }
 
 // connectedSays is who is connected to the window served, one a line.
-func connectedSays(s Serving) string {
+func connectedSays(s app.Serving) string {
 	if len(s.Clients) == 0 {
 		return "Nobody yet."
 	}
@@ -98,7 +100,7 @@ type servedShown struct {
 // showServed keeps the dialog saying the window is served up to date
 // as windows connect and go, closes it once serving stops, and opens
 // it once serving asked for has started.
-func (w *window) showServed(s Serving, u *gunim.UI) {
+func (w *window) showServed(s app.Serving, u *gunim.UI) {
 	if sh := w.served; sh != nil {
 		switch {
 		case u.Presence(sh.d) == gunim.Exiting || w.dialog != sh.d:
@@ -139,7 +141,7 @@ func (w *window) connectWindowDialog(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return ConnectWindow{Addr: addr.Text(), KeyFile: key.Text()} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.ConnectWindow{Addr: addr.Text(), KeyFile: key.Text()} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }

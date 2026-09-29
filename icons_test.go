@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/paint"
 )
@@ -38,7 +40,7 @@ func TestEveryCommandInTheMenusAndThePaletteHasAnIcon(t *testing.T) {
 func TestAFailureShowsAnErrorToast(t *testing.T) {
 	_, _, publish := windowStage(t)
 	st := twoPanes("p2", nil)
-	st.Notices = []Notice{{ID: 1, Title: "Couldn't open the files on web1", Body: "no route to host", Kind: NoticeFailed}}
+	st.Notices = []app.Notice{{ID: 1, Title: "Couldn't open the files on web1", Body: "no route to host", Kind: app.NoticeFailed}}
 	publish(st)
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
@@ -51,18 +53,4 @@ func TestAFailureShowsAnErrorToast(t *testing.T) {
 		}
 	}
 	t.Fatal("the failure's toast shows no error icon")
-}
-
-// The notices a failure and a success make are of their kinds.
-func TestNoticesKeepTheirKinds(t *testing.T) {
-	a := &app{}
-	a.failed("Couldn't save", "disk full")
-	a.worked("Saved web1", "tester@web1", "")
-	a.notify("Disconnected from web1", "", "")
-	want := []NoticeKind{NoticeFailed, NoticeWorked, NoticePlain}
-	for i, n := range a.st.Notices {
-		if n.Kind != want[i] {
-			t.Errorf("notice %q is of kind %d, want %d", n.Title, n.Kind, want[i])
-		}
-	}
 }

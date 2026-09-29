@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim"
@@ -20,13 +23,13 @@ func switcherStage(t *testing.T) *window {
 	t.Helper()
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	var panes []Pane
+	var panes []app.Pane
 	for _, id := range []string{"p1", "p2", "p3"} {
-		sh.Set(id, screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
-		panes = append(panes, Pane{ID: id, Title: "Terminal " + id})
+		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
 	}
-	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	win.run("view.switcher", lastUI)
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
@@ -62,11 +65,11 @@ func TestThePanesNotPickedFadeAsThePickGrows(t *testing.T) {
 func TestTheSwitcherShowsAFilePane(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	sh.Set("p2", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	sh.Set("p2", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p2").T.Close() })
-	publish(State{Panes: []Pane{{ID: "p1", Title: "srv", Kind: kindFiles}, {ID: "p2", Title: "Terminal 2"}},
-		Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}, {Name: "b.txt"}}, Seq: 1}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "srv", Kind: app.KindFiles}, {ID: "p2", Title: "Terminal 2"}},
+		Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}, {Name: "b.txt"}}, Seq: 1}}})
 	for range 10 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -100,7 +103,7 @@ func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight})
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	in, ok := nextIntent(t).(FocusPane)
+	in, ok := nextIntent(t).(app.FocusPane)
 	if !ok || in.Pane != sw.tiles[sw.picked].id {
 		t.Fatalf("at the pick, it asked for %#v", in)
 	}

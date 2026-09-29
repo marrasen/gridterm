@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	gi "github.com/marrasen/gunim/input"
 )
 
@@ -11,8 +13,8 @@ import (
 // can be moved in.
 func TestSplitAsksWhatGoesBeside(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "left", Kind: kindFiles}, {ID: "p2", Title: "right", Kind: kindFiles}},
-		Stage: &Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "right", Kind: app.KindFiles}},
+		Stage: &app.Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -27,7 +29,7 @@ func TestSplitAsksWhatGoesBeside(t *testing.T) {
 	lastWindow.Frame(time.Second / 60)
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(MovePane); !ok || in != (MovePane{Pane: "p2", Beside: "p1"}) {
+	if in, ok := nextIntent(t).(app.MovePane); !ok || in != (app.MovePane{Pane: "p2", Beside: "p1"}) {
 		t.Fatalf("picking Move right sent %#v", in)
 	}
 }

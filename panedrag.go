@@ -3,6 +3,8 @@ package main
 import (
 	"math"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
@@ -41,7 +43,7 @@ func (s *switcher) carry(at geom.Point, u *gunim.UI) {
 	t.fade.Animate(0.25, widget.Quick.Get(u.Theme()))
 	g := &paneGhost{s: s, t: t, size: r.Size(), lit: anim.NewFloat(0)}
 	g.Add(g.lit)
-	u.StartDrag(s, PaneDrag{Pane: t.id, Window: s.w.winID}, g, s.grab)
+	u.StartDrag(s, app.PaneDrag{Pane: t.id, Window: s.w.winID}, g, s.grab)
 	u.Invalidate()
 }
 
@@ -60,7 +62,7 @@ func (s *switcher) dragEnded(e input.DragEnd, u *gunim.UI) {
 	case e.Out && len(s.tiles) > 1:
 		// The pane's top left corner where the picture's was, and the
 		// window as large as this one.
-		u.Send(s, PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.size})
+		u.Send(s, app.PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.size})
 		s.lose(t, u)
 	default:
 		// Let go over this window, or outside it with nothing else
@@ -131,7 +133,7 @@ func (g *paneGhost) Handle(e input.Event, u *gunim.UI) bool {
 func (w *window) paneDrop(e input.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
 	case input.DragOver:
-		if d, ok := e.Data.(PaneDrag); !ok || d.Window == w.winID {
+		if d, ok := e.Data.(app.PaneDrag); !ok || d.Window == w.winID {
 			return false
 		}
 		u.AnswerDrag(movesHere)
@@ -143,12 +145,12 @@ func (w *window) paneDrop(e input.Event, u *gunim.UI) bool {
 		u.Invalidate()
 		return false
 	case input.Drop:
-		d, ok := e.Data.(PaneDrag)
+		d, ok := e.Data.(app.PaneDrag)
 		if !ok || d.Window == w.winID {
 			return false
 		}
 		w.dropLit.Animate(0, widget.Settle.Get(u.Theme()))
-		u.Send(w, PaneToWindow{Pane: d.Pane})
+		u.Send(w, app.PaneToWindow{Pane: d.Pane})
 		u.Invalidate()
 		return true
 	}

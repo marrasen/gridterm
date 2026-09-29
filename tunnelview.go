@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/words"
 
@@ -61,7 +63,7 @@ func (w *window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	if len(kept) > 0 {
 		names := []string{"A new one"}
 		for _, t := range kept {
-			if tu, err := asTunnel(t); err == nil {
+			if tu, err := app.AsTunnel(t); err == nil {
 				names = append(names, tu.String())
 			}
 		}
@@ -107,8 +109,8 @@ func (w *window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.On} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.OpenTunnel{Machine: machine, Tunnel: tunnel(), Keep: keep.On} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -146,7 +148,7 @@ func (w *window) savedTunnelItems() []widget.PaletteItem {
 			}
 		}
 		what := s.Kind + " tunnel"
-		if t, err := asTunnel(s); err == nil {
+		if t, err := app.AsTunnel(s); err == nil {
 			what = "Tunnel " + t.String()
 		}
 		out = append(out, widget.PaletteItem{Title: "Open " + what + " via " + via})
@@ -207,17 +209,17 @@ func newTunnelBar() *tunnelBar {
 }
 
 // show brings the bar up to date with t, which ok says still has a row.
-func (b *tunnelBar) show(t Tunnel, ok bool, u *gunim.UI) {
+func (b *tunnelBar) show(t app.Tunnel, ok bool, u *gunim.UI) {
 	switch {
 	case ok && t.Live:
-		b.watch.Label, b.watch.Icon, b.watch.On = "Watch the Traffic", icon.Activity, WatchTunnel{ID: t.ID, On: true}
+		b.watch.Label, b.watch.Icon, b.watch.On = "Watch the Traffic", icon.Activity, app.WatchTunnel{ID: t.ID, On: true}
 		if t.Watching {
-			b.watch.Label, b.watch.Icon, b.watch.On = "Stop Watching", icon.EyeOff, WatchTunnel{ID: t.ID}
+			b.watch.Label, b.watch.Icon, b.watch.On = "Stop Watching", icon.EyeOff, app.WatchTunnel{ID: t.ID}
 		}
-		b.close.Label, b.close.Icon, b.close.On = "Close Tunnel", icon.Unplug, CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.On = "Close Tunnel", icon.Unplug, app.CloseTunnel{ID: t.ID}
 		b.bar.set(t.Label+" · "+t.Note, u, b.watch, b.close)
 	case ok:
-		b.close.Label, b.close.Icon, b.close.On = "Clear", icon.X, CloseTunnel{ID: t.ID}
+		b.close.Label, b.close.Icon, b.close.On = "Clear", icon.X, app.CloseTunnel{ID: t.ID}
 		b.bar.set(t.Label+" · stopped", u, b.close)
 	default:
 		b.bar.set("This tunnel has closed.", u)

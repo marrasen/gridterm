@@ -3,6 +3,8 @@ package main
 import (
 	"slices"
 
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
@@ -19,7 +21,7 @@ type buttonBar struct {
 
 func newButtonBar() *buttonBar {
 	b := &buttonBar{label: widget.NewLabel("")}
-	b.label.Size, b.label.Color, b.label.MaxLines = smallText, faint, 1
+	b.label.Size, b.label.Color, b.label.MaxLines = smallText, look.Faint, 1
 	return b
 }
 
@@ -95,7 +97,7 @@ type captioned struct {
 
 func newCaptioned(pane gunim.Node) *captioned {
 	l := widget.NewLabel("")
-	l.Size, l.Color, l.MaxLines = smallText, faint, 1
+	l.Size, l.Color, l.MaxLines = smallText, look.Faint, 1
 	return &captioned{pane: pane, label: l}
 }
 

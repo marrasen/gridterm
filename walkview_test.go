@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/driver"
@@ -15,15 +18,15 @@ import (
 func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	var panes []Pane
+	var panes []app.Pane
 	for _, id := range []string{"p1", "p2", "p3"} {
-		sh.Set(id, screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
-		panes = append(panes, Pane{ID: id, Title: "Terminal " + id})
+		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
 	}
 	// Used in the order p1, p2, p3.
 	for _, id := range []string{"p1", "p2", "p3"} {
-		publish(State{Panes: panes, Stage: &Box{Pane: id}, Focus: id})
+		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
 	}
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -33,7 +36,7 @@ func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
 		lastWindow.Frame(time.Second / 60)
 		for {
-			if f, ok := nextIntent(t).(FocusPane); ok {
+			if f, ok := nextIntent(t).(app.FocusPane); ok {
 				return f.Pane
 			}
 		}
@@ -65,7 +68,7 @@ func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 	// From the palette, with no Ctrl to let go of, it takes one step.
 	win.run("pane.next", lastUI)
 	for {
-		if f, ok := nextIntent(t).(FocusPane); ok {
+		if f, ok := nextIntent(t).(app.FocusPane); ok {
 			if f.Pane != "p3" {
 				t.Fatalf("from the palette it went to %s, want p3", f.Pane)
 			}
@@ -82,14 +85,14 @@ func TestCtrlTabWalksThePanesByLastUse(t *testing.T) {
 func TestAWalkEndsWhenTheWindowLosesTheKeyboard(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	var panes []Pane
+	var panes []app.Pane
 	for _, id := range []string{"p1", "p2"} {
-		sh.Set(id, screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
-		panes = append(panes, Pane{ID: id, Title: "Terminal " + id})
+		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
 	}
 	for _, id := range []string{"p1", "p2"} {
-		publish(State{Panes: panes, Stage: &Box{Pane: id}, Focus: id})
+		publish(app.State{Panes: panes, Stage: &app.Box{Pane: id}, Focus: id})
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl | gi.ModShift})
 	lastWindow.Frame(time.Second / 60)

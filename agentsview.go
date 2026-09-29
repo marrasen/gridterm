@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
 
@@ -17,13 +19,13 @@ import (
 // for each that is in it, and the agent program the prompt is written
 // for. Ticking a box shares that pane at once. With no share yet it
 // starts one with the focused pane.
-func (w *window) shareDialog(st Share, u *gunim.UI) {
+func (w *window) shareDialog(st app.Share, u *gunim.UI) {
 	if st.Code == "" {
-		if w.kindOf(w.focused) != kindTerminal {
+		if w.kindOf(w.focused) != app.KindTerminal {
 			w.toasts.Show(widget.Toast{Title: "Share a terminal pane", Body: "Click into the terminal to share, then choose Share with an Agent."}, u)
 			return
 		}
-		u.Send(w, SharePane{Pane: w.focused})
+		u.Send(w, app.SharePane{Pane: w.focused})
 		w.sharing = true
 		return
 	}
@@ -33,10 +35,10 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		shared[p.Pane] = true
 		mays[p.Pane] = settings.AgentMay(p.May)
 	}
-	host := widget.NewDropdown(agentHostNames()...)
+	host := widget.NewDropdown(app.AgentHostNames()...)
 	host.Label = "Agent"
-	host.Selected = max(0, slices.Index(agentHostNames(), st.Host))
-	hostName := func() string { return agentHostNames()[max(0, min(host.Selected, len(agentHosts)-1))] }
+	host.Selected = max(0, slices.Index(app.AgentHostNames(), st.Host))
+	hostName := func() string { return app.AgentHostNames()[max(0, min(host.Selected, len(app.AgentHosts)-1))] }
 	code := widget.NewLabel(st.Code)
 	// Picked out and copied as it is, for an agent set up by hand.
 	code.Selectable = true
@@ -45,7 +47,7 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		Add("Code", code).
 		Add("Agent", host)
 	for _, p := range w.panes {
-		if p.Kind != kindTerminal {
+		if p.Kind != app.KindTerminal {
 			continue
 		}
 		label := p.Title
@@ -60,9 +62,9 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		id := p.ID
 		box.OnFlip(func(on bool, u *gunim.UI) {
 			if on {
-				u.Send(w, SharePane{Pane: id})
+				u.Send(w, app.SharePane{Pane: id})
 			} else {
-				u.Send(w, UnsharePane{Pane: id})
+				u.Send(w, app.UnsharePane{Pane: id})
 			}
 		})
 		form.Add("", box)
@@ -70,22 +72,22 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 	d := widget.NewDialog("Agent Share")
 	d.Body = form
 	d.SetButtons("Done", "")
-	d.AddAction("Copy Prompt", func(u *gunim.UI) { u.Send(w, CopyAgentPrompt{Host: hostName()}) })
+	d.AddAction("Copy Prompt", func(u *gunim.UI) { u.Send(w, app.CopyAgentPrompt{Host: hostName()}) })
 	d.AddAction("Copy Code", func(u *gunim.UI) {
 		u.SetClipboard(st.Code)
 		w.toasts.Show(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
 	})
-	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(hostNamed(hostName()), u) })
-	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, WriteSkill{Host: hostName()}) })
-	d.AddButton("Stop Sharing", func() gunim.Intent { return StopSharing{} })
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(app.HostNamed(hostName()), u) })
+	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, app.WriteSkill{Host: hostName()}) })
+	d.AddButton("Stop Sharing", func() gunim.Intent { return app.StopSharing{} })
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // permissionsDialog shows what the agent may do in the focused pane
 // beyond reading and typing. Each box takes effect as it is ticked.
-func (w *window) permissionsDialog(st Share, u *gunim.UI) {
-	i := slices.IndexFunc(st.Panes, func(p SharedPane) bool { return p.Pane == w.focused })
+func (w *window) permissionsDialog(st app.Share, u *gunim.UI) {
+	i := slices.IndexFunc(st.Panes, func(p app.SharedPane) bool { return p.Pane == w.focused })
 	if i < 0 {
 		w.toasts.Show(widget.Toast{Title: "This pane is not shared", Body: "Share it with an agent first."}, u)
 		return
@@ -107,37 +109,37 @@ func (w *window) permissionsDialog(st Share, u *gunim.UI) {
 		on := b.on
 		box.OnFlip(func(v bool, u *gunim.UI) {
 			*on = v
-			u.Send(w, SetAgentMay{Pane: id, May: settings.AgentMay(may)})
+			u.Send(w, app.SetAgentMay{Pane: id, May: settings.AgentMay(may)})
 		})
 		form.Add("", box)
 	}
 	d := widget.NewDialog("Agent Permissions")
 	d.Body = form
 	d.SetButtons("Done", "")
-	d.AddButton("Take Back", func() gunim.Intent { return UnsharePane{Pane: id} })
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.AddButton("Take Back", func() gunim.Intent { return app.UnsharePane{Pane: id} })
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // setupDialog shows how to add kakel's MCP server to an agent
 // program, and copies it.
-func (w *window) setupDialog(host agentHost, u *gunim.UI) {
-	what := "Run this, as one command line, then start " + host.called + " again. It only writes the config."
+func (w *window) setupDialog(host app.AgentHost, u *gunim.UI) {
+	what := "Run this, as one command line, then start " + host.Called + " again. It only writes the config."
 	copyTitle := "Copy Command"
-	if host.cmd == "" {
-		where := host.configAt
+	if host.Cmd == "" {
+		where := host.ConfigAt
 		if where == "" {
 			where = "its MCP config"
 		}
-		what = "Put this in " + where + ", beside any servers already there. Then start " + host.called + " again."
+		what = "Put this in " + where + ", beside any servers already there. Then start " + host.Called + " again."
 		copyTitle = "Copy Config"
 	}
-	line := host.setupToCopy(exePath())
-	d := widget.NewDialog("Set Up " + host.called)
+	line := host.SetupToCopy(app.ExePath())
+	d := widget.NewDialog("Set Up " + host.Called)
 	d.Body = widget.NewForm().Add("", widget.NewLabel(what)).Add("", widget.NewLabel(line))
 	d.SetButtons("Close", "")
-	d.AddAction(copyTitle, func(u *gunim.UI) { u.Send(w, CopyAgentSetup{Host: host.name}) })
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.AddAction(copyTitle, func(u *gunim.UI) { u.Send(w, app.CopyAgentSetup{Host: host.Name}) })
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 

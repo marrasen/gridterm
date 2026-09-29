@@ -3,6 +3,8 @@ package main
 import (
 	"testing"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/kakel/machines"
 )
 
@@ -10,7 +12,7 @@ import (
 // ID, and something kept on a quick connection by its address.
 func TestKeptWorkIsFoundForItsMachine(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Machines: []machines.Info{{ID: "a1", Name: "srv"}, {ID: "quick-1", Name: "me@typed", Quick: true}}})
+	publish(app.State{Machines: []machines.Info{{ID: "a1", Name: "srv"}, {ID: "quick-1", Name: "me@typed", Quick: true}}})
 	for _, c := range []struct {
 		host, id string
 		machine  machines.ID

@@ -4,6 +4,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim/widget"
 )
 
@@ -33,15 +35,15 @@ func TestThePaletteFindsCommandsByOtherWords(t *testing.T) {
 // not in the order the panes were opened.
 func TestNextPaneGoesInTheSidebarsOrder(t *testing.T) {
 	win, _, publish := windowStage(t)
-	panes := []Pane{{ID: "p1", Title: "one", Kind: kindFiles}, {ID: "p2", Title: "two", Kind: kindFiles, Machine: "srv"}, {ID: "p3", Title: "three", Kind: kindFiles}}
-	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]Browser{"p1": {Path: "/"}, "p2": {Path: "/"}, "p3": {Path: "/"}}})
+	panes := []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}, {ID: "p2", Title: "two", Kind: app.KindFiles, Machine: "srv"}, {ID: "p3", Title: "three", Kind: app.KindFiles}}
+	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}, "p3": {Path: "/"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	win.run("pane.nextInSidebar", lastUI)
-	var got FocusPane
+	var got app.FocusPane
 	for got.Pane == "" {
-		if in, ok := nextIntent(t).(FocusPane); ok {
+		if in, ok := nextIntent(t).(app.FocusPane); ok {
 			got = in
 		}
 	}

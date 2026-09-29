@@ -4,7 +4,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/winkeys"
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -19,9 +24,9 @@ func termStage(t *testing.T, size geom.Size) (*window, *term) {
 	t.Helper()
 	win, sh, publish := windowStageOf(t, size)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	return win, win.terms["p1"]
 }
 
@@ -145,5 +150,44 @@ func TestAClickOutsideTheThemePickerClosesIt(t *testing.T) {
 	frames(20)
 	if win.themePicker.IsOpen() || !tm.focused {
 		t.Fatalf("after a click on the terminal, the picker is open %v, the terminal has the keyboard %v", win.themePicker.IsOpen(), tm.focused)
+	}
+}
+
+// On a Swedish keyboard the key marked + sits where a US one has -.
+// Ctrl and that key makes the font bigger, as the key says.
+func TestPunctuationIsTheKeyItTypes(t *testing.T) {
+	for _, c := range []struct {
+		press gi.KeyPress
+		want  input.Key
+	}{
+		{gi.KeyPress{Key: gi.KeyMinus, Char: '+'}, input.KeyPlus},
+		{gi.KeyPress{Key: gi.KeySlash, Char: '-'}, input.KeyMinus},
+		{gi.KeyPress{Key: gi.KeyMinus, Char: '-'}, input.KeyMinus},
+		{gi.KeyPress{Key: gi.KeyMinus}, input.KeyMinus},
+		{gi.KeyPress{Key: gi.KeyA, Char: 'a'}, input.KeyA},
+	} {
+		ev, ok := winkeys.Event(c.press)
+		if !ok || ev.Key != c.want {
+			t.Errorf("%+v reads as %v, %v; want %v", c.press, ev.Key, ok, c.want)
+		}
+	}
+	ev, _ := winkeys.Event(gi.KeyPress{Key: gi.KeyMinus, Char: '+', Mods: gi.ModControl})
+	if id, _ := shortcuts().Lookup(ui.ChordOf(ev)); id != "font.increase" {
+		t.Fatalf("Ctrl and the key marked + runs %q", id)
+	}
+}
+
+// A pane too small for a usable screen still resizes the shell, once it
+// has stayed so a moment.
+func TestATinyPaneResizesItsShellOnceSettled(t *testing.T) {
+	_, tm := termStage(t, geom.Sz(900, 75))
+	// Until the sidebar has slid into place.
+	frames(90)
+	cols, rows := tm.cells.Fit()
+	if cols >= leastCols && rows >= leastRows {
+		t.Fatalf("the pane fits %dx%d, which is not small", cols, rows)
+	}
+	if size := tm.sh.T.Size(); size.Cols != cols || size.Rows != rows {
+		t.Fatalf("settled, the shell is %dx%d, want %dx%d", size.Cols, size.Rows, cols, rows)
 	}
 }

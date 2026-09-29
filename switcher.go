@@ -6,6 +6,8 @@ import (
 	"slices"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
@@ -30,7 +32,7 @@ var (
 type switcher struct {
 	anim.Group
 	w     *window
-	panes []Pane
+	panes []app.Pane
 	tiles []*tile
 	hot   int
 	in    *anim.Float
@@ -66,7 +68,7 @@ type tile struct {
 	label text.Run
 }
 
-func newSwitcher(w *window, panes []Pane, focus string, u *gunim.UI) *switcher {
+func newSwitcher(w *window, panes []app.Pane, focus string, u *gunim.UI) *switcher {
 	s := &switcher{w: w, panes: panes, in: anim.NewFloat(0), picked: -1}
 	s.Add(s.in)
 	for i, p := range panes {
@@ -326,7 +328,7 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 	u.ForgetDrawing(s.w.stage)
 	s.stageAt = stage
 	s.landed = time.Now()
-	u.Send(s.w, FocusPane{Pane: t.id})
+	u.Send(s.w, app.FocusPane{Pane: t.id})
 	s.w.closeSwitcher(false, u)
 }
 

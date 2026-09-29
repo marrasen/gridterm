@@ -6,6 +6,8 @@ import (
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
+	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/look"
 )
 
 // keyBar is the strip of keys along the foot of a file pane: each key
@@ -89,7 +91,7 @@ func (b *keyBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 				p.RRect(b.boxes[i], 5, paint.Solid(widget.FieldFill.Get(th)))
 				b.labels[i].Color = widget.Ink
 			} else {
-				b.labels[i].Color = faint
+				b.labels[i].Color = look.Faint
 			}
 			k.Paint(p)
 		}
@@ -154,7 +156,7 @@ func (l *errLine) Handle(e gi.Event, u *gunim.UI) bool {
 	d := widget.NewDialog("Couldn't read the folder")
 	d.Body = widget.NewLabel(l.b.st.Path + "\n\n" + l.b.st.Err)
 	d.SetButtons("OK", "")
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	l.b.w.openDialog(d, u)
 	return true
 }

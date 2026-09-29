@@ -4,6 +4,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/geom"
@@ -14,15 +17,15 @@ import (
 )
 
 func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
-	win, sh, publish := windowStageOf(t, firstSize(defaultFontSize, 220))
+	win, sh, publish := windowStageOf(t, app.FirstSize(app.DefaultFontSize, 220))
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, PaneTitles: true}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220, FontSize: app.DefaultFontSize, PaneTitles: true}
 	for range 10 {
 		publish(st)
 	}
-	if cols, rows := win.terms["p1"].cells.Fit(); cols != openCols || rows != openRows {
+	if cols, rows := win.terms["p1"].cells.Fit(); cols != app.OpenCols || rows != app.OpenRows {
 		t.Fatalf("the window opens on a terminal of %d by %d", cols, rows)
 	}
 }
@@ -30,14 +33,14 @@ func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
 func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
-	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	face, err := text.Parse(fonts.DOS)
 	if err != nil {
 		t.Fatal(err)
 	}
-	font := Font{Name: dosFamily, Faces: [4]*text.Face{face}}
-	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1", Fonts: []string{bundledFamily, dosFamily}, Font: font, FontSize: defaultFontSize}
+	font := app.Font{Name: app.DosFamily, Faces: [4]*text.Face{face}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Fonts: []string{app.BundledFamily, app.DosFamily}, Font: font, FontSize: app.DefaultFontSize}
 	publish(st)
 	if win.terms["p1"].cells.Faces != font.Faces {
 		t.Fatal("the terminal is not drawn in the font picked")
@@ -56,13 +59,13 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 	box, _ := lastUI.Bounds(win.terms["p1"])
 	lastWindow.Input(gi.Scroll{Pos: box.Center(), Delta: geom.Pt(0, zoomNotch), Mods: gi.ModControl})
 	lastWindow.Frame(time.Second / 60)
-	if in := nextIntent(t); in != (FontSize{Step: 1}) {
+	if in := nextIntent(t); in != (app.FontSize{Step: 1}) {
 		t.Fatalf("Ctrl and a notch of the wheel sent %#v", in)
 	}
 	if !win.run("font.use.bundled", lastUI) {
 		t.Fatal("font.use.bundled was not taken")
 	}
-	if in := nextIntent(t); in != (PickFont{Name: bundledFamily}) {
+	if in := nextIntent(t); in != (app.PickFont{Name: app.BundledFamily}) {
 		t.Fatalf("font.use.bundled sent %#v", in)
 	}
 }

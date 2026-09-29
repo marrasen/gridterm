@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
@@ -26,17 +28,17 @@ type secretsPane struct {
 	opens *buttonBar
 	keys  *widget.Table
 	col   *widget.Flex
-	st    Secrets
-	byID  map[widget.Key]SecretItem
+	st    app.Secrets
+	byID  map[widget.Key]app.SecretItem
 	// The header's buttons and the bar's.
 	add, note, lock, unlock         *widget.Button
 	typ, cp, reveal, change, remove *widget.Button
 	addKey, addPass, removeKey      *widget.Button
-	keyNames                        map[widget.Key]SecretKey
+	keyNames                        map[widget.Key]app.SecretKey
 }
 
 func newSecretsPane(w *window) *secretsPane {
-	p := &secretsPane{w: w, head: newButtonBar(), act: newButtonBar(), opens: newButtonBar(), byID: map[widget.Key]SecretItem{}, keyNames: map[widget.Key]SecretKey{}}
+	p := &secretsPane{w: w, head: newButtonBar(), act: newButtonBar(), opens: newButtonBar(), byID: map[widget.Key]app.SecretItem{}, keyNames: map[widget.Key]app.SecretKey{}}
 	p.head.label.Size, p.head.label.Color = widget.DialogTitleSize, widget.Ink
 	p.table = widget.NewTable(
 		widget.TableColumn{Title: "Name"},
@@ -51,7 +53,7 @@ func newSecretsPane(w *window) *secretsPane {
 		}
 		return widget.TableRow{Cells: []string{it.Name, it.User, kind}}
 	}
-	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, CopySecret{ID: string(k)}) }
+	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: string(k)}) }
 	p.keys = widget.NewTable(widget.TableColumn{Title: "Key"}, widget.TableColumn{Title: "", Width: 340})
 	p.keys.Row = func(k widget.Key) widget.TableRow {
 		s := p.keyNames[k]
@@ -62,23 +64,23 @@ func newSecretsPane(w *window) *secretsPane {
 	p.lock, p.unlock = button(icon.Lock, "Lock"), button(icon.LockOpen, "Unlock")
 	p.typ, p.cp, p.reveal = button(icon.Keyboard, "Type"), button(icon.Copy, "Copy"), button(icon.Eye, "Show")
 	p.change, p.remove = button(icon.Pencil, "Change"), button(icon.Trash2, "Remove")
-	p.lock.On, p.unlock.On = LockSecrets{}, UnlockSecrets{}
+	p.lock.On, p.unlock.On = app.LockSecrets{}, app.UnlockSecrets{}
 	p.add.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Password, nil, u) })
 	p.note.OnActivate(func(u *gunim.UI) { p.w.secretForm(secrets.Note, nil, u) })
-	onRow := func(b *widget.Button, do func(SecretItem, *gunim.UI)) {
+	onRow := func(b *widget.Button, do func(app.SecretItem, *gunim.UI)) {
 		b.OnActivate(func(u *gunim.UI) {
 			if k, ok := p.table.Cursor(); ok {
 				do(p.byID[k], u)
 			}
 		})
 	}
-	onRow(p.typ, func(it SecretItem, u *gunim.UI) { u.Send(p.table, TypeSecret{ID: it.ID}) })
-	onRow(p.cp, func(it SecretItem, u *gunim.UI) { u.Send(p.table, CopySecret{ID: it.ID}) })
-	onRow(p.reveal, func(it SecretItem, u *gunim.UI) { u.Send(p.table, RevealSecret{ID: it.ID}) })
-	onRow(p.change, func(it SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
+	onRow(p.typ, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.TypeSecret{ID: it.ID}) })
+	onRow(p.cp, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: it.ID}) })
+	onRow(p.reveal, func(it app.SecretItem, u *gunim.UI) { u.Send(p.table, app.RevealSecret{ID: it.ID}) })
+	onRow(p.change, func(it app.SecretItem, u *gunim.UI) { p.w.secretForm(it.Kind, &it, u) })
 	p.remove.OnActivate(func(u *gunim.UI) {
 		// The ones marked with Space, or the one under the cursor.
-		var picked []SecretItem
+		var picked []app.SecretItem
 		for _, k := range p.table.Marked() {
 			picked = append(picked, p.byID[k])
 		}
@@ -96,7 +98,7 @@ func newSecretsPane(w *window) *secretsPane {
 	})
 	p.addKey, p.addPass, p.removeKey = button(icon.KeyRound, "Add Key"), button(icon.RectangleEllipsis, "Add Passphrase"),
 		button(icon.Trash2, "Remove")
-	p.addKey.On = AddSecretsKey{}
+	p.addKey.On = app.AddSecretsKey{}
 	p.addPass.OnActivate(func(u *gunim.UI) { p.w.passphraseForm(p.st, u) })
 	p.removeKey.OnActivate(func(u *gunim.UI) {
 		if k, ok := p.keys.Cursor(); ok {
@@ -109,7 +111,7 @@ func newSecretsPane(w *window) *secretsPane {
 }
 
 // show brings the pane up to date with the vault.
-func (p *secretsPane) show(st Secrets, u *gunim.UI) {
+func (p *secretsPane) show(st app.Secrets, u *gunim.UI) {
 	p.st = st
 	clear(p.byID)
 	keys := make([]widget.Key, 0, len(st.Items))
@@ -163,7 +165,7 @@ func (p *secretsPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kid
 // secretForm asks for a new secret of kind, or a change to old. A
 // password is typed hidden, with a box to show it and a button that
 // makes one up; a note is typed in the open.
-func (w *window) secretForm(kind secrets.Kind, old *SecretItem, u *gunim.UI) {
+func (w *window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI) {
 	name, user, value := widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
 	user.Placeholder = "optional: who or what it is for"
 	value.Secret = kind != secrets.Note
@@ -208,24 +210,24 @@ func (w *window) secretForm(kind secrets.Kind, old *SecretItem, u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return PutSecret{ID: id, Name: strings.TrimSpace(name.Text()), User: strings.TrimSpace(user.Text()), Kind: kind, Value: value.Text()}
+		return app.PutSecret{ID: id, Name: strings.TrimSpace(name.Text()), User: strings.TrimSpace(user.Text()), Kind: kind, Value: value.Text()}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // confirmRemoveSecret asks before taking a secret out of the vault.
-func (w *window) confirmRemoveSecret(it SecretItem, u *gunim.UI) {
+func (w *window) confirmRemoveSecret(it app.SecretItem, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + it.Name + "?")
 	d.Body = widget.NewLabel("It goes from the secrets for good.")
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = RemoveSecret{ID: it.ID}, DialogClosed{}
+	d.Accept, d.Dismiss = app.RemoveSecret{ID: it.ID}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // confirmRemoveSecrets asks before removing several secrets at once.
-func (w *window) confirmRemoveSecrets(items []SecretItem, u *gunim.UI) {
+func (w *window) confirmRemoveSecrets(items []app.SecretItem, u *gunim.UI) {
 	names := make([]string, len(items))
 	ids := make([]string, len(items))
 	for i, it := range items {
@@ -235,13 +237,13 @@ func (w *window) confirmRemoveSecrets(items []SecretItem, u *gunim.UI) {
 	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". They go from the secrets for good.")
 	d.SetButtons("Remove "+strconv.Itoa(len(items)), "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = RemoveSecrets{IDs: ids}, DialogClosed{}
+	d.Accept, d.Dismiss = app.RemoveSecrets{IDs: ids}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // passphraseForm asks for a passphrase that opens the secrets where
 // none of their keys is.
-func (w *window) passphraseForm(st Secrets, u *gunim.UI) {
+func (w *window) passphraseForm(st app.Secrets, u *gunim.UI) {
 	if st.Passphrase {
 		w.toasts.Show(widget.Toast{Title: "A passphrase opens the secrets already", Body: "Remove it first to set another."}, u)
 		return
@@ -262,14 +264,14 @@ func (w *window) passphraseForm(st Secrets, u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return AddSecretsPassphrase{Passphrase: pass.Text()} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.AddSecretsPassphrase{Passphrase: pass.Text()} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // confirmRemoveKey asks before a key, or the passphrase, stops opening
 // the secrets, saying what still opens them after.
-func (w *window) confirmRemoveKey(st Secrets, k SecretKey, u *gunim.UI) {
+func (w *window) confirmRemoveKey(st app.Secrets, k app.SecretKey, u *gunim.UI) {
 	if len(st.Keys) < 2 {
 		w.toasts.Show(widget.Toast{Title: "Only one key opens the secrets", Body: "Add another first, so something still opens them."}, u)
 		return
@@ -278,7 +280,7 @@ func (w *window) confirmRemoveKey(st Secrets, k SecretKey, u *gunim.UI) {
 	d.Body = widget.NewLabel(k.Removing)
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept, d.Dismiss = RemoveSecretsKey{Fingerprint: k.Fingerprint}, DialogClosed{}
+	d.Accept, d.Dismiss = app.RemoveSecretsKey{Fingerprint: k.Fingerprint}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -299,8 +301,8 @@ func (w *window) exportForm(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return ExportSecrets{Path: path.Text()} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.ExportSecrets{Path: path.Text()} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -309,7 +311,7 @@ func (w *window) exportForm(u *gunim.UI) {
 func (w *window) importForm(u *gunim.UI) {
 	path := widget.NewTextField()
 	path.Placeholder = "a CSV file, such as ~/Downloads/passwords.csv"
-	dup := widget.NewDropdown(keepBoth, skipThem, replace)
+	dup := widget.NewDropdown(app.KeepBoth, app.SkipThem, app.Replace)
 	dup.Label = "One already here"
 	d := widget.NewDialog("Import Secrets")
 	d.Body = widget.NewForm().Add("File", path).Add("Already here", dup)
@@ -321,9 +323,9 @@ func (w *window) importForm(u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return ImportSecrets{Path: path.Text(), Duplicates: []string{keepBoth, skipThem, replace}[max(0, min(dup.Selected, 2))]}
+		return app.ImportSecrets{Path: path.Text(), Duplicates: []string{app.KeepBoth, app.SkipThem, app.Replace}[max(0, min(dup.Selected, 2))]}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -360,15 +362,15 @@ func (w *window) makeKeyDialog(u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return MakeKey{Path: path.Text(), Comment: comment.Text(), Passphrase: pass.Text(), Generate: made()}
+		return app.MakeKey{Path: path.Text(), Comment: comment.Text(), Passphrase: pass.Text(), Generate: made()}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // secretsHeading is the pane's heading: the secrets, and the terminal
 // waiting for one, when one is.
-func secretsHeading(st Secrets) string {
+func secretsHeading(st app.Secrets) string {
 	if st.Waiting != "" {
 		return "Secrets — " + st.Waiting + " is waiting for one"
 	}

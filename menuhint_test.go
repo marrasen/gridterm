@@ -4,12 +4,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	gi "github.com/marrasen/gunim/input"
 )
 
 func TestAMenuLineSaysItsFullTitleAtTheBottom(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{})
+	publish(app.State{})
 	frame := func() { lastWindow.Frame(time.Second / 60) }
 	win.bar.Open(0, lastUI)
 	frame()

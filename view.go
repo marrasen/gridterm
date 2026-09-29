@@ -2,11 +2,14 @@ package main
 
 import (
 	"fmt"
-	"image/color"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
 
 	"github.com/marrasen/kakel/screen"
 
@@ -36,12 +39,8 @@ import (
 
 // The window's own tokens.
 var (
-	sidebarFill = theme.Color("kakel.sidebar", color.NRGBA{R: 0x1b, G: 0x1e, B: 0x26, A: 0xff})
-	rowActive   = theme.Color("kakel.row.active", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0x40})
-	rowHover    = theme.Color("kakel.row.hover", color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x12})
-	faint       = theme.Color("kakel.faint", color.NRGBA{R: 0x8a, G: 0x93, B: 0xa6, A: 0xff})
-	noGap       = theme.Length("kakel.nogap", 0)
-	smallText   = theme.Length("kakel.small", 12)
+	noGap     = theme.Length("kakel.nogap", 0)
+	smallText = theme.Length("kakel.small", 12)
 )
 
 // window is the view the program's state drives.
@@ -71,9 +70,9 @@ type window struct {
 	lastTerm string
 	// share is the agent share as last published, and sharing says the
 	// user just asked for one, so its dialog opens once it has a code.
-	share Share
+	share app.Share
 	// serving is the serving as last published.
-	serving Serving
+	serving app.Serving
 	// bells is the bells as last published, titles whether panes show
 	// their titles, and captions the line over each pane that does.
 	// sidebarShown is whether the sidebar shows, as last published, and
@@ -88,10 +87,10 @@ type window struct {
 	// savedCommands are the commands kept, and remoteWindows the
 	// windows connected to, as last published.
 	savedCommands []settings.SavedCommand
-	remoteWindows []RemoteWindow
+	remoteWindows []app.RemoteWindow
 	// shellChoices are the shells here, and chosenShell the one kept,
 	// as last published.
-	shellChoices []ShellChoice
+	shellChoices []app.ShellChoice
 	chosenShell  string
 	// termProgram is what new shells are told the terminal is called.
 	termProgram string
@@ -108,7 +107,7 @@ type window struct {
 	// echo sends rings out past the window's edges, pings the counts
 	// last sent for, and away says another program has the keyboard.
 	echo         widget.Echo
-	pings        Pings
+	pings        app.Pings
 	away         bool
 	titles       bool
 	captions     map[string]*captioned
@@ -134,7 +133,7 @@ type window struct {
 	drawn       map[string]gunim.Node
 	// vault is the secrets as last published, and afterUnlock a command
 	// waiting for them to open.
-	vault       Secrets
+	vault       app.Secrets
 	afterUnlock string
 	// title is the window's title as last set.
 	title string
@@ -143,12 +142,12 @@ type window struct {
 	// dialing are the servers being connected to, fileClip what the
 	// file clipboard holds, and keyFiles the key files kept.
 	dialing  []machines.ID
-	fileClip FileClip
+	fileClip app.FileClip
 	keyFiles []string
 	// fonts are the families on the Font menu, and font the one the
 	// terminals are drawn in.
 	fonts []string
-	font  Font
+	font  app.Font
 	// zoomed gathers Ctrl and the wheel until it makes a point of font
 	// size.
 	zoomed float32
@@ -177,7 +176,7 @@ type window struct {
 	served       *servedShown
 	// panes are the panes as last published, sideOrder them as the
 	// sidebar lists them, and sw the switcher while it is open.
-	panes     []Pane
+	panes     []app.Pane
 	sideOrder []string
 	sw        *switcher
 	// winID numbers the window among kakel's own, and behind says
@@ -212,7 +211,7 @@ type window struct {
 	paletteIDs []string
 }
 
-func newWindow(sh *screen.Shells, keys *ui.Keymap, all []themed) *window {
+func newWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *window {
 	w := &window{
 		contents:    map[string]theme.Theme{},
 		list:        widget.NewList(),
@@ -238,11 +237,11 @@ func newWindow(sh *screen.Shells, keys *ui.Keymap, all []themed) *window {
 	w.outer = widget.NewSplit(w.side, main)
 	w.outer.Fixed = true
 	w.outer.SetShare(220, nil)
-	w.outer.OnMove = func(v float32) gunim.Intent { return SidebarMoved{Width: v} }
+	w.outer.OnMove = func(v float32) gunim.Intent { return app.SidebarMoved{Width: v} }
 	w.bar = widget.NewMenubar()
 	// The menus behind one button, leaving the bar to move the window.
 	w.bar.Compact = true
-	w.bar.Title = programName
+	w.bar.Title = app.ProgramName
 	for _, m := range menus {
 		bm := widget.BarMenu{Title: m.title}
 		for i, it := range m.items {
@@ -284,7 +283,7 @@ func newWindow(sh *screen.Shells, keys *ui.Keymap, all []themed) *window {
 			}
 		case m < len(menus) && menus[m].title == "Font":
 			if i < len(w.fonts) {
-				u.Send(w, PickFont{Name: w.fonts[i]})
+				u.Send(w, app.PickFont{Name: w.fonts[i]})
 			}
 		case m < len(menus) && i < len(menus[m].items):
 			w.run(menus[m].items[i].id, u)
@@ -304,7 +303,7 @@ func newWindow(sh *screen.Shells, keys *ui.Keymap, all []themed) *window {
 	}}
 	w.servers(nil)
 	for _, t := range all {
-		w.contents[t.name] = t.content
+		w.contents[t.Name] = t.Content
 	}
 	return w
 }
@@ -335,7 +334,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		// In the sidebar's own order, which the window has: grouped by
 		// machine, as the rows are read.
 		if next := w.paneInSidebar(id == "pane.previousInSidebar"); next != "" {
-			u.Send(w, FocusPane{Pane: next})
+			u.Send(w, app.FocusPane{Pane: next})
 		}
 		return true
 	case "pane.next", "pane.previous":
@@ -368,17 +367,17 @@ func (w *window) run(id string, u *gunim.UI) bool {
 			w.toasts.Show(widget.Toast{Title: "Connection logs belong to servers", Body: "Open one from a pane on a server."}, u)
 			return true
 		}
-		u.Send(w, ShowLog{Machine: machine})
+		u.Send(w, app.ShowLog{Machine: machine})
 		return true
 	case "agent.typed":
-		u.Send(w, ShowTyped{Pane: w.focused})
+		u.Send(w, app.ShowTyped{Pane: w.focused})
 		return true
 	case "pane.scrollback":
-		if w.kindOf(w.focused) != kindTerminal {
+		if w.kindOf(w.focused) != app.KindTerminal {
 			w.toasts.Show(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal has kept."}, u)
 			return true
 		}
-		u.Send(w, ShowScrollback{Pane: w.focused})
+		u.Send(w, app.ShowScrollback{Pane: w.focused})
 		return true
 	case "conn.command":
 		w.commandDialog(u)
@@ -409,10 +408,10 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.makeKeyDialog(u)
 		return true
 	case "help.shortcuts":
-		u.Send(w, ShowHelp{})
+		u.Send(w, app.ShowHelp{})
 		return true
 	case "shortcuts.write":
-		u.Send(w, WriteShortcuts{Bindings: w.keys.Bindings()})
+		u.Send(w, app.WriteShortcuts{Bindings: w.keys.Bindings()})
 		return true
 	case "app.about":
 		w.aboutDialog(u)
@@ -427,14 +426,14 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		w.termProgramDialog(u)
 		return true
 	case "pane.titles":
-		u.Send(w, TogglePaneTitles{})
+		u.Send(w, app.TogglePaneTitles{})
 		return true
 	case "serve.attach":
 		w.connectWindowDialog(u)
 		return true
 	case "conn.disconnect":
 		if m := w.machineOf(w.focused); m != "" {
-			u.Send(w, Disconnect{Machine: m})
+			u.Send(w, app.Disconnect{Machine: m})
 		} else {
 			w.toasts.Show(widget.Toast{Title: "This pane is on this computer", Body: "Disconnect closes the connection to a server or a window."}, u)
 		}
@@ -451,15 +450,15 @@ func (w *window) run(id string, u *gunim.UI) bool {
 	case "agent.hand":
 		// Shared, it opens its permissions: to open them again for a
 		// pane shared already, or to tick more once the share is made.
-		if slices.ContainsFunc(w.share.Panes, func(p SharedPane) bool { return p.Pane == w.focused }) {
+		if slices.ContainsFunc(w.share.Panes, func(p app.SharedPane) bool { return p.Pane == w.focused }) {
 			w.permissionsDialog(w.share, u)
 			return true
 		}
-		u.Send(w, SharePane{Pane: w.focused})
+		u.Send(w, app.SharePane{Pane: w.focused})
 		w.permsAfter = w.focused
 		return true
 	case "agent.take":
-		u.Send(w, UnsharePane{Pane: w.focused})
+		u.Send(w, app.UnsharePane{Pane: w.focused})
 		return true
 	case "secrets.change", "secrets.forget", "secrets.removeKey", "secrets.addPassphrase":
 		w.secretsCommand(id, u)
@@ -569,7 +568,7 @@ func (w *window) zoom(s input.Scroll, u *gunim.UI) {
 		return
 	}
 	w.zoomed -= float32(steps)
-	u.Send(w, FontSize{Step: steps})
+	u.Send(w, app.FontSize{Step: steps})
 }
 
 // zoomNotch is how far the wheel turns for a point of font size: a
@@ -578,7 +577,7 @@ const zoomNotch = 40
 
 // showFonts fills the Font menu, the family in use ticked, and draws
 // every terminal and reader in that family.
-func (w *window) showFonts(st State) {
+func (w *window) showFonts(st app.State) {
 	if st.Font.Name != w.font.Name {
 		for _, t := range w.terms {
 			t.cells.Faces = st.Font.Faces
@@ -592,7 +591,7 @@ func (w *window) showFonts(st State) {
 	m := widget.BarMenu{Title: "Font"}
 	for i, name := range st.Fonts {
 		m.Items = append(m.Items, name)
-		m.Checked = append(m.Checked, fontCommandID(name) == fontCommandID(st.Font.Name))
+		m.Checked = append(m.Checked, app.FontCommandID(name) == app.FontCommandID(st.Font.Name))
 		if i == 1 {
 			// A line under Go Mono.
 			m.Breaks = append(m.Breaks, i)
@@ -609,7 +608,7 @@ func (w *window) showFonts(st State) {
 // pane's title on the window's own title bar, and the two together for
 // the taskbar. A terminal the user has not named goes by what its
 // program calls it now.
-func (w *window) showTitle(st State, u *gunim.UI) {
+func (w *window) showTitle(st app.State, u *gunim.UI) {
 	pane := ""
 	for _, p := range st.Panes {
 		if p.ID == st.Focus {
@@ -621,9 +620,9 @@ func (w *window) showTitle(st State, u *gunim.UI) {
 			}
 		}
 	}
-	title := programName
+	title := app.ProgramName
 	if pane != "" {
-		title = programName + " — " + pane
+		title = app.ProgramName + " — " + pane
 	}
 	if title != w.title {
 		w.title = title
@@ -640,7 +639,7 @@ func (w *window) secretsCommand(id string, u *gunim.UI) {
 	st := w.vault
 	if !st.Open {
 		w.afterUnlock = id
-		u.Send(w, UnlockSecrets{})
+		u.Send(w, app.UnlockSecrets{})
 		return
 	}
 	w.afterUnlock = ""
@@ -699,7 +698,7 @@ func (w *window) pickTheme(u *gunim.UI) {
 		p.Items = append(p.Items, widget.PaletteItem{Title: name, Hint: hint})
 	}
 	names := w.themes
-	p.Pick = func(i int, u *gunim.UI) { u.Send(w, PickTheme{Name: names[i]}) }
+	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.PickTheme{Name: names[i]}) }
 	w.themePicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
@@ -716,19 +715,19 @@ func (w *window) connectDialog(u *gunim.UI) {
 		typed := strings.TrimSpace(target.Text())
 		for _, h := range w.saved {
 			if strings.EqualFold(h.Name, typed) {
-				return ConnectTo{Server: machines.ID(h.ID)}
+				return app.ConnectTo{Server: machines.ID(h.ID)}
 			}
 		}
-		return ConnectTo{Target: typed}
+		return app.ConnectTo{Target: typed}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
 // showAsk shows the oldest question a connection is waiting on, in a
 // dialog, and takes the dialog away when its question goes, as when the
 // connection gives up.
-func (w *window) showAsk(asks []Ask, u *gunim.UI) {
+func (w *window) showAsk(asks []app.Ask, u *gunim.UI) {
 	if w.ask != nil {
 		for _, q := range asks {
 			if q.ID == w.askID {
@@ -767,7 +766,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 			d.AddAction(act, func(u *gunim.UI) { u.SetClipboard(copied) })
 			continue
 		}
-		d.AddAction(act, func(u *gunim.UI) { u.Send(w, AskAction{ID: q.ID, Action: act}) })
+		d.AddAction(act, func(u *gunim.UI) { u.Send(w, app.AskAction{ID: q.ID, Action: act}) })
 	}
 	d.Body = form
 	id := q.ID
@@ -786,7 +785,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 			}
 			answers = append(answers, yes)
 		}
-		return AskAnswered{ID: id, Yes: true, Answers: answers}
+		return app.AskAnswered{ID: id, Yes: true, Answers: answers}
 	}
 	no := q.No
 	if no == "" {
@@ -802,7 +801,7 @@ func (w *window) showAsk(asks []Ask, u *gunim.UI) {
 		d.SetButtons(q.Yes, no)
 		d.OnAccept = func() gunim.Intent { return answer("") }
 	}
-	d.Dismiss = AskAnswered{ID: id}
+	d.Dismiss = app.AskAnswered{ID: id}
 	d.Danger, d.Careful = q.Danger, q.Careful
 	d.Icon = askIcons[q.Icon]
 	if q.Plain {
@@ -909,7 +908,7 @@ func (w *window) servers(saved []remote.Host) {
 		w.paletteIDs = append(w.paletteIDs, "conn.saved."+strconv.Itoa(i+1))
 	}
 	for _, name := range w.fonts {
-		id := fontCommandID(name)
+		id := app.FontCommandID(name)
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Font: " + name, Hint: hint(id)})
 		w.paletteIDs = append(w.paletteIDs, id)
 	}
@@ -949,7 +948,7 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 	switch {
 	case strings.HasPrefix(id, "server.open."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.open.")); ok {
-			u.Send(w, ConnectTo{Server: machines.ID(h.ID)})
+			u.Send(w, app.ConnectTo{Server: machines.ID(h.ID)})
 		}
 	case strings.HasPrefix(id, "server.edit."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.edit.")); ok {
@@ -961,16 +960,16 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 		}
 	case strings.HasPrefix(id, "conn.log."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.log.")); ok {
-			u.Send(w, ShowLog{Machine: m})
+			u.Send(w, app.ShowLog{Machine: m})
 		}
 	case strings.HasPrefix(id, "conn.terminal."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.terminal.")); ok {
-			u.Send(w, OpenOn{Machine: m})
+			u.Send(w, app.OpenOn{Machine: m})
 		}
 	case strings.HasPrefix(id, "conn.files."):
 		rest := strings.TrimPrefix(id, "conn.files.")
 		if m, ok := machineNamed(rest); ok {
-			u.Send(w, FilesOn{Machine: m})
+			u.Send(w, app.FilesOn{Machine: m})
 			break
 		}
 		// A folder offered on a machine: its number follows the
@@ -982,29 +981,29 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 		m, ok := machineNamed(rest[:cut])
 		i, numbered := nth(rest[cut+1:])
 		if folders := w.foldersOn(m); ok && numbered && i < len(folders) {
-			u.Send(w, FilesOn{Machine: m, Path: folders[i]})
+			u.Send(w, app.FilesOn{Machine: m, Path: folders[i]})
 		}
 	case strings.HasPrefix(id, shellfind.CommandPrefix):
 		for i, sid := range w.shellIDs() {
 			if sid == id {
-				u.Send(w, OpenShellNamed{ID: w.shellChoices[i].ID})
+				u.Send(w, app.OpenShellNamed{ID: w.shellChoices[i].ID})
 			}
 		}
 	case strings.HasPrefix(id, "shell.pick."):
-		u.Send(w, PickShell{ID: strings.TrimPrefix(id, "shell.pick.")})
+		u.Send(w, app.PickShell{ID: strings.TrimPrefix(id, "shell.pick.")})
 	case strings.HasPrefix(id, "conn.saved."):
 		if i, ok := nth(strings.TrimPrefix(id, "conn.saved.")); ok && i < len(w.savedCommands) {
-			u.Send(w, RunSavedCommand{Saved: w.savedCommands[i]})
+			u.Send(w, app.RunSavedCommand{Saved: w.savedCommands[i]})
 		}
 	case strings.HasPrefix(id, "font.use."):
 		for _, name := range w.fonts {
-			if fontCommandID(name) == id {
-				u.Send(w, PickFont{Name: name})
+			if app.FontCommandID(name) == id {
+				u.Send(w, app.PickFont{Name: name})
 			}
 		}
 	case strings.HasPrefix(id, "conn.savedtunnel."):
 		if i, ok := nth(strings.TrimPrefix(id, "conn.savedtunnel.")); ok && i < len(w.savedTunnels) {
-			u.Send(w, OpenSavedTunnel{Saved: w.savedTunnels[i]})
+			u.Send(w, app.OpenSavedTunnel{Saved: w.savedTunnels[i]})
 		}
 	default:
 		return false
@@ -1177,9 +1176,9 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	}
 	d.OnAccept = func() gunim.Intent {
 		h, _ := host()
-		return SaveServer{Host: h, Under: under}
+		return app.SaveServer{Host: h, Under: under}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -1191,8 +1190,8 @@ func (w *window) confirmRemove(id machines.ID, u *gunim.UI) {
 	}
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
-	d.Accept = RemoveServer{ID: id}
-	d.Dismiss = DialogClosed{}
+	d.Accept = app.RemoveServer{ID: id}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -1215,7 +1214,7 @@ func (w *window) filesKeyOf(id string) machines.ID {
 func (w *window) nextFilePane(id string, back bool) string {
 	var files []string
 	for _, p := range w.panes {
-		if p.Kind == kindFiles {
+		if p.Kind == app.KindFiles {
 			files = append(files, p.ID)
 		}
 	}
@@ -1255,7 +1254,7 @@ func (w *window) foldersOn(m machines.ID) []string {
 func (w *window) removeSays(name machines.ID) string {
 	called := w.nameOf(name)
 	switch {
-	case slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == name }):
+	case slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == name }):
 		return called + " is connected. Removing it closes the connection and its panes."
 	case slices.Contains(w.connected, name):
 		said := called + " is connected. Removing it closes the connection"
@@ -1272,7 +1271,7 @@ func (w *window) removeSays(name machines.ID) string {
 	case slices.Contains(w.dropped, name):
 		left := 0
 		for _, p := range w.panes {
-			if p.Machine == name && p.Kind != kindLog {
+			if p.Machine == name && p.Kind != app.KindLog {
 				left++
 			}
 		}
@@ -1311,8 +1310,8 @@ func (w *window) rename(u *gunim.UI) {
 	d := widget.NewDialog("Rename the pane")
 	d.Body = widget.NewForm().Add("Name", name)
 	d.SetButtons("Rename", "Cancel")
-	d.OnAccept = func() gunim.Intent { return RenamePane{Pane: id, Title: name.Text()} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.RenamePane{Pane: id, Title: name.Text()} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -1372,7 +1371,7 @@ func (w *window) cmdName(id machines.ID) string {
 // commandAt is a machine to run a command on, and where its pane goes.
 type commandAt struct {
 	machine machines.ID
-	at      placement
+	at      app.Placement
 }
 
 // paneInSidebar is the pane after the focused one in the sidebar, or
@@ -1445,7 +1444,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 		// Dropped somewhere that is no terminal: the sidebar, a file
 		// pane, the menu bar. The focused pane is what the user is
 		// working in, and is where the files are wanted.
-		u.Send(w, DropFiles{Paths: d.Paths})
+		u.Send(w, app.DropFiles{Paths: d.Paths})
 		return true
 	}
 	// Ctrl lights the link under the pointer in whichever pane it is
@@ -1454,7 +1453,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	case input.WindowFocusGained:
 		w.away = false
 		if w.behind {
-			u.Send(w, WindowFocused{})
+			u.Send(w, app.WindowFocused{})
 		}
 	case input.WindowFocusLost:
 		w.away = true
@@ -1494,7 +1493,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 }
 
 // update shows st.
-func (w *window) update(st State, u *gunim.UI) {
+func (w *window) update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
 	w.machineList = st.Machines
 	w.winID, w.behind = st.Window, st.Behind
@@ -1528,14 +1527,14 @@ func (w *window) update(st State, u *gunim.UI) {
 			at++
 		}
 		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
-			closes: DisconnectClient(c)}
+			closes: app.DisconnectClient(c)}
 		rows = slices.Insert(rows, at, item)
 	}
 	rows = w.markRows(rows, st)
 	w.sideOrder = w.sideOrder[:0]
 	for _, r := range rows {
 		// This window's own: a tunnel's row may name a pane in another.
-		if r.pane != "" && !r.heading && slices.ContainsFunc(st.Panes, func(p Pane) bool { return p.ID == r.pane }) {
+		if r.pane != "" && !r.heading && slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.ID == r.pane }) {
 			w.sideOrder = append(w.sideOrder, r.pane)
 		}
 	}
@@ -1558,7 +1557,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
-	if id := w.permsAfter; id != "" && slices.ContainsFunc(st.Share.Panes, func(p SharedPane) bool { return p.Pane == id }) {
+	if id := w.permsAfter; id != "" && slices.ContainsFunc(st.Share.Panes, func(p app.SharedPane) bool { return p.Pane == id }) {
 		w.permsAfter = ""
 		if id == w.focused {
 			w.permissionsDialog(st.Share, u)
@@ -1685,7 +1684,7 @@ func (w *window) update(st State, u *gunim.UI) {
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)
 	}
-	if w.kindOf(st.Focus) == kindTerminal {
+	if w.kindOf(st.Focus) == app.KindTerminal {
 		w.lastTerm = st.Focus
 	}
 	for id, p := range w.tunnelPanes {
@@ -1696,11 +1695,11 @@ func (w *window) update(st State, u *gunim.UI) {
 		if u.Presence(p) == gunim.Exiting {
 			continue
 		}
-		var t Tunnel
+		var t app.Tunnel
 		ok := false
 		for _, pane := range st.Panes {
 			if pane.ID == id {
-				i := slices.IndexFunc(st.Tunnels, func(t Tunnel) bool { return t.ID == pane.Tunnel })
+				i := slices.IndexFunc(st.Tunnels, func(t app.Tunnel) bool { return t.ID == pane.Tunnel })
 				if ok = i >= 0; ok {
 					t = st.Tunnels[i]
 				}
@@ -1750,7 +1749,7 @@ func (w *window) update(st State, u *gunim.UI) {
 			u.SetClipboard(n.Clipboard)
 			if n.Forget {
 				copied := n.Clipboard
-				u.After(clipboardHolds*time.Second, func(u *gunim.UI) {
+				u.After(app.ClipboardHolds*time.Second, func(u *gunim.UI) {
 					// Only the secret goes; what was copied since stays.
 					if u.Clipboard() == copied {
 						u.SetClipboard("")
@@ -1783,7 +1782,7 @@ func (w *window) update(st State, u *gunim.UI) {
 // is kept while its panes stay the same, and made afresh once they
 // change, so a change anywhere makes a new tree above it, which the
 // stage swaps in whole.
-func (w *window) build(b *Box, keep map[string]bool) gunim.Node {
+func (w *window) build(b *app.Box, keep map[string]bool) gunim.Node {
 	switch {
 	case b == nil:
 		return nil
@@ -1803,7 +1802,7 @@ func (w *window) build(b *Box, keep map[string]bool) gunim.Node {
 	sp := widget.NewSplit(a, c)
 	sp.Vertical = b.Vertical
 	id := b.ID
-	sp.OnMove = func(v float32) gunim.Intent { return SplitMoved{Split: id, Share: v} }
+	sp.OnMove = func(v float32) gunim.Intent { return app.SplitMoved{Split: id, Share: v} }
 	if b.Opening {
 		// The new pane, second, slides in from the edge.
 		sp.SetShare(1, nil)
@@ -1822,7 +1821,7 @@ func (w *window) kindOf(id string) string {
 			return p.Kind
 		}
 	}
-	return kindTerminal
+	return app.KindTerminal
 }
 
 // paneNode returns the node that shows pane id, made on first use,
@@ -1855,41 +1854,41 @@ func (w *window) paneNode(id string) gunim.Node {
 // bareNode returns the node that shows pane id, made on first use.
 func (w *window) bareNode(id string) gunim.Node {
 	switch w.kindOf(id) {
-	case kindFiles:
+	case app.KindFiles:
 		b, ok := w.browsers[id]
 		if !ok {
 			b = newBrowser(w, id)
 			w.browsers[id] = b
 		}
 		return b
-	case kindCopies:
+	case app.KindCopies:
 		if w.copies == nil {
 			w.copies = newCopiesPane(w)
 		}
 		return w.copies
-	case kindHelp:
+	case app.KindHelp:
 		if w.help == nil {
 			w.help = newHelpPane(w)
 		}
 		return w.help
-	case kindSecrets:
+	case app.KindSecrets:
 		if w.secrets == nil {
 			w.secrets = newSecretsPane(w)
 		}
 		return w.secrets
-	case kindJobs:
+	case app.KindJobs:
 		if w.jobs == nil {
 			w.jobs = newJobsPane()
 		}
 		return w.jobs
-	case kindTunnel:
+	case app.KindTunnel:
 		p, ok := w.tunnelPanes[id]
 		if !ok {
 			p = newTunnelPane(w.term(id))
 			w.tunnelPanes[id] = p
 		}
 		return p
-	case kindReader:
+	case app.KindReader:
 		r, ok := w.readers[id]
 		if !ok {
 			r = newReader(w, id)
@@ -1912,16 +1911,16 @@ func (w *window) focusNode(id string) gunim.Node {
 	if r, ok := w.readers[id]; ok {
 		return r
 	}
-	if w.kindOf(id) == kindJobs && w.jobs != nil {
+	if w.kindOf(id) == app.KindJobs && w.jobs != nil {
 		return w.jobs.clear
 	}
-	if w.kindOf(id) == kindSecrets && w.secrets != nil {
+	if w.kindOf(id) == app.KindSecrets && w.secrets != nil {
 		return w.secrets.table
 	}
-	if w.kindOf(id) == kindHelp && w.help != nil {
+	if w.kindOf(id) == app.KindHelp && w.help != nil {
 		return w.help.table
 	}
-	if w.kindOf(id) == kindCopies && w.copies != nil {
+	if w.kindOf(id) == app.KindCopies && w.copies != nil {
 		return w.copies.table
 	}
 	return nil
@@ -2004,7 +2003,7 @@ func (p *panel) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 		return
 	}
 	defer pt.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
-	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(sidebarFill.Get(f.Theme)))
+	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(look.SidebarFill.Get(f.Theme)))
 	kids.At(0).Paint(pt)
 }
 
@@ -2040,7 +2039,7 @@ type sideItem struct {
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []machines.ID, named func(machines.ID) (string, bool), dropped ...machines.ID) []sideItem {
+func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, windows []app.RemoteWindow, saved []machines.ID, named func(machines.ID) (string, bool), dropped ...machines.ID) []sideItem {
 	if named == nil {
 		named = func(m machines.ID) (string, bool) { return string(m), false }
 	}
@@ -2078,7 +2077,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 	for _, t := range tunnels {
 		shown[t.ID] = true
 	}
-	paneRow := func(p Pane) sideItem {
+	paneRow := func(p app.Pane) sideItem {
 		note := notes[p.ID]
 		switch {
 		case p.Ended:
@@ -2088,7 +2087,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		case note == "" && p.Note != "":
 			note = p.Note
 		}
-		return sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: FocusPane{Pane: p.ID}, closes: ClosePane{Pane: p.ID}, dim: p.Ended}
+		return sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: app.FocusPane{Pane: p.ID}, closes: app.ClosePane{Pane: p.ID}, dim: p.Ended}
 	}
 	var out []sideItem
 	for _, m := range order {
@@ -2116,7 +2115,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 			// from here.
 			for _, o := range w.Open {
 				if o.Key() == "" {
-					out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+					out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: app.AttachWindow{Window: m, ID: o.ID}, dim: true})
 				} else if !slices.Contains(far, o.Key()) {
 					far = append(far, o.Key())
 				}
@@ -2144,14 +2143,14 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 				}
 				for _, o := range w.Open {
 					if o.Key() == host {
-						out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+						out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: app.AttachWindow{Window: m, ID: o.ID}, dim: true})
 					}
 				}
 			}
 		}
 		for _, t := range tunnels {
 			if t.Machine == m {
-				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: ShowTunnel{ID: t.ID}, closes: CloseTunnel{ID: t.ID}, dim: !t.Live})
+				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: app.ShowTunnel{ID: t.ID}, closes: app.CloseTunnel{ID: t.ID}, dim: !t.Live})
 			}
 		}
 	}
@@ -2191,9 +2190,9 @@ type sideRow struct {
 func (w *window) newSideRow(it sideItem) *sideRow {
 	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
 	r.title.MaxLines, r.note.MaxLines = 1, 1
-	r.note.Size, r.note.Color = smallText, faint
+	r.note.Size, r.note.Color = smallText, look.Faint
 	if it.heading {
-		r.title.Size, r.title.Color = smallText, faint
+		r.title.Size, r.title.Color = smallText, look.Faint
 	}
 	r.set(it)
 	r.ring = anim.NewFloat(0)
@@ -2213,7 +2212,7 @@ func (r *sideRow) set(it sideItem) {
 	if !it.heading {
 		r.title.Color = widget.Ink
 		if it.dim {
-			r.title.Color = faint
+			r.title.Color = look.Faint
 		}
 	}
 }
@@ -2262,12 +2261,12 @@ func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	inset := geom.Rect{Min: geom.Pt(6, 1), Max: geom.Pt(box.W-6, box.H-1)}
 	if t := r.hover.Value(); t > 0.01 {
-		c := rowHover.Get(f.Theme)
+		c := look.RowHover.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
 		p.RRect(inset, 6, paint.Solid(c))
 	}
 	if t := r.active.Value(); t > 0.01 {
-		c := rowActive.Get(f.Theme)
+		c := look.RowActive.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
 		p.RRect(inset, 6, paint.Solid(c))
 	}
@@ -2381,7 +2380,7 @@ type statusLine struct {
 
 func newStatusLine() *statusLine {
 	l := widget.NewLabel("")
-	l.Size, l.Color, l.MaxLines = smallText, faint, 1
+	l.Size, l.Color, l.MaxLines = smallText, look.Faint, 1
 	h := widget.NewLabel("")
 	h.Size, h.MaxLines = smallText, 1
 	s := &statusLine{label: l, height: anim.NewFloat(0), hint: h}
@@ -2521,7 +2520,7 @@ func (w *window) focusRowsAway(from string, n int, u *gunim.UI) {
 func (w *window) focusSidebar(u *gunim.UI) {
 	w.present(false, u)
 	if !w.sidebarShown {
-		u.Send(w, ToggleSidebar{})
+		u.Send(w, app.ToggleSidebar{})
 	}
 	if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(w.focused)); ok {
 		u.Focus(row)
@@ -2630,16 +2629,16 @@ var askIcons = map[string]*icon.Icon{
 }
 
 // toastKinds are the toasts for the kinds of notice.
-var toastKinds = map[NoticeKind]widget.ToastKind{
-	NoticePlain:  widget.ToastPlain,
-	NoticeWorked: widget.ToastSuccess,
-	NoticeFailed: widget.ToastError,
+var toastKinds = map[app.NoticeKind]widget.ToastKind{
+	app.NoticePlain:  widget.ToastPlain,
+	app.NoticeWorked: widget.ToastSuccess,
+	app.NoticeFailed: widget.ToastError,
 }
 
 // paintPlus draws a heading's plus, faint, and brighter under the
 // pointer.
 func (r *sideRow) paintPlus(p *paint.Painter, f gunim.Frame, box geom.Size) {
-	c := faint.Get(f.Theme)
+	c := look.Faint.Get(f.Theme)
 	if t := r.hover.Value(); t > 0.01 {
 		c = anim.Mix(anim.ColorCodec, c, widget.Accent.Get(f.Theme), min(t, 1))
 	}
@@ -2660,13 +2659,13 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		acts = append(acts, act)
 	}
 	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
-	window := slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == m })
+	window := slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == m })
 	for _, h := range w.saved {
 		if machines.ID(h.ID) == m && h.Window && !window {
 			// Saved as a window and not connected: nothing that needs a
 			// shell applies.
 			saved := h
-			add(icon.Plug, "Connect", send(ConnectTo{Server: m}))
+			add(icon.Plug, "Connect", send(app.ConnectTo{Server: m}))
 			add(icon.Pencil, "Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
 			add(icon.Trash2, "Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			w.showMachineMenu(r, items, icons, acts, u)
@@ -2678,7 +2677,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	// saved server.
 	heading := func(title string) { add(nil, title, nil) }
 	heading("Terminal")
-	add(icon.SquareTerminal, "New Terminal", send(OpenOn{Machine: m}))
+	add(icon.SquareTerminal, "New Terminal", send(app.OpenOn{Machine: m}))
 	if !window {
 		add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	}
@@ -2686,13 +2685,13 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		// This computer's shells, each to open a terminal with.
 		heading("Shells")
 		for _, sh := range w.shellChoices {
-			add(icon.SquareTerminal, sh.Title, send(OpenShellNamed{ID: sh.ID}))
+			add(icon.SquareTerminal, sh.Title, send(app.OpenShellNamed{ID: sh.ID}))
 		}
 	}
 	heading("Files")
-	add(icon.House, "Home", send(FilesOn{Machine: m}))
+	add(icon.House, "Home", send(app.FilesOn{Machine: m}))
 	for _, f := range w.foldersOn(m) {
-		add(icon.Folder, f, send(FilesOn{Machine: m, Path: f}))
+		add(icon.Folder, f, send(app.FilesOn{Machine: m, Path: f}))
 	}
 	if m != "" && !window {
 		heading("Forward")
@@ -2701,12 +2700,12 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	}
 	if m != "" {
 		heading("Connection")
-		add(icon.ScrollText, "Connection Log", send(ShowLog{Machine: m}))
+		add(icon.ScrollText, "Connection Log", send(app.ShowLog{Machine: m}))
 		if slices.Contains(w.dropped, m) {
 			// Its connection went: the row stays until this clears it.
-			add(icon.X, "Clear", send(ClearMachine{ID: m}))
+			add(icon.X, "Clear", send(app.ClearMachine{ID: m}))
 		} else {
-			add(icon.Unplug, "Disconnect", send(Disconnect{Machine: m}))
+			add(icon.Unplug, "Disconnect", send(app.Disconnect{Machine: m}))
 		}
 		for _, h := range w.saved {
 			if machines.ID(h.ID) == m {
@@ -2731,7 +2730,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 func (w *window) askSplit(vertical bool, u *gunim.UI) {
 	focus := w.focused
 	if focus == "" {
-		u.Send(w, SplitPane{Vertical: vertical})
+		u.Send(w, app.SplitPane{Vertical: vertical})
 		return
 	}
 	if w.splitter == nil {
@@ -2750,15 +2749,15 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 		w.splitter.Items = append(w.splitter.Items, widget.PaletteItem{Title: title, Also: []string{also}})
 		w.splitWith = append(w.splitWith, in)
 	}
-	add("New Terminal", "", SplitPane{Vertical: vertical})
+	add("New Terminal", "", app.SplitPane{Vertical: vertical})
 	if len(w.shellChoices) > 1 {
 		for _, sh := range w.shellChoices {
-			add("New "+sh.Title, "", SplitPane{Vertical: vertical, Shell: sh.ID})
+			add("New "+sh.Title, "", app.SplitPane{Vertical: vertical, Shell: sh.ID})
 		}
 	}
 	for _, p := range w.panes {
 		if p.ID != focus {
-			add("Move "+p.Title, w.nameOf(p.Machine), MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
+			add("Move "+p.Title, w.nameOf(p.Machine), app.MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
 		}
 	}
 	here := machines.Local
@@ -2770,27 +2769,27 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 	reach := w.machines()
 	for _, m := range reach {
 		if m != here {
-			add("Terminal on "+w.nameOf(m), "", SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
+			add("Terminal on "+w.nameOf(m), "", app.SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
 		}
 	}
 	// The saved servers not connected to, which cost a sign-in first.
 	for _, h := range w.saved {
 		if !h.Window && !slices.Contains(reach, machines.ID(h.ID)) {
-			add("Terminal on "+h.Name+", connecting first", h.Address, SplitPane{Vertical: vertical, Machine: machines.ID(h.ID), Elsewhere: true})
+			add("Terminal on "+h.Name+", connecting first", h.Address, app.SplitPane{Vertical: vertical, Machine: machines.ID(h.ID), Elsewhere: true})
 		}
 	}
 	// A command beside it, asked for once picked: not on a kakel
 	// window, which has no shell to run one in.
-	if !slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == here }) {
+	if !slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == here }) {
 		add("Run a Command…", "program execute", nil)
-		w.splitCommand = commandAt{machine: here, at: placement{beside: focus, vertical: vertical}}
+		w.splitCommand = commandAt{machine: here, at: app.Placement{Beside: focus, Vertical: vertical}}
 	}
 	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
 // keepDrawings keeps what each pane draws, and lets go of the drawings
 // of panes that have closed.
-func (w *window) keepDrawings(st State, u *gunim.UI) {
+func (w *window) keepDrawings(st app.State, u *gunim.UI) {
 	if w.drawings == nil {
 		w.drawings, w.drawn = map[string]*gunim.Drawing{}, map[string]gunim.Node{}
 	}
@@ -2820,31 +2819,31 @@ func (w *window) keepDrawings(st State, u *gunim.UI) {
 func (w *window) madeNode(id string) gunim.Node {
 	var n gunim.Node
 	switch w.kindOf(id) {
-	case kindFiles:
+	case app.KindFiles:
 		if b, ok := w.browsers[id]; ok {
 			n = b
 		}
-	case kindCopies:
+	case app.KindCopies:
 		if w.copies != nil {
 			n = w.copies
 		}
-	case kindHelp:
+	case app.KindHelp:
 		if w.help != nil {
 			n = w.help
 		}
-	case kindSecrets:
+	case app.KindSecrets:
 		if w.secrets != nil {
 			n = w.secrets
 		}
-	case kindJobs:
+	case app.KindJobs:
 		if w.jobs != nil {
 			n = w.jobs
 		}
-	case kindTunnel:
+	case app.KindTunnel:
 		if p, ok := w.tunnelPanes[id]; ok {
 			n = p
 		}
-	case kindReader:
+	case app.KindReader:
 		if r, ok := w.readers[id]; ok {
 			n = r
 		}
@@ -2862,7 +2861,7 @@ func (w *window) madeNode(id string) gunim.Node {
 // sight: a bell in any pane, and a long command finishing in the pane in
 // front. A
 // faint one goes out again and again while a connection is being made.
-func (w *window) echoFor(st State, u *gunim.UI) {
+func (w *window) echoFor(st app.State, u *gunim.UI) {
 	was := w.pings
 	w.pings = st.Pings
 	if st.Behind {

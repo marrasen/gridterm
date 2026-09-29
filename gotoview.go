@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 )
 
@@ -21,7 +23,7 @@ func (b *browser) complete(text string, u *gunim.UI) {
 	if dir != b.st.Listed.Dir {
 		if dir != b.asked {
 			b.asked = dir
-			u.Send(b, ListFolders{Pane: b.id, Dir: dir})
+			u.Send(b, app.ListFolders{Pane: b.id, Dir: dir})
 		}
 		return
 	}

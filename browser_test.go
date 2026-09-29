@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/vfs"
@@ -13,14 +15,14 @@ import (
 
 func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 	win, _, publish := windowStage(t)
-	panes := []Pane{{ID: "p1", Title: "a", Kind: kindFiles}, {ID: "p2", Title: "b", Kind: kindFiles}}
+	panes := []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}}
 	entries := []vfs.Entry{
 		{Name: "notes.txt", Size: 10},
 		{Name: "latest", Mode: fs.ModeSymlink, Link: "/srv/www/v2"},
 	}
-	st := State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220,
-		Browsers: map[string]Browser{"p1": {Path: "/srv", Entries: entries, Seq: 1}, "p2": {Path: "/", Seq: 1}},
-		FileClip: FileClip{Key: "", At: "/srv", Names: []string{"notes.txt"}}}
+	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220,
+		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: entries, Seq: 1}, "p2": {Path: "/", Seq: 1}},
+		FileClip: app.FileClip{Key: "", At: "/srv", Names: []string{"notes.txt"}}}
 	publish(st)
 	b := win.browsers["p1"]
 	if row := b.row("latest"); !row.Accent || row.Cells[1] != "→ /srv/www/v2" {
@@ -38,23 +40,23 @@ func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 		lastWindow.Frame(time.Second / 60)
 	}
 	press(gi.KeyTab, 0)
-	if in, ok := nextIntent(t).(FocusPane); !ok || in.Pane != "p2" {
+	if in, ok := nextIntent(t).(app.FocusPane); !ok || in.Pane != "p2" {
 		t.Fatalf("Tab sent %#v", in)
 	}
 	press(gi.KeyEscape, 0)
-	if in := nextIntent(t); in != (DropFileClip{}) {
+	if in := nextIntent(t); in != (app.DropFileClip{}) {
 		t.Fatalf("Escape sent %#v", in)
 	}
 	press(gi.KeyD, gi.ModControl)
-	if in, ok := nextIntent(t).(ClosePane); !ok || in.Pane != "p1" {
+	if in, ok := nextIntent(t).(app.ClosePane); !ok || in.Pane != "p1" {
 		t.Fatalf("Ctrl+D sent %#v", in)
 	}
 }
 
 func TestTheTopOfAFilesystemHasNothingAboveIt(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/", Entries: []vfs.Entry{{Name: "etc", Mode: fs.ModeDir}}, Seq: 1, Top: true}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Entries: []vfs.Entry{{Name: "etc", Mode: fs.ModeDir}}, Seq: 1, Top: true}}}
 	publish(st)
 	if k, _ := win.browsers["p1"].table.Cursor(); k != "etc" {
 		t.Fatalf("at the top, the list starts at %q", k)
@@ -86,8 +88,8 @@ func TestAPathIsCutWhereItsLastNameStarts(t *testing.T) {
 
 func TestGoToCompletesAFoldersName(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/", Seq: 1, Sep: "/", Roots: []string{"/"}}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1, Sep: "/", Roots: []string{"/"}}}}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -101,7 +103,7 @@ func TestGoToCompletesAFoldersName(t *testing.T) {
 	lastWindow.Input(gi.TextInput{Text: "rd"})
 	lastWindow.Frame(time.Second / 60)
 	for {
-		if in, ok := nextIntent(t).(ListFolders); ok {
+		if in, ok := nextIntent(t).(app.ListFolders); ok {
 			if in.Dir != "/home" {
 				t.Fatalf("asked for the folders in %q", in.Dir)
 			}
@@ -109,8 +111,8 @@ func TestGoToCompletesAFoldersName(t *testing.T) {
 		}
 	}
 	br := st.Browsers["p1"]
-	br.Listed = Listed{Dir: "/home", Folders: []string{"rdp"}}
-	st.Browsers = map[string]Browser{"p1": br}
+	br.Listed = app.Listed{Dir: "/home", Folders: []string{"rdp"}}
+	st.Browsers = map[string]app.Browser{"p1": br}
 	publish(st)
 	if b.goTo.Ghost != "p" {
 		t.Fatalf("the suggestion is %q, want the rest of rdp", b.goTo.Ghost)
@@ -119,8 +121,8 @@ func TestGoToCompletesAFoldersName(t *testing.T) {
 
 func TestTheKeyBarPressesItsKeys(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}}, Seq: 1}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}}, Seq: 1}}}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -145,21 +147,21 @@ func TestTheKeyBarPressesItsKeys(t *testing.T) {
 		t.Fatalf("with nothing to paste, Paste sent %d intents", n)
 	}
 	click("^D Close")
-	if in, ok := nextIntent(t).(ClosePane); !ok || in.Pane != "p1" {
+	if in, ok := nextIntent(t).(app.ClosePane); !ok || in.Pane != "p1" {
 		t.Fatalf("Close sent %#v", in)
 	}
 }
 
 func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "/", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/root"}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/root"}}}
 	publish(st)
 	b := win.browsers["p1"]
 	if b.path.Text != "Reading /root…" {
 		t.Fatalf("before the first read, the path says %q", b.path.Text)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/root", Err: "open /root: permission denied"}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/root", Err: "open /root: permission denied"}}
 	publish(st)
 	if b.problem.label.Text == "" {
 		t.Fatal("a folder that could not be read says nothing")
@@ -176,14 +178,14 @@ func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
 func TestAWSLDistributionsFilesAreOfferedHere(t *testing.T) {
 	win, _, publish := windowStage(t)
 	root := `\\wsl.localhost\Ubuntu`
-	publish(State{Shells: []ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "wsl:Ubuntu", Title: "Ubuntu", Folder: root}}})
+	publish(app.State{Shells: []app.ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "wsl:Ubuntu", Title: "Ubuntu", Folder: root}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	if !win.run("conn.files..1", lastUI) {
 		t.Fatal("the first folder here was not taken")
 	}
-	if in := nextIntent(t); in != (FilesOn{Machine: "", Path: root}) {
+	if in := nextIntent(t); in != (app.FilesOn{Machine: "", Path: root}) {
 		t.Fatalf("it sent %#v", in)
 	}
 }
@@ -196,8 +198,8 @@ func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
 	for i := range 300 {
 		many = append(many, vfs.Entry{Name: fmt.Sprintf("dir%03d", i), Mode: fs.ModeDir})
 	}
-	st := State{Panes: []Pane{{ID: "p1", Title: "/a", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/a", Entries: many, Seq: 1}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/a", Entries: many, Seq: 1}}}
 	publish(st)
 	b := win.browsers["p1"]
 	b.table.SetCursor("dir250", lastUI)
@@ -208,7 +210,7 @@ func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
 	if left <= 0 {
 		t.Fatal("the long folder did not scroll")
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/a/dir250", Entries: []vfs.Entry{{Name: "one"}}, Seq: 2}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/a/dir250", Entries: []vfs.Entry{{Name: "one"}}, Seq: 2}}
 	publish(st)
 	if off := b.table.Offset(); off != 0 {
 		t.Fatalf("in the short folder, the view is at %v", off)
@@ -217,7 +219,7 @@ func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/a", Entries: many, Land: "dir250", Seq: 3}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/a", Entries: many, Land: "dir250", Seq: 3}}
 	publish(st)
 	if k, _ := b.table.Cursor(); k != "dir250" {
 		t.Fatalf("back, the cursor is on %q", k)
@@ -231,21 +233,21 @@ func TestGoingBackToAFolderShowsItAsItWasLeft(t *testing.T) {
 // through the folders been through, as in a browser.
 func TestTheSideButtonsGoBackAndForward(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "/a", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 1}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 1}}}
 	publish(st)
-	st.Browsers = map[string]Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 2}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 2}}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	box, _ := lastUI.Bounds(win.browsers["p1"])
-	side := func(b gi.Button) Browse {
+	side := func(b gi.Button) app.Browse {
 		t.Helper()
 		lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: b, Clicks: 1})
 		lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: b})
 		lastWindow.Frame(time.Second / 60)
-		in, ok := nextIntent(t).(Browse)
+		in, ok := nextIntent(t).(app.Browse)
 		if !ok {
 			t.Fatalf("the side button sent %#v", in)
 		}
@@ -254,16 +256,16 @@ func TestTheSideButtonsGoBackAndForward(t *testing.T) {
 	if in := side(gi.ButtonBack); in.Path != "/a" {
 		t.Fatalf("Back went to %q", in.Path)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 3}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/a", Entries: []vfs.Entry{{Name: "b", Mode: fs.ModeDir}}, Seq: 3}}
 	publish(st)
 	if in := side(gi.ButtonForward); in.Path != "/a/b" {
 		t.Fatalf("Forward went to %q", in.Path)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 4}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/a/b", Entries: []vfs.Entry{{Name: "c"}}, Seq: 4}}
 	publish(st)
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeft, Mods: gi.ModAlt})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(Browse); !ok || in.Path != "/a" {
+	if in, ok := nextIntent(t).(app.Browse); !ok || in.Path != "/a" {
 		t.Fatalf("Alt+Left sent %#v", in)
 	}
 }

@@ -6,6 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
@@ -119,7 +123,7 @@ var (
 func markColour(state meter.State, now time.Time, th gunim.Frame) color.NRGBA {
 	switch state {
 	case meter.Closed:
-		return faint.Get(th.Theme)
+		return look.Faint.Get(th.Theme)
 	case meter.Active:
 		return anim.Mix(anim.ColorCodec, markThere, markBusy, float32(glowAt(now)))
 	}
@@ -233,18 +237,18 @@ func drawIcon(p *paint.Painter, ic *icon.Icon, r geom.Rect, c color.NRGBA, thick
 
 // markRows gives the sidebar's rows their marks, and puts the file work
 // under way under the machine it works on.
-func (w *window) markRows(rows []sideItem, st State) []sideItem {
-	panes := map[string]Pane{}
+func (w *window) markRows(rows []sideItem, st app.State) []sideItem {
+	panes := map[string]app.Pane{}
 	for _, p := range st.Panes {
 		panes[p.ID] = p
 	}
-	tunnels := map[string]Tunnel{}
+	tunnels := map[string]app.Tunnel{}
 	for _, t := range st.Tunnels {
 		tunnels[t.ID] = t
 	}
 	connected := func(m machines.ID) bool {
 		return m == "" || slices.Contains(st.Connected, m) ||
-			slices.ContainsFunc(st.Windows, func(rw RemoteWindow) bool { return rw.Name == m })
+			slices.ContainsFunc(st.Windows, func(rw app.RemoteWindow) bool { return rw.Name == m })
 	}
 	for i := range rows {
 		r := &rows[i]
@@ -261,11 +265,11 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 				r.live = func(time.Time) meter.State { return meter.Active }
 			case connected(m):
 				r.live = func(time.Time) meter.State { return meter.Settled }
-			case slices.Contains(st.Dropped, m), slices.ContainsFunc(st.Panes, func(p Pane) bool { return p.Machine == m }):
+			case slices.Contains(st.Dropped, m), slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.Machine == m }):
 				// Its connection went, and its panes stay to be read.
 				r.live = func(time.Time) meter.State { return meter.Closed }
 			}
-			if slices.ContainsFunc(st.Windows, func(rw RemoteWindow) bool { return rw.Name == m }) {
+			if slices.ContainsFunc(st.Windows, func(rw app.RemoteWindow) bool { return rw.Name == m }) {
 				r.kind = "window"
 			}
 		case strings.HasPrefix(r.key, "tunnel:"):
@@ -314,10 +318,10 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 			at++
 		}
 		item := sideItem{key: "job:" + j.ID, text: j.Title, note: j.Detail, kind: j.Kind,
-			click: ShowJobs{}, closes: CancelJob{ID: j.ID}, fill: j.Share, filling: j.Share >= 0 && !j.Done,
+			click: app.ShowJobs{}, closes: app.CancelJob{ID: j.ID}, fill: j.Share, filling: j.Share >= 0 && !j.Done,
 			live: func(time.Time) meter.State { return meter.Active }}
 		if j.Done {
-			item.dim, item.closes = true, DropJob{ID: j.ID}
+			item.dim, item.closes = true, app.DropJob{ID: j.ID}
 			item.live = func(time.Time) meter.State { return meter.Closed }
 		}
 		rows = slices.Insert(rows, at, item)
@@ -326,19 +330,19 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 }
 
 // paneKindIcon is the icon for a pane.
-func paneKindIcon(p Pane) string {
+func paneKindIcon(p app.Pane) string {
 	switch p.Kind {
-	case kindFiles:
+	case app.KindFiles:
 		return "files"
-	case kindReader:
+	case app.KindReader:
 		return "reader"
-	case kindLog:
+	case app.KindLog:
 		return "log"
-	case kindSecrets:
+	case app.KindSecrets:
 		return "secrets"
-	case kindJobs:
+	case app.KindJobs:
 		return "jobs"
-	case kindTunnel:
+	case app.KindTunnel:
 		return "tunnel"
 	}
 	if p.Command {

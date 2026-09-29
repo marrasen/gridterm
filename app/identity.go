@@ -1,0 +1,125 @@
+package app
+
+import (
+	"os"
+	"strings"
+
+	"github.com/marrasen/kakel/machines"
+
+	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/session"
+	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/shellsetup"
+)
+
+// What a shell here is started with: in the folder of the pane the user
+// is in, told which terminal it runs in, and, with Shell Setup on,
+// taught to say what it is doing, so paths it prints can be followed and
+// an agent can tell a command's end.
+
+// Intents for the shell's start.
+type (
+	// ToggleShellSetup turns the teaching of new shells here on or off.
+	ToggleShellSetup struct{}
+	// SetTermProgram sets what new shells here are told the terminal
+	// is called, "" for kakel's own name.
+	SetTermProgram struct{ Called string }
+)
+
+// knownTerminals are names a user may give instead, for a program that
+// shows pictures only in a terminal it knows.
+var KnownTerminals = []string{"iTerm.app", "WezTerm", "vscode", "Apple_Terminal"}
+
+// startLocalSession starts argv here, or the user's shell when it is
+// nil, in dir, as a new shell is started. A shell, rather than one
+// command, is taught when Shell Setup is on.
+func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell bool) (session.Session, error) {
+	called := ""
+	if a.settings != nil {
+		called = a.settings.TermProgram()
+	}
+	sess, err := session.StartLocal(session.LocalConfig{
+		Command: argv, Dir: dir, Env: paneEnv(argv, called), Cols: cols, Rows: rows,
+	})
+	if err != nil || !shell || !a.st.ShellSetup {
+		return sess, err
+	}
+	route := argv
+	if len(route) == 0 {
+		if got, err := session.DefaultShell(); err == nil {
+			route = got
+		}
+	}
+	if typed := shellsetup.Typed(shellsetup.RouteFor(route)); len(typed) > 0 {
+		_, _ = sess.Write(typed)
+	}
+	return sess, nil
+}
+
+// teachFar teaches a server's shell to say what it is doing, when its
+// saved server says to.
+func (a *app) teachFar(machine machines.ID, sess session.Session) {
+	for _, h := range a.st.Saved {
+		if machines.ID(h.ID) == machine && h.Setup {
+			if typed := shellsetup.Typed(shellsetup.RouteFor(nil)); len(typed) > 0 {
+				_, _ = sess.Write(typed)
+			}
+		}
+	}
+}
+
+// paneEnv is what a shell here is told about the terminal it runs in.
+func paneEnv(argv []string, called string) []string {
+	if called == "" {
+		called = build.Name
+	}
+	env := []string{"TERM_PROGRAM=" + called, "TERM_PROGRAM_VERSION=" + build.Version()}
+	if shellfind.IsWSL(argv) {
+		env = append(env, "WSLENV="+shellfind.CarryIntoWSL(os.Getenv("WSLENV"), "TERM_PROGRAM", "TERM_PROGRAM_VERSION"))
+	}
+	return env
+}
+
+// dirHere is the folder of the focused pane's shell, when it is on this
+// machine and has said, for a new shell to start in.
+func (a *app) dirHere() string {
+	t := a.terminal(a.st.Focus)
+	if t == nil || a.machineOf(a.st.Focus) != "" {
+		return ""
+	}
+	dir, host := t.Dir()
+	switch strings.ToLower(host) {
+	case "", "localhost", "127.0.0.1", "::1":
+	default:
+		if h, err := os.Hostname(); err != nil || !strings.EqualFold(h, host) {
+			return ""
+		}
+	}
+	return a.localDir(a.st.Focus, dir)
+}
+
+// localDir is a folder a pane says it is in, as this computer names
+// it, or "" when it names none here. A WSL shell says a Linux path, and
+// under the computer's own name, since WSL shares it: /mnt/d/src is
+// D:\src, and its own files are on \\wsl.localhost. A folder that is
+// not here, as a path from another system, gives "", so a new shell
+// starts where it would have rather than failing to start.
+func (a *app) localDir(pane, dir string) string {
+	if pathSep == `\` && strings.HasPrefix(dir, "/") {
+		if distro := a.distroOf(pane); distro != "" {
+			dir = shellfind.WindowsPath(distro, dir)
+		} else {
+			dir = shellfind.DrivePath(dir)
+		}
+	}
+	if dir == "" {
+		return ""
+	}
+	if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+		return ""
+	}
+	return dir
+}
+
+// pathSep is this system's separator of folders in a path.
+const pathSep = string(os.PathSeparator)

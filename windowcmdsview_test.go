@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
@@ -23,7 +25,7 @@ import (
 
 func TestTheHelpListsEveryCommandWithItsShortcut(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Kind: kindHelp, Title: "Shortcuts and Commands"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Kind: app.KindHelp, Title: "Shortcuts and Commands"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	found := false
 	for _, r := range win.help.rows {
 		if r[2] == "pane.close" && r[1] == "Ctrl+Shift+W" {
@@ -58,7 +60,7 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 	change := func(k input.Key, id string) keys.Change {
 		return keys.Change{Chord: ui.Chord{Key: k, Mods: input.ModCtrl | input.ModAlt}, Command: id, Written: "ctrl+alt+" + id}
 	}
-	publish(State{Shortcuts: []keys.Change{
+	publish(app.State{Shortcuts: []keys.Change{
 		change(input.KeyA, "view.switcher"),
 		change(input.KeyB, "pane.open"),
 		change(input.KeyC, "server.open.my-desk"),
@@ -75,7 +77,7 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 
 func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []machines.ID{"d1"},
+	publish(app.State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []machines.ID{"d1"},
 		Machines: []machines.Info{{ID: "d1", Name: "My Desk"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -84,11 +86,11 @@ func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 		id   string
 		want gunim.Intent
 	}{
-		{"server.open.my-desk", ConnectTo{Server: "d1"}},
-		{"conn.terminal.my-desk", OpenOn{Machine: "d1"}},
-		{"conn.terminal.", OpenOn{Machine: ""}},
-		{"conn.files.my-desk", FilesOn{Machine: "d1"}},
-		{"conn.files.my-desk.1", FilesOn{Machine: "d1", Path: "/srv/www"}},
+		{"server.open.my-desk", app.ConnectTo{Server: "d1"}},
+		{"conn.terminal.my-desk", app.OpenOn{Machine: "d1"}},
+		{"conn.terminal.", app.OpenOn{Machine: ""}},
+		{"conn.files.my-desk", app.FilesOn{Machine: "d1"}},
+		{"conn.files.my-desk.1", app.FilesOn{Machine: "d1", Path: "/srv/www"}},
 	} {
 		if !win.run(c.id, lastUI) {
 			t.Fatalf("%s was not taken", c.id)
@@ -103,15 +105,15 @@ func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 // carries on once they are open.
 func TestChangeSecretUnlocksFirst(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Secrets: Secrets{Exists: true}})
+	publish(app.State{Secrets: app.Secrets{Exists: true}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	win.run("secrets.change", lastUI)
-	if in := nextIntent(t); in != (UnlockSecrets{}) {
+	if in := nextIntent(t); in != (app.UnlockSecrets{}) {
 		t.Fatalf("with the secrets locked, it sent %#v", in)
 	}
-	publish(State{Secrets: Secrets{Exists: true, Open: true, Items: []SecretItem{{ID: "s1", Name: "db"}}}})
+	publish(app.State{Secrets: app.Secrets{Exists: true, Open: true, Items: []app.SecretItem{{ID: "s1", Name: "db"}}}})
 	if win.afterUnlock != "" {
 		t.Fatal("the command was left waiting")
 	}
@@ -130,7 +132,7 @@ func TestChangeSecretUnlocksFirst(t *testing.T) {
 func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Identities: []string{"/k/one", "/k/two"}}
-	publish(State{Saved: []remote.Host{desk}, Connected: []machines.ID{"laptop"}})
+	publish(app.State{Saved: []remote.Host{desk}, Connected: []machines.ID{"laptop"}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -141,7 +143,7 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
 	for {
-		if in, ok := nextIntent(t).(SaveServer); ok {
+		if in, ok := nextIntent(t).(app.SaveServer); ok {
 			if !slices.Equal(in.Host.Identities, []string{"/k/one", "/k/two"}) {
 				t.Fatalf("saved the keys %v", in.Host.Identities)
 			}
@@ -160,7 +162,7 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 // Enter on About closes it, rather than asking the network anything.
 func TestEnterClosesAbout(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{})
+	publish(app.State{})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -170,7 +172,7 @@ func TestEnterClosesAbout(t *testing.T) {
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	if got := nextIntent(t); got != (DialogClosed{}) {
+	if got := nextIntent(t); got != (app.DialogClosed{}) {
 		t.Fatalf("Enter on About sent %#v", got)
 	}
 }
@@ -181,7 +183,7 @@ func TestEnterClosesAbout(t *testing.T) {
 func TestTheServerFormFitsItsType(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Window: true}
-	publish(State{Saved: []remote.Host{desk, {ID: "j1", Name: "jump", Address: "jump.example"}}})
+	publish(app.State{Saved: []remote.Host{desk, {ID: "j1", Name: "jump", Address: "jump.example"}}})
 	win.serverForm(&desk, lastUI)
 	for range 3 {
 		lastWindow.Frame(time.Second / 60)
@@ -232,7 +234,7 @@ func TestTheWindowTakesTheShortcutsFile(t *testing.T) {
 		t.Fatalf("read %+v, %v", changes, err)
 	}
 	win, _, publish := windowStage(t)
-	publish(State{Shortcuts: changes, ShortcutsRead: 1, ShortcutsAgain: true})
+	publish(app.State{Shortcuts: changes, ShortcutsRead: 1, ShortcutsAgain: true})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyJ, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
 		t.Fatalf("Ctrl+Shift+J runs %q", id)
 	}
@@ -244,7 +246,7 @@ func TestTheWindowTakesTheShortcutsFile(t *testing.T) {
 	}
 	// One naming a command there is none of changes nothing, and says
 	// that alone.
-	publish(State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl}, Command: "no.such", Written: "ctrl+K"}}, ShortcutsRead: 2, ShortcutsAgain: true})
+	publish(app.State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl}, Command: "no.such", Written: "ctrl+K"}}, ShortcutsRead: 2, ShortcutsAgain: true})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyJ, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
 		t.Fatal("a file naming an unknown command changed the keys")
 	}
@@ -254,7 +256,7 @@ func TestTheWindowTakesTheShortcutsFile(t *testing.T) {
 	// A command renamed since the file was written is followed.
 	keys.Renamed["pane.shut"] = "pane.close"
 	t.Cleanup(func() { delete(keys.Renamed, "pane.shut") })
-	publish(State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}, Command: "pane.shut", Written: "ctrl+shift+K"}}, ShortcutsRead: 3})
+	publish(app.State{Shortcuts: []keys.Change{{Chord: ui.Chord{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}, Command: "pane.shut", Written: "ctrl+shift+K"}}, ShortcutsRead: 3})
 	if id, _ := win.keys.Lookup(ui.Chord{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}); id != "pane.close" {
 		t.Fatalf("a renamed command's chord runs %q", id)
 	}

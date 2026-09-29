@@ -5,6 +5,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -30,7 +34,7 @@ type browser struct {
 	path  *widget.Label
 	table *widget.Table
 	col   *widget.Flex
-	st    Browser
+	st    app.Browser
 	shown int
 	// at is the folder the rows show, and left how each folder left was
 	// left, to show it so going back to it.
@@ -64,7 +68,7 @@ type browser struct {
 func newBrowser(w *window, id string) *browser {
 	b := &browser{w: w, id: id, byName: map[widget.Key]vfs.Entry{}}
 	b.path = widget.NewLabel("")
-	b.path.Size, b.path.Color, b.path.MaxLines = smallText, faint, 1
+	b.path.Size, b.path.Color, b.path.MaxLines = smallText, look.Faint, 1
 	b.table = widget.NewTable(
 		widget.TableColumn{Title: "Name"},
 		widget.TableColumn{Title: "Size", Width: 90, End: true},
@@ -73,10 +77,10 @@ func newBrowser(w *window, id string) *browser {
 	b.table.Row = b.row
 	b.table.OnActivate = func(k widget.Key, u *gunim.UI) {
 		if k == up {
-			u.Send(b.table, GoUp{Pane: b.id})
+			u.Send(b.table, app.GoUp{Pane: b.id})
 			return
 		}
-		u.Send(b.table, EnterEntry{Pane: b.id, Name: string(k)})
+		u.Send(b.table, app.EnterEntry{Pane: b.id, Name: string(k)})
 	}
 	b.table.OnSort = func(col int, desc bool, u *gunim.UI) {
 		b.sortBy, b.descending = col, desc
@@ -147,13 +151,13 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	ctrl := k.Mods == gi.ModControl
 	switch {
 	case k.Key == gi.KeyBackspace && k.Mods == 0:
-		u.Send(b, GoUp{Pane: b.id})
+		u.Send(b, app.GoUp{Pane: b.id})
 	case k.Key == gi.KeyF5 && k.Mods == 0, k.Key == gi.KeyC && ctrl:
-		u.Send(b, ClipFiles{Pane: b.id, Names: b.picked()})
+		u.Send(b, app.ClipFiles{Pane: b.id, Names: b.picked()})
 	case k.Key == gi.KeyF6 && k.Mods == 0, k.Key == gi.KeyX && ctrl:
-		u.Send(b, ClipFiles{Pane: b.id, Names: b.picked(), Cut: true})
+		u.Send(b, app.ClipFiles{Pane: b.id, Names: b.picked(), Cut: true})
 	case k.Key == gi.KeyF7 && k.Mods == 0, k.Key == gi.KeyV && ctrl:
-		u.Send(b, PasteFiles{Pane: b.id})
+		u.Send(b, app.PasteFiles{Pane: b.id})
 	case k.Key == gi.KeyF8 && k.Mods == 0, k.Key == gi.KeyDelete && k.Mods == 0:
 		b.confirmDelete(u)
 	case k.Key == gi.KeyF2 && k.Mods == 0:
@@ -163,19 +167,19 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	case k.Key == gi.KeyF3 && k.Mods == 0, k.Key == gi.KeyF4 && k.Mods == 0:
 		// A link is read through, wherever it goes; a folder is Enter's.
 		if c, ok := b.table.Cursor(); ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink()) {
-			u.Send(b, ViewFile{Pane: b.id, Name: string(c), Follow: k.Key == gi.KeyF4})
+			u.Send(b, app.ViewFile{Pane: b.id, Name: string(c), Follow: k.Key == gi.KeyF4})
 		}
 	case k.Key == gi.KeyG && ctrl:
 		b.askGoTo(u)
 	case k.Key == gi.KeyD && ctrl:
-		u.Send(b, ClosePane{Pane: b.id})
+		u.Send(b, app.ClosePane{Pane: b.id})
 	case k.Key == gi.KeyEscape && k.Mods == 0:
 		// The table has had it first, for a name being found.
-		u.Send(b, DropFileClip{})
+		u.Send(b, app.DropFileClip{})
 	case k.Key == gi.KeyTab && (k.Mods == 0 || k.Mods == gi.ModShift):
 		// To the next file pane, or the one before.
 		if next := b.w.nextFilePane(b.id, k.Mods == gi.ModShift); next != "" {
-			u.Send(b, FocusPane{Pane: next})
+			u.Send(b, app.FocusPane{Pane: next})
 		}
 	default:
 		return false
@@ -242,8 +246,8 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 	d.Body = widget.NewLabel("From " + b.st.Path + ". This can't be undone.")
 	d.SetButtons("Delete", "Cancel")
 	d.Danger = true
-	d.Accept = DeleteFiles{Pane: b.id, Names: names}
-	d.Dismiss = DialogClosed{}
+	d.Accept = app.DeleteFiles{Pane: b.id, Names: names}
+	d.Dismiss = app.DialogClosed{}
 	b.w.openDialog(d, u)
 }
 
@@ -264,9 +268,9 @@ func (b *browser) askRename(u *gunim.UI) {
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return RenameFile{Pane: b.id, From: string(k), To: strings.TrimSpace(name.Text())}
+		return app.RenameFile{Pane: b.id, From: string(k), To: strings.TrimSpace(name.Text())}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	b.w.openDialog(d, u)
 }
 
@@ -316,15 +320,15 @@ func (b *browser) askGoToWith(text, why string, u *gunim.UI) {
 		// another window.
 		b.asks = max(b.asks, b.st.WentTo) + 1
 		b.goingTo, b.goToAsk = path.Text(), b.asks
-		return GoTo{Pane: b.id, Path: path.Text(), Ask: b.asks}
+		return app.GoTo{Pane: b.id, Path: path.Text(), Ask: b.asks}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	b.w.openDialog(d, u)
 }
 
 // wentTo hears how a Go To went, once the program has said: one that
 // failed is asked again, with what was typed and why.
-func (b *browser) wentTo(st Browser, u *gunim.UI) {
+func (b *browser) wentTo(st app.Browser, u *gunim.UI) {
 	if b.goingTo == "" || st.WentTo < b.goToAsk {
 		return
 	}
@@ -347,13 +351,13 @@ func (b *browser) askFolder(u *gunim.UI) {
 		}
 		return ""
 	}
-	d.OnAccept = func() gunim.Intent { return MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())} }
+	d.Dismiss = app.DialogClosed{}
 	b.w.openDialog(d, u)
 }
 
 // show takes the program's state for the pane.
-func (b *browser) show(st Browser, u *gunim.UI) {
+func (b *browser) show(st app.Browser, u *gunim.UI) {
 	b.wentTo(st, u)
 	listed := st.Listed.Dir != b.st.Listed.Dir || !slices.Equal(st.Listed.Folders, b.st.Listed.Folders)
 	b.st = st
@@ -506,7 +510,7 @@ func (b *browser) goBack(u *gunim.UI) {
 	b.back = b.back[:len(b.back)-1]
 	b.forward = append(b.forward, b.at)
 	b.travel = true
-	u.Send(b, Browse{Pane: b.id, Path: to})
+	u.Send(b, app.Browse{Pane: b.id, Path: to})
 }
 
 // goForward goes to the folder gone back from, as a browser's Forward
@@ -519,5 +523,5 @@ func (b *browser) goForward(u *gunim.UI) {
 	b.forward = b.forward[:len(b.forward)-1]
 	b.back = append(b.back, b.at)
 	b.travel = true
-	u.Send(b, Browse{Pane: b.id, Path: to})
+	u.Send(b, app.Browse{Pane: b.id, Path: to})
 }

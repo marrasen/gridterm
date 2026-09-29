@@ -9,6 +9,10 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
@@ -43,7 +47,7 @@ type reader struct {
 	// and not been handed over, and then and thenPic what the reader
 	// waits to be handed.
 	seq     int
-	fresh   *Reader
+	fresh   *app.Reader
 	then    func([]string, bool, error)
 	thenPic func(files.Pic, error)
 	// thenSave is told how the save that is out went, once Saves passes
@@ -81,7 +85,7 @@ func newReader(w *window, id string) *reader {
 // show takes the reader's state: the first read makes the reader, and
 // each read after it is handed to the reader, which asked for it or,
 // for a file followed, is opened again for it.
-func (rd *reader) show(st Reader, u *gunim.UI) {
+func (rd *reader) show(st app.Reader, u *gunim.UI) {
 	rd.send = func(in gunim.Intent) { u.Send(rd.cells, in) }
 	rd.ui = u
 	if st.Saves != rd.saves {
@@ -157,7 +161,7 @@ func (rd *reader) show(st Reader, u *gunim.UI) {
 }
 
 // make makes the reader, at the first read.
-func (rd *reader) make(st Reader) {
+func (rd *reader) make(st app.Reader) {
 	name := st.Name
 	if name == "" {
 		name = filepath.Base(st.Path)
@@ -174,7 +178,7 @@ func (rd *reader) make(st Reader) {
 			return
 		}
 		// Lines asked of a file named as a picture: it was not one.
-		rd.send(ReadAgain{Pane: rd.id, Text: files.IsPicture(name)})
+		rd.send(app.ReadAgain{Pane: rd.id, Text: files.IsPicture(name)})
 	}
 	r.ReadPic = func(then func(files.Pic, error)) {
 		if rd.fresh != nil {
@@ -186,17 +190,17 @@ func (rd *reader) make(st Reader) {
 			rd.waiting = false
 			return
 		}
-		rd.send(ReadAgain{Pane: rd.id})
+		rd.send(app.ReadAgain{Pane: rd.id})
 	}
 	r.OnFollow = func(on bool) {
 		rd.follow = on
-		rd.send(FollowFile{Pane: rd.id, On: on})
+		rd.send(app.FollowFile{Pane: rd.id, On: on})
 	}
 	r.OnCopy = func(text string) { rd.ui.SetClipboard(text) }
-	r.OnClose = func() { rd.send(ClosePane{Pane: rd.id}) }
+	r.OnClose = func() { rd.send(app.ClosePane{Pane: rd.id}) }
 	r.OnSave = func(at string, lines []string, then func(error)) {
 		rd.thenSave = then
-		rd.send(SaveLines{Pane: rd.id, Path: at, Lines: lines})
+		rd.send(app.SaveLines{Pane: rd.id, Path: at, Lines: lines})
 	}
 	r.SaveAs = cmp.Or(st.SaveAs, filepath.Join("~", name))
 	rd.saveAs = st.SaveAs
@@ -298,8 +302,8 @@ func rgba(c color.NRGBA) color.RGBA { return color.RGBA{R: c.R, G: c.G, B: c.B, 
 // readerStyle is the reader's colours, from the theme.
 func readerStyle(f gunim.Frame) files.Style {
 	th := f.Theme
-	fg, bg := rgba(widget.Ink.Get(th)), rgba(termBackground.Get(th))
-	accent, dim := rgba(widget.Accent.Get(th)), rgba(faint.Get(th))
+	fg, bg := rgba(widget.Ink.Get(th)), rgba(look.TermBackground.Get(th))
+	accent, dim := rgba(widget.Accent.Get(th)), rgba(look.Faint.Get(th))
 	return files.Style{
 		FG: fg, BG: bg, SelectedFG: bg, SelectedBG: accent,
 		HeaderFG: accent, PathFG: fg, DirFG: accent, LinkFG: accent, MarkedFG: accent, ClipFG: accent,

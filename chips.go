@@ -2,6 +2,9 @@ package main
 
 import (
 	"image/color"
+	"strconv"
+
+	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -129,7 +132,7 @@ func (b *chipBar) Handle(e gi.Event, u *gunim.UI) bool {
 }
 
 // showChips puts on the bar what the window is doing for others.
-func (w *window) showChips(st State) {
+func (w *window) showChips(st app.State) {
 	var chips []chip
 	if st.Share.Code != "" && len(st.Share.Panes) > 0 {
 		chips = append(chips, chip{text: "Agent Share", colour: st.Marks.Agent, do: func(u *gunim.UI) { w.shareDialog(w.share, u) }})
@@ -137,7 +140,7 @@ func (w *window) showChips(st State) {
 	if st.Serving.On {
 		text := "Serving"
 		if n := len(st.Serving.Clients); n > 0 {
-			text += " · " + itoa(n)
+			text += " · " + strconv.Itoa(n)
 		}
 		chips = append(chips, chip{text: text, colour: st.Marks.Watched, do: func(u *gunim.UI) { w.servingDialog(w.serving, u) }})
 	}

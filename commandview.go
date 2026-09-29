@@ -4,6 +4,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
@@ -18,12 +20,12 @@ func (w *window) commandDialog(u *gunim.UI) { w.commandDialogOn(w.machineOf(w.fo
 
 // commandDialogOn asks for a command to run on machine.
 func (w *window) commandDialogOn(machine machines.ID, u *gunim.UI) {
-	w.commandDialogAt(machine, placement{}, u)
+	w.commandDialogAt(machine, app.Placement{}, u)
 }
 
 // commandDialogAt asks for a command to run on machine, its pane put
 // where at says.
-func (w *window) commandDialogAt(machine machines.ID, at placement, u *gunim.UI) {
+func (w *window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
 			w.toasts.Show(widget.Toast{Title: w.nameOf(machine) + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
@@ -77,9 +79,9 @@ func (w *window) commandDialogAt(machine machines.ID, at placement, u *gunim.UI)
 		if !keep.On && picked != "" && line.Text() == picked {
 			forget = picked
 		}
-		return RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.beside, Vertical: at.vertical}
+		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.Beside, Vertical: at.Vertical}
 	}
-	d.Dismiss = DialogClosed{}
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -137,13 +139,13 @@ func (w *window) termProgramDialog(u *gunim.UI) {
 	called := widget.NewTextField()
 	called.SetText(w.termProgram)
 	called.Placeholder = "kakel"
-	known := widget.NewDropdown(append([]string{"kakel"}, knownTerminals...)...)
+	known := widget.NewDropdown(append([]string{"kakel"}, app.KnownTerminals...)...)
 	known.Label = "Known terminals"
 	known.OnPick(func(i int, u *gunim.UI) {
 		if i == 0 {
 			called.SetText("")
 		} else {
-			called.SetText(knownTerminals[i-1])
+			called.SetText(app.KnownTerminals[i-1])
 		}
 		u.Invalidate()
 	})
@@ -152,7 +154,7 @@ func (w *window) termProgramDialog(u *gunim.UI) {
 		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports kakel. Another name can turn on features such as pictures, and can also bring sequences that show as text. It applies to new panes.")).
 		Add("TERM_PROGRAM", called).Add("Known", known)
 	d.SetButtons("Save", "Cancel")
-	d.OnAccept = func() gunim.Intent { return SetTermProgram{Called: called.Text()} }
-	d.Dismiss = DialogClosed{}
+	d.OnAccept = func() gunim.Intent { return app.SetTermProgram{Called: called.Text()} }
+	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }

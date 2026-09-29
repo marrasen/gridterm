@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/icon"
 
@@ -414,63 +416,63 @@ func chordLabel(c ui.Chord) string {
 func commandIntent(id string) (gunim.Intent, bool) {
 	switch id {
 	case "pane.splitRight":
-		return SplitPane{}, true
+		return app.SplitPane{}, true
 	case "pane.splitDown":
-		return SplitPane{Vertical: true}, true
+		return app.SplitPane{Vertical: true}, true
 	case "pane.popOut":
-		return PopOut{}, true
+		return app.PopOut{}, true
 	case "pane.close":
-		return ClosePane{}, true
+		return app.ClosePane{}, true
 	case "edit.pasteImage":
-		return PasteImage{}, true
+		return app.PasteImage{}, true
 	case "pane.nextInSidebar":
-		return NextPane{}, true
+		return app.NextPane{}, true
 	case "pane.previousInSidebar":
-		return NextPane{Back: true}, true
+		return app.NextPane{Back: true}, true
 	case "conn.terminal":
-		return NewTerminal{}, true
+		return app.NewTerminal{}, true
 	case "shell.default":
-		return OpenDefaultShell{}, true
+		return app.OpenDefaultShell{}, true
 	case "secrets.pane":
-		return ShowSecrets{}, true
+		return app.ShowSecrets{}, true
 	case "secrets.addKey":
-		return AddSecretsKey{}, true
+		return app.AddSecretsKey{}, true
 	case "sidebar.toggle":
-		return ToggleSidebar{}, true
+		return app.ToggleSidebar{}, true
 	case "app.exit":
-		return Exit{}, true
+		return app.Exit{}, true
 	case "conn.files":
-		return OpenFiles{}, true
+		return app.OpenFiles{}, true
 	case "view.jobs":
-		return ShowJobs{}, true
+		return app.ShowJobs{}, true
 	case "files.copies":
-		return ShowCopies{}, true
+		return app.ShowCopies{}, true
 	case "server.reload":
-		return ReloadServers{}, true
+		return app.ReloadServers{}, true
 	case "shell.setup":
-		return ToggleShellSetup{}, true
+		return app.ToggleShellSetup{}, true
 	case "sshkey.lock":
-		return LockKeys{}, true
+		return app.LockKeys{}, true
 	case "shortcuts.reload":
-		return ReloadShortcuts{}, true
+		return app.ReloadShortcuts{}, true
 	case "view.themesReload":
-		return ReloadThemes{}, true
+		return app.ReloadThemes{}, true
 	case "view.themesStart":
-		return WriteThemeFile{}, true
+		return app.WriteThemeFile{}, true
 	case "conn.clearFinished":
-		return ClearFinished{}, true
+		return app.ClearFinished{}, true
 	case "secrets.open":
-		return ShowSecrets{}, true
+		return app.ShowSecrets{}, true
 	case "secrets.lock":
-		return LockSecrets{}, true
+		return app.LockSecrets{}, true
 	case "view.log":
-		return ShowLog{}, true
+		return app.ShowLog{}, true
 	case "font.increase":
-		return FontSize{Step: 1}, true
+		return app.FontSize{Step: 1}, true
 	case "font.decrease":
-		return FontSize{Step: -1}, true
+		return app.FontSize{Step: -1}, true
 	case "font.reset":
-		return FontSize{}, true
+		return app.FontSize{}, true
 	}
 	return nil, false
 }

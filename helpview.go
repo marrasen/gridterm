@@ -7,6 +7,8 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
@@ -265,8 +267,8 @@ func (w *window) aboutDialog(u *gunim.UI) {
 		Add("", widget.NewLabel("A GPU-drawn terminal emulator, on gunim.")).
 		Add("Version", widget.NewLabel(build.Version()))
 	d.SetButtons("Close", "")
-	d.AddAction("Check for Updates", func(u *gunim.UI) { u.Send(w, CheckUpdates{}) })
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.AddAction("Check for Updates", func(u *gunim.UI) { u.Send(w, app.CheckUpdates{}) })
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }
 
@@ -280,7 +282,7 @@ func (w *window) fileLocationsDialog(u *gunim.UI) {
 	form := widget.NewForm()
 	for _, f := range []struct{ what, name string }{
 		{"Settings", settings.File}, {"Saved servers", remote.BookFile}, {"Themes", themes.File},
-		{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known windows", knownWindowsFile},
+		{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known windows", app.KnownWindowsFile},
 	} {
 		form.Add(f.what, widget.NewLabel(filepath.Join(dir, f.name)))
 	}
@@ -301,10 +303,10 @@ func (w *window) fileLocationsDialog(u *gunim.UI) {
 		if made, err := conf.IsDir(beside); err == nil && !made {
 			d.AddAction("Make Portable", func(u *gunim.UI) {
 				d.Close(u)
-				u.Send(w, MakePortable{})
+				u.Send(w, app.MakePortable{})
 			})
 		}
 	}
-	d.Accept, d.Dismiss = DialogClosed{}, DialogClosed{}
+	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }

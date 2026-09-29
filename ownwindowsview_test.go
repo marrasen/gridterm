@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 )
@@ -12,22 +14,22 @@ import (
 // moves the pane in.
 func TestAPaneDroppedFromAnotherWindowMovesIn(t *testing.T) {
 	_, _, publish := windowStage(t)
-	publish(State{Window: 2, Panes: []Pane{{ID: "p1", Title: "Jobs", Kind: kindJobs}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
+	publish(app.State{Window: 2, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	at := geom.Pt(450, 300)
-	lastWindow.Input(gi.Drop{Pos: at, Data: PaneDrag{Pane: "p9", Window: 1}})
+	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p9", Window: 1}})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(PaneToWindow); !ok || in.Pane != "p9" {
+	if in, ok := nextIntent(t).(app.PaneToWindow); !ok || in.Pane != "p9" {
 		t.Fatalf("the drop sent %#v", in)
 	}
 	// Its own pane, dropped back on it, is no move.
-	lastWindow.Input(gi.Drop{Pos: at, Data: PaneDrag{Pane: "p1", Window: 2}})
+	lastWindow.Input(gi.Drop{Pos: at, Data: app.PaneDrag{Pane: "p1", Window: 2}})
 	lastWindow.Frame(time.Second / 60)
 	select {
 	case env := <-lastWindow.Client().Intents():
-		if _, ok := env.Intent.(PaneToWindow); ok {
+		if _, ok := env.Intent.(app.PaneToWindow); ok {
 			t.Fatalf("its own pane dropped back sent %#v", env.Intent)
 		}
 	case <-time.After(50 * time.Millisecond):
@@ -37,11 +39,11 @@ func TestAPaneDroppedFromAnotherWindowMovesIn(t *testing.T) {
 // A window with another pane dragged over it lights up.
 func TestAWindowLightsUnderAPaneFromAnother(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Window: 2, Panes: []Pane{{ID: "p1", Title: "Jobs", Kind: kindJobs}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
-	if !win.paneDrop(gi.DragOver{Data: PaneDrag{Pane: "p9", Window: 1}}, lastUI) {
+	publish(app.State{Window: 2, Panes: []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	if !win.paneDrop(gi.DragOver{Data: app.PaneDrag{Pane: "p9", Window: 1}}, lastUI) {
 		t.Fatal("the window did not take a pane from another")
 	}
-	if win.paneDrop(gi.DragOver{Data: PaneDrag{Pane: "p1", Window: 2}}, lastUI) {
+	if win.paneDrop(gi.DragOver{Data: app.PaneDrag{Pane: "p1", Window: 2}}, lastUI) {
 		t.Fatal("the window took its own pane")
 	}
 	for range 30 {
@@ -62,7 +64,7 @@ func TestAClickOnATilePicksIt(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary})
 	lastWindow.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(FocusPane); !ok || in.Pane != "p2" {
+	if in, ok := nextIntent(t).(app.FocusPane); !ok || in.Pane != "p2" {
 		t.Fatalf("the click sent %#v", in)
 	}
 }
@@ -84,7 +86,7 @@ func TestATileLetGoOutsideAsksForAWindow(t *testing.T) {
 		t.Fatal("the tile did not lift off")
 	}
 	sw.Handle(gi.DragEnd{Out: true, At: geom.Pt(1200, 300)}, lastUI)
-	in, ok := nextIntent(t).(PaneToNewWindow)
+	in, ok := nextIntent(t).(app.PaneToNewWindow)
 	if !ok || in.Pane != "p2" || in.At != geom.Pt(1200, 300).Sub(sw.grab) || in.Size != sw.size {
 		t.Fatalf("let go outside, the switcher sent %#v", in)
 	}

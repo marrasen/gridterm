@@ -6,6 +6,10 @@ import (
 	"math"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim"
@@ -67,7 +71,7 @@ type term struct {
 	// agent says the pane is shared with an agent, and marks are the
 	// colours of the rings that say so.
 	agent bool
-	marks Marks
+	marks look.Marks
 	// scale is how much a held screen bigger than the pane is shrunk to
 	// fit it, and offset where it is drawn: 1 and nothing otherwise.
 	scale  float32
@@ -138,7 +142,7 @@ func (t *term) lookAgain(u *gunim.UI) {
 func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
 	g.Size = 15
-	g.Background = termBackground
+	g.Background = look.TermBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
 	t.Add(t.settle)
 	// The whole screen, not just the rows changed since the last pane
@@ -322,12 +326,12 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		if len(e.Paths) == 0 {
 			return false
 		}
-		u.Send(t, DropFiles{Pane: t.id, Paths: e.Paths})
+		u.Send(t, app.DropFiles{Pane: t.id, Paths: e.Paths})
 		return true
 	case gi.FocusGained, gi.FocusLost:
 		_, t.focused = e.(gi.FocusGained)
 		if t.focused {
-			u.Send(t, FocusPane{Pane: t.id})
+			u.Send(t, app.FocusPane{Pane: t.id})
 		}
 		t.blinkOff = false
 		t.sync()
@@ -481,7 +485,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		if s := u.Clipboard(); s != "" {
 			t.paste(s)
 		} else {
-			u.Send(t, NoTextToPaste{})
+			u.Send(t, app.NoTextToPaste{})
 		}
 		return true
 	case e.Button == gi.ButtonSecondary && !t.sh.T.MouseTaken(mods):
@@ -572,7 +576,7 @@ func (t *term) pasteClipboard(u *gunim.UI) {
 		t.paste(s)
 		return
 	}
-	u.Send(t, PastePicture{Pane: t.id})
+	u.Send(t, app.PastePicture{Pane: t.id})
 }
 
 // scroll hands the terminal a wheel notch at a time, which it takes as

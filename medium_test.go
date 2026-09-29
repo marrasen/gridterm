@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/remote"
@@ -15,8 +17,8 @@ import (
 // first, and a command beside the pane.
 func TestSplitOffersServersNotConnectedAndACommand(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "one", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
 	win.run("pane.splitRight", lastUI)
 	titles := []string{}
 	for _, it := range win.splitter.Items {
@@ -33,8 +35,8 @@ func TestSplitOffersServersNotConnectedAndACommand(t *testing.T) {
 // why.
 func TestGoToAsksAgainWhenTheFolderCannotBeRead(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "one", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/", Seq: 1}}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
 	publish(st)
 	b := win.browsers["p1"]
 	b.askGoToWith("/nowhere", "", lastUI)
@@ -43,16 +45,16 @@ func TestGoToAsksAgainWhenTheFolderCannotBeRead(t *testing.T) {
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	var went GoTo
+	var went app.GoTo
 	for went.Path == "" {
-		if in, ok := nextIntent(t).(GoTo); ok {
+		if in, ok := nextIntent(t).(app.GoTo); ok {
 			went = in
 		}
 	}
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	st.Browsers = map[string]Browser{"p1": {Path: "/", Seq: 1, Err: "no such folder", WentTo: went.Ask, GoToErr: "no such folder"}}
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/", Seq: 1, Err: "no such folder", WentTo: went.Ask, GoToErr: "no such folder"}}
 	publish(st)
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
@@ -66,7 +68,7 @@ func TestGoToAsksAgainWhenTheFolderCannotBeRead(t *testing.T) {
 // and closes once serving stops.
 func TestTheServingDialogKeepsUp(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Serving: Serving{Allowed: []string{"laptop"}}}
+	st := app.State{Serving: app.Serving{Allowed: []string{"laptop"}}}
 	publish(st)
 	// Serve pressed, as a user does.
 	win.servingDialog(st.Serving, lastUI)
@@ -75,7 +77,7 @@ func TestTheServingDialogKeepsUp(t *testing.T) {
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	lastWindow.Frame(time.Second / 60)
-	st.Serving = Serving{On: true, Addr: "0.0.0.0:7777", Fingerprint: "SHA256:x", Allowed: []string{"laptop"}, Tries: 1}
+	st.Serving = app.Serving{On: true, Addr: "0.0.0.0:7777", Fingerprint: "SHA256:x", Allowed: []string{"laptop"}, Tries: 1}
 	publish(st)
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)
@@ -83,12 +85,12 @@ func TestTheServingDialogKeepsUp(t *testing.T) {
 	if win.served == nil {
 		t.Fatal("serving began, and the dialog saying so did not open")
 	}
-	st.Serving.Clients = []ServedClient{{Name: "laptop", From: "10.0.0.2"}}
+	st.Serving.Clients = []app.ServedClient{{Name: "laptop", From: "10.0.0.2"}}
 	publish(st)
 	if got := win.served.who.Text; !strings.Contains(got, "laptop") {
 		t.Fatalf("a window connected, and the dialog says %q", got)
 	}
-	st.Serving = Serving{Allowed: []string{"laptop"}, Tries: 1}
+	st.Serving = app.Serving{Allowed: []string{"laptop"}, Tries: 1}
 	publish(st)
 	if win.served != nil {
 		t.Fatal("serving stopped, and the dialog stays")
@@ -98,7 +100,7 @@ func TestTheServingDialogKeepsUp(t *testing.T) {
 // Serve that did not start opens nothing, then or later.
 func TestAServeThatFailedOpensNothingLater(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Serving: Serving{Allowed: []string{"laptop"}}}
+	st := app.State{Serving: app.Serving{Allowed: []string{"laptop"}}}
 	publish(st)
 	win.servingDialog(st.Serving, lastUI)
 	for range 20 {
@@ -109,7 +111,7 @@ func TestAServeThatFailedOpensNothingLater(t *testing.T) {
 	st.Serving.Tries = 1
 	publish(st)
 	// Served later, from another window.
-	st.Serving = Serving{On: true, Addr: "0.0.0.0:7777", Allowed: []string{"laptop"}, Tries: 2}
+	st.Serving = app.Serving{On: true, Addr: "0.0.0.0:7777", Allowed: []string{"laptop"}, Tries: 2}
 	publish(st)
 	for range 30 {
 		lastWindow.Frame(time.Second / 60)

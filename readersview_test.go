@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/app"
+
 	gi "github.com/marrasen/gunim/input"
 )
 
@@ -12,10 +14,10 @@ import (
 // has got of the size listed, and asks for nothing more meanwhile.
 func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "big.log", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "big.log", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20}}
 	publish(st)
-	st.Readers = map[string]Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20, SoFar: 1 << 20}}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20, SoFar: 1 << 20}}
 	publish(st)
 	rd := win.readers["p1"]
 	if rd == nil || rd.r == nil || !rd.r.Busy() || rd.r.SoFar() != 1<<20 {
@@ -32,7 +34,7 @@ func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
 		t.Fatal("the reader does not say the size it was listed as")
 	}
 	for len(lastWindow.Client().Intents()) > 0 {
-		if in, ok := (<-lastWindow.Client().Intents()).Intent.(ReadAgain); ok {
+		if in, ok := (<-lastWindow.Client().Intents()).Intent.(app.ReadAgain); ok {
 			t.Fatalf("the reader asked for a read with one on its way: %#v", in)
 		}
 	}
@@ -41,8 +43,8 @@ func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
 // Ctrl+F in the reader tells the program to follow, and again to stop.
 func TestCtrlFInTheReaderTellsTheProgram(t *testing.T) {
 	_, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "log.txt", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "log.txt", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1}}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -50,9 +52,9 @@ func TestCtrlFInTheReaderTellsTheProgram(t *testing.T) {
 	for _, want := range []bool{true, false} {
 		lastWindow.Input(gi.KeyPress{Key: gi.KeyF, Mods: gi.ModControl})
 		lastWindow.Frame(time.Second / 60)
-		var got *FollowFile
+		var got *app.FollowFile
 		for got == nil {
-			if in, ok := nextIntent(t).(FollowFile); ok {
+			if in, ok := nextIntent(t).(app.FollowFile); ok {
 				got = &in
 			}
 		}
@@ -66,10 +68,10 @@ func TestCtrlFInTheReaderTellsTheProgram(t *testing.T) {
 // reaches the reader.
 func TestTheReaderTakesTheNameOfferedToSaveUnder(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "log.txt", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log.txt"}}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "log.txt", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log.txt"}}
 	publish(st)
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log 2.txt"}}
+	st.Readers = map[string]app.Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log 2.txt"}}
 	publish(st)
 	if got := win.readers["p1"].r.SaveAs; got != "~/log 2.txt" {
 		t.Fatalf("the reader offers to save as %q", got)

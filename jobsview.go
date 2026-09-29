@@ -5,6 +5,10 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/app"
+
+	"github.com/marrasen/kakel/look"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
@@ -38,18 +42,18 @@ func newJobsPane() *jobsPane {
 		none:  true,
 	}
 	p.head.Size = widget.DialogTitleSize
-	p.empty.Color = faint
-	p.clear.On = ClearJobs{}
+	p.empty.Color = look.Faint
+	p.clear.On = app.ClearJobs{}
 	p.body = widget.NewScroll(widget.NewPad(p.list))
 	return p
 }
 
 // show brings the cards up to date with jobs.
-func (p *jobsPane) show(jobs []Job, u *gunim.UI) {
+func (p *jobsPane) show(jobs []app.Job, u *gunim.UI) {
 	widget.Sync(p.list, u, jobs,
-		func(j Job) widget.Key { return widget.Key(j.ID) },
-		func(j Job) *jobCard { return newJobCard(j) },
-		func(c *jobCard, j Job, u *gunim.UI) { c.show(j, u) })
+		func(j app.Job) widget.Key { return widget.Key(j.ID) },
+		func(j app.Job) *jobCard { return newJobCard(j) },
+		func(c *jobCard, j app.Job, u *gunim.UI) { c.show(j, u) })
 	p.none = len(jobs) == 0
 }
 
@@ -104,26 +108,26 @@ type jobCard struct {
 	acts []gunim.Node
 }
 
-func newJobCard(j Job) *jobCard {
+func newJobCard(j app.Job) *jobCard {
 	c := &jobCard{
 		title: widget.NewLabel(""), detail: widget.NewLabel(""), names: widget.NewLabel(""),
-		bar: widget.NewProgressBar(), graph: widget.NewLiveGraph(sampleEvery, mostSpeeds),
+		bar: widget.NewProgressBar(), graph: widget.NewLiveGraph(app.SampleEvery, app.MostSpeeds),
 		cancel: iconButton(icon.CircleStop, "Cancel"), repeat: iconButton(icon.Repeat, "Repeat"), save: widget.NewCheckbox("Save this copy"),
 	}
 	c.graph.Label = func(v float64) string { return words.Size(int64(v)) + "/s" }
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
-	c.detail.Size, c.detail.Color = smallText, faint
+	c.detail.Size, c.detail.Color = smallText, look.Faint
 	c.names.Size = smallText
-	c.cancel.On, c.repeat.On = CancelJob{ID: j.ID}, RepeatJob{ID: j.ID}
+	c.cancel.On, c.repeat.On = app.CancelJob{ID: j.ID}, app.RepeatJob{ID: j.ID}
 	id := j.ID
-	c.save.OnChange = func(on bool) gunim.Intent { return SaveCopy{ID: id, On: on} }
+	c.save.OnChange = func(on bool) gunim.Intent { return app.SaveCopy{ID: id, On: on} }
 	c.acts = c.want(j)
 	c.fill(j)
 	return c
 }
 
 // want are the controls a job's row offers.
-func (c *jobCard) want(j Job) []gunim.Node {
+func (c *jobCard) want(j app.Job) []gunim.Node {
 	switch {
 	case !j.Done:
 		return []gunim.Node{c.cancel}
@@ -134,10 +138,10 @@ func (c *jobCard) want(j Job) []gunim.Node {
 }
 
 // fill says j on the card.
-func (c *jobCard) fill(j Job) {
+func (c *jobCard) fill(j app.Job) {
 	c.title.SetText(j.Title)
 	c.detail.SetText(j.Detail)
-	c.detail.Color = faint
+	c.detail.Color = look.Faint
 	if j.Failed {
 		c.detail.Color = widget.DialogProblem
 	}
@@ -155,7 +159,7 @@ func (c *jobCard) fill(j Job) {
 
 // namesLines lists what a job works on, the one it is on marked and
 // the ones done ticked, and at most five of them.
-func namesLines(j Job) string {
+func namesLines(j app.Job) string {
 	if len(j.Names) < 2 && j.Current == "" {
 		return ""
 	}
@@ -179,7 +183,7 @@ func namesLines(j Job) string {
 }
 
 // show brings the card up to date with j.
-func (c *jobCard) show(j Job, u *gunim.UI) {
+func (c *jobCard) show(j app.Job, u *gunim.UI) {
 	c.bar.Indeterminate = j.Share < 0 && !j.Done
 	if j.Share >= 0 {
 		c.bar.Set(j.Share, u)
@@ -279,9 +283,9 @@ func newCopiesPane(w *window) *copiesPane {
 	p.table = widget.NewTable(widget.TableColumn{Title: "What"}, widget.TableColumn{Title: "From → To", Width: 380})
 	p.table.Row = func(k widget.Key) widget.TableRow {
 		c := p.kept[k]
-		return widget.TableRow{Cells: []string{copiedWhat(c), copiedWhere(c, p.w.nameOf)}}
+		return widget.TableRow{Cells: []string{app.CopiedWhat(c), app.CopiedWhere(c, p.w.nameOf)}}
 	}
-	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, RunSavedCopy{Saved: p.kept[k]}) }
+	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.RunSavedCopy{Saved: p.kept[k]}) }
 	p.col = widget.Column(p.table, p.bar).Grow(p.table, 1)
 	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
 	return p
@@ -326,7 +330,7 @@ func (p *copiesPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids
 func (p *copiesPane) Handle(e gi.Event, u *gunim.UI) bool {
 	if k, ok := e.(gi.KeyPress); ok && k.Key == gi.KeyDelete && k.Mods == 0 {
 		if at, ok := p.table.Cursor(); ok {
-			u.Send(p.table, ForgetCopy{Saved: p.kept[at]})
+			u.Send(p.table, app.ForgetCopy{Saved: p.kept[at]})
 			return true
 		}
 	}

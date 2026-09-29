@@ -3,6 +3,8 @@ package main
 import (
 	"slices"
 
+	"github.com/marrasen/kakel/app"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
@@ -27,7 +29,7 @@ type paneWalk struct {
 // noteFocus puts the focused pane first in the order of use. A walk
 // passing through panes changes nothing until it ends.
 func (w *window) noteFocus(focus string) {
-	if w.walk != nil || !slices.ContainsFunc(w.panes, func(p Pane) bool { return p.ID == focus }) {
+	if w.walk != nil || !slices.ContainsFunc(w.panes, func(p app.Pane) bool { return p.ID == focus }) {
 		return
 	}
 	if len(w.recent) > 0 && w.recent[0] == focus {
@@ -69,7 +71,7 @@ func (w *window) walkRecent(step int, u *gunim.UI) {
 		return
 	}
 	w.walk.at = ((w.walk.at+step)%n + n) % n
-	u.Send(w, FocusPane{Pane: w.walk.order[w.walk.at]})
+	u.Send(w, app.FocusPane{Pane: w.walk.order[w.walk.at]})
 	titles := make([]string, n)
 	for i, id := range w.walk.order {
 		for _, p := range w.panes {

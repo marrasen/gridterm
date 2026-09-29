@@ -9,6 +9,7 @@ import (
 
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/machines"
 )
 
 // ctrlClick clicks with Ctrl down on where text is on pane id's
@@ -98,6 +99,13 @@ func TestAServersLocalAddressOpensThroughATunnel(t *testing.T) {
 	<-opened
 	if len(a.st.Tunnels) != 1 {
 		t.Fatalf("the second click opened another tunnel: %+v", a.st.Tunnels)
+	}
+	// This machine's own localhost is the browser's to reach.
+	if err := a.openLink(machines.Local, "http://localhost:"+port+"/here"); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-opened; got != "http://localhost:"+port+"/here" || len(a.st.Tunnels) != 1 {
+		t.Fatalf("this machine's localhost opened as %q, over tunnels %+v", got, a.st.Tunnels)
 	}
 }
 

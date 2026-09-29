@@ -15,11 +15,12 @@ import (
 )
 
 // The agent programs the prompt and setup are written for, by name.
+// ClaudeCode is the one written for when none has been picked.
 const (
 	ClaudeCode = "Claude Code"
-	Codex      = "Codex"
-	Cursor     = "Cursor"
-	Other      = "Another host"
+	codex      = "Codex"
+	cursor     = "Cursor"
+	other      = "Another host"
 )
 
 // Host is an agent program: Name is what the list calls it, and Called
@@ -36,9 +37,9 @@ type Host struct {
 // All are the agent programs kakel knows how to set up.
 var All = []Host{
 	{Name: ClaudeCode, Called: ClaudeCode, Cmd: "claude", skillIn: []string{".claude", "skills", "kakel"}, skillEnv: "CLAUDE_CONFIG_DIR"},
-	{Name: Codex, Called: Codex, Cmd: "codex"},
-	{Name: Cursor, Called: Cursor, ConfigAt: "~/.cursor/mcp.json"},
-	{Name: Other, Called: "the host"},
+	{Name: codex, Called: codex, Cmd: "codex"},
+	{Name: cursor, Called: cursor, ConfigAt: "~/.cursor/mcp.json"},
+	{Name: other, Called: "the host"},
 }
 
 // Named is the agent program called name, or the first for a name it

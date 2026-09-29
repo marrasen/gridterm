@@ -105,7 +105,7 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 		if !keep.On && picked != "" && strings.Join(strings.Fields(line.Text()), " ") == picked {
 			forget = picked
 		}
-		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.Beside, Vertical: at.Vertical}
+		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.Beside, Vertical: at.Vertical, Instead: at.Instead}
 	}
 	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)

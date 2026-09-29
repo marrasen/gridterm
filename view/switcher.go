@@ -92,20 +92,46 @@ func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switch
 
 // natural returns the size a pane's screen has on stage, or the size
 // it was last drawn at, or the whole of size for a pane never drawn.
-func (s *switcher) natural(t *tile, size geom.Size) geom.Size {
-	if term, ok := s.w.terms[t.id]; ok {
+func (s *switcher) natural(t *tile, size geom.Size) geom.Size { return s.w.natural(t.id, size) }
+
+// natural is the size pane id draws at, from its terminal's grid or
+// its last drawing, or size when it has neither.
+func (w *Window) natural(id string, size geom.Size) geom.Size {
+	if term, ok := w.terms[id]; ok {
 		cell := term.cells.CellSize()
 		cols, rows := term.cells.GridSize()
 		if n := geom.Sz(cell.W*float32(cols), cell.H*float32(rows)); n.W > 0 && n.H > 0 {
 			return n
 		}
 	}
-	if d := s.w.drawings[t.id]; d != nil && !d.Recording().Empty() {
+	if d := w.drawings[id]; d != nil && !d.Recording().Empty() {
 		if n := d.Size(); n.W > 0 && n.H > 0 {
 			return n
 		}
 	}
 	return size
+}
+
+// paintMiniature draws pane id shrunk into r, keeping its shape: a
+// terminal live, any other pane as it was last drawn. It reports false
+// when there is nothing of it to draw.
+func (w *Window) paintMiniature(p *paint.Painter, f gunim.Frame, id string, r geom.Rect, size geom.Size) bool {
+	term, live := w.terms[id]
+	d := w.drawings[id]
+	nat := w.natural(id, size)
+	if nat.W <= 0 || nat.H <= 0 || !live && (d == nil || d.Recording().Empty()) {
+		return false
+	}
+	scale := min(r.Size().W/nat.W, r.Size().H/nat.H)
+	defer p.Layer(paint.LayerOpts{Bounds: r, Opacity: 1, Clip: true})()
+	defer p.Push(paint.Translate(r.Min))()
+	defer p.Push(paint.Scale(scale, geom.Point{}))()
+	if live {
+		term.cells.Paint(p, f, nat, gunim.Children{})
+	} else {
+		p.Replay(d.Recording())
+	}
+	return true
 }
 
 // standsAt is where pane id stands on stage now, if it is on stage.
@@ -264,21 +290,7 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	defer close()
 	p.ShadowRRect(r, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
 	// A terminal live, and any other pane as it was last drawn.
-	term, live := s.w.terms[tl.id]
-	d := s.w.drawings[tl.id]
-	if nat := s.natural(tl, s.size); nat.W > 0 && nat.H > 0 && (live || (d != nil && !d.Recording().Empty())) {
-		scale := min(r.Size().W/nat.W, r.Size().H/nat.H)
-		func() {
-			defer p.Layer(paint.LayerOpts{Bounds: r, Opacity: 1, Clip: true})()
-			defer p.Push(paint.Translate(r.Min))()
-			defer p.Push(paint.Scale(scale, geom.Point{}))()
-			if live {
-				term.cells.Paint(p, f, nat, gunim.Children{})
-			} else {
-				p.Replay(d.Recording())
-			}
-		}()
-	}
+	s.w.paintMiniature(p, f, tl.id, r, s.size)
 	if on := min(max(ring, 0), 1); on > 0.01 {
 		c := switcherRing.Get(th)
 		c.A = uint8(float32(c.A) * on)

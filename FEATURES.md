@@ -66,6 +66,11 @@ The whole list. The [README](README.md) has the short version.
   of the first, so no local port is opened for it and nothing else on
   the machine can use it. Closing the one in the middle closes what
   rides on it.
+- **Splits that ask in place.** Split Right and Split Down split at
+  once, and the new half offers what goes there: `+ Terminal`, one
+  button for each shell here and each machine, `+ Command…`, and small
+  live pictures of the other panes, to move one in. Escape gives the
+  half back.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
   sidebar: this machine, a server, or five of each with kakel in the

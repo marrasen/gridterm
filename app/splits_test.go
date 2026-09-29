@@ -52,3 +52,47 @@ func TestFilesFromAFilePaneOpenBesideIt(t *testing.T) {
 		t.Fatalf("the second file pane, %s, is in group %d, and the first, %s, in %d", second, a.groupOf[second], first, a.groupOf[first])
 	}
 }
+
+// A split puts a chooser beside the pane at once. A pane picked in it
+// moves into the chooser's place, and the chooser goes.
+func TestAPanePickedInASplitsChooserTakesItsPlace(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{})
+	a.focus("f1")
+	a.handle(ChooseSplit{Vertical: true})
+	chooser := a.st.Focus
+	g := a.groupOf["f1"]
+	if b := a.groups[g]; a.kindOfPane(chooser) != KindChooser || b.B == nil || b.B.Pane != chooser || !b.Vertical {
+		t.Fatalf("split, the group is %+v and the focus on %s", b, chooser)
+	}
+	a.handle(MovePane{Pane: "f2", Instead: chooser})
+	if b := a.groups[g]; b.A.Pane != "f1" || b.B.Pane != "f2" || !b.Vertical {
+		t.Fatalf("picked, the group is %+v", b)
+	}
+	if a.has(chooser) || len(a.st.Panes) != 2 || a.st.Focus != "f2" || len(a.groups) != 1 {
+		t.Fatalf("picked, the panes are %+v, the focus on %s, %d groups", a.st.Panes, a.st.Focus, len(a.groups))
+	}
+}
+
+// A new shell picked in a split's chooser opens in its place, and a
+// chooser closed gives its half back.
+func TestANewShellPickedInASplitsChooserTakesItsPlace(t *testing.T) {
+	a, _ := agentApp(t)
+	first := a.st.Panes[0].ID
+	a.handle(ChooseSplit{})
+	chooser := a.st.Focus
+	a.handle(SplitPane{Instead: chooser})
+	waitFor(t, a, "the new shell", func() bool { return !a.has(chooser) })
+	g := a.groupOf[first]
+	if b := a.groups[g]; b.A == nil || b.A.Pane != first || b.B == nil || a.kindOfPane(b.B.Pane) != KindTerminal {
+		t.Fatalf("picked, the group is %+v", b)
+	}
+	a.handle(ChooseSplit{})
+	chooser = a.st.Focus
+	a.remove(chooser)
+	if a.has(chooser) || len(a.choosers) != 0 {
+		t.Fatalf("closed, the chooser stays: %v", a.choosers)
+	}
+}

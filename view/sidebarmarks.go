@@ -253,6 +253,7 @@ var kindIcons = map[string]*icon.Icon{
 	"served":   icon.ScreenShare,
 	"command":  icon.SquareChevronRight,
 	"terminal": icon.SquareTerminal,
+	"split":    icon.Columns2,
 }
 
 // paintIcon draws the little picture for a kind of row in r.
@@ -400,6 +401,8 @@ func paneKindIcon(p app.Pane) string {
 		return "jobs"
 	case app.KindTunnel:
 		return "tunnel"
+	case app.KindChooser:
+		return "split"
 	}
 	if p.Command {
 		return "command"

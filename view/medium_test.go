@@ -13,20 +13,20 @@ import (
 	"github.com/marrasen/kakel/remote"
 )
 
-// Split Right offers a saved server not connected to, which connects
-// first, and a command beside the pane.
-func TestSplitOffersServersNotConnectedAndACommand(t *testing.T) {
+// A split's chooser offers a saved server not connected to, which
+// connects first, and a command in its place.
+func TestAChooserOffersServersNotConnectedAndACommand(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "one", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
-	win.run("pane.splitRight", lastUI)
-	titles := []string{}
-	for _, it := range win.splitter.Items {
-		titles = append(titles, it.Title)
+	var labels []string
+	for _, b := range win.choosers["c1"].buttons {
+		labels = append(labels, b.Label)
 	}
-	for _, want := range []string{"Terminal on far, connecting first", "Run a Command…"} {
-		if !slices.Contains(titles, want) {
-			t.Fatalf("Split Right offers %q, and not %q", titles, want)
+	for _, want := range []string{"Terminal", "Terminal on far", "Command…"} {
+		if !slices.Contains(labels, want) {
+			t.Fatalf("the chooser offers %q, and not %q", labels, want)
 		}
 	}
 }

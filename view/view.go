@@ -61,6 +61,7 @@ type Window struct {
 	// browsers and readers are the file panes and readers, by pane.
 	browsers map[string]*browser
 	readers  map[string]*reader
+	choosers map[string]*chooser
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
 	tunnelPanes map[string]*tunnelPane
@@ -127,12 +128,6 @@ type Window struct {
 	splits   map[string]*widget.Split
 	focused  string
 	palette  *widget.Palette
-	// splitter asks what goes in the new half of a split, and splitWith
-	// is what each of its lines asks the program for; nil is a command,
-	// asked for on splitCommand's machine and put where it says.
-	splitter     *widget.Palette
-	splitWith    []gunim.Intent
-	splitCommand commandAt
 	// drawings keep what each pane's node drew last, by pane, and drawn
 	// is that node, for the switcher to show a pane of any kind, and one
 	// off the stage as it was last seen.
@@ -232,6 +227,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		terms:       map[string]*term{},
 		browsers:    map[string]*browser{},
 		readers:     map[string]*reader{},
+		choosers:    map[string]*chooser{},
 		tunnelPanes: map[string]*tunnelPane{},
 		splits:      map[string]*widget.Split{},
 		captions:    map[string]*captioned{},
@@ -1460,12 +1456,6 @@ func (w *Window) cmdName(id machines.ID) string {
 	return remote.CommandName(w.nameOf(id))
 }
 
-// commandAt is a machine to run a command on, and where its pane goes.
-type commandAt struct {
-	machine machines.ID
-	at      app.Placement
-}
-
 // paneInSidebar is the pane after the focused one in the sidebar, or
 // the one before with back, going round.
 func (w *Window) paneInSidebar(back bool) string {
@@ -1755,6 +1745,14 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		r.show(st.Readers[id], u)
 	}
+	for id, c := range w.choosers {
+		if !open[id] {
+			delete(w.choosers, id)
+			continue
+		}
+		// What it offers follows the panes, the shells and the machines.
+		c.refresh()
+	}
 	// Panes off stage are out of the tree, where nothing can be added
 	// to them; each catches up as it comes back.
 	if w.jobs != nil && u.Presence(w.jobs) != gunim.Exiting {
@@ -2016,6 +2014,13 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.readers[id] = r
 		}
 		return r
+	case app.KindChooser:
+		c, ok := w.choosers[id]
+		if !ok {
+			c = newChooser(w, id)
+			w.choosers[id] = c
+		}
+		return c
 	}
 	return w.term(id)
 }
@@ -2031,6 +2036,9 @@ func (w *Window) focusNode(id string) gunim.Node {
 	}
 	if r, ok := w.readers[id]; ok {
 		return r
+	}
+	if c, ok := w.choosers[id]; ok {
+		return c.first()
 	}
 	if w.kindOf(id) == app.KindJobs && w.jobs != nil {
 		return w.jobs.clear
@@ -2946,62 +2954,16 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	w.showMachineMenu(r, items, icons, acts, u)
 }
 
-// askSplit asks what goes in the new half of a split of the focused
-// pane: a new terminal, one on another shell or machine, or a pane
-// already open, moved in.
-// Moving one in is how two file panes come to sit side by side.
+// askSplit splits the focused pane at once, to the right or below with
+// vertical, and puts a chooser in the new half, where a new terminal or
+// a pane to move there is picked. With no pane to split, it opens a
+// terminal.
 func (w *Window) askSplit(vertical bool, u *gunim.UI) {
-	focus := w.focused
-	if focus == "" {
+	if w.focused == "" {
 		u.Send(w, app.SplitPane{Vertical: vertical})
 		return
 	}
-	if w.splitter == nil {
-		w.splitter = &widget.Palette{Placeholder: "Split with", Pick: func(i int, u *gunim.UI) {
-			switch {
-			case i >= len(w.splitWith):
-			case w.splitWith[i] == nil:
-				w.commandDialogAt(w.splitCommand.machine, w.splitCommand.at, u)
-			default:
-				u.Send(w, w.splitWith[i])
-			}
-		}}
-	}
-	w.splitter.Items, w.splitWith = nil, nil
-	add := func(title, also string, in gunim.Intent) {
-		w.splitter.Items = append(w.splitter.Items, widget.PaletteItem{Title: title, Also: []string{also}})
-		w.splitWith = append(w.splitWith, in)
-	}
-	add("New Terminal", "", app.SplitPane{Vertical: vertical})
-	if len(w.shellChoices) > 1 {
-		for _, sh := range w.shellChoices {
-			add("New "+sh.Title, "", app.SplitPane{Vertical: vertical, Shell: sh.ID})
-		}
-	}
-	for _, p := range w.panes {
-		if p.ID != focus {
-			add("Move "+p.Title, w.nameOf(p.Machine), app.MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
-		}
-	}
-	// Where the focused pane runs: the machine beyond a window, for one
-	// on such a machine.
-	here := w.filesKeyOf(focus)
-	reach := w.machines()
-	for _, m := range reach {
-		if m != here {
-			add("Terminal on "+w.nameOf(m), "", app.SplitPane{Vertical: vertical, Machine: m, Elsewhere: true})
-		}
-	}
-	// The saved servers not connected to, which cost a sign-in first.
-	for _, h := range w.saved {
-		if !h.Window && !slices.Contains(reach, machines.ID(h.ID)) {
-			add("Terminal on "+h.Name+", connecting first", h.Address, app.SplitPane{Vertical: vertical, Machine: machines.ID(h.ID), Elsewhere: true})
-		}
-	}
-	// A command beside it, asked for once picked.
-	add("Run a Command…", "program execute", nil)
-	w.splitCommand = commandAt{machine: here, at: app.Placement{Beside: focus, Vertical: vertical}}
-	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+	u.Send(w, app.ChooseSplit{Vertical: vertical})
 }
 
 // keepDrawings keeps what each pane draws, and lets go of the drawings
@@ -3063,6 +3025,10 @@ func (w *Window) madeNode(id string) gunim.Node {
 	case app.KindReader:
 		if r, ok := w.readers[id]; ok {
 			n = r
+		}
+	case app.KindChooser:
+		if c, ok := w.choosers[id]; ok {
+			n = c
 		}
 	default:
 		if t, ok := w.terms[id]; ok {

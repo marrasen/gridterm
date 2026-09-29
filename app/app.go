@@ -250,6 +250,8 @@ type Pane struct {
 	// Command says the pane runs one command rather than a shell, and
 	// offers to run it again when it finishes.
 	Command bool
+	// SplitFrom is, for a split's chooser, the pane it was split from.
+	SplitFrom string
 }
 
 // Box is one part of an arrangement: a pane, or a split of two boxes.
@@ -344,13 +346,22 @@ type (
 		Machine   machines.ID
 		Elsewhere bool
 		Shell     string
+		// Instead opens it in the place of that split's chooser, on the
+		// machine of the pane the chooser was split from.
+		Instead string
 	}
 	// MovePane moves Pane out of wherever it is and into a split beside
 	// Beside: to the right, or below with Vertical.
 	MovePane struct {
 		Pane, Beside string
 		Vertical     bool
+		// Instead moves it into the place of that split's chooser.
+		Instead string
 	}
+	// ChooseSplit splits the focused pane at once, to the right, or
+	// below with Vertical, and puts a chooser in the new half: what goes
+	// there is picked in it, and it gives its place to that.
+	ChooseSplit struct{ Vertical bool }
 	// ClosePane closes a pane, or the focused one when Pane is empty.
 	ClosePane struct{ Pane string }
 	// FocusPane gives a pane the keyboard, bringing its group on stage.
@@ -473,6 +484,9 @@ type app struct {
 	// lands after a later one was asked for is dropped: a pane is never
 	// sent back to where it was.
 	listing map[string]int
+	// choosers are the split choosers open, by the pane each was split
+	// from.
+	choosers map[string]string
 	// listingAt is the listing each file pane has on its way, which a
 	// listing again asks for once more: not the folder it shows, which
 	// the user may be leaving. It goes once that listing lands.
@@ -640,6 +654,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		farLogs:      map[machines.ID]bool{},
 		notRun:       map[string]bool{},
 		listing:      map[string]int{},
+		choosers:     map[string]string{},
 		listingAt:    map[string]Browse{},
 		saying:       map[string]string{},
 		openedFor:    map[string]bool{},
@@ -966,6 +981,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.openTerminal()
 	case SplitPane:
 		err = a.split(in)
+	case ChooseSplit:
+		a.chooseSplit(in)
 	case MovePane:
 		a.movePane(in)
 	case ClosePane:
@@ -1327,6 +1344,9 @@ func (a *app) has(id string) bool {
 type Placement struct {
 	Beside   string
 	Vertical bool
+	// Instead puts the pane in the place of that one, a split's chooser,
+	// which goes: the chooser's split is the one it lands in.
+	Instead string
 }
 
 // hooks are what a pane's shell tells the program.
@@ -1471,6 +1491,9 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	if w := a.ownerOf(at.Beside); w != nil && !w.gone {
 		a.front(w)
 	}
+	if w := a.ownerOf(at.Instead); w != nil && !w.gone {
+		a.front(w)
+	}
 	a.st.Panes = append(a.st.Panes, p)
 	a.stayEmpty = false
 	a.winOf[p.ID] = a.frontID()
@@ -1481,6 +1504,14 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 // place puts a pane in no group yet where at says: in a split beside
 // another, or in a group of its own.
 func (a *app) place(id string, at Placement) {
+	if g, ok := a.groupOf[at.Instead]; ok && at.Instead != "" {
+		// In the chooser's place, which goes, as picked in it.
+		a.groups[g] = a.groups[g].replace(at.Instead, &Box{Pane: id})
+		a.groupOf[id] = g
+		delete(a.groupOf, at.Instead)
+		a.dropChooser(at.Instead)
+		return
+	}
 	a.nextGroup++
 	g, ok := a.groupOf[at.Beside]
 	if at.Beside == "" || !ok {
@@ -1516,7 +1547,15 @@ func (a *app) openTerminal() error {
 
 // split opens a shell beside the focused pane, on its machine.
 func (a *app) split(in SplitPane) error {
-	machine := a.filesKey(a.st.Focus)
+	from := a.st.Focus
+	at := Placement{Beside: from, Vertical: in.Vertical}
+	if in.Instead != "" {
+		// From the chooser: the pane it was split from is the one the
+		// new shell is like, and the chooser's place is where it goes.
+		from = a.choosers[in.Instead]
+		at = Placement{Instead: in.Instead}
+	}
+	machine := a.filesKey(from)
 	if in.Elsewhere {
 		machine = in.Machine
 	}
@@ -1526,27 +1565,58 @@ func (a *app) split(in SplitPane) error {
 			return fmt.Errorf("this machine has no shell called %q", in.Shell)
 		}
 		a.nextShell, machine = argv, ""
-	} else if machine == a.filesKey(a.st.Focus) {
+	} else if machine == a.filesKey(from) {
 		a.likeHere()
 	}
-	return a.open(machine, Placement{Beside: a.st.Focus, Vertical: in.Vertical})
+	return a.open(machine, at)
+}
+
+// KindChooser is a split's new half before anything is put in it: it
+// offers new terminals and the panes to move there.
+const KindChooser = "chooser"
+
+// chooseSplit splits the focused pane at once and puts a chooser in the
+// new half.
+func (a *app) chooseSplit(in ChooseSplit) {
+	from := a.st.Focus
+	if from == "" || !a.has(from) {
+		return
+	}
+	a.next++
+	id := "p" + strconv.Itoa(a.next)
+	a.choosers[id] = from
+	a.addPane(a.paneOn(a.filesKey(from), Pane{ID: id, Title: "Split", Kind: KindChooser, SplitFrom: from}), nil, Placement{Beside: from, Vertical: in.Vertical})
+}
+
+// dropChooser takes away a chooser that has given its place to what was
+// picked in it.
+func (a *app) dropChooser(id string) {
+	delete(a.choosers, id)
+	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); i >= 0 {
+		a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
+		delete(a.winOf, id)
+	}
 }
 
 // movePane moves a pane that is open into a split beside another, as
 // Split Right and Split Down can: the way to two file panes
 // side by side.
 func (a *app) movePane(in MovePane) {
-	if in.Pane == in.Beside || !a.has(in.Pane) || !a.has(in.Beside) {
+	target := in.Beside
+	if in.Instead != "" {
+		target = in.Instead
+	}
+	if in.Pane == target || !a.has(in.Pane) || !a.has(target) {
 		return
 	}
-	from, to := a.ownerOf(in.Pane), a.ownerOf(in.Beside)
+	from, to := a.ownerOf(in.Pane), a.ownerOf(target)
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == in.Pane })
 	next := a.take(in.Pane)
 	if from != to {
 		a.winOf[in.Pane] = to.id
 		a.refocus(from, in.Pane, next, i)
 	}
-	a.place(in.Pane, Placement{Beside: in.Beside, Vertical: in.Vertical})
+	a.place(in.Pane, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
 	a.focus(in.Pane)
 }
 
@@ -1637,6 +1707,7 @@ func (a *app) remove(id string) {
 	delete(a.linksAt, id)
 	delete(a.notRun, id)
 	delete(a.listing, id)
+	delete(a.choosers, id)
 	delete(a.listingAt, id)
 	delete(a.openedFor, id)
 	delete(a.programTitle, id)

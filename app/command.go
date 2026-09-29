@@ -30,6 +30,8 @@ type RunCommand struct {
 	// Vertical, rather than on a stage of its own.
 	Beside   string
 	Vertical bool
+	// Instead runs it in the place of that split's chooser.
+	Instead string
 	// Forget is a saved command picked and then unticked, which is how
 	// the user says to forget it.
 	Forget string
@@ -90,11 +92,11 @@ func (a *app) runCommandThen(in RunCommand, then func(id string, err error)) err
 	if a.machines.Get(through).Window != nil {
 		// The window runs it, in a pane of its own, which this one
 		// watches: its own machine's, or one it reaches.
-		return a.openThrough(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical}, then)
+		return a.openThrough(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead}, then)
 	}
 	return a.startCommand(in.Machine, cmd, commandStart{
 		then: func(sess session.Session) {
-			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical})
+			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical, Instead: in.Instead})
 			then(id, nil)
 		},
 		failed: func() { then("", errors.New("could not run "+title)) },

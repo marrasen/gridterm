@@ -137,7 +137,7 @@ func (a *app) pickShell(id string) error {
 // a pane on a server, and one running a command rather than a shell
 // leave it as it is.
 func (a *app) likeHere() {
-	id := a.st.Focus
+	id := a.here()
 	if a.nextShell != nil || a.machineOf(id) != "" {
 		return
 	}

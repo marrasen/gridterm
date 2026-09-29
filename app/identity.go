@@ -88,15 +88,25 @@ func paneEnv(argv []string, called string) []string {
 // dirHere is the folder of the focused pane's shell, when it is on this
 // machine and has said, for a new shell to start in.
 func (a *app) dirHere() string {
-	t := a.terminal(a.st.Focus)
-	if t == nil || a.machineOf(a.st.Focus) != "" {
+	id := a.here()
+	t := a.terminal(id)
+	if t == nil || a.machineOf(id) != "" {
 		return ""
 	}
 	dir, host := t.Dir()
 	if !isThisMachine(host) {
 		return ""
 	}
-	return a.localDir(a.st.Focus, dir)
+	return a.localDir(id, dir)
+}
+
+// here is the pane a new shell is like: the focused one, or while a
+// split's chooser has the keyboard, the pane it was split from.
+func (a *app) here() string {
+	if from, ok := a.choosers[a.st.Focus]; ok {
+		return from
+	}
+	return a.st.Focus
 }
 
 // isThisMachine reports whether a host a shell named is this computer.

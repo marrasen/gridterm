@@ -38,6 +38,9 @@ type term struct {
 	cells   *widget.CellGrid
 	row     []widget.Cell
 	focused bool
+	// away says the window is without the keyboard, another program
+	// having it: no cursor shows, and none blinks, until it is back.
+	away bool
 	// wheel gathers the wheel's movement until it makes a whole notch.
 	wheel float32
 	// held is the button down in the pane, and at the cell the pointer
@@ -90,13 +93,30 @@ const (
 	smallSettle          = 150 * time.Millisecond
 )
 
+// setAway hides the cursor while the window is without the keyboard,
+// and shows it again, lit, and blinking where it blinks, once it is
+// back: the cursor is where typing goes, and none goes to a window in
+// the background.
+func (t *term) setAway(away bool, u *gunim.UI) {
+	if away == t.away {
+		return
+	}
+	t.away = away
+	if !away {
+		t.blinkAgain()
+		t.blink(u)
+	}
+	t.sync()
+	u.Invalidate()
+}
+
 // blinkHalf is each half of a cursor's blink: once a second.
 const blinkHalf = 500 * time.Millisecond
 
 // blink starts the cursor blinking, while the pane has the keyboard and
 // its program asked for a blinking cursor.
 func (t *term) blink(u *gunim.UI) {
-	if t.blinking || !t.focused || !t.wantBlink {
+	if t.blinking || !t.focused || t.away || !t.wantBlink {
 		return
 	}
 	t.blinking = true
@@ -108,7 +128,7 @@ func (t *term) blinkStep(run int, u *gunim.UI) {
 	if run != t.blinkRun {
 		return
 	}
-	if !t.focused || !t.wantBlink {
+	if !t.focused || t.away || !t.wantBlink {
 		t.blinking, t.blinkOff = false, false
 	} else {
 		t.blinkOff = !t.blinkOff
@@ -275,7 +295,7 @@ func (t *term) sync() {
 		t.wantBlink = cur.Blink
 		// A pane whose program has ended takes no typing, and one without
 		// the keyboard takes none now, so neither shows a cursor.
-		visible := cur.Visible && !sh.T.Exited() && t.focused
+		visible := cur.Visible && !sh.T.Exited() && t.focused && !t.away
 		if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
 			t.cursorAt = at
 			t.blinkAgain()

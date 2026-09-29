@@ -287,3 +287,30 @@ func TestAPanePickedInASplitGrowsIntoItsPlace(t *testing.T) {
 		t.Fatal("p3, in no split with p2, grows with it")
 	}
 }
+
+// The cursor hides while the window is without the keyboard, and shows
+// again once it is back.
+func TestTheCursorHidesWhileTheWindowIsInactive(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	term := win.terms["p1"]
+	if !term.cursorShown {
+		t.Fatal("with the keyboard, the pane shows no cursor")
+	}
+	lastWindow.Input(gi.WindowFocusLost{})
+	lastWindow.Frame(time.Second / 60)
+	if term.cursorShown {
+		t.Fatal("with the window in the background, the pane still shows its cursor")
+	}
+	lastWindow.Input(gi.WindowFocusGained{})
+	lastWindow.Frame(time.Second / 60)
+	if !term.cursorShown {
+		t.Fatal("with the keyboard back, the pane shows no cursor")
+	}
+}

@@ -1535,11 +1535,17 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 	switch k := e.(type) {
 	case input.WindowFocusGained:
 		w.away = false
+		for _, t := range w.terms {
+			t.setAway(false, u)
+		}
 		if w.behind {
 			u.Send(w, app.WindowFocused{})
 		}
 	case input.WindowFocusLost:
 		w.away = true
+		for _, t := range w.terms {
+			t.setAway(true, u)
+		}
 		// Another program took the keyboard, as a screenshot tool does,
 		// and no release of Ctrl will come: the walk ends where it is,
 		// and no link stays lit.
@@ -2069,6 +2075,7 @@ func (w *Window) term(id string) *term {
 	}
 	t := newTerm(id, w.shells.Get(id), w.keys)
 	t.ctrl = w.ctrlHeld
+	t.away = w.away
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize
 	}

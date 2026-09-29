@@ -14,9 +14,9 @@ The whole list. The [README](README.md) has the short version.
   window — can tell the difference.
 - **Connections, not just shells.** One SSH connection carries several
   things at once, so a second terminal on a machine is a second channel
-  rather than a second login. A remote command gets a connection of its
-  own, named by what it runs. Connect from inside the window with
-  `Ctrl+Shift+N`.
+  rather than a second login. A command runs on a channel of the same
+  connection, in a pane named by what it runs. Connect from inside the
+  window with `Ctrl+Shift+N`.
 - **One kakel window working in another.** A window can serve itself
   on a port you opt into, and another window on another machine can take
   it over: its sidebar appears under that window's name, and a pane
@@ -36,6 +36,14 @@ The whole list. The [README](README.md) has the short version.
   them, as SFTP on a channel of its own, so a browser pane on that
   machine costs no second login. A window that would rather not offer
   its files refuses the channel by name.
+- **The machines beyond a connected window.** The servers that window
+  is connected to get a heading each under its name, and their plus
+  offers what a server of your own does: a terminal, a command, files
+  and its saved folders, a tunnel or SOCKS proxy, its connection log, and
+  Disconnect, which asks that window to close its connection. Each
+  rides the one connection to the window. A tunnel through a window
+  listens here; a remote forward needs a connection of your own. An
+  agent handed a pane out there works in it as in any other.
 - **Panes shared with an agent.** Set the panes up -- through whatever
   machines, as whatever user, with whatever credentials -- put them in a
   share, and give a program you are talking to the one code for it. The
@@ -69,7 +77,10 @@ The whole list. The [README](README.md) has the short version.
   have gone to. A copy can be pasted into one pane after another; a cut
   lands once. What is waiting to be pasted is marked in the pane it came
   from, and comes from the directory it was taken in whatever that pane
-  is showing by then. A bar along the bottom says which key does what,
+  is showing by then. Files on a machine with exactly one saved folder
+  open at that folder; with none or several, at home. Ctrl+C, Ctrl+X and
+  Ctrl+V do what F5, F6 and F7 do. A bar along the bottom says which key
+  does what,
   the way Midnight Commander does, and clicking a key on it runs that
   key. A directory is never read on the goroutine that draws, so a slow
   machine cannot stop the window, and a read that fails leaves the
@@ -78,7 +89,7 @@ The whole list. The [README](README.md) has the short version.
   browser and F4 tails one, on this machine or on a server. It works the
   way `less` does: a page at a time, "/" to search, "n" and "N" for the
   next match and the one before, ":" to go to a line, and Ctrl+H for a
-  hex dump. A file being tailed is asked about three times a second and
+  hex dump. A file being tailed is looked at every 300 ms and
   stays at its end as it grows; scroll back and it leaves you where you
   put yourself. Code is coloured by what the file is called, and a
   markdown file gets its headings, bullets and quotes. A picture file
@@ -165,9 +176,8 @@ The whole list. The [README](README.md) has the short version.
   sidebar is the list of what is open and says which one you are looking
   at. A server not saved is connected to with Quick Connect on the
   Servers menu, and listed, marked "quick", while anything is open on
-  it. Nothing polls and
-  nothing ticks: the row is worked out afresh each frame from when the
-  last byte went by, so an idle sidebar redraws nothing at all.
+  it. Nothing polls: the row is worked out afresh each frame from when
+  the last byte went by, so an idle sidebar redraws nothing at all.
   `Ctrl+Shift+B` hides it and shows it again.
 - **Servers are saved.** A machine you add gets a line on the Servers
   menu and an entry in the palette, kept in a JSON file under the OS
@@ -176,16 +186,18 @@ The whole list. The [README](README.md) has the short version.
   file nobody could parse is still somebody's list of servers.
 - **Secrets are asked for in the window.** A key passphrase, an account
   password and a one-time code all get a dialog. A passphrase that does
-  not open the key is asked for again -- three tries -- and the dialog
-  says the last one did not work. An unlocked key is kept in memory for
-  as long as the window is open and never written anywhere, so the second
-  connection to a machine asks nothing.
+  not open the key is asked for again, with no limit, and the dialog
+  says the last one did not work; Cancel stops the asking. An unlocked
+  key is kept in memory until the window closes or Lock SSH Keys is
+  chosen, and never written anywhere, so the second connection to a
+  machine asks nothing.
 - **Unknown host keys are shown, not assumed.** A host that is not in
   `known_hosts` gets a dialog with its fingerprint, and only an explicit
   yes records it. A key that does not match one already recorded is
   refused with no button to press.
-- **The SSH agent is carried only where you say.** The **SSH agent**
-  field in the server dialog lets that machine reach the agent running
+- **The SSH agent is carried only where you say.** "Forward this
+  machine's SSH agent to it" in the server dialog lets that machine
+  reach the agent running
   here, so a jump onward from it signs with the keys held here and no
   key is copied over. It is off until you turn it on, per machine, and
   while it is on anyone who is root on that machine can sign with those
@@ -195,11 +207,15 @@ The whole list. The [README](README.md) has the short version.
 - **Drawn by gunim.** The window is drawn on the GPU by gunim, a
   pure-Go GUI framework by the same author. It loads OpenGL at run time,
   and presents through DXGI on Windows.
+- **The window opens where it was.** Its place and size, and whether it
+  was maximized, are kept from the last run. A window whose screen has
+  gone opens on one that is there.
 - **Damage tracking.** Writing a cell that already holds the same
   content does not dirty its row, and only the rows that changed are
   passed on to be drawn.
 - **Wide characters and combining marks.** CJK and emoji take two
-  columns; a base character and its marks share one cell.
+  columns; a base character and its marks share one cell. Emoji are
+  drawn from the system's emoji font, in colour.
 - **Box drawing that joins up.** The box and block characters are drawn
   in code at the exact cell size, so framed TUIs have unbroken lines.
 - **A real key pipeline.** Press, release and OS repeat with modifiers,
@@ -229,7 +245,7 @@ says which it is in two ways:
   environment variable does not.
 
 Both say `kakel`, which is true and which no program has heard of
-yet. "What this window calls itself…" in the command palette changes the
+yet. "Terminal Identity…" on the Options menu changes the
 name to a terminal a program does know, which is how to make one show
 pictures before it has heard of this one. It may then send the rest of
 that terminal's sequences, and whatever kakel does not read lands on
@@ -248,11 +264,11 @@ Kakel sets this up itself. As a shell starts it types one line in,
 the way you would type it, and then clears the pane. There is nothing to
 install and no profile to edit.
 
-- **On this machine it is on**, and `Shell setup on this machine, on or
-  off` in the command palette turns it off. It is invisible: kakel
+- **On this machine it is on**, and "Shell Setup" on the Machine menu
+  turns it off. It is invisible: kakel
   builds the line for whichever shell the pane runs.
-- **On a server it is off**, and the **Shell setup** field in the server
-  dialog turns it on. It is off because the line goes into whatever
+- **On a server it is off**, and "Teach its shell to say what it is
+  doing" in the server dialog turns it on. It is off because the line goes into whatever
   login shell that account has. bash and zsh understand it; fish, a
   device CLI or a menu would answer with an error.
 - **Another kakel is never set up from here.** The window over there

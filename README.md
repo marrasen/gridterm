@@ -17,8 +17,6 @@ handing over the machine.
 Kakel is Swedish for tile. It was called gridterm until September 2026;
 see [Coming from gridterm](#coming-from-gridterm).
 
-66,124 lines of Go, 68,501 lines of tests, 2,535 tests.
-
 ![kakel with vim open on one of its own source files](docs/hero.png)
 
 ## Install
@@ -43,7 +41,7 @@ go install github.com/marrasen/kakel@latest
 kakel                          # your login shell
 kakel -ssh user@host           # a shell on another machine
 kakel -e 'vim /etc/hosts'      # one command
-kakel -font-size 18
+kakel -font-size 18            # 8 to 96 pixels
 kakel -font-family 'Cascadia Mono'
 kakel -list-fonts              # the monospace families installed
 ```
@@ -76,8 +74,9 @@ leave out borrows one you gave.
   syntax colour, and JSON logs laid out as logs.
 - **Tunnels**, local, remote and SOCKS5, each with a pane saying what it
   is carrying.
-- **One kakel working inside another**, including joining a program
-  already running over there so both people see it.
+- **One kakel working inside another**, and through it on the servers
+  it is connected to, including joining a program already running over
+  there so both people see it.
 - **Panes shared with an agent** over MCP, where one code reaches
   exactly the panes you shared and nothing else.
 - **Motion that says what happened.** The pane switcher zooms from
@@ -104,13 +103,13 @@ kakel comes with:
 | `Ctrl+Shift+K` | the command palette |
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
-| `Ctrl+Alt+V` | paste a picture |
+| `Ctrl+Alt+V` | paste a picture as a file, and type its path |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
 | `Ctrl+Shift+B` | show or hide the sidebar |
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+G` | go to a directory, in a file pane |
-| `Ctrl+Shift+H` | every shortcut |
+| `Ctrl+Shift+H` | every command and shortcut |
 | `F10` | the menus |
 | `F11` | fill the screen with the pane or split in front |
 
@@ -162,14 +161,9 @@ kakel is gridterm, renamed, with its window rebuilt on gunim.
 | [DESIGN.md](DESIGN.md) | why the code is the shape it is |
 | [GAPS.md](GAPS.md) | what is not there yet |
 | [LINUX.md](LINUX.md) | the state of the Linux build |
-| [MENUS.md](MENUS.md) | every menu, written down |
 | [WORDING.md](WORDING.md) | how dialogs, buttons and commands are worded |
-| [DIALOGS.md](DIALOGS.md) | every dialog, written down |
-| [COMMANDS.md](COMMANDS.md) | every command in the palette |
 | [CHANGELOG.md](CHANGELOG.md) | what changed in each release |
 | [RELEASING.md](RELEASING.md) | how a release is cut |
-| [REMOTE-APPS.md](REMOTE-APPS.md) | an idea: remote windows inside kakel |
-| [docs/gunimterm.md](docs/gunimterm.md) | how the window moved onto gunim |
 
 ## Licence
 

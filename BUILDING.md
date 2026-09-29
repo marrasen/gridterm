@@ -26,7 +26,12 @@ build needs no graphics headers either.
 tests draw into gunim's offscreen window.
 
 `make` has the rest: `make windows`, `make linux`, `make test`,
-`make vet`, `make fmt`.
+`make vet`, `make fmt`, `make icon`, `make release`.
+
+CI's gate is `gofmt -l .`, `golangci-lint` and `go test ./...`
+([.github/workflows/check.yml](.github/workflows/check.yml)). Run all
+three before a push: `go vet` alone lets through what the linter
+stops.
 
 ### Working on gunim at the same time
 
@@ -101,8 +106,8 @@ not match the echo of what the script has just typed. The exception is a
 type" -- which takes the pane as it already is, because there is nothing
 for the text to be an answer to. Wait a moment after it all the same:
 the shell's own setup can still be running when the prompt shows. A step
-that waits 30 seconds without seeing its text logs an error and ends the
-script.
+that waits 30 seconds without seeing its text fails the run, and the
+steps after it are not run.
 
 Two things that cost a run each:
 

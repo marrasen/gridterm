@@ -4,11 +4,6 @@ Every dialog, button, menu row, command title and error in kakel is
 written to these rules. They are here so a new one comes out right the
 first time rather than being rewritten later.
 
-[DIALOGS.md](DIALOGS.md) and [COMMANDS.md](COMMANDS.md) are what the
-rules were applied to: one entry per dialog and one row per command, with
-the wording as it should read. When you add a dialog or a command, add it
-there too.
-
 ## The rules
 
 1. **Say what it is. Never what it is not.** No "not a path", "rather
@@ -71,12 +66,12 @@ header around it, and it heads the notice shown when the command fails.
    pane's", no commas, no clauses.
 2. **A title stands alone.** `Split Right`, never bare `Right`. A menu
    row may be shorter than the title only where its header already says
-   the missing word; those rows are listed at the end of
-   [COMMANDS.md](COMMANDS.md).
+   the missing word.
 3. **`…` means the command asks something before it acts.** A command
    that shows something and asks nothing has none: `About kakel`,
    `File Locations`, `Typing History`.
-4. **Every word a title loses goes into `AlsoFind`**, along with the
+4. **Every word a title loses goes into `commandAlso`** in
+   `view/keys.go`, along with the
    ordinary synonyms and both spellings, so whoever learned the old
    wording still finds the command by typing it.
 
@@ -85,11 +80,8 @@ A toggle is named for the thing it shows and the tick says the rest.
 
 **Command IDs never change.** `edit.copy`, `pane.close` and the rest are
 what a saved key binding, a menu line and the shortcuts file refer to.
-Renaming one breaks whatever pointed at it. Titles are free to edit.
-
-**A command title is also an error heading.** `(*app).reporting` shows
-`<Title> failed`, with the ellipsis stripped: `Open Tunnel failed`. Every
-title has to read correctly in that frame.
+Renaming one breaks whatever pointed at it. Titles are free to edit. If
+an ID ever has to move, `keys.Renamed` keeps the old one working.
 
 ## Status text: a row on the sidebar
 
@@ -108,16 +100,14 @@ taken in at a glance and not to be read as a sentence.
    sentence.
 4. **The same thing gets the same words on every surface.** A connection
    that dropped reads `connection lost` whether it carried a pane or a
-   window. Where a state is shown in two places it is one constant, the
-   way `transportLost` is.
+   window. Where a state is shown in two places it is written once.
 5. **A note is shown while it is changing and then goes quiet.** It
-   holds for as long as the status line holds a line, and then comes off
-   the row; the pointer on the row brings it back, and so does the
-   selection while the sidebar has the focus. A note takes its room from
+   stands for four seconds (`noteFor` in `view/view.go`), and then comes
+   off the row; the pointer on the row brings it back, and so does the
+   keyboard. A note takes its room from
    the name, which is what the row is for, so it earns that room while
    it is saying something new and gives it back afterwards. A copy says
    `3 of 7` and then `4 of 7`, so its note is up the whole time it runs.
-   `ui.ListRow.NoteQuiet` is what asks for this.
 6. **Nothing lives only in a note.** A note can be dropped by a narrow
    sidebar and is gone four seconds after it settles, so anything that
    has to be read later belongs where it can be read later. The reason a
@@ -129,84 +119,32 @@ states, and follow the button rules rather than these.
 
 ## Error headings
 
-One shape: `Could not <verb> <object>`. A partial success is `<What
+One shape: `Couldn't <verb> <object>`. A partial success is `<What
 worked>, but <what did not>`. Two failures the user cannot act on
 differently get one heading between them — the body carries the error.
+A command that fails is headed by `failedTitle` in `app/app.go`:
+`Couldn't open the tunnel`.
 
 ## Reach for a widget, not a sentence
 
 These exist so a dialog does not need a paragraph explaining itself. Use
-them before adding body text.
+them before adding body text. They are gunim's widgets.
 
 | Instead of | Use |
 |---|---|
-| A paragraph explaining one field | `ui.Field.Hint` — one line, drawn while that field has focus |
-| A sentence saying a field is ignored here | `ui.Field.Disabled` — drawn dim, takes no keys, focus steps over it |
-| "Ctrl+down and Ctrl+up step through…" | Nothing: a field with `Options` draws `Ctrl+↑↓` beside it |
-| A field whose answer must be one of a list, typed and then refused | `ui.Field.Choices` — a drop-down, drawn with `▾`. It holds a key and shows a label, so a server can be saved by its id and shown by its name |
-| A dialog that only says something worked | `(*app).say(text)` — one line along the bottom row |
-| `Copy` on a notice with nothing to copy | `ui.Notice.SetNoCopy()` |
+| A sentence saying a field is ignored here | `Disabled` on the field: drawn dim, and it takes no keys |
+| A field whose answer must be one of a list, typed and then refused | `widget.Dropdown` |
+| A dialog that only says something worked | a toast: `(*app).worked` |
 
-A dialog is as wide as its longest line and stops there, so a body
-written as one long line is a body with its end cut off. Wrap by hand, or
-through `wrapLines(…, errorLineWidth)`.
+## A word shown in two places is written once
 
-## Every word is a constant, said once
-
-**A display string more than one place shows is written once.** The
-tick boxes an agent is told to look for live in `agent`, because the
-MCP server quotes them back. Button titles, field labels
-and dialog titles are written where the view makes them: the constants
-file the old window kept them in, `wording.go`, did not come across to
-the gunim window.
-
-A menu row that says exactly its command's title carries no `Title` at
-all — `ui.MenuItem` falls back to the registered one. The row cannot
-drift from the command because there is nothing to drift.
-
-Two reasons, and the second costs the most:
+The tick boxes an agent is told to look for live in `agent`
+(`agent.BoxRestart` and the rest), because the MCP server quotes them
+back. The window's other words are written where the view makes them.
 
 **Copies drift.** The MCP server once told an agent to ask the user to
 tick "Restart a closed connection" after the dialog had renamed that box.
 Both halves worked; only the pair was wrong.
-
-**A test has to find a button before it can press one.** Given a literal,
-the only handle is the wording, so every test that presses Cancel is
-coupled to the word "Cancel" without caring what it says. Reword and a
-hundred tests break that were never about wording. Given a constant, the
-handle is the constant, and rewording costs nothing.
-
-Rewording this whole window once cost about 700 lines of test churn. With
-the constants in place it costs none.
-
-A constant also splits two things a literal runs together: **what the
-button is** and **what it says**. The identity becomes a symbol; the text
-becomes data hanging off it. That gives two independent edits. Change the
-value and nothing else moves. Rename the symbol and an editor moves every
-use mechanically, because it is following a symbol rather than searching
-for a word that may also be a substring of three others.
-
-### What actually protects the wording
-
-Three layers, and only the first is total:
-
-| Catches | How | Gap |
-|---|---|---|
-| A constant renamed or deleted while still used | The compiler, at every use | None |
-| A constant nobody uses any more | `unused` in the linter | Not for an exported identifier in a library package: staticcheck assumes exported means API |
-| A button gone from a dialog that still needs it | The behaviour test that presses it | Only where such a test exists |
-
-The second layer is why the linter runs in CI. A word nothing uses is a
-button that has gone, and neither the compiler nor `go vet` says a word
-about an unused package-level constant — it is the linter's `unused`
-check and nothing else.
-
-It is also why kakel keeps its word constants unexported where it can.
-The four in `agent` have to be exported, because the MCP server quotes
-them back to an agent, and they give up that second layer for it.
-
-None of these three layers is a test asserting that a button says a
-particular word. That layer was catching nothing the others missed.
 
 ## Tests
 
@@ -241,7 +179,7 @@ it is the work this rule exists to avoid. Instead:
 
 A test that is merely *coupled* to wording — one that presses a button by
 its title on the way to checking something real — is not restating
-anything. Do not delete it. Give it a constant to hold instead.
+anything. Do not delete it.
 
 The general form, which is not only about wording: **a test asserting
 that two things agree is usually a sign they should be one thing.** The
@@ -257,8 +195,8 @@ dialog carried a sentence explaining that a field would be ignored. Rule
 fixing the field failed the build. Watch for tests that defend the things
 these rules remove.
 
-## Where the shared titles are listed
+## Dialog titles
 
-Some titles are one constant shared by a command and the dialog it opens
-— `helpTitle`, `copiesTitle`, `typedTitle` and the rest.
-[COMMANDS.md](COMMANDS.md) lists them.
+A dialog opened by a command is titled with the command's title, less
+the `…`: `Serve This Window`, `Agent Permissions`. Where it names its
+target it may drop the verb: `Run Command on <where>`.

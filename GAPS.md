@@ -5,35 +5,26 @@ What is not there yet, said plainly. The
 list; this is the part worth knowing before you try to use kakel for
 something.
 
-- **Split with runs no command.** The "Split with" choice offers a
-  terminal on each machine; the "Command on <machine>…" lines, which
-  would run a command in the new half, are still to come.
 - **A fallback glyph is always upright.** The system fonts consulted for
   runes the main font lacks are shared by every style, so CJK, braille
   and heavy box drawing stay regular even in bold or italic text.
-- **Variable fonts render at their default instance.**
-  `x/image/font/sfnt` does not apply variation axes, so asking such a
-  font for its bold weight gets the default one.
-- **Blink** is parsed and ignored.
-- **Colour emoji** do not render. `x/image/font/sfnt` cannot read the
-  bitmap tables that colour emoji fonts use.
+- **Variable fonts render at their default instance.** gunim's text
+  package sets no variation axes, so asking such a font for its bold
+  weight gets the default one.
+- **Blinking text** is parsed and ignored. The cursor blinks when a
+  program asks; the text does not.
 - **Emoji ZWJ sequences and flags** show only their first glyph; the
   rest of the cluster is dropped rather than stacked in one cell.
 - **OSC 52 clipboard reads** are never answered: replying would let any
   program that can write to the terminal read the clipboard out.
-- **A watched pane is not resized to suit the watcher.** The screen is
-  drawn on the machine it is running on as well, and shrinking somebody
-  else's shell to fit a pane they are not looking at would reach further
-  than watching was asked to. So the size travels instead and the row
-  says what it is; a screen wider than the pane showing it wraps.
 - **Two kakel windows have to be the same build.** What one window
   says to another uses SSH's own encoding, which is positional: there is
   no room for a field one end knows and the other does not. A window of
   another build is refused by name rather than half understood.
-- **The files of a machine the served window reached** are not offered.
-  A window serves the files of the machine it is running on. Something
-  it reached over SSH of its own is another hop, and nothing proxies it
-  yet.
+- **A remote forward cannot go through a kakel window.** A tunnel or a
+  SOCKS proxy to a machine beyond a window listens here, and works. A
+  port that listens on the far machine needs a connection of this
+  window's own to ask for it, so it is refused.
 - **An agent is handed a screen, not a session.** It reads what is on
   the pane and types into it, the way a person looking over your
   shoulder would. A shell with shell integration on tells it when a
@@ -63,8 +54,5 @@ something.
   parser keeps that much and throws the rest away. The two sequences
   that carry a picture are read before it sees them, so they are whole;
   a clipboard write longer than a kilobyte is cut short.
-- **An APC, PM or SOS string with no terminator grows without bound.**
-  The parser buffers it before the emulator sees anything, so it cannot
-  be capped from here; it needs a fix in `danielgatis/go-vte`, which
-  already caps OSC the same way.
-- `-e` splits its argument on spaces, with no quoting.
+- **A command is split on spaces, with no quoting.** That goes for
+  `-e` and for Run Command alike.

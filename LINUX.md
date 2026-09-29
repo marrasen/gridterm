@@ -47,11 +47,13 @@ It goes through `golang.design/x/clipboard`, which talks to X11 itself.
 The old text path shelled out to `xclip` or `xsel` through
 `atotto/clipboard`, and neither is part of a desktop: on the machine
 this was built on, neither was installed, so copy and paste did nothing
-at all. Text and pictures now go through one library, which they have to:
-X11 gives the clipboard to a single owning process, so text written by a
-helper process and pictures written by this one would take the clipboard
-from each other on every copy. Windows and macOS are untouched and still
-use `atotto/clipboard`, in `clip/text_other.go`.
+at all. Windows and macOS still use `atotto/clipboard` for text, in
+`clip/text_other.go`.
+
+Since the move to gunim, `clip` carries less. Copying and pasting text
+in a pane goes through gunim's own clipboard. `clip` is what pastes a
+picture, puts a picture another window sent on this machine's clipboard,
+and copies a secret.
 
 A picture that cannot be read is still an error, told apart from a
 clipboard that holds no picture, which is what the paste command needs.
@@ -90,31 +92,11 @@ connection to a closed port hangs on Windows and is refused at once on
 Linux, which two takeover tests were built on. None of these were
 faults in the window.
 
-## Two flaky tests, now fixed
-
-Both predate this work and both showed up on Linux. They were races, not
-platform differences, and each was found by taking a goroutine dump of a
-hung run.
-
-`TestAParkedRelayFromAnOldConnectionLeavesTheNewCountAlone` waited for
-the machine's own count of file sessions before cutting the connection.
-That count goes up when the request to open one arrives, while the answer
-is still crossing, so the test sometimes cut the connection mid-handshake
-and left the window waiting for an answer that was never coming. It now
-waits for the window to start carrying bytes, which is the thing it
-actually meant.
-
-`TestClickingAWholePathOpensIt` printed a path longer than the pane is
-wide and looked for a run of characters the wrap fell inside. Where it
-broke depended on how many digits the machine put in a temporary
-directory's name, so it passed about seven times in ten. It now looks at
-the text with the row breaks taken out.
-
 ## The rest of the survey, as it stands
 
 **The shells.** Nothing to do. `shells.Find` returns the login shell on
-Linux, and `localArgv` asks `session.DefaultShell` rather than working
-it out for itself.
+Linux, and `app.localArgv` asks `session.DefaultShell` rather than
+working it out for itself.
 
 **Fonts.** Nothing to do. `kakel -list-fonts` on the test machine
 found DejaVu Sans Mono, Liberation Mono, Nimbus Mono PS, Noto Sans Mono
@@ -127,7 +109,7 @@ fix is not either.
 
 With a picture on the clipboard and nothing else, the ordinary paste
 shortcut reaches `pastePicture`, and for a pane on this machine that was
-`pane.PressPaste()` -- which sends the program a literal ctrl+V. That is
+`PressPaste` -- which sends the program a literal ctrl+V. That is
 the right thing more often than it looks. Kakel cannot hand a picture
 down a pty, so what it does is nudge the program to go and read the
 clipboard itself, which is how Claude Code and the rest take one as a
@@ -141,8 +123,8 @@ markers as text instead of obeying them, and the shell stayed that way
 with nothing on screen to say why.
 
 **This hit Windows too.** Not through a pane on a machine at the far end
--- those are `hostMachine` and were already handed a file. Through WSL: a
-WSL pane is local, so it is `hostHere`, and it runs bash.
+-- those were already handed a file. Through WSL: a WSL pane is local,
+and it runs bash.
 
 Two questions decide it now, and neither is about which machine kakel
 is running on:
@@ -152,11 +134,13 @@ is running on:
   now that it reads a Windows path through `shells.CommandBase`.
 - Is that shell what is reading right now, rather than a program it
   started? The shell says so itself, in the OSC 133 marks shell setup
-  puts there and which are on by default. `term.RunningAProgram` is that
-  answer, with the alternate screen counting as a program on its own.
+  puts there and which are on by default. `RunningAProgram` in
+  `ui/term` is that answer, with the alternate screen counting as a
+  program on its own.
 
 So ctrl+V is kept for the case it is good for -- a program is running
-and the shell says so -- and the picture goes as a file otherwise. A
+and the shell says so -- and the picture goes as a file otherwise.
+`shellWouldQuoteIt` in `app/pictures.go` asks both questions. A
 shell that sends no marks lands on the file too: not knowing is not a
 reason to send a key that breaks a shell silently, and a path is
 something every program here reads already, which is what a pane on a
@@ -167,15 +151,14 @@ is paste there.
 
 ## What has still not been looked at
 
-- **A release.** The CI runner is one Windows box, pinned by hand. Linux
-  binaries need a second runner or a container.
 - **Wayland.** The window has only been run on X11. How it behaves on
   Wayland is unknown.
-- **The icon and the taskbar.** `appicon` builds and the window title is
-  right -- it reads `kakel — rdp@marras-skylake: /tmp`, so OSC 7
-  reaches it. What a Linux desktop does with the icon has not been seen.
-- **The primary selection.** Middle-click paste, and the selection
-  clipboard as distinct from the clipboard, are still not implemented.
+- **The icon and the taskbar.** `appicon` builds, and the window title
+  follows the pane in front. What a Linux desktop does with the icon has
+  not been seen.
+- **The primary selection.** Middle click pastes the clipboard. The
+  selection clipboard, as distinct from the clipboard, is still not
+  implemented.
   The library now in use reaches both -- `clipboard.FromPrimary` -- so
   this is a smaller job than it was.
 - **Anything else a Linux user expects a terminal to do.** The shortcuts

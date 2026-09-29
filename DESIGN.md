@@ -5,31 +5,88 @@ input or the clipboard work.
 
 ## Layout
 
-| Package | Lines | Needs a GPU? | What it is |
-|---|---|---|---|
-| `vt` | 2,016 | no | the VT emulator: parser, screen model, two buffers, scrollback |
-| `grid` | 1,109 | no | the display grid, damage tracking, selection, wide-character invariants |
-| `input` | 592 | no | key, text, mouse and paste events to VT bytes |
-| `session` | 362 | no | a shell as a byte stream, and the local pty |
-| `remote` | 3,693 | no | SSH: connections, shells, host keys, unlocked keys, tunnels |
-| `serve` | 1,934 | no | one window served to another: the listener, the client, and what they say |
-| `agent` | 683 | no | panes shared with an agent: the code, the port, and what may be asked |
-| `mcp` | 638 | no | those panes over the Model Context Protocol, on standard input and output |
-| `conns` | 252 | no | what the window has open, grouped by machine |
-| `vfs` | 669 | no | a filesystem a file pane works on: this machine, or one over SFTP |
-| `jobs` | 1,142 | no | copying, moving and deleting in the background, with progress and cancel |
-| `meter` | 327 | no | bytes moved, and how long ago: the four states |
-| `ui` | 5,919 | no | the widget toolkit: panes, decks, menus, dialogs, fields, lists |
-| `ui/term` | 787 | no | a shell on a widget |
-| `ui/files` | 1,455 | no | the file manager: any number of panes side by side |
-| `glyph` | 407 | no | finds the monospaced font families on this machine, and holds their font files |
-| `main` | 18,125 | yes | the window and the wiring, drawn by gunim |
+`main.go` is all of package `main`: it reads the command line and
+starts the program. Everything else is a package of its own.
 
-The layering is deliberate: only `main` imports gunim, the GUI framework
-that draws the window. `ui` knows nothing about terminals or SSH, `serve` carries bytes without knowing what rides
-on them, and `session` knows nothing about any of them. Everything
-fiddly is testable without a display, which is how the emulator got
-written.
+The window and the program:
+
+- `app`: the program side. It owns the panes' programs, the
+  connections, the files and the rest, publishes what the windows show
+  as `State`, and carries out what they ask for as intents.
+- `view`: the window. It draws the `State` with gunim and turns what
+  the user does into intents.
+- `look`: kakel's themes turned into gunim's, and the colours of the
+  window's own parts.
+- `winkeys`: keys as gunim hears them, turned into kakel's keys and
+  back.
+- `words`: numbers and names written the way kakel says them.
+- `appicon`: kakel's icon, drawn at any size.
+
+The terminal:
+
+- `vt`: the VT emulator: parser, screen model, two buffers, scrollback,
+  pictures.
+- `grid`: the character grid, damage tracking and selection.
+- `input`: key, text, mouse and paste events turned into VT bytes.
+- `session`: a program as a byte stream, and the local pty.
+- `screen`: the programs running in panes, each with its screen, and
+  the session a watcher from another window gets.
+- `ui/term`: a shell on a terminal, with the goroutines that move its
+  bytes.
+- `shells`: the shells a pane on this machine can run, and WSL paths.
+- `shellsetup`: the lines that teach a shell to say what it is doing.
+- `links`: which links and paths in a pane may be followed.
+- `glyph`, `fonts`: the monospaced fonts installed, and the ones
+  compiled in.
+- `syntax`: colour for the lines of a file in the reader.
+
+Machines and connections:
+
+- `machines`: one record per machine kakel works on: its name, its ID,
+  and what hangs off its connection.
+- `remote`: SSH: connections, shells, host keys, unlocked keys, jump
+  hosts, tunnels.
+- `tunnel`: a port forwarded over a connection, and its account.
+- `meter`: bytes moved, and how long ago.
+- `serve`: one kakel window connected to another: the listener, the
+  client, and what they say to each other.
+- `vfs`: a filesystem a file pane works on: this machine, or one over
+  SFTP.
+- `jobs`: copying, moving and deleting in the background.
+- `ui/files`: the reader, and the file panes' keys. `view` draws the
+  file panes themselves.
+- `pasted`: where a pasted picture or a dropped file is written.
+
+Agents:
+
+- `agent`: panes shared with an agent: the code, the port, and what
+  may be asked.
+- `agentterm`: how an agent reads a terminal and types into it.
+- `agenthost`: the agent programs kakel knows how to set up.
+- `mcp`: shared panes over the Model Context Protocol, on standard
+  input and output.
+- `steps`: the steps that drive a pane, shared by agents and `-shot`.
+
+Keeping things:
+
+- `conf`: where kakel keeps its files.
+- `settings`: the choices kakel remembers between runs.
+- `keys`: the user's keyboard shortcuts file.
+- `themes`: the themes built in and the ones the user wrote.
+- `secrets`, `vaultkeys`: the secrets file, and the SSH keys that open
+  it.
+- `logs`: what the window logged, for the Window Log.
+- `clip`: pictures on the clipboard, and text for the secrets.
+- `notify`: a message outside the window.
+
+`ui` is the old app's text-mode toolkit. What is left of it in use is
+the keymap and what `ui/term` and `ui/files` are built on. `internal`
+holds the build stamp, test helpers and the icon writer.
+
+gunim is imported by `app`, `view`, `look`, `winkeys`, `settings` and
+`main`. The terminal packages, `serve`, `remote`, `vfs` and `jobs` do
+not import it. So everything fiddly is testable without a display,
+which is how the emulator got written.
 
 ## The notes
 
@@ -42,13 +99,14 @@ whose painter draws rounded rectangles, strokes, shadows and pictures in
 pixels. Anything that is a shape rather than a character belongs there.
 
 Reaching for cells because the thing in front of you is already a grid
-is how that gets forgotten. Two places have paid for it:
+is how that gets forgotten. The old app, gridterm, paid for it twice:
 
-- The rules around a menu are box-drawing characters, so they are a cell
-  thick, they break where a font draws those characters differently, and
-  a corner can only be the shapes a font has.
+- The rules around a menu were box-drawing characters, so they were a
+  cell thick, they broke where a font drew those characters differently,
+  and a corner could only be the shapes a font had.
 - The border round a shared pane was cells filled with colour, which
-  made it a character wide and a character tall.
+  made it a character wide and a character tall. It is now a ring drawn
+  in pixels, in `view/glow.go`.
 
 The rule of thumb: if you are about to ask which *character* draws
 something, or how many *cells* thick it is, it is a shape and it wants
@@ -66,18 +124,17 @@ a dark ground under light furniture, which is what a DOS program looked
 like.
 
 So a theme may write its frame down instead. `themes.Frame` names the
-two colours the furniture is drawn in, a single or double rule, and the
-buttons. `themes.Look` is that block with its colours read, and the
-helpers in `look/theme.go` are the one place each furniture colour is decided:
-each reads the look when the theme set one and derives exactly what it
-derived before when the theme did not.
+two colours the furniture is drawn in, a single or double rule, the
+buttons, and the sidebar. `themes.Look` is that block with its colours
+read. `look.Of` is the one place each furniture colour is decided: it
+reads the look when the theme set one, and derives the colour from the
+theme's two ends when it did not.
 
-Two things follow from a stated frame. Dialogs go flat -- an opaque box,
-square corners, no frosted glass -- because glass behind an opaque box
-is paid for and never seen. And a colour the window takes from the
-numbered sixteen is now drawn on a second ground, so `app.onFrame` moves
-it towards the frame's own text until it can be read there, which keeps
-what it can of the hue.
+A stated frame also changes how things are drawn: a black shadow under
+each button, the active colours on the button Enter presses, and a
+double rule round a dialog when the frame asks for one. Where a colour
+from the palette has to read on the frame, `look.Of` picks the one of
+a few that stands out most (`standout`).
 
 **A theme may name a typeface, and the name is a wish.** `Theme.Font` is
 a family name. A window takes it when it has that font, compiled in or
@@ -108,13 +165,16 @@ question is whether this window can put one there.
 
 - A pane on this machine: the picture is already on the clipboard that
   program reads, so the paste key is pressed and that is all of it.
-- A pane on a kakel this window has taken over: the picture is sent
+- A pane on this machine whose shell is at its prompt: readline reads
+  the paste key as quoted-insert, so the picture is written to a file
+  and the path typed instead (`shellWouldQuoteIt`).
+- A pane on a kakel window this one is connected to: the picture is sent
   over a channel of its own on the connection that is already open, put
   on that machine's clipboard, and then the paste key is pressed. Only
   once it has landed, or it would paste whatever was there before.
-- A pane on a machine reached by SSH: there is no clipboard over there
-  to reach, so the picture is written on that machine and the path typed
-  names a file it can open.
+- A pane on a machine reached by SSH, or beyond a connected window:
+  there is no clipboard over there to reach, so the picture is written
+  on that machine and the path typed names a file it can open.
 
 `edit.pasteImage` asks for the other thing: the picture written to a
 file on whatever machine the pane is on, and the path typed. That is
@@ -124,9 +184,9 @@ the ordinary paste falls back to where there is no clipboard to reach.
 
 Reading the clipboard is per-platform. `clip/image_windows.go` asks
 the operating system for a device independent bitmap and turns it into
-an image, and `clip/clip_linux.go` reads one through X11; everywhere
-else reports that there is no picture, so the
-command says so rather than failing in a way that reads like a fault.
+an image, and `clip/clip_linux.go` reads one through X11. Everywhere
+else reports that there is no picture, so the command says so rather
+than failing in a way that reads like a fault.
 
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
@@ -137,50 +197,30 @@ The file an SSH pane gets goes under the home directory of whoever the
 connection logs in as, because where a temporary directory is depends on
 the machine and this has only a path separator to go on.
 
-**The sidebar is built again every frame, and costs nothing to build.**
-Marcus asked for it to be built only when something changes. Most of
-what a row says changes on its own -- a rate, how far a job has got, how
-long ago something settled, the glow on a shared pane -- so a test for
-"has anything changed" would have to work out nearly everything the
-rebuild works out. What was worth taking away was the garbage, not the
-work: `refreshPanel` builds into slices and maps the last frame used,
-`Registry.Each` walks the list without building a group and a slice of
-rows per machine, and `TestBuildingTheSidebarAsksTheHeapForNothing`
-holds it at nothing.
-
-Redrawing was never the problem. The list draws through a `ui.buffer`,
-so a rebuild that comes out the same dirties no row and the frame is
-skipped anyway.
-
 **Idle costs nothing; moving costs a whole frame.** Marcus settled this
 on 2026-09-19. There are two savings worth making and one that is not:
 
 - Do not draw when nothing changed. That is what the skipped frame is
   for, and it is the whole of why damage tracking exists.
-- Do not draw what nobody is shown. A pane behind the switcher is drawn
-  into the window's grid that nothing blits.
+- Do not draw what nobody is shown.
 - Do *not* make an animation coarse to save frames. Something moving on
   screen is something the user is looking at, and it should move at the
   rate the screen refreshes.
 
-The way to have both is to animate in bursts. The border round a shared
-pane and the mark on a busy row each pulse for 250ms once a second:
-every frame while a pulse is running, and perfectly still for the other
-750ms, which the compositor reads as nothing to do. Smooth where it is
-looked at, and three frames in four skipped anyway.
+Two things move on their own: the ring round a shared pane and the mark
+on a busy sidebar row. Both glow on one three-second cycle
+(`glowEvery`). While either is showing, the window is drawn again every
+50 ms (`glowStep`); with neither, nothing asks for a frame.
 
-Both of those used to be stepped instead -- 200ms and 250ms a step --
-and both said in their own comments that it was to cost nothing. It is
-the wrong worry. Marcus runs termflix in a full-screen kakel on an
+Cost is the wrong worry here. Marcus runs termflix in a full-screen kakel on an
 ultrawide monitor, which animates every character on it at 24fps, and
 the fans stay off. A few borders and icons are not what makes a computer
 warm. If they ever look expensive, that is a thing to measure and fix
 rather than a reason to animate less.
 
-One trap, which the old stepped pulse had a comment about and the fade
-had to learn again: a mark that pulses must not rest *on* the colour it
-pulses from, or a busy row at rest cannot be told from a settled one.
-`pulseRest` is what keeps it off the end.
+One trap, which the old app had to learn twice: a mark that pulses must
+not rest *on* the colour it pulses from, or a busy row at rest cannot be
+told from a settled one.
 
 **Damage tracking is load-bearing.** `term.sync` copies only the rows
 the grid marks dirty into what the window draws, so a row it skips keeps
@@ -210,7 +250,8 @@ host as unknown — it reports its key as changed.
 
 ## What ConPTY passes on
 
-Every pane on this machine runs through ConPTY, which is not a pipe. It
+On Windows every pane on this machine runs through ConPTY, which is not
+a pipe. It
 reads what the program writes, keeps a console buffer, and writes that
 out again. So it answers some sequences itself and passes on the ones it
 has no opinion about.
@@ -251,11 +292,11 @@ What follows from it:
 
 ## Settled, do not re-open
 
-- **A failure belonging to a pane the user has closed goes to the log,
-  not to a dialog** (2026-09-20). It failed long after the user stopped
-  waiting, and the dialog took their next click. `reportForPane` shows
-  it only while the pane is open. The error is not dropped: "Show what
-  the window has logged" is where it goes.
+- **A failure is a notice, not a dialog** (2026-09-20). It was settled
+  for a pane the user had closed: it failed long after they stopped
+  waiting, and a dialog took their next click. The gunim window does it
+  for every failure: a toast, which takes no click, and a line in the
+  Window Log, where it can be read again once the toast has gone.
 
 - **The file viewer stays a viewer, with no caret** (2026-09-20). A
   keyboard selection goes on starting at the top left of the view,
@@ -264,29 +305,29 @@ What follows from it:
   the reader is a pager.
 
 - **The words a user reads say "connect to"** (2026-09-19), mirroring
-  the host's "Serve this window…". "Work in" was wrong because
+  the host's "Serve This Window…". "Work in" was wrong because
   nothing moves, "share" because a share is the set of panes handed to
   an agent, and "session" because a session is a running shell. The
   code still says "take over"; see #60.
 
-- **A new pane opens on the shell that was picked last** (2026-09-19).
-  Three things are asked in order: `-e` on the command line, the shell
-  in the settings file, then the machine's default. `rememberShell`
-  writes the file when a shell is opened by name. "Default shell" opens
-  on the machine's default and forgets the pick. With nothing written
-  down, `session.DefaultShell` answers `%COMSPEC%` on Windows, so a
+- **A new terminal here opens on the shell kept for new terminals**
+  (2026-09-19). Three things are asked in order: the shell the focused
+  pane runs (`likeHere`), the shell kept in the settings file, then the
+  machine's default. A shell is kept by picking "Start … in New
+  Terminals" in the palette (`pickShell`); "New Terminal, Default
+  Shell" opens the machine's default and forgets the pick. With nothing
+  kept, `session.DefaultShell` answers `%COMSPEC%` on Windows, so a
   first launch opens cmd.exe, not PowerShell.
 
-- **"Connection closed." already has two buttons** (2026-09-19,
-  against `d79f629`). Reconnect and Close, with Close the default, as
-  `TestEnterClosesThePaneRatherThanStartingItAgain` pins.
+- **A pane whose program ended asks what next, with two buttons**
+  (2026-09-19). Close is the default, so typing exit and Enter leaves
+  nothing behind. `TestEnterClosesAPaneWhoseShellEnded` pins it.
 
-- **Every shell gets "Connection closed. Reconnect?"**, whether the
-  transport went or the user typed exit, and whether the shell is on a
-  machine or this one. That is what ssh prints, and kakel calls
-  every pane a connection. Settled twice on 2026-09-17: a reviewer
-  argued a local shell was never connected, and Marcus kept the one
-  wording.
+- **A shell on a server says "Connection closed.", with Reconnect.** A
+  shell on this machine says "The shell has finished.", with Start
+  Again (`paneEnded` in `app/ended.go`). On 2026-09-17 Marcus kept one
+  wording, "Connection closed.", for both; the gunim window has always
+  worded them apart.
 
 - **A command is worded differently**, and not for tidiness. Nothing is
   being connected: the command's channel closed and the SSH connection
@@ -300,26 +341,26 @@ What follows from it:
   `log.Fatal` was wrong too: started from Explorer there is no console.
 
 - **The keyboard shortcuts file holds changes, not the whole map**
-  (2026-09-17). Moving a shortcut takes two lines, and the notice and
-  the README say so.
+  (2026-09-17). Moving a shortcut takes two lines, and USAGE.md and
+  the file's own `_help` lines say so.
 
 - **A listing that fails while a path is being completed is not shown**
   (2026-09-17). A dialog per keystroke would be worse than the fault,
-  so the failure goes to the log and the completion offers nothing.
+  so the completion offers nothing and the typing goes on.
 
 - **Nothing caps the panes a window keeps** (2026-09-16). A pane worth
   keeping is worth reusing, so reusing it is the easy thing rather than
   throwing the transcript away. Closing a pane does release what it
   held.
 
-- **What the agent sent is written down**, and is on the Servers menu
-  as "What the agent typed" (2026-09-17). The user hands the pane over,
+- **What the agent sent is written down**, and Typing History on the
+  Share menu shows it (2026-09-17). The user hands the pane over,
   gives the access and holds the secrets, so what the agent does there
   is theirs to read. It is what was sent, not what ran: Backspace, Tab
   completion and Up through the history all change a line first, Ctrl+U
   throws one away, a here-document reads as four commands, and in a
-  full-screen program every line typed reads as a command. The dialog
-  says so. A secret the user types at the agent's asking is not in it.
+  full-screen program every line typed reads as a command. Its first
+  line says so. A secret the user types at the agent's asking is not in it.
 
 - **A hand-over does not expire** (2026-09-17). It lasts until the user
   takes it back or closes the pane. Revisit if forgotten hand-overs

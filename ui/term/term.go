@@ -1228,13 +1228,13 @@ func (t *Terminal) pathUnder(joined []rune, at int) (open string, line, from, to
 	t.mu.Unlock()
 	// A path in quotes, which may hold a space, and then the run of
 	// characters under the pointer.
-	for _, find := range []func([]rune, int) (string, int, int, int, bool){findQuotedPath, findPathText} {
-		text, line, from, to, found := find(joined, at)
-		if !found {
-			continue
-		}
-		if open, _, real := t.cfg.FindPath(text, dir); real {
-			return open, line, from, to, true
+	tries := findQuotedPaths(joined, at)
+	if text, line, from, to, found := findPathText(joined, at); found {
+		tries = append(tries, quotedPath{text: text, line: line, from: from, to: to})
+	}
+	for _, p := range tries {
+		if open, _, real := t.cfg.FindPath(p.text, dir); real {
+			return open, p.line, p.from, p.to, true
 		}
 	}
 	return "", 0, 0, 0, false

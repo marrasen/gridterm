@@ -195,20 +195,31 @@ func findPathText(row []rune, at int) (text string, line, from, to int, ok bool)
 	return text, line, from, from + len([]rune(text)), true
 }
 
-// findQuotedPath is the text between the quotes around a column, when
+// quotedPath is a path found in quotes: its text, the line named with
+// it, and where it stands along the row.
+type quotedPath struct {
+	text     string
+	line     int
+	from, to int
+}
+
+// findQuotedPaths is the text between the quotes around a column, when
 // it has a space in it: how a shell, a compiler or a person writes a
 // path that holds one, such as "C:\Program Files\app\log.txt". A line
-// reference just after the closing quote is read off, as in
-// "my file.go":12.
+// is read off inside the quotes, as in "my file.go:12", or just after
+// them, as in "my file.go":12 or Python's "my file.py", line 12.
 //
-// The quotes are paired by counting: the column is inside a quoted
-// run when an odd number of that quote stand before it on the line.
-// An apostrophe in a word throws the count, and then the disk says no
-// and the run of characters under the column is tried instead.
-func findQuotedPath(row []rune, at int) (text string, line, from, to int, ok bool) {
+// Both kinds of quote are tried, the pair nearest the column first, so
+// a path in single quotes inside a message in double quotes is found.
+// The quotes are paired by counting: the column is inside a quoted run
+// when an odd number of that quote stand before it on the line. An
+// apostrophe in a word throws the count, and then the disk says no and
+// the run of characters under the column is tried instead.
+func findQuotedPaths(row []rune, at int) []quotedPath {
 	if at < 0 || at >= len(row) {
-		return "", 0, 0, 0, false
+		return nil
 	}
+	var found []quotedPath
 	for _, q := range []rune{'"', '\''} {
 		if row[at] == q {
 			continue
@@ -232,22 +243,36 @@ func findQuotedPath(row []rune, at int) (text string, line, from, to int, ok boo
 			slices.ContainsFunc(inner, func(r rune) bool { return r < ' ' || r == 0x7f }) {
 			continue
 		}
-		return string(inner), lineAfter(row[end+1:]), open + 1, end, true
+		text, line := splitLineRef(string(inner))
+		if line == 0 {
+			line = lineAfter(row[end+1:])
+		}
+		found = append(found, quotedPath{text: text, line: line, from: open + 1, to: open + 1 + len([]rune(text))})
 	}
-	return "", 0, 0, 0, false
+	// The pair nearest the column first: the narrower of the two.
+	if len(found) == 2 && found[1].to-found[1].from < found[0].to-found[0].from {
+		found[0], found[1] = found[1], found[0]
+	}
+	return found
 }
 
-// lineAfter is the line of a ":42" or ":42:8" at the start of rest,
-// or zero.
+// lineAfter is the line named at the start of rest, just after a
+// quoted path: ":42", ":42:8", or Python's ", line 42". Zero for none.
 func lineAfter(rest []rune) int {
-	if len(rest) < 2 || rest[0] != ':' {
+	s := string(rest)
+	switch {
+	case strings.HasPrefix(s, ":"):
+		s = s[1:]
+	case strings.HasPrefix(s, ", line "):
+		s = s[len(", line "):]
+	default:
 		return 0
 	}
-	d := 1
-	for d < len(rest) && rest[d] >= '0' && rest[d] <= '9' {
+	d := 0
+	for d < len(s) && s[d] >= '0' && s[d] <= '9' {
 		d++
 	}
-	return atoi(string(rest[1:d]))
+	return atoi(s[:d])
 }
 
 // splitLineRef takes a "file:42" or "file:42:8" apart, which is how

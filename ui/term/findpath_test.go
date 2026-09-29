@@ -120,10 +120,13 @@ func TestAQuotedPathMayHoldASpace(t *testing.T) {
 		{`cannot open "My Documents/notes.txt": no such file`, 20, "My Documents/notes.txt", 0},
 		{`Copied 'C:\Program Files\app\log.txt' here`, 12, `C:\Program Files\app\log.txt`, 0},
 		{`"src/my file.go":12:3: undefined`, 3, "src/my file.go", 12},
+		{`at "src/my file.go:12" it failed`, 6, "src/my file.go", 12},
+		{`  File "/x/my file.py", line 12, in main`, 12, "/x/my file.py", 12},
+		{`log "opened 'My Notes/a.txt' ok"`, 14, "My Notes/a.txt", 0},
 	} {
-		text, num, _, _, ok := findQuotedPath([]rune(tc.line), tc.at)
-		if !ok || text != tc.want || num != tc.num {
-			t.Errorf("%q at %d gave %q line %d (%v), want %q line %d", tc.line, tc.at, text, num, ok, tc.want, tc.num)
+		found := findQuotedPaths([]rune(tc.line), tc.at)
+		if len(found) == 0 || found[0].text != tc.want || found[0].line != tc.num {
+			t.Errorf("%q at %d gave %+v, want %q line %d", tc.line, tc.at, found, tc.want, tc.num)
 		}
 	}
 	// Outside the quotes, on the quote itself, and quotes round no
@@ -137,8 +140,8 @@ func TestAQuotedPathMayHoldASpace(t *testing.T) {
 		{`open "notes.txt" now`, 8},
 		{`it's in the 'other file' now`, 1},
 	} {
-		if text, _, _, _, ok := findQuotedPath([]rune(tc.line), tc.at); ok {
-			t.Errorf("%q at %d gave %q", tc.line, tc.at, text)
+		if found := findQuotedPaths([]rune(tc.line), tc.at); len(found) > 0 {
+			t.Errorf("%q at %d gave %+v", tc.line, tc.at, found)
 		}
 	}
 }

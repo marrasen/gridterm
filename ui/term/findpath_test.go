@@ -123,6 +123,8 @@ func TestAQuotedPathMayHoldASpace(t *testing.T) {
 		{`at "src/my file.go:12" it failed`, 6, "src/my file.go", 12},
 		{`  File "/x/my file.py", line 12, in main`, 12, "/x/my file.py", 12},
 		{`log "opened 'My Notes/a.txt' ok"`, 14, "My Notes/a.txt", 0},
+		{`  File "/x/main.py", line 12, in main`, 10, "/x/main.py", 12},
+		{`"main.go":7: undefined`, 2, "main.go", 7},
 	} {
 		found := findQuotedPaths([]rune(tc.line), tc.at)
 		if len(found) == 0 || found[0].text != tc.want || found[0].line != tc.num {

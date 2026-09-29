@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1232,7 +1233,12 @@ func (t *Terminal) pathUnder(joined []rune, at int) (open string, line, from, to
 	if text, line, from, to, found := findPathText(joined, at); found {
 		tries = append(tries, quotedPath{text: text, line: line, from: from, to: to})
 	}
-	for _, p := range tries {
+	for i, p := range tries {
+		// The same text twice is asked once: on a server, each is a
+		// question over the connection.
+		if slices.ContainsFunc(tries[:i], func(q quotedPath) bool { return q.text == p.text }) {
+			continue
+		}
 		if open, _, real := t.cfg.FindPath(p.text, dir); real {
 			return open, p.line, p.from, p.to, true
 		}

@@ -204,7 +204,7 @@ type quotedPath struct {
 }
 
 // findQuotedPaths is the text between the quotes around a column, when
-// it has a space in it: how a shell, a compiler or a person writes a
+// it has a space in it or a line named after it: how a shell, a compiler or a person writes a
 // path that holds one, such as "C:\Program Files\app\log.txt". A line
 // is read off inside the quotes, as in "my file.go:12", or just after
 // them, as in "my file.go":12 or Python's "my file.py", line 12.
@@ -239,13 +239,17 @@ func findQuotedPaths(row []rune, at int) []quotedPath {
 		}
 		end += at
 		inner := row[open+1 : end]
-		if !slices.Contains(inner, ' ') || inner[0] == ' ' || inner[len(inner)-1] == ' ' ||
+		// Quotes round a path with no space matter only for the line
+		// after them, as Python writes one: the path alone is found
+		// without them.
+		after := lineAfter(row[end+1:])
+		if !slices.Contains(inner, ' ') && after == 0 || inner[0] == ' ' || inner[len(inner)-1] == ' ' ||
 			slices.ContainsFunc(inner, func(r rune) bool { return r < ' ' || r == 0x7f }) {
 			continue
 		}
 		text, line := splitLineRef(string(inner))
 		if line == 0 {
-			line = lineAfter(row[end+1:])
+			line = after
 		}
 		found = append(found, quotedPath{text: text, line: line, from: open + 1, to: open + 1 + len([]rune(text))})
 	}

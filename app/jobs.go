@@ -221,11 +221,13 @@ func (a *app) relistOn(op jobs.Op) {
 	for id, b := range a.st.Browsers {
 		f := a.filesOf(id)
 		if f != nil && (vfs.Same(f, op.From) || (op.To != nil && vfs.Same(f, op.To))) {
-			at := b.Path
-			if asked, ok := a.listingAt[id]; ok {
-				at = asked
+			again := Browse{Pane: id, Path: b.Path}
+			if on, ok := a.listingAt[id]; ok {
+				// The one on its way, asked again whole, so what it was
+				// asked for, such as a Go To, still hears.
+				again = on
 			}
-			a.browse(Browse{Pane: id, Path: at})
+			a.browse(again)
 		}
 	}
 }

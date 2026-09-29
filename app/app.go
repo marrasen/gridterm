@@ -470,10 +470,10 @@ type app struct {
 	// lands after a later one was asked for is dropped: a pane is never
 	// sent back to where it was.
 	listing map[string]int
-	// listingAt is the folder each file pane last asked for, which a
-	// listing again asks for: not the folder it shows, which the user
-	// may be leaving.
-	listingAt map[string]string
+	// listingAt is the listing each file pane has on its way, which a
+	// listing again asks for once more: not the folder it shows, which
+	// the user may be leaving. It goes once that listing lands.
+	listingAt map[string]Browse
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -637,7 +637,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		farLogs:   map[machines.ID]bool{},
 		notRun:    map[string]bool{},
 		listing:   map[string]int{},
-		listingAt: map[string]string{},
+		listingAt: map[string]Browse{},
 		saying:    map[string]string{},
 		openedFor: map[string]bool{},
 		parked:    map[*remote.Conn]int{},

@@ -373,8 +373,9 @@ func (s *switcher) Handle(e input.Event, u *gunim.UI) bool {
 		case input.KeyEscape:
 			s.cancel(u)
 		default:
-			// Its shortcut again closes it.
-			if ev, ok := winkeys.Event(e); ok {
+			// Its shortcut again closes it; held down, it does not
+			// open and close over and over.
+			if ev, ok := winkeys.Event(e); ok && !e.Repeat {
 				if id, bound := s.w.keys.Lookup(ui.ChordOf(ev)); bound && id == "view.switcher" {
 					s.cancel(u)
 				}

@@ -86,7 +86,7 @@ func (m *rowMarks) endRoom(*sideRow) float32 {
 	if m.closable {
 		room += crossRoom
 	}
-	if m.traffic != nil {
+	if m.moved() {
 		room += graphRoom
 	}
 	return room
@@ -105,10 +105,20 @@ func (m *rowMarks) laid(padX, end, height, width float32) {
 		right -= crossRoom
 	}
 	m.graph = geom.Rect{}
-	if m.traffic != nil {
+	if m.moved() {
 		m.graph = geom.Rc(right-graphRoom+4, (height-12)/2, graphRoom-6, 12)
 	}
 	_ = end
+}
+
+// moved reports whether the row carries traffic that has ever moved:
+// only then is room kept for its graph, and the name keeps it before.
+func (m *rowMarks) moved() bool {
+	if m.traffic == nil {
+		return false
+	}
+	in, out := m.traffic.Totals()
+	return in+out > 0
 }
 
 // onCross reports whether p, in the row's space, is on its cross.
@@ -160,7 +170,7 @@ func (m *rowMarks) paint(p *paint.Painter, f gunim.Frame, r *sideRow) {
 		ink.A = 0xb0
 		paintIcon(p, m.kind, geom.Rc(m.iconX, mid-iconSize/2, iconSize, iconSize), ink)
 	}
-	if m.traffic != nil {
+	if m.traffic != nil && !m.graph.Empty() {
 		m.paintGraph(p, f, now)
 	}
 	if m.closable {

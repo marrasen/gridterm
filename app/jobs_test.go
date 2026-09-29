@@ -372,3 +372,32 @@ func TestACopyEndingListsTheFolderAPaneIsGoingTo(t *testing.T) {
 		t.Fatalf("the pane went back to %q", got)
 	}
 }
+
+// A copy that ends after a pane failed to open a folder lists the
+// folder the pane still shows, not the one it could not open.
+func TestACopyEndingAfterAFailedListingListsThePaneAgain(t *testing.T) {
+	a, _ := agentApp(t)
+	was := t.TempDir()
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	a.browse(Browse{Pane: pane, Path: filepath.Join(was, "not-there")})
+	waitFor(t, a, "the failure", func() bool { return a.st.Browsers[pane].Err != "" })
+	if err := os.WriteFile(filepath.Join(was, "new.txt"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.relistOn(jobs.Op{Kind: jobs.Copy, From: vfs.NewLocal(), Names: []string{"new.txt"}, To: vfs.NewLocal(), Into: was})
+	waitFor(t, a, "the new file listed", func() bool {
+		for _, e := range a.st.Browsers[pane].Entries {
+			if e.Name == "new.txt" {
+				return true
+			}
+		}
+		return false
+	})
+	if b := a.st.Browsers[pane]; b.Path != was || b.Err != "" {
+		t.Fatalf("listed again, the pane is at %q and says %q", b.Path, b.Err)
+	}
+}

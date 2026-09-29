@@ -441,7 +441,7 @@ func (a *app) browse(in Browse) {
 	}
 	in.Path = vfs.Spelled(f, in.Path)
 	a.listing[in.Pane]++
-	a.listingAt[in.Pane] = in.Path
+	a.listingAt[in.Pane] = in
 	asked := a.listing[in.Pane]
 	go func() {
 		entries, err := f.ReadDir(in.Path)
@@ -450,6 +450,7 @@ func (a *app) browse(in Browse) {
 				// A later listing was asked for: this one is old news.
 				return
 			}
+			delete(a.listingAt, in.Pane)
 			b := a.st.Browsers[in.Pane]
 			if err != nil {
 				b.Err = err.Error()

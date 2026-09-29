@@ -25,6 +25,12 @@ func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 	if win.sw == nil {
 		t.Fatal("the switcher's shortcut did not open it")
 	}
+	// Held down, the key repeats, and the switcher stays.
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyA, Mods: gi.ModControl | gi.ModShift, Repeat: true, Time: time.Now()})
+	lastWindow.Frame(time.Second / 60)
+	if win.sw == nil {
+		t.Fatal("the key repeating closed the switcher")
+	}
 	press(gi.KeyA)
 	if win.sw != nil {
 		t.Fatal("the switcher's shortcut again left it open")

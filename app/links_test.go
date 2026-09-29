@@ -77,23 +77,6 @@ func TestCtrlClickOpensAFileInTheReader(t *testing.T) {
 	})
 }
 
-func TestOnlyWebAndMailLinksOpen(t *testing.T) {
-	for at, ok := range map[string]bool{
-		"https://example.com": true, "mailto:a@example.com": true,
-		"file:///etc/passwd": false, "javascript:alert(1)": false, "": false,
-	} {
-		if err := linkIsOpenable(at); (err == nil) != ok {
-			t.Errorf("%q: %v", at, err)
-		}
-	}
-	if target, ok := serviceOnTheFarEnd("srv", "http://localhost:3000/app"); !ok || target != "127.0.0.1:3000" {
-		t.Errorf("a server's localhost:3000 goes to %q, %v", target, ok)
-	}
-	if _, ok := serviceOnTheFarEnd("", "http://localhost:3000/app"); ok {
-		t.Error("this machine's localhost went through a tunnel")
-	}
-}
-
 func TestAServersLocalAddressOpensThroughATunnel(t *testing.T) {
 	a, _, echo := tunnelApp(t)
 	opened := make(chan string, 2)
@@ -151,19 +134,6 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	a.handle(ReadAgain{Pane: reader})
 	if r := a.st.Readers[reader]; !slices.Contains(r.Lines, "later-line") {
 		t.Fatalf("read again, the reader ends %q", r.Lines[len(r.Lines)-3:])
-	}
-}
-
-// A path a shell on a far Windows machine prints from the top of a
-// drive is looked for at the top of that drive.
-func TestAWindowsPathFromTheTopOfADriveStandsAlone(t *testing.T) {
-	for p, abs := range map[string]bool{
-		`C:\Users\x`: true, "d:/x": true, `C:\`: true,
-		"C:": false, "a:b.jar": false, "notes.txt": false, "/home/x": false, "1:/x": false,
-	} {
-		if windowsAbs(p) != abs {
-			t.Errorf("%q from the top of a drive: %v, want %v", p, !abs, abs)
-		}
 	}
 }
 

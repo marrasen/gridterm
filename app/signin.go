@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
 )
@@ -133,7 +134,7 @@ func linkIn(word string) (string, bool) {
 			return "", false
 		}
 	}
-	if linkIsOpenable(at) != nil {
+	if links.Openable(at) != nil {
 		return "", false
 	}
 	return at, true

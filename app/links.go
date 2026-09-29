@@ -1,18 +1,15 @@
 package app
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"net"
 	"net/url"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
 
+	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/kakel/machines"
@@ -47,7 +44,7 @@ func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.H
 	}
 	h.FindPath = func(text, dir string) (string, bool, bool) {
 		if machine == "" {
-			return findOnDisk(text, dir)
+			return links.OnDisk(text, dir)
 		}
 		return a.findFar(machine, text, dir)
 	}
@@ -64,11 +61,13 @@ func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.H
 // openLink opens an address in the browser: through a tunnel when it
 // is on a server's own loopback.
 func (a *app) openLink(machine machines.ID, at string) error {
-	if err := linkIsOpenable(at); err != nil {
+	if err := links.Openable(at); err != nil {
 		return err
 	}
-	target, far := serviceOnTheFarEnd(machine, at)
-	if !far {
+	target, local := links.LocalService(at)
+	if !local || machine == machines.Local {
+		// An address anywhere, or on this machine's own loopback: the
+		// browser here reaches it.
 		return openInBrowser(at)
 	}
 	if _, ok, err := a.connOf(machine); err != nil {
@@ -101,7 +100,7 @@ func (a *app) tunnelTo(machine machines.ID, target string) (string, error) {
 			continue
 		}
 		got := open.Forwarder().Tunnel()
-		if got.Kind == remote.LocalForward && sameTarget(got.Target, target) {
+		if got.Kind == remote.LocalForward && links.SameTarget(got.Target, target) {
 			return open.Forwarder().Addr(), nil
 		}
 	}
@@ -110,39 +109,6 @@ func (a *app) tunnelTo(machine machines.ID, target string) (string, error) {
 	}
 	last := a.st.Tunnels[len(a.st.Tunnels)-1]
 	return a.tunnels[last.ID].Forwarder().Addr(), nil
-}
-
-// serviceOnTheFarEnd is where an address on a server's own loopback
-// points, as a target for a tunnel, and whether it is one.
-func serviceOnTheFarEnd(machine machines.ID, at string) (string, bool) {
-	if machine == "" {
-		return "", false
-	}
-	u, err := url.Parse(at)
-	if err != nil || u.Port() == "" || !isLoopbackName(u.Hostname()) {
-		return "", false
-	}
-	return net.JoinHostPort("127.0.0.1", u.Port()), true
-}
-
-func isLoopbackName(name string) bool {
-	if strings.EqualFold(name, "localhost") {
-		return true
-	}
-	ip := net.ParseIP(name)
-	return ip != nil && (ip.IsLoopback() || ip.IsUnspecified())
-}
-
-func sameTarget(a, b string) bool {
-	ah, ap, err := net.SplitHostPort(a)
-	if err != nil {
-		return a == b
-	}
-	bh, bp, err := net.SplitHostPort(b)
-	if err != nil {
-		return a == b
-	}
-	return ap == bp && (strings.EqualFold(ah, bh) || isLoopbackName(ah) && isLoopbackName(bh))
 }
 
 // openInBrowser opens an address in the user's browser. A variable,
@@ -161,49 +127,6 @@ var openInBrowser = func(at string) error {
 	}
 	go func() { _ = cmd.Wait() }()
 	return nil
-}
-
-// linkIsOpenable refuses what is no web or mail address.
-func linkIsOpenable(at string) error {
-	at = strings.TrimSpace(at)
-	if at == "" || strings.ContainsAny(at, "\r\n\x00") {
-		return errors.New("that is no address")
-	}
-	u, err := url.Parse(at)
-	if err != nil {
-		return fmt.Errorf("%s is not an address: %w", at, err)
-	}
-	switch strings.ToLower(u.Scheme) {
-	case "http", "https", "mailto", "ftp", "ftps":
-		return nil
-	}
-	return fmt.Errorf("kakel opens web and mail links, and %s is a %q link", at, u.Scheme)
-}
-
-// findOnDisk is the file or folder a path in a pane names on this
-// machine, read against the pane's folder when it is relative.
-func findOnDisk(text, dir string) (at string, isDir, ok bool) {
-	text = strings.TrimSpace(text)
-	if text == "" || strings.ContainsAny(text, "\r\n\x00") {
-		return "", false, false
-	}
-	try := text
-	if !filepath.IsAbs(text) && !strings.HasPrefix(text, "/") && !strings.HasPrefix(text, `\\`) {
-		if dir == "" {
-			return "", false, false
-		}
-		try = filepath.Join(dir, text)
-	}
-	info, err := os.Lstat(try)
-	if err != nil {
-		return "", false, false
-	}
-	if info.Mode()&fs.ModeSymlink != 0 {
-		if target, err := os.Stat(try); err == nil {
-			return try, target.IsDir(), true
-		}
-	}
-	return try, info.IsDir(), true
 }
 
 // mostFarPaths is how many paths on servers are remembered.
@@ -232,7 +155,7 @@ func (a *app) findFar(machine machines.ID, text, dir string) (string, bool, bool
 		return "", false, false
 	}
 	at := text
-	if !strings.HasPrefix(text, "/") && !windowsAbs(text) {
+	if !strings.HasPrefix(text, "/") && !links.WindowsAbs(text) {
 		if dir == "" {
 			return "", false, false
 		}
@@ -311,17 +234,6 @@ func (a *app) forgetFar(machine machines.ID) {
 			delete(a.far.known, key)
 		}
 	}
-}
-
-// windowsAbs reports whether a path starts at the top of a Windows
-// drive, "C:\dir" or "C:/dir", the way a shell on a Windows machine
-// prints one.
-func windowsAbs(p string) bool {
-	if len(p) < 3 || p[1] != ':' || p[2] != '\\' && p[2] != '/' {
-		return false
-	}
-	c := p[0]
-	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
 // openPath opens a path a link named: a folder in a file pane, a file

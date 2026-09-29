@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/tunnel"
 
 	"golang.org/x/crypto/ssh"
 
@@ -148,7 +149,7 @@ func TestATunnelCarriesBytesAndItsRowSaysSo(t *testing.T) {
 	if !row.Live || row.Machine != "srv" || !strings.HasPrefix(row.Label, ":") || !strings.HasSuffix(row.Label, echo) {
 		t.Fatalf("the row is %+v", row)
 	}
-	c, err := net.Dial("tcp", a.tunnels[row.ID].f.Addr())
+	c, err := net.Dial("tcp", a.tunnels[row.ID].Forwarder().Addr())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,7 +163,7 @@ func TestATunnelCarriesBytesAndItsRowSaysSo(t *testing.T) {
 	deadline := time.Now().Add(5 * time.Second)
 	for !strings.HasPrefix(a.st.Tunnels[0].Note, "idle · ") {
 		if time.Now().After(deadline) {
-			t.Fatalf("five seconds after the stream closed, the row says %q and the tunnel counts %d streams; notices %+v", a.st.Tunnels[0].Note, a.tunnels[row.ID].f.Streams(), a.st.Notices)
+			t.Fatalf("five seconds after the stream closed, the row says %q and the tunnel counts %d streams; notices %+v", a.st.Tunnels[0].Note, a.tunnels[row.ID].Forwarder().Streams(), a.st.Notices)
 		}
 		select {
 		case f := <-a.events:
@@ -171,7 +172,7 @@ func TestATunnelCarriesBytesAndItsRowSaysSo(t *testing.T) {
 		}
 	}
 
-	addr := a.tunnels[row.ID].f.Addr()
+	addr := a.tunnels[row.ID].Forwarder().Addr()
 	a.handle(CloseTunnel{ID: row.ID})
 	if len(a.st.Tunnels) != 0 || len(a.tunnels) != 0 {
 		t.Fatalf("closed, the tunnel is still listed: %+v", a.st.Tunnels)
@@ -236,7 +237,7 @@ func TestATunnelStopsWithItsConnectionAndStaysUntilCleared(t *testing.T) {
 func TestATunnelGoesWithAConnectionLetGoOfOnPurpose(t *testing.T) {
 	a, conn, echo := tunnelApp(t)
 	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}})
-	addr := a.tunnels[a.st.Tunnels[0].ID].f.Addr()
+	addr := a.tunnels[a.st.Tunnels[0].ID].Forwarder().Addr()
 	_ = conn.Close()
 	if err := a.tunnelsDiedOn("srv", true); err != nil {
 		t.Fatalf("closing the tunnels said %v", err)
@@ -255,26 +256,26 @@ func TestWatchingATunnelWritesItsTrafficDown(t *testing.T) {
 	a.handle(OpenTunnel{Machine: "srv", Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}})
 	id := a.st.Tunnels[0].ID
 	open := a.tunnels[id]
-	c, err := net.Dial("tcp", open.f.Addr())
+	c, err := net.Dial("tcp", open.Forwarder().Addr())
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
 	say(t, c, "quiet")
-	before := open.seen.Held()
+	before := open.Account().Held()
 	a.handle(WatchTunnel{ID: id, On: true})
 	if !a.st.Tunnels[0].Watching {
 		t.Fatal("watching, the row says it is not")
 	}
 	say(t, c, "loud")
 	// The line saying watching began, then a chunk each way.
-	if got := open.seen.Held() - before; got != 3 {
+	if got := open.Account().Held() - before; got != 3 {
 		t.Fatalf("watching, %d entries were written, want 3", got)
 	}
-	held := open.seen.Held()
+	held := open.Account().Held()
 	a.handle(WatchTunnel{ID: id})
 	say(t, c, "quiet again")
-	if got := open.seen.Held() - held; got != 1 {
+	if got := open.Account().Held() - held; got != 1 {
 		t.Fatalf("after stopping, %d entries were written, want only the one saying so", got)
 	}
 }
@@ -286,8 +287,8 @@ func TestOpeningASavedTunnelLeavesTheListInItsOrder(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.settings = set
-	first := asSaved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo})
-	second := asSaved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:1"})
+	first := tunnel.Saved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo})
+	second := tunnel.Saved("srv", "", remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: "127.0.0.1:1"})
 	for _, s := range []settings.SavedTunnel{second, first} {
 		if err := set.KeepTunnel(s, mostSavedTunnels); err != nil {
 			t.Fatal(err)

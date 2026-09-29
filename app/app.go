@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/look"
+	"github.com/marrasen/kakel/tunnel"
 
 	"github.com/marrasen/kakel/screen"
 
@@ -492,7 +493,7 @@ type app struct {
 	// tunnels are the tunnels by ID, tunnelSeq counts them, ticking is
 	// set while their notes are kept up to date, and quiet says a tick
 	// changed nothing, so nothing is published.
-	tunnels map[string]*tunnel
+	tunnels map[string]*tunnel.Held
 	// secrets is the vault, once asked for, and secretsAt where it is
 	// kept, when a test says. lastTerminal is the terminal pane that
 	// last had the keyboard, for typing a secret into.
@@ -587,7 +588,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		ring:      remote.NewRing(),
 		replies:   map[uint64]chan AskAnswered{},
 		closing:   map[string]bool{},
-		tunnels:   map[string]*tunnel{},
+		tunnels:   map[string]*tunnel.Held{},
 		agents:    agents{by: map[string]*handover{}},
 		commands:  map[string]command{},
 		noticed:   map[string]uint64{},

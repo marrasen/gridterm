@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/tunnel"
 
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/words"
@@ -63,7 +64,7 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	if len(kept) > 0 {
 		names := []string{"A new one"}
 		for _, t := range kept {
-			if tu, err := app.AsTunnel(t); err == nil {
+			if tu, err := tunnel.Read(t); err == nil {
 				names = append(names, tu.String())
 			}
 		}
@@ -148,7 +149,7 @@ func (w *Window) savedTunnelItems() []widget.PaletteItem {
 			}
 		}
 		what := s.Kind + " tunnel"
-		if t, err := app.AsTunnel(s); err == nil {
+		if t, err := tunnel.Read(s); err == nil {
 			what = "Tunnel " + t.String()
 		}
 		out = append(out, widget.PaletteItem{Title: "Open " + what + " via " + via})

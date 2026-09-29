@@ -3,20 +3,15 @@ package app
 import (
 	"errors"
 	"fmt"
-	"io"
-	"net"
 	"slices"
 	"strconv"
-	"strings"
-	"sync"
 	"time"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/tunnel"
 
 	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/words"
 
-	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/settings"
@@ -75,53 +70,6 @@ type (
 // KindTunnel is a tunnel's pane.
 const KindTunnel = "tunnel"
 
-// mostTunnelLines is how much of a tunnel's account is kept, and
-// mostTapBytes how much of one chunk of traffic is written down.
-const (
-	mostTunnelLines = 500
-	mostTapBytes    = 4 << 10
-)
-
-// tunnel is a tunnel the program holds.
-type tunnel struct {
-	f     *remote.Forwarder
-	count *meter.Meter
-	tap   *trafficTap
-	seen  *logs.Lines
-	// failed counts the streams that failed, and told is set once the
-	// first has been shown: a proxy would show one for every dead name
-	// a browser looks up.
-	failed int
-	told   bool
-	// done is set once it has stopped: its row and account stay, to be
-	// read, until it is cleared.
-	done bool
-}
-
-// say writes a line into the tunnel's account.
-func (t *tunnel) say(line string) { _, _ = t.seen.Write([]byte(line + "\n")) }
-
-// note is what the tunnel's row says: the streams it carries, or how
-// many failed while it carries none, and what has moved through it.
-func (t *tunnel) note() string {
-	live := t.f.Streams()
-	var s string
-	switch {
-	case live == 1:
-		s = "1 stream"
-	case live > 1:
-		s = strconv.Itoa(live) + " streams"
-	case t.failed > 0:
-		s = strconv.Itoa(t.failed) + " failed"
-	default:
-		s = "idle"
-	}
-	if in, out := t.count.Totals(); in+out > 0 {
-		s += " · " + words.Size(int64(in+out))
-	}
-	return s
-}
-
 // tunnelIndex returns the index of tunnel id in the state, or -1.
 func (a *app) tunnelIndex(id string) int {
 	return slices.IndexFunc(a.st.Tunnels, func(t Tunnel) bool { return t.ID == id })
@@ -158,7 +106,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		return nil
 	}
 	if a.settings != nil && !in.Saved {
-		saved := asSaved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
+		saved := tunnel.Saved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
 		switch {
 		case in.Keep:
 			if err := a.settings.KeepTunnel(saved, mostSavedTunnels); err != nil {
@@ -173,10 +121,10 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	}
 	a.tunnelSeq++
 	id := "t" + strconv.Itoa(a.tunnelSeq)
-	open := &tunnel{count: meter.New(), tap: &trafficTap{}, seen: logs.New(mostTunnelLines, nil)}
+	open := tunnel.New()
 	f, err := conn.OpenTunnel(a.ctx, remote.TunnelConfig{
 		Tunnel: t,
-		Count:  counted{m: open.count, t: open.tap},
+		Count:  open.Counter(),
 		OnError: func(err error) {
 			a.events <- func() { a.tunnelFailed(id, err) }
 		},
@@ -187,11 +135,11 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	if err != nil {
 		return err
 	}
-	open.f = f
+	open.Started(f)
 	a.tunnels[id] = open
-	label := tunnelLabel(f)
-	open.say("opened " + label + " over " + a.machines.Name(in.Machine))
-	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
+	label := open.Label()
+	open.Say("opened " + label + " over " + a.machines.Name(in.Machine))
+	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.Note(), Live: true, Meter: open.Meter()})
 	a.worked("Tunnel open", label+", over "+a.machines.Name(in.Machine), "")
 	a.tickTunnels()
 	return nil
@@ -213,7 +161,7 @@ func (a *app) confirmTunnel(in OpenTunnel, called string) {
 	if t.Kind == remote.RemoteForward {
 		said += " " + called + " chooses where it listens. With GatewayPorts on, that is its whole network."
 	}
-	ans, err := a.ask(a.ctx, Ask{Title: "Open " + listenName(t) + "?", Text: said, Yes: "Open", Danger: true})
+	ans, err := a.ask(a.ctx, Ask{Title: "Open " + tunnel.ListenName(t) + "?", Text: said, Yes: "Open", Danger: true})
 	if err != nil || !ans.Yes {
 		return
 	}
@@ -226,40 +174,13 @@ func (a *app) confirmTunnel(in OpenTunnel, called string) {
 	}
 }
 
-// listenName is the question's own name for what is being opened. A
-// tunnel that asked for any free port has no number to give yet.
-func listenName(t remote.Tunnel) string {
-	if host, port, err := net.SplitHostPort(t.Listen); err == nil && port == "0" {
-		return "a port on " + host + " to the network"
-	}
-	return t.Listen + " to the network"
-}
-
-// tunnelLabel names a tunnel, with the port it was given when it asked
-// for any free one. A listener on this machine alone is named by its
-// port: the loopback address before it is the same for every tunnel.
-func tunnelLabel(f *remote.Forwarder) string {
-	got := f.Tunnel()
-	if host, port, err := net.SplitHostPort(got.Listen); err == nil {
-		if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
-			got.Listen = ":" + port
-		}
-	}
-	return got.String()
-}
-
 // closeTunnel closes a tunnel and takes its row away. Its pane stays,
 // with what it did to read.
 func (a *app) closeTunnel(id string) error {
 	var err error
 	if open, ok := a.tunnels[id]; ok {
 		delete(a.tunnels, id)
-		if !open.done {
-			err = open.f.Close()
-			open.tap.stop()
-			open.count.Close()
-			open.say("closed")
-		}
+		err = open.Close()
 	}
 	if i := a.tunnelIndex(id); i >= 0 {
 		a.st.Tunnels = slices.Delete(slices.Clone(a.st.Tunnels), i, i+1)
@@ -271,14 +192,12 @@ func (a *app) closeTunnel(id string) error {
 // first is shown; the rest are counted on the row.
 func (a *app) tunnelFailed(id string, err error) {
 	open, ok := a.tunnels[id]
-	if !ok || open.done {
+	if !ok || open.Done() {
 		return
 	}
-	open.failed++
-	open.say("a stream failed: " + err.Error())
-	a.setTunnel(id, func(t *Tunnel) { t.Note = open.note() })
-	if !open.told {
-		open.told = true
+	first := open.Failed(err)
+	a.setTunnel(id, func(t *Tunnel) { t.Note = open.Note() })
+	if first {
 		a.failed("Trouble on the tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label, err.Error())
 		a.problem()
 	}
@@ -289,14 +208,10 @@ func (a *app) tunnelFailed(id string, err error) {
 // when there is one.
 func (a *app) tunnelStopped(id, why string, err error) error {
 	open, ok := a.tunnels[id]
-	if !ok || open.done {
+	if !ok || open.Done() {
 		return nil
 	}
-	open.done = true
-	closeErr := open.f.Close()
-	open.tap.stop()
-	open.count.Close()
-	open.say(why)
+	closeErr := open.Stop(why)
 	a.setTunnel(id, func(t *Tunnel) { t.Live, t.Watching, t.Note = false, false, "stopped" })
 	if err != nil {
 		a.failed("Tunnel "+a.st.Tunnels[a.tunnelIndex(id)].Label+" stopped", err.Error())
@@ -326,16 +241,10 @@ func (a *app) tunnelsDiedOn(machine machines.ID, letGo bool) error {
 // watchTunnel starts or stops writing a tunnel's traffic down.
 func (a *app) watchTunnel(in WatchTunnel) {
 	open, ok := a.tunnels[in.ID]
-	if !ok || open.done {
+	if !ok || open.Done() {
 		return
 	}
-	if in.On {
-		open.tap.watch(open.seen)
-		open.say("watching what goes through it")
-	} else {
-		open.tap.stop()
-		open.say("stopped watching")
-	}
+	open.Watch(in.On)
 	a.setTunnel(in.ID, func(t *Tunnel) { t.Watching = in.On })
 }
 
@@ -357,7 +266,7 @@ func (a *app) showTunnel(id string) {
 	}
 	a.next++
 	pane := "p" + strconv.Itoa(a.next)
-	sh := screen.Open(open.seen.Open(), a.palette, a.hooks(pane))
+	sh := screen.Open(open.Account().Open(), a.palette, a.hooks(pane))
 	a.addPane(Pane{ID: pane, Title: "Tunnel " + t.Label, Machine: t.Machine, Kind: KindTunnel, Tunnel: id}, sh, Placement{})
 	a.setTunnel(id, func(t *Tunnel) { t.Pane = pane })
 }
@@ -369,9 +278,8 @@ func (a *app) tunnelPaneGone(pane string) {
 		if t.Pane != pane {
 			continue
 		}
-		if open, ok := a.tunnels[t.ID]; ok && t.Watching && !open.done {
-			open.tap.stop()
-			open.say("stopped watching")
+		if open, ok := a.tunnels[t.ID]; ok && t.Watching && !open.Done() {
+			open.Watch(false)
 		}
 		a.setTunnel(t.ID, func(t *Tunnel) { t.Pane, t.Watching = "", false })
 	}
@@ -389,11 +297,11 @@ func (a *app) tickTunnels() {
 		a.quiet = true
 		live := 0
 		for id, open := range a.tunnels {
-			if open.done {
+			if open.Done() {
 				continue
 			}
 			live++
-			if n := open.note(); n != a.st.Tunnels[a.tunnelIndex(id)].Note {
+			if n := open.Note(); n != a.st.Tunnels[a.tunnelIndex(id)].Note {
 				a.setTunnel(id, func(t *Tunnel) { t.Note = n })
 				a.quiet = false
 			}
@@ -410,7 +318,7 @@ func (a *app) tickTunnels() {
 // openSavedTunnel opens a tunnel kept from before, over the machine it
 // was kept on, by the name that machine has now.
 func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
-	t, err := AsTunnel(saved)
+	t, err := tunnel.Read(saved)
 	if err != nil {
 		return err
 	}
@@ -433,99 +341,3 @@ func (a *app) serverID(machine machines.ID) string {
 
 // mostSavedTunnels is how many tunnels are kept.
 const mostSavedTunnels = 50
-
-// asSaved is a tunnel written the way kakel keeps it.
-func asSaved(host, id string, t remote.Tunnel) settings.SavedTunnel {
-	return settings.SavedTunnel{Host: host, HostID: id, Kind: t.Kind.String(), Listen: t.Listen, Target: t.Target}
-}
-
-// AsTunnel is a kept tunnel read back.
-func AsTunnel(saved settings.SavedTunnel) (remote.Tunnel, error) {
-	for _, k := range []remote.TunnelKind{remote.LocalForward, remote.RemoteForward, remote.DynamicForward} {
-		if saved.Kind == k.String() {
-			return remote.Tunnel{Kind: k, Listen: saved.Listen, Target: saved.Target}, nil
-		}
-	}
-	return remote.Tunnel{}, fmt.Errorf("a tunnel kept as %q is not one this knows", saved.Kind)
-}
-
-// counted counts what moves through a tunnel, and writes it down while
-// the tunnel is watched.
-type counted struct {
-	m *meter.Meter
-	t *trafficTap
-}
-
-// Wrap implements [remote.Counter].
-func (c counted) Wrap(w io.Writer, out bool) io.Writer {
-	return tapWriter{w: meter.Writer{W: w, M: c.m, Out: out}, t: c.t, out: out}
-}
-
-// trafficTap copies what goes through a tunnel into its account, while
-// somebody is watching. Off until asked for: a tunnel carries whatever
-// it carries, passwords included.
-type trafficTap struct {
-	mu sync.Mutex
-	to *logs.Lines
-}
-
-func (t *trafficTap) watch(to *logs.Lines) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.to = to
-}
-
-func (t *trafficTap) stop() { t.watch(nil) }
-
-// saw writes one chunk down while the tunnel is watched. It runs on
-// the streams' goroutines.
-func (t *trafficTap) saw(out bool, p []byte) {
-	t.mu.Lock()
-	to := t.to
-	t.mu.Unlock()
-	if to != nil {
-		_, _ = to.Write(chunkLines(out, p))
-	}
-}
-
-// tapWriter is one side of one stream, written down on its way past.
-type tapWriter struct {
-	w   io.Writer
-	t   *trafficTap
-	out bool
-}
-
-func (w tapWriter) Write(p []byte) (int, error) {
-	w.t.saw(w.out, p)
-	return w.w.Write(p)
-}
-
-// chunkLines is one chunk of traffic as the account shows it: which
-// way it went and how much, then the bytes as text, with what would
-// draw over the pane as dots.
-func chunkLines(out bool, p []byte) []byte {
-	head := "← "
-	if out {
-		head = "→ "
-	}
-	head += strconv.Itoa(len(p)) + " bytes"
-	if len(p) > mostTapBytes {
-		p = p[:mostTapBytes]
-		head += ", first " + strconv.Itoa(mostTapBytes) + " shown"
-	}
-	var b strings.Builder
-	b.WriteString(head + "\n")
-	for _, c := range p {
-		switch {
-		case c == '\n' || c == '\t':
-			b.WriteByte(c)
-		case c == '\r':
-		case c < ' ' || c >= 0x7f:
-			b.WriteByte('.')
-		default:
-			b.WriteByte(c)
-		}
-	}
-	b.WriteByte('\n')
-	return []byte(b.String())
-}

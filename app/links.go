@@ -97,19 +97,19 @@ func (a *app) openLink(machine machines.ID, at string) error {
 func (a *app) tunnelTo(machine machines.ID, target string) (string, error) {
 	for _, t := range a.st.Tunnels {
 		open, ok := a.tunnels[t.ID]
-		if !ok || open.done || t.Machine != machine {
+		if !ok || open.Done() || t.Machine != machine {
 			continue
 		}
-		got := open.f.Tunnel()
+		got := open.Forwarder().Tunnel()
 		if got.Kind == remote.LocalForward && sameTarget(got.Target, target) {
-			return open.f.Addr(), nil
+			return open.Forwarder().Addr(), nil
 		}
 	}
 	if err := a.openTunnel(OpenTunnel{Machine: machine, Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: target}, Sure: true}); err != nil {
 		return "", err
 	}
 	last := a.st.Tunnels[len(a.st.Tunnels)-1]
-	return a.tunnels[last.ID].f.Addr(), nil
+	return a.tunnels[last.ID].Forwarder().Addr(), nil
 }
 
 // serviceOnTheFarEnd is where an address on a server's own loopback

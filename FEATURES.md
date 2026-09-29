@@ -95,6 +95,11 @@ The whole list. The [README](README.md) has the short version.
   key. A directory is never read on the goroutine that draws, so a slow
   machine cannot stop the window, and a read that fails leaves the
   listing that worked on screen with the reason beside it.
+- **Zip files walked into like folders.** A `.zip`, `.jar`, `.whl`,
+  `.xpi`, `.crx` or `.vsix` opens with Enter as a folder, on any machine,
+  and its row says "archive" beside its size. It is read only: copy a
+  file out of it, but nothing is written into it. One over 64 MB is
+  refused, as the whole of it is read to list it.
 - **A reader for a file, without a shell.** F3 opens a file from the
   browser and F4 tails one, on this machine or on a server. It works the
   way `less` does: a page at a time, "/" to search, "n" and "N" for the

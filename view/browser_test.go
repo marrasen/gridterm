@@ -22,6 +22,7 @@ func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 	entries := []vfs.Entry{
 		{Name: "notes.txt", Size: 10},
 		{Name: "latest", Mode: fs.ModeSymlink, Link: "/srv/www/v2"},
+		{Name: "site.zip", Mode: fs.ModeDir, Size: 2048, Archive: true},
 	}
 	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220,
 		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: entries, Seq: 1}, "p2": {Path: "/", Seq: 1}},
@@ -30,6 +31,9 @@ func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 	b := win.browsers["p1"]
 	if row := b.row("latest"); !row.Accent || row.Cells[1] != "→ /srv/www/v2" {
 		t.Fatalf("a link shows as %+v", row)
+	}
+	if row := b.row("site.zip"); row.Cells[1] != "archive, 2.0 KB" {
+		t.Fatalf("an archive shows as %+v", row)
 	}
 	if row := b.row("notes.txt"); row.Cells[0] != "·notes.txt" {
 		t.Fatalf("a file waiting to be pasted shows as %+v", row)

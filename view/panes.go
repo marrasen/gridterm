@@ -458,8 +458,9 @@ func (b *browser) list(u *gunim.UI) {
 }
 
 // row is what the table shows for an entry: folders strong, links in
-// the accent colour with where they go, names starting with a dot
-// faint, and one waiting to be pasted with a dot in front.
+// the accent colour with where they go, an archive marked with its
+// size, names starting with a dot faint, and one waiting to be pasted
+// with a dot in front.
 func (b *browser) row(k widget.Key) widget.TableRow {
 	if k == up {
 		return widget.TableRow{Cells: []string{"..", "", ""}, Strong: true}
@@ -471,6 +472,10 @@ func (b *browser) row(k widget.Key) widget.TableRow {
 		size = "→ " + e.Link
 	case e.IsLink():
 		size = "link"
+	case e.Archive:
+		// Walked into as a folder, and marked, so it is not taken for
+		// one: it is read only, and a file on the disk.
+		size = "archive, " + words.Size(e.Size)
 	case !e.IsDir():
 		size = words.Size(e.Size)
 	}

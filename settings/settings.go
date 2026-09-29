@@ -102,6 +102,8 @@ type stored struct {
 
 	// FontSize is the size the text is drawn at, in points.
 	FontSize *float64 `json:"fontSize,omitempty"`
+	// Window is where the window was, and how big, as it last closed.
+	Window *WindowPlace `json:"window,omitempty"`
 }
 
 // SavedCommand is a command line the user asked to keep, the directory
@@ -689,6 +691,42 @@ func (s *Settings) PutFontSize(pt float64) error {
 	}
 	before := s.have
 	s.have.FontSize = &pt
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// WindowPlace is where a window was on the screen, and whether it was
+// maximized: X and Y its top left corner, W and H its size, all in the
+// screen's own coordinates, as gunim reads them. A maximized window's
+// are where it goes back to when it is no longer maximized.
+type WindowPlace struct {
+	X, Y, W, H float32
+	Maximized  bool `json:",omitempty"`
+}
+
+// Window is where the window was as it last closed, and whether that
+// was ever written down.
+func (s *Settings) Window() (WindowPlace, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.Window == nil {
+		return WindowPlace{}, false
+	}
+	return *s.have.Window, true
+}
+
+// PutWindow remembers where the window is, and saves.
+func (s *Settings) PutWindow(p WindowPlace) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Window = &p
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

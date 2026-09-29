@@ -32,6 +32,9 @@ var (
 	RowActive   = theme.Color("kakel.row.active", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0x40})
 	RowHover    = theme.Color("kakel.row.hover", color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0x12})
 	Faint       = theme.Color("kakel.faint", color.NRGBA{R: 0x8a, G: 0x93, B: 0xa6, A: 0xff})
+	// RowActiveInk is the words of the sidebar's row for whatever is in
+	// front: the theme's currentFG, where it wrote a frame down.
+	RowActiveInk = theme.Foreground("kakel.row.active.ink", color.NRGBA{R: 0xe6, G: 0xe9, B: 0xef, A: 0xff})
 )
 
 var TermBackground = theme.Color("kakel.background", color.NRGBA{R: 0x14, G: 0x17, B: 0x1c, A: 0xff})
@@ -200,9 +203,20 @@ func Of(t themes.Theme) (Themed, error) {
 	accent := nrgba(pal.ANSI[12])
 	buttonBG, buttonFG := mix(frameBG, frameFG, 14), frameFG
 	primaryBG := mix(nrgba(pal.ANSI[4]), frameBG, 20)
+	primaryInk := color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	borderLines := float32(1)
+	var buttonShadow color.NRGBA
+	activeInk := sideFG
 	if look.Set {
 		buttonBG, buttonFG = nrgba(look.ButtonBG), nrgba(look.ButtonFG)
-		primaryBG = nrgba(look.ActiveBG)
+		primaryBG, primaryInk = nrgba(look.ActiveBG), nrgba(look.ActiveFG)
+		// Drawn as a text screen's boxes: a black shadow under each
+		// button, as the old app cast, and a double rule if asked for.
+		buttonShadow = color.NRGBA{A: 0xff}
+		if look.Double {
+			borderLines = 2
+		}
+		activeInk = nrgba(look.CurrentFG)
 	}
 	surface := mix(frameBG, frameFG, 7)
 	rule := mix(frameBG, frameFG, 20)
@@ -230,6 +244,9 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.ButtonFill, buttonBG),
 		theme.Set(widget.ButtonHover, mix(buttonBG, buttonFG, 12)),
 		theme.Set(widget.ButtonPrimaryFill, primaryBG),
+		theme.Set(widget.ButtonPrimaryInk, primaryInk),
+		theme.Set(widget.ButtonShadow, buttonShadow),
+		theme.Set(widget.DialogBorderLines, borderLines),
 		theme.Set(widget.ButtonPrimaryHover, mix(primaryBG, color.NRGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}, 12)),
 		theme.Set(widget.TooltipFill, alpha(frameFG, 0xf4)),
 		theme.Set(widget.TooltipInk, frameBG),
@@ -243,6 +260,7 @@ func Of(t themes.Theme) (Themed, error) {
 		theme.Set(widget.PaletteMark, alpha(accent, 0x50)),
 		theme.Set(SidebarFill, mix(sideBG, sideFG, 4)),
 		theme.Set(RowActive, alpha(accent, 0x40)),
+		theme.Set(RowActiveInk, activeInk),
 		theme.Set(RowHover, alpha(sideFG, 0x14)),
 		theme.Set(Faint, mix(sideFG, sideBG, 45)),
 		theme.Set(TermBackground, bg),

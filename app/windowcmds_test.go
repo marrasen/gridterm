@@ -9,9 +9,13 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/kakel/look"
+	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/internal/update"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
@@ -201,5 +205,33 @@ func TestPopOutOnAPaneNotInASplitSaysSo(t *testing.T) {
 	a.handle(PopOut{})
 	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Nothing to pop out" {
 		t.Fatalf("the notices are %+v", a.st.Notices)
+	}
+}
+
+// Where the window was as kakel exits is kept, and the next start
+// opens it there.
+func TestTheWindowOpensWhereItWasLeft(t *testing.T) {
+	testhome.New(t)
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.ctx = t.Context()
+	path, err := settings.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	set, err := settings.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.cur.gw = w
+	want, ok := w.Placement()
+	if !ok {
+		t.Fatal("the test window has no placement")
+	}
+	a.leave()
+	got := Options{}.WindowPlace()
+	if got == nil || *got != want {
+		t.Fatalf("started again, the window opens at %+v, want %+v", got, want)
 	}
 }

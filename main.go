@@ -69,7 +69,8 @@ func run() error {
 		sh := screen.NewShells()
 		all, trouble := look.LoadSaying()
 		ws := &ownWindows{app: a, sh: sh, all: all}
-		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize()})
+		// Where it was as it last closed, or else sized for the font.
+		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace()})
 		if err != nil {
 			return err
 		}

@@ -312,6 +312,19 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 			w.run(w.paletteIDs[i], u)
 		}
 	}}
+	// Its shortcut again closes it: the keys typed in the palette reach
+	// the palette alone, which hands on the ones it does not use.
+	w.palette.Key = func(k input.KeyPress, u *gunim.UI) bool {
+		ev, ok := winkeys.Event(k)
+		if !ok || k.Repeat {
+			return false
+		}
+		if id, bound := w.keys.Lookup(ui.ChordOf(ev)); bound && id == "palette.open" {
+			w.palette.Close(u)
+			return true
+		}
+		return false
+	}
 	w.servers(nil)
 	for _, t := range all {
 		w.contents[t.Name] = t.Content
@@ -340,8 +353,8 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		}
 		// Otherwise the program's, as any other.
 	case "palette.open":
-		// Its shortcut again closes it, when the key reaches the window:
-		// gunim hands the keys typed in the palette to the palette alone.
+		// Its shortcut again closes it, when the key reaches the window
+		// rather than the palette, which hands it on through its Key.
 		if w.palette.IsOpen() {
 			w.palette.Close(u)
 			return true
@@ -781,7 +794,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	if q.Text != "" {
 		note := widget.NewLabel(q.Text)
 		if q.Preformatted {
-			note.Face, note.Selectable = widget.MonoFont, true
+			// Lines kept whole, as a key or a table means them, and
+			// scrolled sideways where they are wider than the dialog.
+			note.Face, note.Selectable, note.NoWrap = widget.MonoFont, true, true
 		}
 		form.Add("", note)
 	}
@@ -832,6 +847,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	}
 	if len(q.Choose) > 0 {
 		d.SetButtons(q.Choose[0], no)
+		// The first choice is the safe one, such as Leave It beside
+		// Replace: Tab from the fields reaches it before the others.
+		d.DefaultFirst = true
 		d.OnAccept = func() gunim.Intent { return answer(q.Choose[0]) }
 		for _, c := range q.Choose[1:] {
 			d.AddButton(c, func() gunim.Intent { return answer(c) })
@@ -1851,22 +1869,37 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 		w.toasts.Show(widget.Toast{Title: n.Title, Body: n.Body, Kind: toastKinds[n.Kind]}, u)
 	}
-	// The View menu ticks the sidebar while it shows.
+	// The menus and the palette tick a switch while it is on, such as
+	// the sidebar while it shows.
 	for m := range menus {
 		for i, it := range menus[m].items {
-			switch it.id {
-			case "sidebar.toggle":
-				w.bar.Menus[m].Checked[i] = st.Sidebar
-			case "pane.titles":
-				w.bar.Menus[m].Checked[i] = st.PaneTitles
-			case "view.fullScreen":
-				w.bar.Menus[m].Checked[i] = u.FullScreen()
-			case "shell.setup":
-				w.bar.Menus[m].Checked[i] = st.ShellSetup
+			if on, isSwitch := switchOn(it.id, st, u); isSwitch {
+				w.bar.Menus[m].Checked[i] = on
 			}
 		}
 	}
+	for i, id := range w.paletteIDs {
+		if on, isSwitch := switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
+			w.palette.Items[i].Checked = on
+		}
+	}
 	u.Invalidate()
+}
+
+// switchOn reports whether the command id switches something, and
+// whether that is on now.
+func switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bool) {
+	switch id {
+	case "sidebar.toggle":
+		return st.Sidebar, true
+	case "pane.titles":
+		return st.PaneTitles, true
+	case "view.fullScreen":
+		return u.FullScreen(), true
+	case "shell.setup":
+		return st.ShellSetup, true
+	}
+	return false, false
 }
 
 // build returns the nodes for b, making the ones it lacks. Terminals
@@ -2328,6 +2361,8 @@ type sideRow struct {
 	said           string
 	saidAt         time.Time
 	pointed, typed bool
+	// dim says the row's thing has ended, and its words are faint.
+	dim bool
 }
 
 // noteFor is how long a sidebar row's note stands before it goes quiet.
@@ -2376,10 +2411,22 @@ func (r *sideRow) set(it sideItem) {
 		r.machine = machines.ID(m)
 	}
 	if !it.heading {
+		r.dim = it.dim
+		r.inkTitle()
+	}
+}
+
+// inkTitle colours the row's words: faint when dim, the theme's colour
+// for whatever is in front while it is, and the usual ink otherwise.
+func (r *sideRow) inkTitle() {
+	switch {
+	case r.heading:
+	case r.dim:
+		r.title.Color = look.Faint
+	case r.on:
+		r.title.Color = look.RowActiveInk
+	default:
 		r.title.Color = widget.Ink
-		if it.dim {
-			r.title.Color = look.Faint
-		}
 	}
 }
 
@@ -2388,6 +2435,7 @@ func (r *sideRow) setActive(on bool, u *gunim.UI) {
 		return
 	}
 	r.on = on
+	r.inkTitle()
 	to := float32(0)
 	if on {
 		to = 1

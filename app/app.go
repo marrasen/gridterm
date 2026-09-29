@@ -1186,6 +1186,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.checkUpdates()
 	case NoTextToPaste:
 		a.noTextToPaste()
+	case ClipboardUnreadable:
+		a.failed("Couldn't read the clipboard", in.Why)
 	case MakePortable:
 		a.makePortable()
 	case ShowHelp:

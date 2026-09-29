@@ -31,6 +31,9 @@ type (
 	// NoTextToPaste says a middle click found no text to paste, which
 	// is said when the clipboard holds a picture: that paste takes text.
 	NoTextToPaste struct{}
+	// ClipboardUnreadable says a paste found the clipboard could not be
+	// read, and why: not the same as a clipboard with nothing on it.
+	ClipboardUnreadable struct{ Why string }
 )
 
 // readPicture reads the picture on the clipboard. It is read off the

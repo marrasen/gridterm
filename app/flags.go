@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/mcp"
@@ -252,6 +253,25 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 
 // ShowStats says to log how the window draws, each second.
 func (o Options) ShowStats() bool { return o.stats }
+
+// WindowPlace is where the window was as it last closed, for it to open
+// there again, or nil the first time. gunim moves it onto a screen when
+// the one it was on is gone.
+func (o Options) WindowPlace() *driver.Placement {
+	path, err := settings.Path()
+	if err != nil {
+		return nil
+	}
+	s, err := settings.Load(path)
+	if err != nil {
+		return nil
+	}
+	w, ok := s.Window()
+	if !ok || w.W <= 0 || w.H <= 0 {
+		return nil
+	}
+	return &driver.Placement{Bounds: geom.Rc(w.X, w.Y, w.W, w.H), Maximized: w.Maximized}
+}
 
 // WindowSize is the first window's size: room for a terminal of the
 // usual size, at the font size given or kept from last time.

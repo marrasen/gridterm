@@ -254,21 +254,6 @@ func TestWhatAnAgentTypedIsKept(t *testing.T) {
 	}
 }
 
-// An agent's asking is cut to one plain line.
-func TestAnAgentsAskingIsCutToOnePlainLine(t *testing.T) {
-	got := secretLine("the \"db\" pass\u202eword\ue000 -- " + strings.Repeat("x", 200))
-	// Only the agent's words, between the window's quotes.
-	asked := got[strings.Index(got, `for: "`)+6 : strings.LastIndex(got, `" --`)]
-	for _, bad := range []string{"\u202e", "\ue000", "\"", "--"} {
-		if strings.Contains(asked, bad) {
-			t.Errorf("the line keeps %q: %s", bad, got)
-		}
-	}
-	if strings.Count(got, "x") > agent.MostSecretWords {
-		t.Errorf("the line runs to %d characters of asking", strings.Count(got, "x"))
-	}
-}
-
 // With the path to the program unknown, the skill is refused and a
 // copied prompt warns.
 func TestAnUnknownPathRefusesTheSkill(t *testing.T) {

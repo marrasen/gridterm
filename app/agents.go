@@ -13,7 +13,7 @@ import (
 
 	"github.com/marrasen/kakel/agent"
 	"github.com/marrasen/kakel/agenthost"
-	"github.com/marrasen/kakel/input"
+	"github.com/marrasen/kakel/agentterm"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui"
 	uiterm "github.com/marrasen/kakel/ui/term"
@@ -94,12 +94,8 @@ type handover struct {
 	read  *uiterm.Reading
 	lines int
 	size  ui.Size
-	// typed is the prompt the agent last typed at, on typedLine, and
-	// typedDone the commands finished by then; sent says it has typed.
-	typed     string
-	typedLine uint64
-	typedDone uint64
-	sent      bool
+	// typing is where the agent last typed.
+	typing agentterm.Typing
 	// given says the agent has seen the pane.
 	given bool
 	may   settings.AgentMay
@@ -455,19 +451,19 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		}
 		text, atFloor, note := h.read.Text, false, ""
 		if !w.a.agents.allowed(h).ReadBack {
-			text, atFloor, note = stopAtTheFloor(text, *h.read)
+			text, atFloor, note = agentterm.StopAtTheFloor(text, *h.read)
 		}
-		enough := countLines(text) < want
-		cut := trimBlankTail(text)
+		enough := agentterm.CountLines(text) < want
+		cut := agentterm.TrimBlankTail(text)
 		trimmed := len(cut) < len(text)
 		status, hasStatus := h.read.Cmd.Exit()
 		return agent.Look{
-			Screen: lastLines(cut, want), Note: note, Gone: t.Exited(), Changed: h.read.Said,
+			Screen: agentterm.LastLines(cut, want), Note: note, Gone: t.Exited(), Changed: h.read.Said,
 			Row: h.read.Row, Col: h.read.Col, Alt: h.read.Alt, All: atFloor || enough, Trimmed: trimmed,
-			Pictures: picturesSeen(h.read.Pictures), Cols: size.Cols, Rows: size.Rows,
+			Pictures: agentterm.PicturesSeen(h.read.Pictures), Cols: size.Cols, Rows: size.Rows,
 			Marks: h.read.Cmd.Integrated, Running: h.read.Cmd.Running, Done: h.read.Cmd.Done,
-			Status: status, HasStatus: hasStatus, Back: h.promptIsBack(*h.read),
-			Watching: h.typed != "", Yours: h.sent && h.read.Cmd.Done > h.typedDone,
+			Status: status, HasStatus: hasStatus, Back: h.typing.Back(*h.read),
+			Watching: h.typing.Watching(), Yours: h.typing.Yours(h.read.Cmd.Done),
 		}, nil
 	})
 }
@@ -485,7 +481,7 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		if at.Alt {
 			return agent.Look{}, errors.New("a full-screen program is drawing in that pane, so there is no command output to read: read the pane instead")
 		}
-		from, note, err := h.outputFrom(at)
+		from, note, err := h.typing.OutputFrom(at)
 		if err != nil {
 			return agent.Look{}, err
 		}
@@ -506,33 +502,20 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		}
 		status, hasStatus := read.Cmd.Exit()
 		text := strings.TrimRight(read.Text, "\n")
-		if countLines(read.Text) < there {
-			note += fmt.Sprintf(" The start of it is missing: it printed %d lines and this is the last %d.", there, countLines(read.Text))
+		if agentterm.CountLines(read.Text) < there {
+			note += fmt.Sprintf(" The start of it is missing: it printed %d lines and this is the last %d.", there, agentterm.CountLines(read.Text))
 		}
 		if strings.TrimSpace(text) == "" {
 			note += " Nothing is there: either it has printed nothing yet, or the screen has been cleared since it started."
 		}
 		return agent.Look{
 			Screen: text, Gone: t.Exited(), Changed: read.Said, Row: read.Row, Col: read.Col, Alt: read.Alt,
-			Pictures: picturesIn(read.Pictures, read.Row, countLines(text)), Cols: size.Cols, Rows: size.Rows,
+			Pictures: agentterm.PicturesIn(read.Pictures, read.Row, agentterm.CountLines(text)), Cols: size.Cols, Rows: size.Rows,
 			Note: note, Marks: read.Cmd.Integrated, Running: read.Cmd.Running, Done: read.Cmd.Done,
-			Status: status, HasStatus: hasStatus, Back: h.promptIsBack(read),
-			Watching: h.typed != "", Yours: h.sent && read.Cmd.Done > h.typedDone,
+			Status: status, HasStatus: hasStatus, Back: h.typing.Back(read),
+			Watching: h.typing.Watching(), Yours: h.typing.Yours(read.Cmd.Done),
 		}, nil
 	})
-}
-
-// outputFrom is the line the last command's output begins on.
-func (h *handover) outputFrom(at uiterm.Reading) (uint64, string, error) {
-	from, marked := at.Cmd.Output()
-	mine := at.Cmd.Running || (h.sent && at.Cmd.Done > h.typedDone)
-	switch {
-	case marked && (!h.sent || mine):
-		return from, "This is what the last command printed, from where the shell said its output began.", nil
-	case h.sent:
-		return h.typedLine, "This shell does not say where a command's output begins, so this is everything the pane has said since you last typed. It starts on the line you typed at, so the first line is the prompt with your command echoed after it.", nil
-	}
-	return 0, "", errors.New("nothing here knows where the last command's output began: this shell does not mark its commands, and you have typed nothing in this pane. Read the pane with read_pane instead")
 }
 
 // Send implements [agent.Window].
@@ -549,32 +532,11 @@ func (w agentWindow) Send(id, text string, keys []string) error {
 		if t.Exited() {
 			return struct{}{}, errors.New("the program in that pane has finished, so nothing is left to type into")
 		}
-		h.markPrompt(t)
+		h.typing.Mark(t)
 		w.a.agentTyped(h.pane, text, keys)
-		return struct{}{}, typeInto(t, text, keys)
+		return struct{}{}, agentterm.TypeInto(t, text, keys)
 	})
 	return err
-}
-
-// markPrompt writes down the prompt the agent is typing at, to tell
-// when it comes back.
-func (h *handover) markPrompt(t *uiterm.Terminal) {
-	read := t.ReadLines(1)
-	h.sent, h.typedDone = true, read.Cmd.Done
-	if read.Alt {
-		return
-	}
-	if h.typed != "" && read.Line == h.typedLine && strings.HasPrefix(read.Before, h.typed) {
-		return
-	}
-	h.typed, h.typedLine = read.Before, read.Line
-}
-
-func (h *handover) promptIsBack(read uiterm.Reading) bool {
-	if h.typed == "" || read.Alt {
-		return false
-	}
-	return read.Line > h.typedLine && read.Before == h.typed
 }
 
 // Restart implements [agent.Window]: it starts a pane's program again,
@@ -734,7 +696,7 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 		if t.Exited() {
 			return ask{}, errors.New("the program in that pane has finished, so nothing is waiting to be told anything")
 		}
-		answered, stop, err := t.WaitForSecret(secretLine(what))
+		answered, stop, err := t.WaitForSecret(agentterm.SecretLine(what))
 		if err != nil {
 			return ask{}, err
 		}
@@ -763,101 +725,6 @@ func (w agentWindow) Secret(id, what string, wait time.Duration) (bool, error) {
 		return false, errors.New("this window is closing")
 	}
 }
-
-// secretLine is what the pane says when an agent asks for a secret.
-func secretLine(what string) string {
-	// Cleaned to one plain line, cut short, with nothing in it that
-	// could draw or pass itself off as the window.
-	asked := strings.TrimSpace(agent.CleanSecretAsk(what))
-	if asked == "" {
-		asked = "something it says it cannot see"
-	}
-	return `-- kakel: an agent wants something typed here. The window never tells it what you type. The program in this pane gets it, so if you can see the characters as you type them, the agent can read them off the screen too. It asked for: "` + asked + `" --`
-}
-
-// typeInto types text into a terminal and then presses keys.
-func typeInto(t *uiterm.Terminal, text string, keys []string) error {
-	if err := agent.CheckKeys(keys); err != nil {
-		return err
-	}
-	going := []byte(text)
-	for _, name := range keys {
-		chord, err := ui.ParseChord(name)
-		if err != nil {
-			return fmt.Errorf("kakel cannot press %q: %w", name, err)
-		}
-		press := input.Event{Kind: input.KeyPress, Key: chord.Key, Mods: chord.Mods}
-		if chord.Key == input.KeySpace && chord.Mods == 0 {
-			press = input.Event{Kind: input.Text, Rune: ' ', NormalText: true}
-		}
-		going = append(going, t.EncodeKey(press)...)
-	}
-	t.Send(going)
-	return nil
-}
-
-// stopAtTheFloor cuts what was read at the last clear, and says so.
-func stopAtTheFloor(screen string, read uiterm.Reading) (string, bool, string) {
-	if read.Alt || read.Floor == 0 || read.Bottom < read.Floor {
-		return screen, false, ""
-	}
-	below := int(read.Bottom-read.Floor) + 1
-	if below > countLines(screen) {
-		return screen, false, ""
-	}
-	return lastLines(screen, below), true, "The pane was cleared, so the lines above the clear are not offered here. They are still in the pane, and the user can scroll up to them."
-}
-
-func lastLines(text string, n int) string {
-	if n <= 0 {
-		return ""
-	}
-	from := len(text)
-	for left := n; left > 0; left-- {
-		cut := strings.LastIndexByte(text[:from], '\n')
-		if cut < 0 {
-			return text
-		}
-		from = cut
-	}
-	return text[from+1:]
-}
-
-func picturesIn(on []uiterm.Picture, lastRow, lines int) []agent.Picture {
-	first := lastRow - lines + 1
-	var keep []uiterm.Picture
-	for _, p := range on {
-		if p.Top <= lastRow && p.Top+p.Rows-1 >= first {
-			keep = append(keep, p)
-		}
-	}
-	return picturesSeen(keep)
-}
-
-func picturesSeen(on []uiterm.Picture) []agent.Picture {
-	var out []agent.Picture
-	for _, p := range on {
-		out = append(out, agent.Picture{Top: p.Top, Rows: p.Rows, Cols: p.Cols, Width: p.Width, Height: p.Height, Wire: p.Wire})
-	}
-	return out
-}
-
-func trimBlankTail(text string) string {
-	if strings.TrimSpace(text) == "" {
-		return text
-	}
-	end := len(text)
-	for end > 0 {
-		cut := strings.LastIndexByte(text[:end], '\n')
-		if strings.TrimSpace(text[cut+1:end]) != "" {
-			break
-		}
-		end = cut
-	}
-	return text[:end]
-}
-
-func countLines(text string) int { return strings.Count(text, "\n") + 1 }
 
 // WriteSkill writes the skill for an agent program, which tells it how
 // to work in the panes; Over writes over one edited since.

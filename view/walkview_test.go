@@ -105,3 +105,39 @@ func TestAWalkEndsWhenTheWindowLosesTheKeyboard(t *testing.T) {
 		t.Fatal("with the keyboard gone to another program, the walk goes on")
 	}
 }
+
+// Walking to a pane that sits in a split rings it, the ring sliding from
+// the pane left, and the ring goes once Ctrl is let go of.
+func TestCtrlTabRingsAPaneInASplit(t *testing.T) {
+	win, _, publish := windowStage(t)
+	panes := []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}}
+	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
+	st := app.State{Panes: panes, Stage: split, Focus: "p1", Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}}}
+	publish(st)
+	st.Focus = "p2"
+	publish(st)
+	st.Focus = "p1"
+	publish(st)
+	frames := func() {
+		for range 40 {
+			lastWindow.Frame(time.Second / 60)
+		}
+	}
+	frames()
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModControl})
+	lastWindow.Frame(time.Second / 60)
+	// The program puts p2 in front, in the same split.
+	st.Focus = "p2"
+	publish(st)
+	frames()
+	m := win.walkMark
+	want, _ := win.standsAt("p2", lastUI)
+	if m == nil || m.shown.Value() < 0.9 || m.box.Value() != want {
+		t.Fatalf("walked to p2, the ring is %+v, want it shown round %v", m, want)
+	}
+	lastWindow.Input(gi.KeyRelease{Key: gi.KeyLeftControl})
+	lastWindow.Frame(time.Second / 60)
+	if win.walkMark != nil {
+		t.Fatal("letting go of Ctrl left the ring")
+	}
+}

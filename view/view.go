@@ -162,6 +162,9 @@ type Window struct {
 	recent   []string
 	walk     *paneWalk
 	walkList *walkList
+	// walkMark is the ring round the pane a walk has reached, while that
+	// pane sits in a split.
+	walkMark *walkMark
 	keyMods  input.Mods
 	// glowing is set while a shared pane's ring keeps frames coming,
 	// and revealed is the pane whose row the sidebar last scrolled to.
@@ -1772,6 +1775,12 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.vault = st.Secrets
 	w.noteFocus(st.Focus)
+	if w.walk != nil {
+		// Once the stage has laid the pane reached out, the ring goes to
+		// it.
+		focus, split := st.Focus, st.Stage != nil && st.Stage.Pane == ""
+		u.After(0, func(u *gunim.UI) { w.markWalk(focus, split, u) })
+	}
 	shared := map[string]bool{}
 	for _, sp := range st.Share.Panes {
 		shared[sp.Pane] = true

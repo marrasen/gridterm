@@ -64,6 +64,11 @@ func (w *Window) recentPanes() []string {
 func (w *Window) walkRecent(step int, u *gunim.UI) {
 	if w.walk == nil {
 		w.walk = &paneWalk{order: w.recentPanes()}
+		// The ring starts round the pane the walk leaves, to slide from.
+		if r, ok := w.standsAt(w.focused, u); ok && w.walkMark == nil {
+			w.walkMark = newWalkMark(r)
+			u.Insert(w, w.walkMark)
+		}
 	}
 	n := len(w.walk.order)
 	if n < 2 {
@@ -104,6 +109,73 @@ func (w *Window) endWalk(u *gunim.UI) {
 		u.Remove(w.walkList)
 		w.walkList = nil
 	}
+	if w.walkMark != nil {
+		u.Remove(w.walkMark)
+		w.walkMark = nil
+	}
+}
+
+// markWalk puts the ring round pane id, where the stage has laid it
+// out, sliding from where it was, when the pane sits in a split; alone
+// on the stage, the pane needs no pointing out, and the ring fades.
+func (w *Window) markWalk(id string, split bool, u *gunim.UI) {
+	m := w.walkMark
+	if m == nil || w.walk == nil {
+		return
+	}
+	r, ok := w.standsAt(id, u)
+	if !ok || !split {
+		m.shown.Animate(0, widget.Quick.Get(u.Theme()))
+		return
+	}
+	if m.shown.Target() < 0.5 {
+		// Coming back from a pane alone: it starts where the pane is.
+		m.box.Jump(r)
+	} else {
+		m.box.Animate(r, widget.Settle.Get(u.Theme()))
+	}
+	m.shown.Animate(1, widget.Quick.Get(u.Theme()))
+	u.Invalidate()
+}
+
+// walkMark is a ring round a pane, which slides from pane to pane as a
+// walk reaches them.
+type walkMark struct {
+	anim.Group
+	box   *anim.Rect
+	shown *anim.Float
+}
+
+func newWalkMark(at geom.Rect) *walkMark {
+	m := &walkMark{box: anim.NewRect(at), shown: anim.NewFloat(0)}
+	m.Add(m.box, m.shown)
+	return m
+}
+
+// Layout implements [gunim.Node]: the ring is drawn in the window's
+// space, over the whole of it.
+func (m *walkMark) Layout(c gunim.Constraints, _ gunim.Frame, _ gunim.Children) geom.Size {
+	return c.Max
+}
+
+// Paint implements [gunim.Node].
+func (m *walkMark) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, _ gunim.Children) {
+	on := min(max(m.shown.Value(), 0), 1)
+	if on < 0.01 {
+		return
+	}
+	c := widget.Accent.Get(f.Theme)
+	c.A = uint8(float32(c.A) * on)
+	p.RRectStroke(m.box.Value().Inset(geom.Uniform(1.5)), 6, paint.Fill{}, paint.Stroke{Width: 3, Color: c})
+}
+
+// Transition implements [gunim.Transitioner]: the ring fades as the
+// walk ends.
+func (m *walkMark) Transition(pr gunim.Presence, f gunim.Frame) bool {
+	if pr == gunim.Exiting {
+		m.shown.Animate(0, widget.Settle.Get(f.Theme))
+	}
+	return !m.shown.Active()
 }
 
 // walkList is the list of panes shown during a walk, the one reached

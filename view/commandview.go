@@ -80,14 +80,20 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 }
 
 // savedCommandOn is the machine a saved command runs on, by that
-// machine's name now.
+// machine's name now: beyond a window, the window's name for it through
+// that window.
 func (w *Window) savedCommandOn(c settings.SavedCommand) string {
+	host, far, beyond := strings.Cut(c.Host, app.KeptFarSep)
+	on := host
 	for _, h := range w.saved {
 		if c.HostID != "" && h.ID == c.HostID {
-			return h.Name
+			on = h.Name
 		}
 	}
-	return c.Host
+	if beyond {
+		return far + " through " + on
+	}
+	return on
 }
 
 // keptFor reports whether something kept for next time, on the saved

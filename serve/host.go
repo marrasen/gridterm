@@ -28,6 +28,11 @@ const mostStreams = 256
 // dialWait is how long a stream's far end has to answer.
 const dialWait = 15 * time.Second
 
+// How many logs one connection may be reading at once: each is a
+// reader following a log here, and a client must not be able to open
+// them without end.
+const mostLogs = 16
+
 // How many file sessions one connection may have at once.
 //
 // A file session is not a channel and a buffer: an SFTP server is a
@@ -54,7 +59,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 	// Counted rather than held in a list: nothing needs to name them,
 	// only to know how many there are. Written by the goroutines that
 	// finish and read by this one.
-	var files, streams atomic.Int32
+	var files, streams, logs atomic.Int32
 	for nch := range chans {
 		if nch.ChannelType() == chanDial {
 			var want dialOn
@@ -131,7 +136,15 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 				_ = nch.Reject(ssh.Prohibited, "this kakel does not show the logs of the machines it reaches")
 				continue
 			}
-			running.Go(func() { s.runLog(ctx, nch, want) })
+			if logs.Load() >= mostLogs {
+				_ = nch.Reject(ssh.ResourceShortage, "this kakel is already showing as many logs as it will on one connection")
+				continue
+			}
+			logs.Add(1)
+			running.Go(func() {
+				defer logs.Add(-1)
+				s.runLog(ctx, nch, want)
+			})
 			continue
 		}
 		if nch.ChannelType() == SessionOnChannel {

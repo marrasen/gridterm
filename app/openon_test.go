@@ -189,6 +189,15 @@ func TestAFarMachinesLogShowsThroughItsWindow(t *testing.T) {
 		t.Fatalf("asked again, the panes are %+v", b.st.Panes)
 	}
 
+	// Its window gone, the log's pane closes, as a log's does whose
+	// reading has ended: there is no program in it to start again.
+	defer func() {
+		if err := b.disconnectWindow(win); err != nil {
+			t.Fatal(err)
+		}
+		pumpBoth(t, a, b, "the log's pane to close", func() bool { return !b.has(log.ID) })
+	}()
+
 	// One it keeps no log of is refused, saying why.
 	b.handle(ShowLog{Machine: machines.FarID(win, "nowhere")})
 	pumpBoth(t, a, b, "the refusal", func() bool {

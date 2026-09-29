@@ -4,6 +4,8 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 
 	"github.com/marrasen/kakel/machines"
 )
@@ -35,6 +37,26 @@ func TestKeptWorkIsFoundForItsMachine(t *testing.T) {
 	} {
 		if got := win.keptFor(c.host, c.id, c.machine); got != c.want {
 			t.Errorf("kept on %q (%q), for %q: %v, want %v", c.host, c.id, c.machine, got, c.want)
+		}
+	}
+}
+
+// A saved command beyond a window is named for the machine it runs on,
+// through the window as it is called now.
+func TestASavedCommandBeyondAWindowIsNamedForItsMachine(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Saved: []remote.Host{{ID: "a1", Name: "laptop"}}})
+	for _, c := range []struct {
+		saved settings.SavedCommand
+		want  string
+	}{
+		{settings.SavedCommand{Host: "old name" + app.KeptFarSep + "db", HostID: "a1"}, "db through laptop"},
+		{settings.SavedCommand{Host: "me@typed" + app.KeptFarSep + "db"}, "db through me@typed"},
+		{settings.SavedCommand{Host: "old name", HostID: "a1"}, "laptop"},
+		{settings.SavedCommand{Host: "me@typed"}, "me@typed"},
+	} {
+		if got := win.savedCommandOn(c.saved); got != c.want {
+			t.Errorf("%+v is on %q, want %q", c.saved, got, c.want)
 		}
 	}
 }

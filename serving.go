@@ -289,7 +289,7 @@ func (a *app) tellServed() {
 		if p.Machine != "" {
 			host = a.nameOf(p.Machine)
 		}
-		o := serve.Open{ID: p.ID, Host: host, Kind: kind, Label: p.Title, State: meter.Opened.String()}
+		o := serve.Open{ID: p.ID, Host: host, HostID: p.Machine, Kind: kind, Label: p.Title, State: meter.Opened.String()}
 		if t := a.terminal(p.ID); t != nil {
 			size := t.Size()
 			o.Cols, o.Rows = size.Cols, size.Rows

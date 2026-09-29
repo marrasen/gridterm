@@ -619,7 +619,7 @@ func (a *app) savedOtherwise(machine string, c *remote.Conn) error {
 		// Typed, not saved, or from before routes were kept.
 		return nil
 	}
-	hosts, err := a.book.Route(machine)
+	hosts, err := a.book.RouteID(machine)
 	if err != nil {
 		return nil
 	}

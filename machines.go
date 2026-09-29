@@ -59,7 +59,7 @@ func (a *app) isQuick(id string) bool {
 // quick connection's address, and "this computer" for "".
 func (a *app) nameOf(id string) string {
 	if window, host, far := strings.Cut(id, farSep); far {
-		return host + " through " + a.nameOf(window)
+		return a.farName(window, host) + " through " + a.nameOf(window)
 	}
 	switch {
 	case id == "":
@@ -77,6 +77,14 @@ func (a *app) nameOf(id string) string {
 		return name
 	}
 	return id
+}
+
+// farName is what window calls the machine it reaches by key.
+func (a *app) farName(window, key string) string {
+	if w := a.windows[window]; w != nil && w.farNames[key] != "" {
+		return w.farNames[key]
+	}
+	return key
 }
 
 // idOf is the machine a name says, as one typed, or asked for by an
@@ -136,6 +144,13 @@ func (a *app) machines() []Machine {
 	for id, q := range a.quick {
 		out = append(out, Machine{ID: id, Name: q.target, Quick: true, Window: q.window, Target: q.target})
 	}
+	// The machines windows reach, by the window's key for each, named
+	// as the window calls them.
+	for wid, w := range a.windows {
+		for key, name := range w.farNames {
+			out = append(out, Machine{ID: wid + farSep + key, Name: name})
+		}
+	}
 	for id, name := range a.goneNames {
 		if !slices.ContainsFunc(out, func(m Machine) bool { return m.ID == id }) {
 			out = append(out, Machine{ID: id, Name: name})
@@ -152,6 +167,12 @@ func (a *app) used(id string) bool {
 		return true
 	}
 	on := func(m string) bool { return m == id || strings.HasPrefix(m, id+farSep) }
+	if c := a.clip; c != nil && on(c.machine) {
+		return true
+	}
+	if slices.ContainsFunc(a.running, func(r *running) bool { return on(r.from) || on(r.to) }) {
+		return true
+	}
 	return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return on(p.Machine) }) ||
 		slices.ContainsFunc(a.st.Tunnels, func(t Tunnel) bool { return on(t.Machine) }) ||
 		slices.ContainsFunc(a.st.Jobs, func(j Job) bool { return on(j.Machine) })
@@ -169,10 +190,13 @@ func (a *app) forgetQuick() {
 		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == id })
 		a.forgetFar(id)
 	}
-	// Names kept for removed servers go once nothing names them.
+	// Names kept for removed servers go once nothing names them, and
+	// their logs with them.
 	for id := range a.goneNames {
 		if !a.used(id) {
 			delete(a.goneNames, id)
+			delete(a.accounts, id)
+			a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == id })
 		}
 	}
 }

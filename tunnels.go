@@ -149,7 +149,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		return err
 	}
 	if (t.Exposed() || t.Kind == remote.RemoteForward) && !in.Sure {
-		go a.confirmTunnel(in)
+		go a.confirmTunnel(in, a.nameOf(in.Machine))
 		return nil
 	}
 	if a.settings != nil && !in.Saved {
@@ -185,7 +185,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	open.f = f
 	a.tunnels[id] = open
 	label := tunnelLabel(f)
-	open.say("opened " + label + " over " + in.Machine)
+	open.say("opened " + label + " over " + a.nameOf(in.Machine))
 	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
 	a.worked("Tunnel open", label+", over "+a.nameOf(in.Machine), "")
 	a.tickTunnels()
@@ -193,19 +193,20 @@ func (a *app) openTunnel(in OpenTunnel) error {
 }
 
 // confirmTunnel asks before opening a tunnel open to the network, and
-// opens it on yes. It runs on a goroutine of its own, as asking waits.
-func (a *app) confirmTunnel(in OpenTunnel) {
+// opens it on yes. It runs on a goroutine of its own, as asking waits;
+// called is what the machine it goes over is called.
+func (a *app) confirmTunnel(in OpenTunnel, called string) {
 	t := in.Tunnel
 	where := "this machine"
 	if t.Kind == remote.RemoteForward {
-		where = in.Machine
+		where = called
 	}
 	said := "Anyone who can reach " + where + " on that port is connected to " + t.Target + ", with no authentication."
 	if t.Kind == remote.DynamicForward {
-		said = "Anyone who can reach " + where + " on that port can connect to anything " + in.Machine + " can reach, with no authentication."
+		said = "Anyone who can reach " + where + " on that port can connect to anything " + called + " can reach, with no authentication."
 	}
 	if t.Kind == remote.RemoteForward {
-		said += " " + in.Machine + " chooses where it listens. With GatewayPorts on, that is its whole network."
+		said += " " + called + " chooses where it listens. With GatewayPorts on, that is its whole network."
 	}
 	ans, err := a.ask(a.ctx, Ask{Title: "Open " + listenName(t) + "?", Text: said, Yes: "Open", Danger: true})
 	if err != nil || !ans.Yes {
@@ -417,6 +418,8 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 
 // serverID is the ID of the saved server named machine, or "".
 func (a *app) serverID(machine string) string {
+	// Beyond a window: the window's.
+	machine, _, _ = strings.Cut(machine, farSep)
 	if _, ok := a.savedHost(machine); ok {
 		return machine
 	}

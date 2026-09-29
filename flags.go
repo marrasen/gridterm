@@ -170,17 +170,27 @@ func (a *app) openFirst() error {
 	switch {
 	case a.opts.ssh != "":
 		in := ConnectTo{Target: a.opts.ssh}
+		// A saved server's name is that server, as Quick Connect takes
+		// it.
+		if a.book != nil {
+			if h, ok := a.book.Lookup(strings.TrimSpace(a.opts.ssh)); ok && !h.Window {
+				in = ConnectTo{Server: h.ID}
+			}
+		}
 		line := strings.TrimSpace(a.opts.command)
 		if line == "" {
 			return a.connect(in)
 		}
 		// -e with -ssh runs the command there, once connected.
-		cfg, err := remote.ParseTarget(strings.TrimSpace(a.opts.ssh))
-		if err != nil {
-			return err
+		machine := in.Server
+		if machine == "" {
+			cfg, err := remote.ParseTarget(strings.TrimSpace(a.opts.ssh))
+			if err != nil {
+				return err
+			}
+			machine = a.newQuick(cfg.Target(), false)
+			in.As = machine
 		}
-		machine := a.newQuick(cfg.Target(), false)
-		in.As = machine
 		return a.connectThen(in, func(err error) {
 			if err != nil {
 				return

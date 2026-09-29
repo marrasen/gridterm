@@ -56,7 +56,6 @@ func TestNothingOpensOnAServerChangedSinceItConnected(t *testing.T) {
 	}
 }
 
-
 // A server renamed while connected is only renamed: its connection and
 // its panes go by its ID, and stay as they are, under the new name.
 func TestRenamingAConnectedServerIsOnlyANewName(t *testing.T) {

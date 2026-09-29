@@ -470,8 +470,8 @@ type app struct {
 	// for one reached by a typed address.
 	connIDs map[string]string
 	dialing map[string]bool
-	ring       *remote.Ring
-	book       *remote.Book
+	ring    *remote.Ring
+	book    *remote.Book
 	// replies waits for the answers to asks, by ID, and askIDs counts
 	// them.
 	replies map[uint64]chan AskAnswered

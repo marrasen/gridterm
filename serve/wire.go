@@ -163,6 +163,12 @@ type Open struct {
 	// window's "Local" is this one's "the machine I took over".
 	Host string `json:"host"`
 
+	// HostID is what the served window knows that machine by, which
+	// its name may change under. A window that sends one sends Host to
+	// be shown, and takes HostID back where it asks for the machine. A
+	// window from before sends neither, or Host alone.
+	HostID string `json:"hostId,omitempty"`
+
 	// Kind, Label and Note are what the panel says about it.
 	Kind  string `json:"kind"`
 	Label string `json:"label"`
@@ -188,6 +194,15 @@ type Open struct {
 	// is sent instead, and the pane watching it can say what it is.
 	Cols int `json:"cols,omitempty"`
 	Rows int `json:"rows,omitempty"`
+}
+
+// Key is what the machine it is on goes by when asked for again: its ID
+// in the served window, or its name from a window that sends none.
+func (o Open) Key() string {
+	if o.HostID != "" {
+		return o.HostID
+	}
+	return o.Host
 }
 
 // HasScreen reports whether this is something a watcher can be shown.

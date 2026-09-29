@@ -47,7 +47,7 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	_, window := a.windows[in.Machine]
 	if a.book != nil {
-		if h, ok := a.book.Lookup(in.Machine); ok && h.Window {
+		if h, ok := a.savedHost(in.Machine); ok && h.Window {
 			window = true
 		}
 	}

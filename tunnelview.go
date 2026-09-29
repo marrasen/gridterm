@@ -51,7 +51,7 @@ func (w *window) tunnelDialogOn(machine string, socks bool, u *gunim.UI) {
 	// than two addresses to remember.
 	var kept []settings.SavedTunnel
 	for _, t := range w.savedTunnels {
-		if w.savedTunnelOn(t) == machine && (t.Kind == remote.DynamicForward.String()) == socks {
+		if w.keptFor(t.Host, t.HostID, machine) && (t.Kind == remote.DynamicForward.String()) == socks {
 			kept = append(kept, t)
 		}
 	}

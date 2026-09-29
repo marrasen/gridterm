@@ -37,7 +37,7 @@ func (w *window) commandDialogAt(machine string, at placement, u *gunim.UI) {
 	// picked is the saved command picked, which unticking Keep forgets.
 	picked := ""
 	for _, c := range w.savedCommands {
-		if w.savedCommandOn(c) == machine {
+		if w.keptFor(c.Host, c.HostID, machine) {
 			kept = append(kept, c)
 		}
 	}
@@ -90,6 +90,20 @@ func (w *window) savedCommandOn(c settings.SavedCommand) string {
 		}
 	}
 	return c.Host
+}
+
+// keptFor reports whether something kept for next time, on the saved
+// server hostID, or on host as it was kept with none, is for machine:
+// the saved server by its ID, this computer, or a quick connection by
+// its address.
+func (w *window) keptFor(host, hostID, machine string) bool {
+	switch {
+	case hostID != "":
+		return hostID == machine
+	case host == "":
+		return machine == ""
+	}
+	return machine != "" && w.nameOf(machine) == host
 }
 
 // savedCommandItems are the palette's lines for the saved commands.

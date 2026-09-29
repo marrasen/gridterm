@@ -133,7 +133,7 @@ func (a *app) startAgain(id string) error {
 				if !ok {
 					open = serve.Open{ID: farID, Kind: "Terminal"}
 				}
-				err = w.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Host, Kind: open.Kind})
+				err = w.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind})
 				if err == nil {
 					sess, err = w.win.Attach(open, size.Cols, size.Rows)
 				}

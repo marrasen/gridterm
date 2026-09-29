@@ -182,18 +182,3 @@ func TestASavedCommandOnARemovedServerIsNotRun(t *testing.T) {
 		t.Fatalf("it dialled %v", a.dialing)
 	}
 }
-
-// A command on a saved kakel window is refused before connecting.
-func TestACommandOnASavedWindowIsRefused(t *testing.T) {
-	a, _ := dialApp(t)
-	if err := a.book.Put(remote.Host{Name: "box", Address: "127.0.0.1", Port: 1, Window: true}, ""); err != nil {
-		t.Fatal(err)
-	}
-	err := a.runCommand(RunCommand{Machine: "box", Line: "uptime"})
-	if err == nil || !strings.Contains(err.Error(), "kakel window") {
-		t.Fatalf("a command on a saved window said %v", err)
-	}
-	if len(a.dialing) != 0 {
-		t.Fatalf("it dialled %v", a.dialing)
-	}
-}

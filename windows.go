@@ -55,8 +55,10 @@ type remoteWin struct {
 	win           *serve.Window
 	addr, keyFile string
 	// bound is the pane here showing each thing it has open, by its id
-	// there.
-	bound map[string]string
+	// there, and farNames what it calls each machine beyond it, by the
+	// key it goes by, kept once seen.
+	bound    map[string]string
+	farNames map[string]string
 	// seen is its list as last told, to publish only a change, and
 	// leaving says the user let go of it.
 	seen    []serve.Open
@@ -87,8 +89,14 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 		return errors.New("type the address of the window to connect to")
 	}
 	name := in.ID
-	if name == "" {
-		name = a.newQuick(addr, true)
+	if _, saved := a.savedHost(name); name == "" || (!saved && !a.isQuick(name)) {
+		// A quick one, or one again that was forgotten meanwhile, as
+		// when its row was cleared before the reconnect was answered.
+		if name == "" {
+			name = a.newQuick(addr, true)
+		} else {
+			a.quick[name] = quickConn{target: addr, window: true}
+		}
 	}
 	if _, ok := a.windows[name]; ok || a.dialing[name] {
 		return fmt.Errorf("this window is already connected to %s", a.nameOf(name))
@@ -150,7 +158,7 @@ func knownWindows() (string, error) {
 // holdWindow keeps a window connected to, following what it has open
 // and noticing when it goes.
 func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) {
-	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}}
+	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}, farNames: map[string]string{}}
 	a.windows[name] = w
 	delete(a.dropped, name)
 	a.showWindows()
@@ -256,6 +264,11 @@ func (a *app) showWindows() {
 	var out []RemoteWindow
 	for name, w := range a.windows {
 		w.seen = w.win.Opens()
+		for _, o := range w.seen {
+			if o.Key() != "" {
+				w.farNames[o.Key()] = o.Host
+			}
+		}
 		rw := RemoteWindow{Name: name, Addr: w.addr}
 		for _, o := range w.seen {
 			if !o.HasScreen() {
@@ -310,7 +323,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 func (a *app) attachWindow(in AttachWindow) error {
 	w, ok := a.windows[in.Window]
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s any more", in.Window)
+		return fmt.Errorf("this window is not connected to %s any more", a.nameOf(in.Window))
 	}
 	if pane, ok := w.bound[in.ID]; ok && a.has(pane) {
 		a.bringHere(pane)
@@ -318,10 +331,10 @@ func (a *app) attachWindow(in AttachWindow) error {
 	}
 	open, ok := w.win.OpenNamed(in.ID)
 	if !ok {
-		return fmt.Errorf("%s no longer has that open", in.Window)
+		return fmt.Errorf("%s no longer has that open", a.nameOf(in.Window))
 	}
 	if !open.HasScreen() {
-		return fmt.Errorf("%q on %s has no screen to work in", open.Label, in.Window)
+		return fmt.Errorf("%q on %s has no screen to work in", open.Label, a.nameOf(in.Window))
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
@@ -332,9 +345,10 @@ func (a *app) attachWindow(in AttachWindow) error {
 				a.failed("Couldn't work in "+open.Label, err.Error())
 				return
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Host}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
-			if open.Host != "" {
-				a.farHost[id] = open.Host
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
+			if open.Key() != "" {
+				a.farHost[id] = open.Key()
+				w.farNames[open.Key()] = open.Host
 			}
 			w.bound[in.ID] = id
 			a.showWindows()

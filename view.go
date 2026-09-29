@@ -1307,8 +1307,8 @@ func (w *window) rename(u *gunim.UI) {
 // nameOf is what machine id is called, as the program says: a saved
 // server's name, a quick connection's address, "this computer" for "".
 func (w *window) nameOf(id string) string {
-	if win, host, far := strings.Cut(id, farSep); far {
-		return host + " through " + w.nameOf(win)
+	if win, _, far := strings.Cut(id, farSep); far {
+		return w.farHostName(id) + " through " + w.nameOf(win)
 	}
 	if id == "" {
 		return "this computer"
@@ -1321,6 +1321,18 @@ func (w *window) nameOf(id string) string {
 	return id
 }
 
+// farHostName is what a window calls the machine beyond it that key,
+// window and the window's own key for it joined by farSep, names.
+func (w *window) farHostName(key string) string {
+	for _, m := range w.machineList {
+		if m.ID == key {
+			return m.Name
+		}
+	}
+	_, host, _ := strings.Cut(key, farSep)
+	return host
+}
+
 // quick reports whether machine id is a quick connection.
 func (w *window) quick(id string) bool {
 	return slices.ContainsFunc(w.machineList, func(m Machine) bool { return m.ID == id && m.Quick })
@@ -1328,7 +1340,13 @@ func (w *window) quick(id string) bool {
 
 // named is nameOf for the sidebar: a machine's name, and whether it is
 // a quick connection.
-func (w *window) named(id string) (string, bool) { return w.nameOf(id), w.quick(id) }
+func (w *window) named(id string) (string, bool) {
+	if strings.Contains(id, farSep) {
+		// Under its window's heading: its own name alone.
+		return w.farHostName(id), false
+	}
+	return w.nameOf(id), w.quick(id)
+}
 
 // cmdName is what a machine is called in a command's ID, as a
 // shortcuts file names it: by its name, not its ID.
@@ -2066,12 +2084,12 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		if m == "" {
 			name = "This computer"
 		}
-		heading := sideItem{key: "machine:" + m, text: name, heading: true}
 		if quick {
-			// Not saved: forgotten once nothing is open on it.
-			heading.note = "quick"
+			// Not saved: forgotten once nothing is open on it. Said in
+			// the heading, whose right is its plus.
+			name += " (quick)"
 		}
-		out = append(out, heading)
+		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
 		for _, p := range panes {
 			if p.Machine == m && p.On == "" && !shown[p.Tunnel] {
 				out = append(out, paneRow(p))
@@ -2085,10 +2103,10 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 			// What the window has open on its own machine, to work in
 			// from here.
 			for _, o := range w.Open {
-				if o.Host == "" {
+				if o.Key() == "" {
 					out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
-				} else if !slices.Contains(far, o.Host) {
-					far = append(far, o.Host)
+				} else if !slices.Contains(far, o.Key()) {
+					far = append(far, o.Key())
 				}
 			}
 		}
@@ -2101,7 +2119,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		// step in: this window's panes on it, and what the window has
 		// open there.
 		for _, host := range far {
-			out = append(out, sideItem{key: "machine:" + m + farSep + host, text: host, heading: true, depth: 1})
+			hostName, _ := named(m + farSep + host)
+			out = append(out, sideItem{key: "machine:" + m + farSep + host, text: hostName, heading: true, depth: 1})
 			for _, p := range panes {
 				if p.Machine == m && p.On == host {
 					out = append(out, paneRow(p))
@@ -2112,7 +2131,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 					continue
 				}
 				for _, o := range w.Open {
-					if o.Host == host {
+					if o.Key() == host {
 						out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
 					}
 				}

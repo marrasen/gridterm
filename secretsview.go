@@ -179,7 +179,7 @@ func (w *window) secretForm(kind secrets.Kind, old *SecretItem, u *gunim.UI) {
 	} else if m := w.machineOf(w.lastTerm); m != "" {
 		// The server in front of the user, which a password typed now
 		// is nearly always for.
-		user.SetText(m)
+		user.SetText(w.nameOf(m))
 	}
 	form := widget.NewForm().Add("", widget.NewLabel("Only your key opens the secrets.")).Add("Name", name).Add("For", user).Add(label, value)
 	d := widget.NewDialog(title)

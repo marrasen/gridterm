@@ -599,6 +599,24 @@ func TestALongClipboardSetArrivesWhole(t *testing.T) {
 	}
 }
 
+// CAN abandons a copy, and what follows it is output again.
+func TestACancelledClipboardSetPrintsWhatFollows(t *testing.T) {
+	h := newHarness(t, 20, 2)
+	h.write("\x1b]52;c;aGk=\x18after")
+	if len(h.clips) != 0 || h.line(0) != "after" {
+		t.Fatalf("copied %q, the line reads %q", h.clips, h.line(0))
+	}
+}
+
+// A copy past the most a program may copy is not taken.
+func TestAHugeClipboardSetIsNotTaken(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	h.write("\x1b]52;c;" + base64.StdEncoding.EncodeToString(make([]byte, mostClipboard+1)) + "\x07")
+	if len(h.clips) != 0 {
+		t.Fatalf("a copy of %d bytes was taken", len(h.clips[0]))
+	}
+}
+
 // Answering an OSC 52 read would let any program that can write to the
 // terminal exfiltrate the clipboard.
 func TestClipboardReadIsNotAnswered(t *testing.T) {

@@ -78,6 +78,10 @@ func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 			}
 		case b == 0x07:
 			s.finish(take)
+		case b == 0x18, b == 0x1a:
+			// CAN and SUB abandon the sequence, as the parser does, and
+			// what follows is output again.
+			s.drop()
 		case b == 0x1b:
 			s.esc = true
 		default:

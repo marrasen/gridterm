@@ -243,7 +243,7 @@ The whole list. The [README](README.md) has the short version.
 - **Mouse, selection and clipboard.** Programs that ask for the mouse
   get it; hold Shift to select text anyway. Drag to select, Alt+drag for
   a rectangle. A program may copy text with OSC 52, as an editor over
-  SSH does, up to about 16 MB; asking to read the clipboard is never
+  SSH does, up to 4 MB; asking to read the clipboard is never
   answered.
 - **A window log.** Help → Window Log shows what the window did: when
   it started, each pane opened and closed, how a shell ended,

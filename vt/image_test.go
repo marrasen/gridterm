@@ -278,3 +278,26 @@ func TestAResetForgetsTheImages(t *testing.T) {
 		t.Errorf("%d images survived a reset", len(got))
 	}
 }
+
+// The word is written in the plain pen, whatever the program left set,
+// and the program's pen is left as it was. A full-screen program is
+// left alone.
+func TestTheWordOnAnImageIsWrittenPlain(t *testing.T) {
+	h := newHarness(t, 80, 4)
+	h.write("\x1b[8;31m")
+	pen := h.term.scr.Pen()
+	sendImage(t, h.term, "inline=1", "!!!")
+	if got := h.term.scr.Pen(); got.Attr != pen.Attr || got.FG != pen.FG {
+		t.Fatalf("the pen was left %+v, want the program's %+v", got, pen)
+	}
+	h.term.Render(h.g)
+	if c, plain := h.g.At(0, 0), h.term.defaultPen(); c.Rune != '[' || c.Attr != plain.Attr || c.FG != plain.FG {
+		t.Fatalf("the word starts with %+v, want plain", c)
+	}
+	h2 := newHarness(t, 80, 4)
+	h2.write("\x1b[?1049h")
+	sendImage(t, h2.term, "inline=1", "!!!")
+	if got := strings.TrimSpace(h2.line(0)); got != "" {
+		t.Fatalf("on the alternate screen, the first line reads %q", got)
+	}
+}

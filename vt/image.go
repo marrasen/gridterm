@@ -146,12 +146,23 @@ func decodeImage(encoded string) (img image.Image, raw []byte, why string) {
 
 // say writes a line of kakel's own into the output where the cursor
 // is, and moves to the start of the next line, as an image would have.
+// It is written in the plain pen, whatever the program left set, and
+// the program's pen and the character it would repeat are put back.
+// Not on the alternate screen, where a program lays out every cell and
+// a line of text would run across its layout.
 func (t *Terminal) say(line string) {
+	if t.scr.OnAltBuffer() {
+		return
+	}
+	pen, last := t.scr.Pen(), t.lastRune
+	t.scr.SetPen(t.defaultPen())
 	for _, r := range line {
 		t.Print(r)
 	}
 	t.Execute('\r')
 	t.Execute('\n')
+	t.scr.SetPen(pen)
+	t.lastRune = last
 }
 
 // mostImagePixels is the largest image decoded, which is what stops

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"image/color"
 	"slices"
 	"strings"
@@ -240,7 +241,7 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 	for _, t := range st.Tunnels {
 		tunnels[t.ID] = t
 	}
-	connected := func(m MachineID) bool {
+	connected := func(m machines.ID) bool {
 		return m == "" || slices.Contains(st.Connected, m) ||
 			slices.ContainsFunc(st.Windows, func(rw RemoteWindow) bool { return rw.Name == m })
 	}
@@ -248,7 +249,7 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 		r := &rows[i]
 		switch {
 		case r.heading && strings.HasPrefix(r.key, "machine:"):
-			m := MachineID(strings.TrimPrefix(r.key, "machine:"))
+			m := machines.ID(strings.TrimPrefix(r.key, "machine:"))
 			if _, _, far := m.Far(); far {
 				// A machine a window reached is there while the window is.
 				r.live = func(time.Time) meter.State { return meter.Opened }

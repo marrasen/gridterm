@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/marrasen/kakel/machines"
 	"log"
 	"os/exec"
 	"slices"
@@ -112,13 +113,13 @@ func (a *app) startAgain(id string) error {
 		return a.restarted(id, t, sess)
 	}
 	size := t.Size()
-	if w, ok := a.windows[machine]; ok {
+	if w := a.machines.Get(machine).Window; w != nil {
 		// The window started it: it is asked to start it again, in its
 		// own pane, what ran there, and the pane here watches that as
 		// before. A window that cannot, or a pane it no longer knows,
 		// gets a shell of its own there.
 		farID := ""
-		for fid, pane := range w.bound {
+		for fid, pane := range w.Bound {
 			if pane == id {
 				farID = fid
 			}
@@ -129,13 +130,13 @@ func (a *app) startAgain(id string) error {
 			if farID != "" {
 				// Ended, it is not listed there, and is asked for by the
 				// ID the window gave it; one on a machine beyond it is.
-				open, ok := w.win.OpenNamed(farID)
+				open, ok := w.Serve.OpenNamed(farID)
 				if !ok {
 					open = serve.Open{ID: farID, Kind: "Terminal"}
 				}
-				err = w.win.StartAgain(serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind})
+				err = w.Serve.StartAgain(serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind})
 				if err == nil {
-					sess, err = w.win.Attach(open, size.Cols, size.Rows)
+					sess, err = w.Serve.Attach(open, size.Cols, size.Rows)
 				}
 				// A window that cannot, or one that closed it: a shell of
 				// its own there, in its place.
@@ -145,7 +146,7 @@ func (a *app) startAgain(id string) error {
 			}
 			if sess == nil && err == nil {
 				moved := farID != "" && a.farHostOf(id) != ""
-				sess, err = w.win.Open(size.Cols, size.Rows, func(n serve.Attached) {
+				sess, err = w.Serve.Open(size.Cols, size.Rows, func(n serve.Attached) {
 					if moved {
 						go func() { a.events <- func() { a.onWindowsOwn(id) } }()
 					}
@@ -209,12 +210,12 @@ func (a *app) startAgain(id string) error {
 // address than the pane was opened at, which a saved server edited
 // since leaves it. The new run goes under the old transcript, and the
 // two would otherwise read as one machine.
-func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine MachineID) {
-	was, now := a.paneAt[id], a.reached[machine]
+func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine machines.ID) {
+	was, now := a.paneAt[id], a.machines.Get(machine).Reached
 	if was == "" || now == "" || was == now {
 		return
 	}
-	t.Say("-- kakel: " + a.nameOf(machine) + " is " + now + " now. This pane was on " + was + " --")
+	t.Say("-- kakel: " + a.machines.Name(machine) + " is " + now + " now. This pane was on " + was + " --")
 	a.paneAt[id] = now
 }
 
@@ -258,7 +259,9 @@ func exitStatus(why error, over bool) (int, bool) {
 // clearFinished closes the panes whose programs have ended and clears
 // the tunnels that stopped.
 func (a *app) clearFinished() {
-	clear(a.dropped)
+	for _, id := range a.machines.Dropped() {
+		a.machines.At(id).Dropped = false
+	}
 	a.clearJobs(true)
 	a.showJobs()
 	for _, p := range slices.Clone(a.st.Panes) {
@@ -293,14 +296,14 @@ func (a *app) giveSavedIDs() {
 
 // ClearMachine takes a machine whose connection went off the sidebar,
 // with the ended panes on it.
-type ClearMachine struct{ ID MachineID }
+type ClearMachine struct{ ID machines.ID }
 
 // clearMachine takes a machine whose connection went off the sidebar.
 // Its panes go too, ended or still ending: the connection under them
 // has gone. A reconnect's log on its way stays.
-func (a *app) clearMachine(name MachineID) {
-	dropped := a.dropped[name]
-	delete(a.dropped, name)
+func (a *app) clearMachine(name machines.ID) {
+	dropped := a.machines.Get(name).Dropped
+	a.machines.At(name).Dropped = false
 	a.withdrawLost(name)
 	for _, p := range slices.Clone(a.st.Panes) {
 		if p.Machine == name && (p.Ended || dropped && p.Kind != kindLog) {
@@ -328,17 +331,17 @@ func (a *app) reloadServers() error {
 
 // bindFar has pane watch what window w calls farID, so the sidebar does
 // not list it under w as well.
-func (a *app) bindFar(w *remoteWin, farID, pane string) {
+func (a *app) bindFar(w *machines.Window, farID, pane string) {
 	if farID == "" || !a.has(pane) {
 		return
 	}
 	// What it watched before is not this pane's any more.
-	for f, p := range w.bound {
+	for f, p := range w.Bound {
 		if p == pane {
-			delete(w.bound, f)
+			delete(w.Bound, f)
 		}
 	}
-	w.bound[farID] = pane
+	w.Bound[farID] = pane
 	a.showWindows()
 }
 
@@ -354,6 +357,6 @@ func (a *app) onWindowsOwn(id string) {
 	delete(a.farHost, id)
 	a.setPane(id, func(p *Pane) { p.On = "" })
 	if t := a.terminal(id); t != nil && was != "" {
-		t.Say("It ran on " + a.nameOf(farID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
+		t.Say("It ran on " + a.machines.Name(machines.FarID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
 	}
 }

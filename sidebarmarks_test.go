@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"testing"
 	"time"
 
@@ -15,7 +16,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	win, _, publish := windowStage(t)
 	busy := meter.New()
 	busy.Moved(10, 0, time.Now())
-	st := State{Sidebar: true, SidebarWidth: 220, Connected: []MachineID{"srv"},
+	st := State{Sidebar: true, SidebarWidth: 220, Connected: []machines.ID{"srv"},
 		Panes: []Pane{
 			{ID: "p1", Title: "Terminal 1"},
 			{ID: "p2", Title: "docs", Kind: kindFiles},

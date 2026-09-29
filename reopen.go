@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
 
@@ -50,15 +51,15 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 	key := a.filesKey(pane)
 	then := func(vfs.FS) { a.handle(in) }
 	machine := a.machineOf(pane)
-	if _, ok := a.conns[machine]; ok {
+	if a.machines.Get(machine).Conn != nil {
 		if err := a.withFiles(key, then); err != nil {
-			a.failed("Couldn't open the files on "+a.nameOf(key), err.Error())
+			a.failed("Couldn't open the files on "+a.machines.Name(key), err.Error())
 		}
 		return true
 	}
-	if _, ok := a.windows[machine]; ok {
+	if a.machines.Get(machine).Window != nil {
 		if err := a.withFiles(key, then); err != nil {
-			a.failed("Couldn't open the files on "+a.nameOf(key), err.Error())
+			a.failed("Couldn't open the files on "+a.machines.Name(key), err.Error())
 		}
 		return true
 	}
@@ -67,10 +68,10 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 			return
 		}
 		if err := a.withFiles(key, then); err != nil {
-			a.failed("Couldn't open the files on "+a.nameOf(key), err.Error())
+			a.failed("Couldn't open the files on "+a.machines.Name(key), err.Error())
 		}
 	}); err != nil {
-		a.failed("Couldn't open the files on "+a.nameOf(key), err.Error())
+		a.failed("Couldn't open the files on "+a.machines.Name(key), err.Error())
 	}
 	return true
 }
@@ -79,19 +80,19 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 // by its ID: a saved one, or a quick connection's address, as the same
 // quick connection. then hears how it went. A window is connected to
 // again by the user, and a server removed from the list is not.
-func (a *app) dialAgain(machine MachineID, then func(error)) error {
-	if q, ok := a.quick[machine]; ok {
-		if q.window {
-			return errors.New("the window " + a.nameOf(machine) + " has gone. Connect to it again first")
+func (a *app) dialAgain(machine machines.ID, then func(error)) error {
+	if target, window, ok := a.machines.Quick(machine); ok {
+		if window {
+			return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
 		}
-		return a.connectThen(ConnectTo{Target: q.target, As: machine}, then)
+		return a.connectThen(ConnectTo{Target: target, As: machine}, then)
 	}
-	h, saved := a.savedHost(machine)
+	h, saved := a.machines.Saved(machine)
 	switch {
 	case !saved:
-		return errors.New(a.nameOf(machine) + " is not in the server list any more, so there is nothing to connect to")
+		return errors.New(a.machines.Name(machine) + " is not in the server list any more, so there is nothing to connect to")
 	case h.Window:
-		return errors.New("the window " + a.nameOf(machine) + " has gone. Connect to it again first")
+		return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
 	}
 	return a.connectThen(ConnectTo{Server: machine}, then)
 }

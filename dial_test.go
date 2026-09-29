@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/marrasen/kakel/machines"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -42,7 +43,8 @@ func dialApp(t *testing.T) (a *app, answering func()) {
 		for len(a.st.Panes) > 0 {
 			a.remove(a.st.Panes[0].ID)
 		}
-		for _, c := range a.conns {
+		for _, id := range a.machines.Connected() {
+			c := a.machines.Get(id).Conn
 			_ = c.Close()
 		}
 	})
@@ -68,9 +70,9 @@ func TestADialIsGivenUp(t *testing.T) {
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
 	a.handle(Disconnect{Machine: "srv"})
-	waitFor(t, a, "the dial to end", func() bool { return len(a.dialing) == 0 && len(a.st.Asks) == 0 })
-	if len(a.st.Panes) != 0 || len(a.conns) != 0 {
-		t.Fatalf("given up, there are panes %+v and connections %v", a.st.Panes, a.conns)
+	waitFor(t, a, "the dial to end", func() bool { return len(a.machines.Dialing()) == 0 && len(a.st.Asks) == 0 })
+	if len(a.st.Panes) != 0 || len(a.machines.Connected()) != 0 {
+		t.Fatalf("given up, there are panes %+v and connections %v", a.st.Panes, a.machines.Connected())
 	}
 	if len(a.st.Notices) != 0 {
 		t.Fatalf("given up on purpose, it said %+v", a.st.Notices)
@@ -82,7 +84,7 @@ func TestRemovingAServerClosesItsConnection(t *testing.T) {
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	a.handle(RemoveServer{ID: "srv"})
-	waitFor(t, a, "the connection to close", func() bool { return a.conns["srv"] == nil && a.st.Panes[0].Ended })
+	waitFor(t, a, "the connection to close", func() bool { return a.machines.Get("srv").Conn == nil && a.st.Panes[0].Ended })
 	if len(a.st.Saved) != 0 {
 		t.Fatalf("removed, the list is %+v", a.st.Saved)
 	}
@@ -93,11 +95,11 @@ func TestRemovingADroppedServerClearsIt(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
-	_ = a.conns["srv"].Close() // as if the network went
-	waitFor(t, a, "the drop", func() bool { return a.dropped["srv"] && a.st.Panes[0].Ended })
+	_ = a.machines.Get("srv").Conn.Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.machines.Get("srv").Dropped && a.st.Panes[0].Ended })
 	a.handle(RemoveServer{ID: "srv"})
-	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
-		t.Fatalf("removed, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	if len(a.machines.Dropped()) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("removed, it keeps %v and panes %+v", a.machines.Dropped(), a.st.Panes)
 	}
 }
 
@@ -107,31 +109,31 @@ func TestRemovingADroppedServerWhileItReconnects(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
-	_ = a.conns["srv"].Close() // as if the network went
-	waitFor(t, a, "the drop", func() bool { return a.dropped["srv"] })
+	_ = a.machines.Get("srv").Conn.Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.machines.Get("srv").Dropped })
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
 	a.handle(RemoveServer{ID: "srv"})
-	waitFor(t, a, "the reconnect to end", func() bool { return len(a.dialing) == 0 && len(a.st.Asks) == 0 })
-	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
-		t.Fatalf("removed, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	waitFor(t, a, "the reconnect to end", func() bool { return len(a.machines.Dialing()) == 0 && len(a.st.Asks) == 0 })
+	if len(a.machines.Dropped()) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("removed, it keeps %v and panes %+v", a.machines.Dropped(), a.st.Panes)
 	}
 }
 
 func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []MachineID{"srv"}, Dialing: []MachineID{"far"}})
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []machines.ID{"srv"}, Dialing: []machines.ID{"far"}})
 	if got := win.removeSays("srv"); got != "srv is connected. Removing it closes the connection and everything through it: 1 pane." {
 		t.Fatalf("for a connected server it says %q", got)
 	}
 	if got := win.removeSays("far"); got != "Removing it cancels the connection in progress." {
 		t.Fatalf("for a server being connected to it says %q", got)
 	}
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []MachineID{"srv"}})
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []machines.ID{"srv"}})
 	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it closes its 1 ended pane." {
 		t.Fatalf("for a dropped server it says %q", got)
 	}
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []MachineID{"srv"}, Dialing: []MachineID{"srv"}})
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []machines.ID{"srv"}, Dialing: []machines.ID{"srv"}})
 	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it cancels the reconnect in progress and closes its 1 ended pane." {
 		t.Fatalf("for a dropped server reconnecting it says %q", got)
 	}
@@ -162,13 +164,13 @@ func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(OpenOn{Machine: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	if a.st.Panes[0].Machine != "srv" || a.conns["srv"] == nil {
+	if a.st.Panes[0].Machine != "srv" || a.machines.Get("srv").Conn == nil {
 		t.Fatalf("opened %+v", a.st.Panes)
 	}
 }
 
 func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
-	rows := sidebarRows(nil, nil, Share{}, nil, []MachineID{"desk"}, nil)
+	rows := sidebarRows(nil, nil, Share{}, nil, []machines.ID{"desk"}, nil)
 	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
 		t.Fatalf("a saved server has no heading: %+v", rows)
 	}
@@ -253,21 +255,21 @@ func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
-	_ = a.conns["srv"].Close() // as if the network went
-	waitFor(t, a, "the drop", func() bool { return a.conns["srv"] == nil })
-	if !a.dropped["srv"] {
-		t.Fatalf("dropped, the machines kept are %v", a.dropped)
+	_ = a.machines.Get("srv").Conn.Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.machines.Get("srv").Conn == nil })
+	if !a.machines.Get("srv").Dropped {
+		t.Fatalf("dropped, the machines kept are %v", a.machines.Dropped())
 	}
 	a.handle(ClearMachine{ID: "srv"})
-	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
-		t.Fatalf("cleared, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	if len(a.machines.Dropped()) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("cleared, it keeps %v and panes %+v", a.machines.Dropped(), a.st.Panes)
 	}
 	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell again", func() bool { answering(); return oneShell(a) })
 	a.handle(Disconnect{Machine: "srv"})
-	waitFor(t, a, "the disconnect", func() bool { return a.conns["srv"] == nil })
-	if len(a.dropped) != 0 {
-		t.Fatalf("let go of on purpose, it keeps %v", a.dropped)
+	waitFor(t, a, "the disconnect", func() bool { return a.machines.Get("srv").Conn == nil })
+	if len(a.machines.Dropped()) != 0 {
+		t.Fatalf("let go of on purpose, it keeps %v", a.machines.Dropped())
 	}
 }
 
@@ -286,7 +288,7 @@ func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
 	waitFor(t, a, "the shell in its place", func() bool { answering(); return oneShell(a) })
 
 	a.handle(ConnectTo{Target: "tester@127.0.0.1:1"})
-	waitFor(t, a, "the dial to fail", func() bool { return len(a.dialing) == 0 })
+	waitFor(t, a, "the dial to fail", func() bool { return len(a.machines.Dialing()) == 0 })
 	var failed string
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog {

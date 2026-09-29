@@ -9,7 +9,7 @@ import (
 )
 
 // idsAsNames gives each server saved in b its name for its ID, as the
-// tests name the machines they connect to: a.conns["srv"] is then the
+// tests name the machines they connect to: a.machines.Get("srv").Conn is then the
 // connection to the saved server srv. Tests of a name and an ID that
 // differ, as after a rename, keep the IDs the list gave.
 func idsAsNames(t *testing.T, b *remote.Book) {
@@ -45,4 +45,15 @@ func idsAsNames(t *testing.T, b *remote.Book) {
 	if err := b.Reload(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// quickCount is how many quick connections a knows.
+func quickCount(a *app) int {
+	n := 0
+	for _, m := range a.machines.Infos() {
+		if m.Quick {
+			n++
+		}
+	}
+	return n
 }

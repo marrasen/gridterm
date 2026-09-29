@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"io/fs"
 	"slices"
 	"strings"
@@ -56,7 +57,7 @@ type Job struct {
 	Title string
 	// Machine is where it works, as its row in the sidebar is filed,
 	// and Kind is copy, move or delete.
-	Machine MachineID
+	Machine machines.ID
 	Kind    string
 	// Detail says how far it has got, or how it ended.
 	Detail string
@@ -91,7 +92,7 @@ const mostFinishedJobs = 20
 type fileClip struct {
 	kind    jobs.Kind
 	from    vfs.FS
-	machine MachineID
+	machine machines.ID
 	at      string
 	names   []string
 }
@@ -99,7 +100,7 @@ type fileClip struct {
 // FileClip is the file clipboard as the window shows it: the names
 // waiting in folder At of the files kept under Key.
 type FileClip struct {
-	Key   MachineID
+	Key   machines.ID
 	At    string
 	Names []string
 	Cut   bool
@@ -125,7 +126,7 @@ type running struct {
 	// do it again; speeds are its speed, sampled as it is looked at,
 	// from lastBytes at lastAt.
 	op       jobs.Op
-	from, to MachineID
+	from, to machines.ID
 	// repeating says a repeat has been asked for and has not started
 	// yet: a machine opened again takes as long as a connection does,
 	// and a second press in that time would copy the same thing twice.
@@ -197,7 +198,7 @@ func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
 
 // followOn is follow, for a job between the machines from and to, which
 // a repeat opens again.
-func (a *app) followOn(op jobs.Op, title string, from, to MachineID) *jobs.Job {
+func (a *app) followOn(op jobs.Op, title string, from, to machines.ID) *jobs.Job {
 	if a.jobs == nil {
 		a.jobs = jobs.New(2)
 	}

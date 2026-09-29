@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"github.com/marrasen/kakel/machines"
 	"maps"
 	"os"
 	"path/filepath"
@@ -191,8 +192,8 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 
 func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []MachineID{"d1"},
-		Machines: []Machine{{ID: "d1", Name: "My Desk"}}})
+	publish(State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []machines.ID{"d1"},
+		Machines: []machines.Info{{ID: "d1", Name: "My Desk"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -279,7 +280,7 @@ func TestClosingTheWindowAsksWhileAnythingIsOpen(t *testing.T) {
 func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 	win, _, publish := windowStage(t)
 	desk := remote.Host{ID: "d1", Name: "desk", Address: "desk.example", Identities: []string{"/k/one", "/k/two"}}
-	publish(State{Saved: []remote.Host{desk}, Connected: []MachineID{"laptop"}})
+	publish(State{Saved: []remote.Host{desk}, Connected: []machines.ID{"laptop"}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}

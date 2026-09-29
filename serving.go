@@ -287,12 +287,12 @@ func (a *app) tellServed() {
 		// By its name, which the other window shows, and asks for back.
 		host := ""
 		if p.Machine != "" {
-			host = a.nameOf(p.Machine)
+			host = a.machines.Name(p.Machine)
 		}
 		// Its ID for a saved machine; a quick one goes by its address,
 		// which lasts where its ID does not.
 		hostID := ""
-		if _, saved := a.savedHost(p.Machine); saved {
+		if _, saved := a.machines.Saved(p.Machine); saved {
 			hostID = string(p.Machine)
 		}
 		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String()}
@@ -435,12 +435,12 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 	}
 	conn, err := onApp(a, func() (*remote.Conn, error) {
 		// Asked for by the ID or the name this window gave it.
-		id, known := a.idOf(host)
+		id, known := a.machines.Find(host)
 		if known {
 			if c, ok, err := a.connOf(id); ok {
 				return c, err
 			}
-			host = a.nameOf(id)
+			host = a.machines.Name(id)
 		}
 		return nil, fmt.Errorf("this window is not connected to %s", host)
 	})

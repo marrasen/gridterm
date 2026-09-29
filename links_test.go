@@ -204,8 +204,8 @@ func TestAPathOnAServerOpensWithNoFilePaneThere(t *testing.T) {
 		t.Fatalf("it said %+v", a.st.Notices)
 	}
 	// The connection gone, what the server said is forgotten.
-	_ = a.conns["srv"].Close()
-	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil && a.fsFor("srv") == nil })
+	_ = a.machines.Get("srv").Conn.Close()
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get("srv").Conn == nil && a.fsFor("srv") == nil })
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()
 	if len(a.far.known) != 0 {
@@ -227,8 +227,8 @@ func TestAPathOnAServerNotConnectedIsNotLookedFor(t *testing.T) {
 			return len(a.far.asking) == 0
 		})
 	}
-	if len(a.dialing) != 0 || len(a.conns) != 0 || len(a.st.Asks) != 0 {
-		t.Fatalf("looking for a path connected: dialing %v, connections %v, asks %v", a.dialing, a.conns, a.st.Asks)
+	if len(a.machines.Dialing()) != 0 || len(a.machines.Connected()) != 0 || len(a.st.Asks) != 0 {
+		t.Fatalf("looking for a path connected: dialing %v, connections %v, asks %v", a.machines.Dialing(), a.machines.Connected(), a.st.Asks)
 	}
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()

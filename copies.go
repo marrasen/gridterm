@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strings"
 
@@ -67,7 +68,7 @@ func (a *app) repeatJob(id string) error {
 	if r.repeating {
 		return nil
 	}
-	for _, m := range []MachineID{r.from, r.to} {
+	for _, m := range []machines.ID{r.from, r.to} {
 		if err := a.stillSaved(m); err != nil {
 			return err
 		}
@@ -79,7 +80,7 @@ func (a *app) repeatJob(id string) error {
 // copyBetween copies names from a folder on one machine into a folder
 // on another, opening the files of both first. over is run once the
 // copy has started, or could not.
-func (a *app) copyBetween(from, to MachineID, at, into string, names []string, over func()) error {
+func (a *app) copyBetween(from, to machines.ID, at, into string, names []string, over func()) error {
 	err := a.withFilesOr(from, func(ff vfs.FS) {
 		if err := a.withFilesOr(to, func(tf vfs.FS) {
 			over()
@@ -144,13 +145,13 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 // stillSaved refuses a machine whose saved server, or saved window it
 // is reached through, was removed from the list since. A listed piece
 // of work keeps its quick connections, so they are there still.
-func (a *app) stillSaved(m MachineID) error {
+func (a *app) stillSaved(m machines.ID) error {
 	window, _, _ := m.Far()
-	if window == Local || a.isQuick(window) {
+	if window == machines.Local || a.machines.IsQuick(window) {
 		return nil
 	}
-	if _, ok := a.savedHost(window); !ok {
-		return fmt.Errorf("%s was removed from the server list", a.nameOf(window))
+	if _, ok := a.machines.Saved(window); !ok {
+		return fmt.Errorf("%s was removed from the server list", a.machines.Name(window))
 	}
 	return nil
 }
@@ -159,14 +160,14 @@ func (a *app) stillSaved(m MachineID) error {
 // the saved server with id, whatever it is called now, or, kept with
 // none, this computer or a quick connection to name, the address it was
 // kept with. A server removed from the list is refused.
-func (a *app) machineNow(name, id string) (MachineID, error) {
+func (a *app) machineNow(name, id string) (machines.ID, error) {
 	if window, host, far := strings.Cut(name, farSep); far {
 		// Beyond a window, the window found as it was kept.
 		w, err := a.machineNow(window, id)
 		if err != nil {
 			return "", err
 		}
-		return farID(w, host), nil
+		return machines.FarID(w, host), nil
 	}
 	switch {
 	case id == "" && name == "":
@@ -174,19 +175,19 @@ func (a *app) machineNow(name, id string) (MachineID, error) {
 	case id == "":
 		// A quick connection, the one there is to that address or one
 		// made for it.
-		if known, ok := a.idOf(name); ok {
+		if known, ok := a.machines.Find(name); ok {
 			if _, _, far := known.Far(); !far {
 				return known, nil
 			}
 		}
-		return a.newQuick(name, false), nil
+		return a.machines.NewQuick(name, false), nil
 	case a.book == nil:
 		return "", fmt.Errorf("the server list could not be read, so %s cannot be found", name)
 	}
-	if _, ok := a.savedHost(MachineID(id)); !ok {
+	if _, ok := a.machines.Saved(machines.ID(id)); !ok {
 		return "", fmt.Errorf("%s was removed from the server list", name)
 	}
-	return MachineID(id), nil
+	return machines.ID(id), nil
 }
 
 // keptAs is what a piece of work kept for next time says it runs on,
@@ -195,14 +196,14 @@ func (a *app) machineNow(name, id string) (MachineID, error) {
 // by, and "" for this computer. Beyond a window: the window so, and
 // its name there, which the window takes back as it does the key and
 // which lasts where a quick connection's key does not.
-func (a *app) keptAs(machine MachineID) string {
-	if machine == Local {
+func (a *app) keptAs(machine machines.ID) string {
+	if machine == machines.Local {
 		return ""
 	}
 	if window, host, far := machine.Far(); far {
-		return a.keptAs(window) + farSep + a.farName(window, host)
+		return a.keptAs(window) + farSep + a.machines.FarName(window, host)
 	}
-	return a.nameOf(machine)
+	return a.machines.Name(machine)
 }
 
 // forgetCopy takes a copy off the saved list.
@@ -237,16 +238,16 @@ func copiedWhat(c settings.SavedCopy) string {
 
 // copiedWhere says where a saved copy goes from and to: a saved server
 // by what named calls it now, and anything else as it was kept.
-func copiedWhere(c settings.SavedCopy, named func(MachineID) string) string {
+func copiedWhere(c settings.SavedCopy, named func(machines.ID) string) string {
 	end := func(machine, id, at string) string {
 		window, host, far := strings.Cut(machine, farSep)
 		switch {
 		case far && id != "" && named != nil:
-			machine = host + " through " + named(MachineID(id))
+			machine = host + " through " + named(machines.ID(id))
 		case far:
 			machine = host + " through " + window
 		case id != "" && named != nil:
-			machine = named(MachineID(id))
+			machine = named(machines.ID(id))
 		case machine == "":
 			machine = "this computer"
 		}

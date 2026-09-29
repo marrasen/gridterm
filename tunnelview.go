@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strconv"
 	"strings"
@@ -25,7 +26,7 @@ func (w *window) tunnelDialog(socks bool, u *gunim.UI) {
 }
 
 // tunnelDialogOn asks for a tunnel over machine's connection.
-func (w *window) tunnelDialogOn(machine MachineID, socks bool, u *gunim.UI) {
+func (w *window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	if machine == "" {
 		w.toasts.Show(widget.Toast{Title: "Tunnels run over a server's connection",
 			Body: "Open one from a pane on a server."}, u)
@@ -122,7 +123,7 @@ func (w *window) savedTunnelOn(t settings.SavedTunnel) string {
 }
 
 // machineOf returns the server pane id is on, "" for this computer.
-func (w *window) machineOf(id string) MachineID {
+func (w *window) machineOf(id string) machines.ID {
 	for _, p := range w.panes {
 		if p.ID == id {
 			return p.Machine

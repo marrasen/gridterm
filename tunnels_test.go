@@ -52,7 +52,7 @@ func tunnelApp(t *testing.T) (a *app, conn *remote.Conn, echo string) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
-	a.conns["srv"] = conn
+	a.machines.At("srv").Conn = conn
 	t.Cleanup(func() {
 		for id := range a.tunnels {
 			_ = a.closeTunnel(id)

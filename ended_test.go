@@ -108,7 +108,8 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 		for len(a.st.Panes) > 0 {
 			a.remove(a.st.Panes[0].ID)
 		}
-		for _, c := range a.conns {
+		for _, id := range a.machines.Connected() {
+			c := a.machines.Get(id).Conn
 			_ = c.Close()
 		}
 	})
@@ -132,8 +133,8 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	// As if the saved server had moved since the pane opened.
 	a.paneAt[id] = "tester@elsewhere:22"
 
-	_ = a.conns[name].Close()
-	waitFor(t, a, "the pane to end", func() bool { return a.st.Panes[0].Ended && a.conns[name] == nil })
+	_ = a.machines.Get(name).Conn.Close()
+	waitFor(t, a, "the pane to end", func() bool { return a.st.Panes[0].Ended && a.machines.Get(name).Conn == nil })
 	if err := a.startAgain(id); err != nil {
 		t.Fatal(err)
 	}
@@ -141,7 +142,7 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	waitFor(t, a, "the line saying it moved", func() bool {
 		// The line wraps at the screen's edge.
 		said := strings.ReplaceAll(a.terminal(id).Text(), "\n", "")
-		return strings.Contains(said, "is "+a.nameOf(name)+" now. This pane was on tester@elsewhere:22")
+		return strings.Contains(said, "is "+a.machines.Name(name)+" now. This pane was on tester@elsewhere:22")
 	})
 }
 

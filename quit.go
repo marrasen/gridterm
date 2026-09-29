@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"strconv"
 	"strings"
 	"sync"
@@ -76,15 +77,17 @@ const hangUpWait = 2 * time.Second
 // went. It waits hangUpWait at most.
 func (a *app) hangUp() {
 	var closers []func() error
-	for _, c := range a.conns {
+	a.machines.Each(func(_ machines.ID, m *machines.Machine) {
+		if m.Conn != nil {
+			closers = append(closers, m.Conn.Close)
+		}
+		if w := m.Window; w != nil {
+			w.Leaving = true
+			closers = append(closers, w.Serve.Close)
+		}
+	})
+	for _, c := range a.machines.Hops() {
 		closers = append(closers, c.Close)
-	}
-	for _, c := range a.hops {
-		closers = append(closers, c.Close)
-	}
-	for _, w := range a.windows {
-		w.leaving = true
-		closers = append(closers, w.win.Close)
 	}
 	if len(closers) == 0 {
 		return
@@ -124,7 +127,7 @@ func (a *app) whatIsOpen() []string {
 	if n := len(a.tunnels); n > 0 {
 		out = append(out, manyOf(n, "tunnel", "tunnels"))
 	}
-	if n := len(a.conns) + len(a.windows); n > 0 {
+	if n := len(a.machines.Connected()) + len(a.machines.Windows()); n > 0 {
 		out = append(out, manyOf(n, "connection", "connections"))
 	}
 	if len(a.agents.by) > 0 {

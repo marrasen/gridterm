@@ -69,7 +69,8 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 		for len(a.st.Panes) > 0 {
 			a.remove(a.st.Panes[0].ID)
 		}
-		for _, c := range a.conns {
+		for _, id := range a.machines.Connected() {
+			c := a.machines.Get(id).Conn
 			_ = c.Close()
 		}
 	})
@@ -90,11 +91,11 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 	files := a.st.Panes[1].ID
 	seq := a.st.Browsers[files].Seq
 
-	_ = a.conns[machine].Close()
-	waitFor(t, a, "the connection to go", func() bool { return a.conns[machine] == nil && a.remoteFS[machine] == nil })
+	_ = a.machines.Get(machine).Conn.Close()
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Files == nil })
 	a.handle(Browse{Pane: files, Path: a.st.Browsers[files].Path})
 	waitFor(t, a, "the folder read again", func() bool { answering(); return a.st.Browsers[files].Seq > seq })
-	if a.conns[machine] == nil {
+	if a.machines.Get(machine).Conn == nil {
 		t.Fatal("the folder was read with no connection")
 	}
 }

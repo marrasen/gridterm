@@ -246,7 +246,7 @@ func clientOf(t *testing.T, a *app) (b *app, keyFile string) {
 	b = newApp(w.Client(), &shells{m: map[string]*shell{}})
 	b.ctx = t.Context()
 	t.Cleanup(func() {
-		for name := range b.windows {
+		for _, name := range b.machines.Windows() {
 			_ = b.disconnectWindow(name)
 		}
 		for len(b.st.Panes) > 0 {
@@ -267,8 +267,8 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
 	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
-	if p := b.st.Panes[0]; b.nameOf(p.Machine) != addr {
-		t.Fatalf("the terminal is on %q, want the window at %s", b.nameOf(p.Machine), addr)
+	if p := b.st.Panes[0]; b.machines.Name(p.Machine) != addr {
+		t.Fatalf("the terminal is on %q, want the window at %s", b.machines.Name(p.Machine), addr)
 	}
 	// It opened a pane on the first window too, which that one shows.
 	pumpBoth(t, a, b, "the pane on the first window", func() bool { return len(a.st.Panes) == 2 })
@@ -301,7 +301,7 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 
 	// Disconnected by the first, the second is told, and its panes end.
 	a.handle(DisconnectClients{})
-	pumpBoth(t, a, b, "the second window to let go", func() bool { return len(b.windows) == 0 })
+	pumpBoth(t, a, b, "the second window to let go", func() bool { return len(b.machines.Windows()) == 0 })
 	pumpBoth(t, a, b, "its terminals to end", func() bool { return b.st.Panes[0].Ended && b.st.Panes[1].Ended })
 }
 
@@ -326,8 +326,8 @@ func TestASavedWindowIsConnectedToAsOne(t *testing.T) {
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
 	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
-	if b.st.Panes[0].Machine != "desk" || b.windows["desk"] == nil {
-		t.Fatalf("connected, the pane is on %q and the windows are %v", b.st.Panes[0].Machine, b.windows)
+	if b.st.Panes[0].Machine != "desk" || b.machines.Get("desk").Window == nil {
+		t.Fatalf("connected, the pane is on %q and the windows are %v", b.st.Panes[0].Machine, b.machines.Windows())
 	}
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"net"
 	"os"
 	"path/filepath"
@@ -24,7 +25,7 @@ import (
 // RemoteWindow is a window this one is connected to, as the sidebar
 // shows it.
 type RemoteWindow struct {
-	Name MachineID
+	Name machines.ID
 	Addr string
 	// Open is what it has open, with a screen to work in, less what
 	// this window already shows.
@@ -40,15 +41,15 @@ type (
 	// connection of its own.
 	ConnectWindow struct {
 		Addr, KeyFile string
-		ID            MachineID
+		ID            machines.ID
 	}
 	// DisconnectWindow lets go of a window, by its ID, closing the
 	// panes on it.
-	DisconnectWindow struct{ ID MachineID }
+	DisconnectWindow struct{ ID machines.ID }
 	// AttachWindow works in something a window has open, in a pane
 	// here.
 	AttachWindow struct {
-		Window MachineID
+		Window machines.ID
 		ID     string
 	}
 )
@@ -56,19 +57,6 @@ type (
 // knownWindowsFile is where the host keys of the windows connected to
 // are kept.
 const knownWindowsFile = "known_windows"
-
-// remoteWin is a window this one holds.
-type remoteWin struct {
-	win           *serve.Window
-	addr, keyFile string
-	// bound is the pane here showing each thing it has open, by its id
-	// there.
-	bound map[string]string
-	// seen is its list as last told, to publish only a change, and
-	// leaving says the user let go of it.
-	seen    []serve.Open
-	leaving bool
-}
 
 // serveAddr is an address with the serving port when it names none.
 func serveAddr(addr string) string {
@@ -94,23 +82,22 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 		return errors.New("type the address of the window to connect to")
 	}
 	name := in.ID
-	if _, saved := a.savedHost(name); name == "" || (!saved && !a.isQuick(name)) {
+	if _, saved := a.machines.Saved(name); name == "" || (!saved && !a.machines.IsQuick(name)) {
 		// A quick one, or one again that was forgotten meanwhile, as
 		// when its row was cleared before the reconnect was answered.
 		if name == "" {
-			name = a.newQuick(addr, true)
+			name = a.machines.NewQuick(addr, true)
 		} else {
-			a.quick[name] = quickConn{target: addr, window: true}
+			a.machines.KeepQuick(name, addr, true)
 		}
 	}
-	if _, ok := a.windows[name]; ok || a.dialing[name] {
-		return fmt.Errorf("this window is already connected to %s", a.nameOf(name))
+	if a.machines.Get(name).Window != nil || a.machines.Get(name).Dialing != nil {
+		return fmt.Errorf("this window is already connected to %s", a.machines.Name(name))
 	}
 	// Connected to again some other way: the question is answered.
 	a.withdrawLost(name)
-	a.dialing[name] = true
 	dctx, cancel := context.WithCancel(a.ctx)
-	a.dialCancel[name] = cancel
+	a.machines.At(name).Dialing = cancel
 	acct := a.account(name)
 	logLine(acct, "", "connecting to the window at "+addr)
 	logPane := a.watchDial(name)
@@ -124,8 +111,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			Wrong:  func(what string) { logLine(acct, badly, what) },
 		})
 		a.events <- func() {
-			delete(a.dialing, name)
-			delete(a.dialCancel, name)
+			a.machines.At(name).Dialing = nil
 			cancel()
 			a.st.Status = ""
 			if err != nil {
@@ -164,10 +150,10 @@ func knownWindows() (string, error) {
 
 // holdWindow keeps a window connected to, following what it has open
 // and noticing when it goes.
-func (a *app) holdWindow(name MachineID, addr, keyFile string, win *serve.Window) {
-	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}}
-	a.windows[name] = w
-	delete(a.dropped, name)
+func (a *app) holdWindow(name machines.ID, addr, keyFile string, win *serve.Window) {
+	w := &machines.Window{Serve: win, Addr: addr, KeyFile: keyFile, Bound: map[string]string{}}
+	a.machines.At(name).Window = w
+	a.machines.At(name).Dropped = false
 	a.showWindows()
 	gone := make(chan struct{})
 	go func() {
@@ -189,7 +175,7 @@ func (a *app) holdWindow(name MachineID, addr, keyFile string, win *serve.Window
 			case <-t.C:
 			}
 			a.events <- func() {
-				if a.windows[name] == w && !slices.Equal(w.seen, win.Opens()) {
+				if a.machines.Get(name).Window == w && !slices.Equal(w.Seen, win.Opens()) {
 					a.showWindows()
 				} else {
 					a.quiet = true
@@ -201,83 +187,84 @@ func (a *app) holdWindow(name MachineID, addr, keyFile string, win *serve.Window
 
 // windowGone lets go of a window whose connection has ended. Its panes
 // end with it, and say so.
-func (a *app) windowGone(name MachineID, w *remoteWin, why error) {
-	if a.windows[name] != w {
+func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
+	if a.machines.Get(name).Window != w {
 		return
 	}
-	delete(a.windows, name)
-	for key, f := range a.remoteFS {
-		if key.Of(name) {
-			_ = f.Close()
-			delete(a.remoteFS, key)
+	a.machines.At(name).Window = nil
+	a.machines.Each(func(key machines.ID, m *machines.Machine) {
+		if m.Files != nil && key.Of(name) {
+			_ = m.Files.Close()
+			m.Files = nil
 			a.forgetFar(key)
 		}
-	}
+	})
 	said := "Its panes here have ended."
-	switch w.win.Going() {
+	switch w.Serve.Going() {
 	case serve.GoingStopped:
 		said = "It stopped being served. " + said
 	case serve.GoingKicked:
 		said = "It disconnected this one. " + said
 	case "":
-		if w.leaving {
+		if w.Leaving {
 			break
 		}
-		a.dropped[name] = true
+		a.machines.At(name).Dropped = true
 		// The connection went, rather than the window saying so on
 		// purpose: offered to reach again, the connection alone, with
 		// what it has open listed once it answers.
-		text := a.nameOf(name)
+		text := a.machines.Name(name)
 		if why != nil && !serve.Ended(why) {
 			text += "\n\n" + serve.Plain(why.Error())
 		}
-		logLine(a.accounts[name], "", "connection lost")
+		logLine(a.machines.Get(name).Log, "", "connection lost")
 		a.problem()
-		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, ID: name}
+		again := ConnectWindow{Addr: w.Addr, KeyFile: w.KeyFile, ID: name}
 		ctx, cancel := context.WithCancel(a.ctx)
 		a.withdrawLost(name)
-		a.lost[name] = cancel
+		a.machines.At(name).Lost = cancel
 		a.askThen(ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
 			if ctx.Err() != nil {
 				// Withdrawn while the answer was on its way.
 				return
 			}
-			delete(a.lost, name)
+			a.machines.At(name).Lost = nil
 			cancel()
 			if !ans.Yes {
 				return
 			}
 			if err := a.reachWindow(again, false); err != nil {
-				a.failed("Couldn't reconnect to "+a.nameOf(name), err.Error())
+				a.failed("Couldn't reconnect to "+a.machines.Name(name), err.Error())
 				a.problem()
 			}
 		})
 		a.showWindows()
 		return
 	}
-	logLine(a.accounts[name], "", "disconnected")
-	a.notify("Disconnected from the window at "+w.addr, said, "")
+	logLine(a.machines.Get(name).Log, "", "disconnected")
+	a.notify("Disconnected from the window at "+w.Addr, said, "")
 	a.showWindows()
 }
 
 // withdrawLost takes back the question offering to reconnect to
 // machine, if there is one.
-func (a *app) withdrawLost(machine MachineID) {
-	if cancel, ok := a.lost[machine]; ok {
+func (a *app) withdrawLost(machine machines.ID) {
+	if cancel := a.machines.Get(machine).Lost; cancel != nil {
 		cancel()
-		delete(a.lost, machine)
+		a.machines.At(machine).Lost = nil
 	}
 }
 
 // disconnectWindow lets go of a window.
-func (a *app) disconnectWindow(name MachineID) error {
-	w, ok := a.windows[name]
+func (a *app) disconnectWindow(name machines.ID) error {
+	w := a.machines.Get(name).Window
+	ok := w != nil
 	if !ok {
 		return nil
 	}
 	// Let go of on purpose: nothing to offer to reconnect.
-	w.leaving = true
-	err := w.win.Close()
+	w.Leaving = true
+	err := w.Serve.Close()
 	if serve.Ended(err) {
 		err = nil
 	}
@@ -287,41 +274,41 @@ func (a *app) disconnectWindow(name MachineID) error {
 // showWindows publishes the windows connected to.
 func (a *app) showWindows() {
 	var out []RemoteWindow
-	for name, w := range a.windows {
-		w.seen = w.win.Opens()
-		for _, o := range w.seen {
+	for _, name := range a.machines.Windows() {
+		w := a.machines.Get(name).Window
+		w.Seen = w.Serve.Opens()
+		for _, o := range w.Seen {
 			if o.Key() != "" {
-				a.farNames[farID(name, o.Key())] = o.Host
+				a.machines.NameFar(name, o.Key(), o.Host)
 			}
 		}
-		rw := RemoteWindow{Name: name, Addr: w.addr}
-		for _, o := range w.seen {
+		rw := RemoteWindow{Name: name, Addr: w.Addr}
+		for _, o := range w.Seen {
 			if !o.HasScreen() {
 				continue
 			}
-			if pane, ok := w.bound[o.ID]; ok && a.has(pane) {
+			if pane, ok := w.Bound[o.ID]; ok && a.has(pane) {
 				continue
 			}
 			rw.Open = append(rw.Open, o)
 		}
 		out = append(out, rw)
 	}
-	slices.SortFunc(out, func(x, y RemoteWindow) int { return strings.Compare(string(x.Name), string(y.Name)) })
 	a.st.Windows = out
 }
 
 // openOnWindow opens a shell on a window, in a pane here.
-func (a *app) openOnWindow(name MachineID, id, title string, at placement, then func(string, error)) error {
-	w := a.windows[name]
+func (a *app) openOnWindow(name machines.ID, id, title string, at placement, then func(string, error)) error {
+	w := a.machines.Get(name).Window
 	a.starting++
 	go func() {
 		// What the window calls the shell arrives on a goroutine of the
 		// connection's, and is written down on the program's.
-		sess, err := w.win.Open(shellCols, shellRows, func(n serve.Attached) {
+		sess, err := w.Serve.Open(shellCols, shellRows, func(n serve.Attached) {
 			go func() {
 				a.events <- func() {
 					if n.ID != "" && a.has(id) {
-						w.bound[n.ID] = id
+						w.Bound[n.ID] = id
 						a.showWindows()
 					}
 				}
@@ -330,7 +317,7 @@ func (a *app) openOnWindow(name MachineID, id, title string, at placement, then 
 		a.events <- func() {
 			a.starting--
 			if err != nil {
-				a.failed("Couldn't open a shell on "+a.nameOf(name), err.Error())
+				a.failed("Couldn't open a shell on "+a.machines.Name(name), err.Error())
 				a.stayIfEmpty()
 				then("", err)
 				return
@@ -346,25 +333,26 @@ func (a *app) openOnWindow(name MachineID, id, title string, at placement, then 
 // attachWindow works in something a window has open, in a pane here,
 // or goes to the pane already showing it.
 func (a *app) attachWindow(in AttachWindow) error {
-	w, ok := a.windows[in.Window]
+	w := a.machines.Get(in.Window).Window
+	ok := w != nil
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s any more", a.nameOf(in.Window))
+		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(in.Window))
 	}
-	if pane, ok := w.bound[in.ID]; ok && a.has(pane) {
+	if pane, ok := w.Bound[in.ID]; ok && a.has(pane) {
 		a.bringHere(pane)
 		return nil
 	}
-	open, ok := w.win.OpenNamed(in.ID)
+	open, ok := w.Serve.OpenNamed(in.ID)
 	if !ok {
-		return fmt.Errorf("%s no longer has that open", a.nameOf(in.Window))
+		return fmt.Errorf("%s no longer has that open", a.machines.Name(in.Window))
 	}
 	if !open.HasScreen() {
-		return fmt.Errorf("%q on %s has no screen to work in", open.Label, a.nameOf(in.Window))
+		return fmt.Errorf("%q on %s has no screen to work in", open.Label, a.machines.Name(in.Window))
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	go func() {
-		sess, err := w.win.Attach(open, shellCols, shellRows)
+		sess, err := w.Serve.Attach(open, shellCols, shellRows)
 		a.events <- func() {
 			if err != nil {
 				a.failed("Couldn't work in "+open.Label, err.Error())
@@ -373,9 +361,9 @@ func (a *app) attachWindow(in AttachWindow) error {
 			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
-				a.farNames[farID(in.Window, open.Key())] = open.Host
+				a.machines.NameFar(in.Window, open.Key(), open.Host)
 			}
-			w.bound[in.ID] = id
+			w.Bound[in.ID] = id
 			a.showWindows()
 		}
 	}()
@@ -384,8 +372,9 @@ func (a *app) attachWindow(in AttachWindow) error {
 
 // giveUp stops a connection being made to machine, and reports
 // whether there was one.
-func (a *app) giveUp(machine MachineID) bool {
-	cancel, ok := a.dialCancel[machine]
+func (a *app) giveUp(machine machines.ID) bool {
+	cancel := a.machines.Get(machine).Dialing
+	ok := cancel != nil
 	if ok {
 		cancel()
 		logLine(a.account(machine), "", "given up")
@@ -396,23 +385,24 @@ func (a *app) giveUp(machine MachineID) bool {
 // Disconnect closes the connection to a server or a window. Its panes
 // end, and say so, and can be started again once it is connected
 // again.
-type Disconnect struct{ Machine MachineID }
+type Disconnect struct{ Machine machines.ID }
 
 // disconnect closes the connection to machine.
-func (a *app) disconnect(machine MachineID) error {
+func (a *app) disconnect(machine machines.ID) error {
 	if a.giveUp(machine) {
 		return nil
 	}
-	if _, ok := a.windows[machine]; ok {
+	if a.machines.Get(machine).Window != nil {
 		return a.disconnectWindow(machine)
 	}
-	conn, ok := a.conns[machine]
+	conn := a.machines.Get(machine).Conn
+	ok := conn != nil
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
+		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
 	}
 	// Let go of on purpose: its row goes with it, and those of the
 	// servers reached through it.
-	a.letGo[machine] = true
-	a.letGoOfRiders(conn)
+	a.machines.At(machine).LetGo = true
+	a.machines.LetGoOfRiders(conn)
 	return conn.Close()
 }

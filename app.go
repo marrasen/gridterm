@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/marrasen/kakel/machines"
 	"log"
 	"maps"
 	"sync/atomic"
@@ -12,7 +13,6 @@ import (
 	"github.com/marrasen/kakel/glyph"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/keys"
-	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/settings"
@@ -83,7 +83,7 @@ type State struct {
 	Jobs []Job
 	// Accounts are the machines with a connection log, in the order
 	// their first connection began.
-	Accounts []MachineID
+	Accounts []machines.ID
 	// Secrets is what the vault holds, by name.
 	Secrets Secrets
 	// Share is the panes shared with an agent.
@@ -95,7 +95,7 @@ type State struct {
 	// Machines are what everything else names machines by, their IDs,
 	// with the names to show: the saved servers and windows, and the
 	// quick connections.
-	Machines []Machine
+	Machines []machines.Info
 	// PaneTitles says each pane shows a line naming it, and Bells
 	// counts the bells rung in panes, for the window to ask for the
 	// user's attention.
@@ -106,11 +106,11 @@ type State struct {
 	// one new terminals start, "" for the user's own.
 	// Connected are the servers connected to, by name, and Dialing the
 	// ones being connected to.
-	Connected []MachineID
-	Dialing   []MachineID
+	Connected []machines.ID
+	Dialing   []machines.ID
 	// Dropped are the machines whose connection went by itself, kept on
 	// the sidebar, greyed, until cleared.
-	Dropped     []MachineID
+	Dropped     []machines.ID
 	Shells      []ShellChoice
 	ChosenShell string
 	// ShellSetup says new shells here are taught to say what they are
@@ -216,7 +216,7 @@ type Pane struct {
 	Title string
 	// Machine is the server the pane's shell runs on, "" for this
 	// computer.
-	Machine MachineID
+	Machine machines.ID
 	// On is the machine the pane runs on when that is a server the
 	// window in Machine reached, and "" for the window's own.
 	On string
@@ -330,7 +330,7 @@ type (
 	// one of this computer's shells.
 	SplitPane struct {
 		Vertical  bool
-		Machine   MachineID
+		Machine   machines.ID
 		Elsewhere bool
 		Shell     string
 	}
@@ -373,11 +373,11 @@ type (
 	// RunSavedCommand runs a command kept from before.
 	RunSavedCommand struct{ Saved settings.SavedCommand }
 	// OpenOn opens a terminal on Machine, "" for this computer.
-	OpenOn struct{ Machine MachineID }
+	OpenOn struct{ Machine machines.ID }
 	// FilesOn opens a file pane on Machine, at Path, or at home when
 	// Path is empty.
 	FilesOn struct {
-		Machine MachineID
+		Machine machines.ID
 		Path    string
 	}
 	// ShowScrollback opens what a terminal pane has kept, scrollback
@@ -400,7 +400,7 @@ type (
 	// the quick connection a typed one is made again for.
 	ConnectTo struct {
 		Target     string
-		Server, As MachineID
+		Server, As machines.ID
 	}
 	// SaveServer saves a server, in place of the one named Under when
 	// that is set.
@@ -409,7 +409,7 @@ type (
 		Under string
 	}
 	// RemoveServer forgets a saved server.
-	RemoveServer struct{ ID MachineID }
+	RemoveServer struct{ ID machines.ID }
 	// AskAnswered answers a question: Yes and the answers, or no.
 	AskAnswered struct {
 		ID      uint64
@@ -453,43 +453,20 @@ type app struct {
 	splits int
 	// notices counts the notices made.
 	notices uint64
-	// ctx ends with the window. conns are the connections open, by the
-	// machine's name, dialing the ones being made, and ring holds the
-	// keys unlocked so far. book is the saved servers.
-	ctx   context.Context
-	conns map[MachineID]*remote.Conn
-	// quick are the connections made by typing an address, by the ID
-	// each was given, and goneNames the names of saved servers removed
-	// while something open still names them.
-	quick     map[MachineID]quickConn
-	goneNames map[MachineID]string
-	// farNames are what windows call the machines beyond them, by the
-	// program's key for each, kept while anything is open on one.
-	farNames map[MachineID]string
-	// hops are the connections made to jump hosts to reach the servers
-	// behind them, by the saved server's name, and hopUsers counts the
-	// connections going through each.
-	hops     map[MachineID]*remote.Conn
-	hopUsers map[*remote.Conn]int
-	// routes are the route each connection was reached by, a hop's and
-	// a server's alike, so one is gone through again only where the
-	// saved servers still name that route.
-	routes map[*remote.Conn]string
-	// connIDs is the saved server each connection was reached by, ""
-	// for one reached by a typed address.
-	connIDs map[MachineID]MachineID
-	dialing map[MachineID]bool
-	ring    *remote.Ring
-	book    *remote.Book
+	// ctx ends with the window. machines is every machine known and
+	// what is kept on its connection, ring holds the keys unlocked so
+	// far, and book is the saved servers.
+	ctx      context.Context
+	machines *machines.Registry
+	ring     *remote.Ring
+	book     *remote.Book
 	// replies waits for the answers to asks, by ID, and askIDs counts
 	// them.
 	replies map[uint64]chan AskAnswered
 	// closing holds the panes folding away.
 	closing map[string]bool
-	// local is this computer's filesystem, once a file pane needs it,
-	// and remoteFS the servers' files opened so far, by machine.
-	local    vfs.FS
-	remoteFS map[MachineID]vfs.FS
+	// local is this computer's filesystem, once a file pane needs it.
+	local vfs.FS
 	// themes are the themes on offer, and palette the terminals' now.
 	// settings is kakel's settings file, which keeps the theme
 	// picked.
@@ -510,8 +487,6 @@ type app struct {
 	// set while their notes are kept up to date, and quiet says a tick
 	// changed nothing, so nothing is published.
 	tunnels map[string]*tunnel
-	// accounts are the connection logs, by machine.
-	accounts map[MachineID]*logs.Lines
 	// secrets is the vault, once asked for, and secretsAt where it is
 	// kept, when a test says. lastTerminal is the terminal pane that
 	// last had the keyboard, for typing a secret into.
@@ -522,8 +497,6 @@ type app struct {
 	agents agents
 	// serving serves this window to others.
 	serving serving
-	// windows are the windows connected to, by name.
-	windows map[MachineID]*remoteWin
 	// leaving is set while the window asks whether to close, and
 	// watchingVault while an open secrets pane reads the vault again.
 	leaving       bool
@@ -539,24 +512,11 @@ type app struct {
 	// gone says the window is on its way out, leaving with what it
 	// shows; its panes close once it has gone.
 	gone bool
-	// dropped are the machines whose connection went by itself, kept
-	// on the sidebar until cleared, and letGo the ones being let go of
-	// on purpose. lost withdraws a dropped window's question offering
-	// to reconnect, once the window is cleared or connected to again.
-	dropped map[MachineID]bool
-	letGo   map[MachineID]bool
-	lost    map[MachineID]context.CancelFunc
 	// paneFiles is each file pane's view of its machine's files.
 	paneFiles map[string]wrappedFiles
-	// dialCancel gives up each connection being made, and dialWaiters
-	// are what is to happen once each has come back.
-	dialCancel  map[MachineID]context.CancelFunc
-	dialWaiters map[MachineID][]func(error)
-	// reached is the address each server was reached at, and paneAt
-	// the address each pane on one was opened at, to say so when a
-	// pane is reconnected somewhere else.
-	reached map[MachineID]string
-	paneAt  map[string]string
+	// paneAt is the address each pane on a server was opened at, to say
+	// so when a pane is reconnected somewhere else.
+	paneAt map[string]string
 	// noticed is the number of the last message each pane's program
 	// sent, and lastToast when the last pop-up went up.
 	noticed   map[string]uint64
@@ -646,51 +606,34 @@ func (s *shells) set(id string, sh *shell) {
 
 func newApp(c gunim.Client, sh *shells) *app {
 	a := &app{
-		c:           c,
-		shells:      sh,
-		st:          State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
-		groups:      map[int]*Box{},
-		groupOf:     map[string]int{},
-		conns:       map[MachineID]*remote.Conn{},
-		hops:        map[MachineID]*remote.Conn{},
-		quick:       map[MachineID]quickConn{},
-		goneNames:   map[MachineID]string{},
-		farNames:    map[MachineID]string{},
-		hopUsers:    map[*remote.Conn]int{},
-		routes:      map[*remote.Conn]string{},
-		connIDs:     map[MachineID]MachineID{},
-		dialing:     map[MachineID]bool{},
-		ring:        remote.NewRing(),
-		replies:     map[uint64]chan AskAnswered{},
-		closing:     map[string]bool{},
-		remoteFS:    map[MachineID]vfs.FS{},
-		tunnels:     map[string]*tunnel{},
-		agents:      agents{by: map[string]*handover{}},
-		windows:     map[MachineID]*remoteWin{},
-		commands:    map[string]command{},
-		noticed:     map[string]uint64{},
-		reached:     map[MachineID]string{},
-		paneFiles:   map[string]wrappedFiles{},
-		dropped:     map[MachineID]bool{},
-		letGo:       map[MachineID]bool{},
-		lost:        map[MachineID]context.CancelFunc{},
-		dialCancel:  map[MachineID]context.CancelFunc{},
-		dialWaiters: map[MachineID][]func(error){},
-		paneAt:      map[string]string{},
-		argvs:       map[string][]string{},
-		farHost:     map[string]string{},
-		typed:       map[string]*typedLog{},
-		reads:       map[string]readSpec{},
-		following:   map[string]bool{},
-		restarts:    map[string]int{},
-		endings:     map[string]int{},
-		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
-		accounts:    map[MachineID]*logs.Lines{},
-		wake:        make(chan struct{}, 1),
-		events:      make(chan func(), 64),
-		winOf:       map[string]int{},
-		intents:     make(chan windowIn, 64),
+		c:         c,
+		shells:    sh,
+		st:        State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
+		groups:    map[int]*Box{},
+		groupOf:   map[string]int{},
+		ring:      remote.NewRing(),
+		replies:   map[uint64]chan AskAnswered{},
+		closing:   map[string]bool{},
+		tunnels:   map[string]*tunnel{},
+		agents:    agents{by: map[string]*handover{}},
+		commands:  map[string]command{},
+		noticed:   map[string]uint64{},
+		paneFiles: map[string]wrappedFiles{},
+		paneAt:    map[string]string{},
+		argvs:     map[string][]string{},
+		farHost:   map[string]string{},
+		typed:     map[string]*typedLog{},
+		reads:     map[string]readSpec{},
+		following: map[string]bool{},
+		restarts:  map[string]int{},
+		endings:   map[string]int{},
+		far:       pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
+		wake:      make(chan struct{}, 1),
+		events:    make(chan func(), 64),
+		winOf:     map[string]int{},
+		intents:   make(chan windowIn, 64),
 	}
+	a.machines = machines.New(func() *remote.Book { return a.book })
 	a.addWindow(c, nil)
 	return a
 }
@@ -927,12 +870,12 @@ func (a *app) openFirstOrSay() {
 // way, and so leaves: nothing connecting, no window or shell opening,
 // and not kept open, as after the first pane failed.
 func (a *app) emptyAndIdle() bool {
-	return len(a.st.Panes) == 0 && len(a.dialing) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
+	return len(a.st.Panes) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
 }
 
 func (a *app) publish() {
-	a.forgetQuick()
-	a.st.Machines = a.machines()
+	a.forgetUnused()
+	a.st.Machines = a.machines.Infos()
 	a.notePanes()
 	a.st.FileClip = FileClip{}
 	if c := a.clip; c != nil {
@@ -954,9 +897,9 @@ func (a *app) publish() {
 	st.SavedCommands = slices.Clone(a.st.SavedCommands)
 	st.Shells = slices.Clone(a.st.Shells)
 	st.SavedCopies = slices.Clone(a.st.SavedCopies)
-	st.Connected = slices.Sorted(maps.Keys(a.conns))
-	st.Dialing = slices.Sorted(maps.Keys(a.dialing))
-	st.Dropped = slices.Sorted(maps.Keys(a.dropped))
+	st.Connected = a.machines.Connected()
+	st.Dialing = a.machines.Dialing()
+	st.Dropped = a.machines.Dropped()
 	a.tellServed()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
@@ -1395,16 +1338,16 @@ func (a *app) hooks(id string) shellHooks {
 // open opens a shell on machine, "" for this one, as a new pane placed
 // at at. A remote shell opens over the machine's connection in the
 // background, and its pane arrives once it has.
-func (a *app) open(machine MachineID, at placement) error { return a.openThen(machine, at, nil) }
+func (a *app) open(machine machines.ID, at placement) error { return a.openThen(machine, at, nil) }
 
 // openThen is open, telling then the pane it opened, or why it could
 // not, once it has. then runs on the program's goroutine, and may be
 // nil.
-func (a *app) openThen(machine MachineID, at placement, then func(id string, err error)) error {
+func (a *app) openThen(machine machines.ID, at placement, then func(id string, err error)) error {
 	if then == nil {
 		then = func(string, error) {}
 	}
-	if machine != "" && a.conns[machine] == nil && a.windows[machine] == nil {
+	if machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 		// Not connected: connected to first, as a saved server's plus
 		// in the sidebar does.
 		return a.dialAgain(machine, func(err error) {
@@ -1412,16 +1355,16 @@ func (a *app) openThen(machine MachineID, at placement, then func(id string, err
 				then("", err)
 				return
 			}
-			if a.conns[machine] == nil && a.windows[machine] == nil {
+			if a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
 				err := errors.New("the connection was made under another name. Open a terminal on it from the sidebar")
-				a.failed("Couldn't open a shell on "+a.nameOf(machine), upperFirst(err.Error())+".")
+				a.failed("Couldn't open a shell on "+a.machines.Name(machine), upperFirst(err.Error())+".")
 				then("", err)
 				return
 			}
 			if err := a.openThen(machine, at, then); err != nil {
-				a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't open a shell on "+a.machines.Name(machine), err.Error())
 				a.problem()
 			}
 		})
@@ -1444,7 +1387,7 @@ func (a *app) openThen(machine MachineID, at placement, then func(id string, err
 		then(id, nil)
 		return nil
 	}
-	if _, ok := a.windows[machine]; ok {
+	if a.machines.Get(machine).Window != nil {
 		return a.openOnWindow(machine, id, title, at, then)
 	}
 	conn, ok, err := a.connOf(machine)
@@ -1452,7 +1395,7 @@ func (a *app) openThen(machine MachineID, at placement, then func(id string, err
 	case err != nil:
 		return err
 	case !ok:
-		return fmt.Errorf("kakel: %s is not connected", a.nameOf(machine))
+		return fmt.Errorf("kakel: %s is not connected", a.machines.Name(machine))
 	}
 	a.starting++
 	go func() {
@@ -1460,14 +1403,14 @@ func (a *app) openThen(machine MachineID, at placement, then func(id string, err
 		a.events <- func() {
 			a.starting--
 			if err != nil {
-				a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't open a shell on "+a.machines.Name(machine), err.Error())
 				a.problem()
 				a.stayIfEmpty()
 				then("", err)
 				return
 			}
 			a.teachFar(machine, sess)
-			a.paneAt[id] = a.reached[machine]
+			a.paneAt[id] = a.machines.Get(machine).Reached
 			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
 			then(id, nil)
 		}
@@ -1512,7 +1455,7 @@ func (a *app) place(id string, at placement) {
 }
 
 // machineOf returns the machine a pane is on, "" for this one.
-func (a *app) machineOf(id string) MachineID {
+func (a *app) machineOf(id string) machines.ID {
 	for _, p := range a.st.Panes {
 		if p.ID == id {
 			return p.Machine

@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 	"io"
 	"os"
@@ -174,7 +175,7 @@ func (a *app) openFirst() error {
 		// it.
 		if a.book != nil {
 			if h, ok := a.book.Lookup(strings.TrimSpace(a.opts.ssh)); ok && !h.Window {
-				in = ConnectTo{Server: MachineID(h.ID)}
+				in = ConnectTo{Server: machines.ID(h.ID)}
 			}
 		}
 		line := strings.TrimSpace(a.opts.command)
@@ -188,7 +189,7 @@ func (a *app) openFirst() error {
 			if err != nil {
 				return err
 			}
-			machine = a.newQuick(cfg.Target(), false)
+			machine = a.machines.NewQuick(cfg.Target(), false)
 			in.As = machine
 		}
 		return a.connectThen(in, func(err error) {
@@ -196,7 +197,7 @@ func (a *app) openFirst() error {
 				return
 			}
 			if err := a.runCommand(RunCommand{Machine: machine, Line: line}); err != nil {
-				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), err.Error())
 			}
 		})
 	case strings.TrimSpace(a.opts.command) != "":

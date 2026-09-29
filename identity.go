@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"os"
 	"strings"
 
@@ -56,9 +57,9 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 
 // teachFar teaches a server's shell to say what it is doing, when its
 // saved server says to.
-func (a *app) teachFar(machine MachineID, sess session.Session) {
+func (a *app) teachFar(machine machines.ID, sess session.Session) {
 	for _, h := range a.st.Saved {
-		if MachineID(h.ID) == machine && h.Setup {
+		if machines.ID(h.ID) == machine && h.Setup {
 			if typed := shellsetup.Typed(shellsetup.RouteFor(nil)); len(typed) > 0 {
 				_, _ = sess.Write(typed)
 			}

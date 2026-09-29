@@ -157,7 +157,7 @@ func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 	t.Chdir(far)
 	_, conn, _ := tunnelApp(t)
 	a, b := connectedWindows(t)
-	a.conns["srv"] = conn
+	a.machines.At("srv").Conn = conn
 	if err := a.open("srv", placement{}); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestAWindowWhoseConnectionDroppedIsOfferedAgain(t *testing.T) {
 	}
 	panes := len(b.st.Panes)
 	b.handle(AskAnswered{ID: q.ID, Yes: true})
-	pumpBoth(t, a, b, "the window again", func() bool { return b.windows[name] != nil })
+	pumpBoth(t, a, b, "the window again", func() bool { return b.machines.Get(name).Window != nil })
 	if len(b.st.Panes) != panes {
 		t.Fatalf("reconnected, the panes went from %d to %d", panes, len(b.st.Panes))
 	}
@@ -236,7 +236,7 @@ func TestAWindowWhoseConnectionDroppedIsOfferedAgain(t *testing.T) {
 	if err := b.disconnectWindow(name); err != nil {
 		t.Fatal(err)
 	}
-	pumpBoth(t, a, b, "the window to go", func() bool { return b.windows[name] == nil })
+	pumpBoth(t, a, b, "the window to go", func() bool { return b.machines.Get(name).Window == nil })
 	if len(b.st.Asks) != 0 {
 		t.Fatalf("let go of on purpose, it asks %+v", b.st.Asks)
 	}
@@ -253,7 +253,7 @@ func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
 	pumpBoth(t, a, b, "the question", func() bool { return len(b.st.Asks) == 1 })
 	b.handle(ClearMachine{ID: name})
 	pumpBoth(t, a, b, "the question to go", func() bool { return len(b.st.Asks) == 0 })
-	if len(b.st.Panes) != 0 || b.dropped[name] || len(b.lost) != 0 {
-		t.Fatalf("cleared, there are panes %+v, dropped %v, questions %v", b.st.Panes, b.dropped, b.lost)
+	if len(b.st.Panes) != 0 || b.machines.Get(name).Dropped || b.machines.Get(name).Lost != nil {
+		t.Fatalf("cleared, there are panes %+v, and it is %+v", b.st.Panes, b.machines.Get(name))
 	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/marrasen/kakel/machines"
 	"os"
 	"time"
 
@@ -13,7 +14,7 @@ import (
 
 // ShowLog opens a log's pane, or goes to it: the connection log of
 // Machine, or the window's own when Machine is "".
-type ShowLog struct{ Machine MachineID }
+type ShowLog struct{ Machine machines.ID }
 
 // kindLog is a log's pane.
 const kindLog = "log"
@@ -24,11 +25,12 @@ var windowLog = logs.New(0, os.Stderr)
 
 // account returns the connection log of machine, made on first use.
 // A log that has one already carries on, under a line saying so.
-func (a *app) account(machine MachineID) *logs.Lines {
-	l, ok := a.accounts[machine]
+func (a *app) account(machine machines.ID) *logs.Lines {
+	l := a.machines.Get(machine).Log
+	ok := l != nil
 	if !ok {
 		l = logs.New(0, nil)
-		a.accounts[machine] = l
+		a.machines.At(machine).Log = l
 		a.st.Accounts = append(a.st.Accounts, machine)
 		return l
 	}
@@ -53,7 +55,7 @@ const (
 )
 
 // showLog opens a log's pane, or goes to the one open.
-func (a *app) showLog(machine MachineID) {
+func (a *app) showLog(machine machines.ID) {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
 			a.bringHere(p.ID)
@@ -62,9 +64,8 @@ func (a *app) showLog(machine MachineID) {
 	}
 	l, title := windowLog, "Window Log"
 	if machine != "" {
-		var ok bool
-		if l, ok = a.accounts[machine]; !ok {
-			a.notify("Connection logs start as a connection does", "Connect to "+a.nameOf(machine)+" first.", "")
+		if l = a.machines.Get(machine).Log; l == nil {
+			a.notify("Connection logs start as a connection does", "Connect to "+a.machines.Name(machine)+" first.", "")
 			return
 		}
 		title = "Connection Log"
@@ -78,7 +79,7 @@ func (a *app) showLog(machine MachineID) {
 // the dial's steps, and why it failed, where the user is looking. It
 // returns the pane it opened, or "" when the log's pane was open
 // already, which it goes to instead. Closing the pane gives the dial up.
-func (a *app) watchDial(machine MachineID) string {
+func (a *app) watchDial(machine machines.ID) string {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
 			a.bringHere(p.ID)
@@ -87,8 +88,8 @@ func (a *app) watchDial(machine MachineID) string {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: "Connecting to " + a.nameOf(machine), Machine: machine, Kind: kindLog},
-		openShell(a.accounts[machine].Open(), a.palette, a.hooks(id)), placement{})
+	a.addPane(Pane{ID: id, Title: "Connecting to " + a.machines.Name(machine), Machine: machine, Kind: kindLog},
+		openShell(a.machines.Get(machine).Log.Open(), a.palette, a.hooks(id)), placement{})
 	return id
 }
 
@@ -96,10 +97,10 @@ func (a *app) watchDial(machine MachineID) string {
 // pane watchDial opened: a terminal, when open says so, beside it,
 // with the log folding away so the terminal takes its room. The log
 // stays under the machine's menu.
-func (a *app) dialed(logPane string, machine MachineID, open bool) {
+func (a *app) dialed(logPane string, machine machines.ID, open bool) {
 	if open {
 		if err := a.open(machine, placement{beside: logPane}); err != nil {
-			a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
+			a.failed("Couldn't open a shell on "+a.machines.Name(machine), err.Error())
 			return
 		}
 	}

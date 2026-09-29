@@ -101,15 +101,15 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	if err != nil {
 		return err
 	}
-	if w, ok := a.windows[machine]; ok && !asFile && a.farHost[id] == "" {
+	if w := a.machines.Get(machine).Window; w != nil && !asFile && a.farHost[id] == "" {
 		// Onto that window's clipboard, then paste pressed, once it has
 		// landed: pressing first would paste what was there before.
 		go func() {
-			err := w.win.SendPicture(raw)
+			err := w.Serve.SendPicture(raw)
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture into "+a.nameOf(machine), err.Error())
+					a.failed("Couldn't paste the picture into "+a.machines.Name(machine), err.Error())
 				case a.terminal(id) == t:
 					t.PressPaste()
 				}
@@ -128,11 +128,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture to "+a.nameOf(key), err.Error())
+					a.failed("Couldn't paste the picture to "+a.machines.Name(key), err.Error())
 				case a.terminal(id) == t:
 					t.Paste(path)
 				default:
-					a.worked("Picture saved", path+" on "+a.nameOf(key)+".", path)
+					a.worked("Picture saved", path+" on "+a.machines.Name(key)+".", path)
 				}
 			}
 		}()

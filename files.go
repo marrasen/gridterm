@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"io"
 	"io/fs"
 	"maps"
@@ -213,14 +214,14 @@ const (
 
 // fsFor returns the filesystem of machine, "" for this computer, or
 // nil for a server whose files are not open yet.
-func (a *app) fsFor(machine MachineID) vfs.FS {
+func (a *app) fsFor(machine machines.ID) vfs.FS {
 	if machine == "" {
 		if a.local == nil {
 			a.local = vfs.NewLocal()
 		}
 		return a.local
 	}
-	return a.remoteFS[machine]
+	return a.machines.Get(machine).Files
 }
 
 // filesOf is what a file pane reads: its machine's files, with the
@@ -248,10 +249,10 @@ func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 
 // filesOn opens a file pane on machine, at path, or at home when path
 // is empty.
-func (a *app) filesOn(machine MachineID, path string) error {
+func (a *app) filesOn(machine machines.ID, path string) error {
 	return a.withFiles(machine, func(f vfs.FS) {
 		if err := a.openFilesOn(machine, f, path); err != nil {
-			a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
+			a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
 		}
 	})
 }
@@ -263,23 +264,23 @@ const farSep = "\x00"
 // farFiles names the files on a machine a window reached, as a
 // filesystem tells whose files it holds.
 type farFiles struct {
-	w    *remoteWin
+	w    *machines.Window
 	host string
 }
 
 // filesKey is the name the files a pane's program sees are kept under:
 // its machine's, or for a pane attached from a window, running on a
 // machine that window reached, that machine's through the window.
-func (a *app) filesKey(id string) MachineID {
+func (a *app) filesKey(id string) machines.ID {
 	if host := a.farHost[id]; host != "" {
-		return farID(a.machineOf(id), host)
+		return machines.FarID(a.machineOf(id), host)
 	}
 	return a.machineOf(id)
 }
 
 // paneOn files p under the machine a files key names: a window, for a
 // machine that window reached, with the machine noted.
-func (a *app) paneOn(key MachineID, p Pane) Pane {
+func (a *app) paneOn(key machines.ID, p Pane) Pane {
 	if window, host, far := key.Far(); far {
 		a.farHost[p.ID] = host
 		p.Machine, p.On = window, host
@@ -292,16 +293,16 @@ func (a *app) paneOn(key MachineID, p Pane) Pane {
 // withFiles runs then with machine's files, on the program's goroutine,
 // opening them first when they are not open: over a server's
 // connection, or a window's, with SFTP, once for all its file panes.
-func (a *app) withFiles(machine MachineID, then func(vfs.FS)) error {
+func (a *app) withFiles(machine machines.ID, then func(vfs.FS)) error {
 	return a.withFilesOr(machine, then, func() {})
 }
 
 // withFilesOr is withFiles, running failed when the files could not be
 // opened after it returned.
-func (a *app) withFilesOr(machine MachineID, then func(vfs.FS), failed func()) error {
-	if c := a.conns[machine]; c != nil {
+func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func()) error {
+	if c := a.machines.Get(machine).Conn; c != nil {
 		// Its files came over the connection as it was saved then.
-		if err := a.savedOtherwise(machine, c); err != nil {
+		if err := a.machines.SavedOtherwise(machine); err != nil {
 			return err
 		}
 	}
@@ -311,7 +312,7 @@ func (a *app) withFilesOr(machine MachineID, then func(vfs.FS), failed func()) e
 	}
 	open := a.filesOpener(machine)
 	if open == nil {
-		if _, _, far := machine.Far(); !far && machine != Local {
+		if _, _, far := machine.Far(); !far && machine != machines.Local {
 			// Not connected: connected to first.
 			return a.dialAgain(machine, func(err error) {
 				if err != nil {
@@ -320,13 +321,13 @@ func (a *app) withFilesOr(machine MachineID, then func(vfs.FS), failed func()) e
 				}
 				if err := a.withFilesOr(machine, then, failed); err != nil {
 					failed()
-					a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
+					a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
 				}
 			})
 		}
-		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
+		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
 	}
-	a.st.Status = "Opening the files on " + a.nameOf(machine) + "…"
+	a.st.Status = "Opening the files on " + a.machines.Name(machine) + "…"
 	a.starting++
 	go func() {
 		f, err := open()
@@ -335,7 +336,7 @@ func (a *app) withFilesOr(machine MachineID, then func(vfs.FS), failed func()) e
 			a.st.Status = ""
 			if err != nil {
 				failed()
-				a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
 				return
 			}
 			then(a.keepFiles(machine, f))
@@ -347,13 +348,13 @@ func (a *app) withFilesOr(machine MachineID, then func(vfs.FS), failed func()) e
 // filesOpener returns what opens a machine's files with SFTP over the
 // connection this window has to it, a server's or a window's, or nil
 // when it has none. What it returns runs on a goroutine of its own.
-func (a *app) filesOpener(machine MachineID) func() (vfs.FS, error) {
+func (a *app) filesOpener(machine machines.ID) func() (vfs.FS, error) {
 	// Named as the user knows it, in what goes wrong with its files.
-	called := a.nameOf(machine)
-	if window, host, far := machine.Far(); far && a.windows[window] != nil {
-		w := a.windows[window]
+	called := a.machines.Name(machine)
+	if window, host, far := machine.Far(); far && a.machines.Get(window).Window != nil {
+		w := a.machines.Get(window).Window
 		return func() (vfs.FS, error) {
-			files, err := w.win.FilesOn(host)
+			files, err := w.Serve.FilesOn(host)
 			if err != nil {
 				return nil, fmt.Errorf("the files on %s: %w", called, err)
 			}
@@ -364,9 +365,9 @@ func (a *app) filesOpener(machine MachineID) func() (vfs.FS, error) {
 			return vfs.NewSFTP(called, farFiles{w, host}, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
 		}
 	}
-	if w, ok := a.windows[machine]; ok {
+	if w := a.machines.Get(machine).Window; w != nil {
 		return func() (vfs.FS, error) {
-			files, err := w.win.Files()
+			files, err := w.Serve.Files()
 			if err != nil {
 				return nil, err
 			}
@@ -395,18 +396,18 @@ func (a *app) filesOpener(machine MachineID) func() (vfs.FS, error) {
 // keepFiles keeps f, a machine's files just opened, for its file panes
 // and its links, and returns what is kept: the files opened meanwhile,
 // when something else opened them first.
-func (a *app) keepFiles(machine MachineID, f vfs.FS) vfs.FS {
+func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 	if have := a.fsFor(machine); have != nil {
 		_ = f.Close()
 		return have
 	}
-	a.remoteFS[machine] = f
+	a.machines.At(machine).Files = f
 	return f
 }
 
 // openFilesOn opens a file pane on a machine whose files are open, at
 // path, or at home when path is empty.
-func (a *app) openFilesOn(machine MachineID, f vfs.FS, path string) error {
+func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
 	if path == "" {
 		home, err := f.Home()
 		if err != nil {
@@ -492,14 +493,14 @@ func (a *app) readFile(in ReadFile) {
 // readOn opens path on a machine's files in a reader, at line when it
 // is past zero, placed at at, and returns its pane. A picture is read
 // as a picture. A file followed is read again each time it changes.
-func (a *app) readOn(machine MachineID, f vfs.FS, path string, follow bool, line int, at placement) string {
+func (a *app) readOn(machine machines.ID, f vfs.FS, path string, follow bool, line int, at placement) string {
 	path = vfs.Spelled(f, path)
 	a.next++
 	id := "p" + itoa(a.next)
 	name := vfs.Base(f, path)
 	a.addPane(a.paneOn(machine, Pane{ID: id, Title: name, Kind: kindReader}), nil, at)
 	under := a.fsFor(machine)
-	_, window := a.windows[machine]
+	window := a.machines.Get(machine).Window != nil
 	_, _, far := machine.Far()
 	window = window || far
 	a.reads[id] = readSpec{f: f, under: under, machine: machine, window: window, archives: f != under, path: path, name: name, line: line}
@@ -523,7 +524,7 @@ type readSpec struct {
 	// reads through, with archives opened as folders when archives is
 	// set. A connection that went takes those files with it, and a read
 	// after goes through the files opened once it is back.
-	machine  MachineID
+	machine  machines.ID
 	under    vfs.FS
 	archives bool
 	// window says machine is another kakel window, or a machine it
@@ -560,10 +561,10 @@ func (a *app) readerFiles(id string, dial bool, then func(vfs.FS)) {
 		return
 	}
 	lost := func() {
-		a.readerSays(id, "The connection to "+a.nameOf(spec.machine)+" went. Ctrl+R connects again.")
+		a.readerSays(id, "The connection to "+a.machines.Name(spec.machine)+" went. Ctrl+R connects again.")
 	}
 	if spec.window && a.fsFor(spec.machine) == nil {
-		a.readerSays(id, "The connection to "+a.nameOf(spec.machine)+" went. Connect to it again, then Ctrl+R.")
+		a.readerSays(id, "The connection to "+a.machines.Name(spec.machine)+" went. Connect to it again, then Ctrl+R.")
 		return
 	}
 	if !dial && a.fsFor(spec.machine) == nil {

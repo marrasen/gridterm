@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -80,7 +81,7 @@ func (a *app) droppedInto(id string) (string, bool) {
 // copyDropped copies dropped files into the folder the shell in a pane
 // said it was in, and says so once they are there. Nothing is typed:
 // the files are where the program is already looking.
-func (a *app) copyDropped(machine MachineID, paths []string, dir string) error {
+func (a *app) copyDropped(machine machines.ID, paths []string, dir string) error {
 	return a.withFiles(machine, func(to vfs.FS) {
 		// The shell's own spelling stays for what the user is told.
 		into := vfs.Spelled(to, dir)
@@ -97,7 +98,7 @@ func (a *app) copyDropped(machine MachineID, paths []string, dir string) error {
 			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, into), "", machine))
 		}
 		if len(already) > 0 {
-			a.tell(arrived(already, dir, a.nameOf(machine)), "Already there.")
+			a.tell(arrived(already, dir, a.machines.Name(machine)), "Already there.")
 		}
 		if len(started) > 0 {
 			a.sayWhenArrived(started, paths, dir, machine)
@@ -113,7 +114,7 @@ func sameDir(a, b string) bool {
 // sayWhenArrived waits for a drop's copies and says what landed, in one
 // notice for the drop: a handful of files dragged in together is one
 // thing the user did.
-func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir string, machine MachineID) {
+func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir string, machine machines.ID) {
 	go func() {
 		failed := 0
 		for _, j := range started {
@@ -136,7 +137,7 @@ func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir string, ma
 			if failed > 0 {
 				body = strconv.Itoa(failed) + " failed. The Jobs pane says why."
 			}
-			a.tell(arrived(names, dir, a.nameOf(machine)), body)
+			a.tell(arrived(names, dir, a.machines.Name(machine)), body)
 		}
 	}()
 }
@@ -155,7 +156,7 @@ func arrived(names []string, dir, where string) string {
 // machine a pane runs on, and types each path once it is there. One
 // job for each, so each has a card of its own and a cross that stops
 // that one.
-func (a *app) uploadDropped(id string, machine MachineID, paths []string) error {
+func (a *app) uploadDropped(id string, machine machines.ID, paths []string) error {
 	t := a.terminal(id)
 	return a.withFiles(machine, func(to vfs.FS) {
 		// Found off the program's goroutine, since it asks the machine.
@@ -163,14 +164,14 @@ func (a *app) uploadDropped(id string, machine MachineID, paths []string) error 
 			dir, err := pasted.DirOn(to)
 			a.events <- func() {
 				if err != nil {
-					a.failed("Couldn't copy the files to "+a.nameOf(machine), err.Error())
+					a.failed("Couldn't copy the files to "+a.machines.Name(machine), err.Error())
 					a.problem()
 					return
 				}
 				for _, path := range paths {
 					name := filepath.Base(path)
 					op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{name}, To: to, Into: dir}
-					j := a.followOn(op, "Copying "+name+" to "+a.nameOf(machine), "", machine)
+					j := a.followOn(op, "Copying "+name+" to "+a.machines.Name(machine), "", machine)
 					at := strings.TrimSuffix(dir, string(to.Sep())) + string(to.Sep()) + name
 					go func() {
 						<-j.Done()
@@ -184,7 +185,7 @@ func (a *app) uploadDropped(id string, machine MachineID, paths []string) error 
 								// The pane closed while the file was on
 								// its way; the notice's Copy is the way
 								// left to the path.
-								a.worked("File copied", at+" on "+a.nameOf(machine)+".", at)
+								a.worked("File copied", at+" on "+a.machines.Name(machine)+".", at)
 								a.done()
 							}
 						}

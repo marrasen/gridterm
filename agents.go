@@ -394,7 +394,7 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 func (a *app) agentLabel(id string) string {
 	where := "this machine"
 	if m := a.machineOf(id); m != "" {
-		where = a.nameOf(m)
+		where = a.machines.Name(m)
 	}
 	return a.titleOf(id) + " on " + where
 }
@@ -598,8 +598,8 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		// dialling it, and dialling is the user's: what
 		// the box allows is a program started again on a connection the
 		// window already holds.
-		if machine := w.a.machineOf(h.pane); machine != "" && w.a.conns[machine] == nil && w.a.windows[machine] == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.nameOf(machine))
+		if machine := w.a.machineOf(h.pane); machine != "" && w.a.machines.Get(machine).Conn == nil && w.a.machines.Get(machine).Window == nil {
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(machine))
 		}
 		// The question the pane asks goes: a restart on its way would
 		// otherwise read as one that failed, which asks it again.
@@ -676,8 +676,8 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 			return struct{}{}, fmt.Errorf("you have opened %d panes from this one, which is as many as a hand-over gives: work in the ones you have, or ask the user for another pane", n)
 		}
 		machine := w.a.machineOf(h.pane)
-		if machine != "" && w.a.conns[machine] == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.nameOf(machine))
+		if machine != "" && w.a.machines.Get(machine).Conn == nil {
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(machine))
 		}
 		from = h
 		focus := w.a.st.Focus

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,7 @@ import (
 // RunCommand runs Line in a pane of its own on Machine, in Dir when
 // given, and keeps it for next time with Keep.
 type RunCommand struct {
-	Machine   MachineID
+	Machine   machines.ID
 	Line, Dir string
 	Keep      bool
 	// Beside puts its pane in a split beside that pane, below it with
@@ -46,14 +47,14 @@ func (a *app) runCommand(in RunCommand) error {
 	if len(argv) == 0 {
 		return errors.New("there is no command to run")
 	}
-	_, window := a.windows[in.Machine]
+	window := a.machines.Get(in.Machine).Window != nil
 	if a.book != nil {
-		if h, ok := a.savedHost(in.Machine); ok && h.Window {
+		if h, ok := a.machines.Saved(in.Machine); ok && h.Window {
 			window = true
 		}
 	}
 	if window {
-		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", a.nameOf(in.Machine))
+		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", a.machines.Name(in.Machine))
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {
@@ -102,7 +103,7 @@ func (s commandStart) fail() {
 // startCommand starts cmd on machine and hands its session to s.then,
 // on the program's goroutine. A saved server not connected is connected
 // to first.
-func (a *app) startCommand(machine MachineID, cmd command, s commandStart) error {
+func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) error {
 	line := strings.Join(cmd.argv, " ")
 	if machine == "" {
 		sess, err := a.startLocalSession(cmd.argv, cmd.dir, shellCols, shellRows, false)
@@ -123,22 +124,22 @@ func (a *app) startCommand(machine MachineID, cmd command, s commandStart) error
 				s.fail()
 				return
 			}
-			if a.conns[machine] == nil {
+			if a.machines.Get(machine).Conn == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), "The connection was made under another name. Open a terminal on it from the sidebar.")
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), "The connection was made under another name. Open a terminal on it from the sidebar.")
 				s.fail()
 				return
 			}
 			if err := a.startCommand(machine, cmd, s); err != nil {
-				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), err.Error())
 				a.problem()
 				s.fail()
 			}
 		})
 	}
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
+		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
 	}
 	if !s.wanted() {
 		return nil
@@ -152,7 +153,7 @@ func (a *app) startCommand(machine MachineID, cmd command, s commandStart) error
 				if !s.wanted() {
 					return
 				}
-				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), err.Error())
 				a.problem()
 				s.fail()
 				a.stayIfEmpty()

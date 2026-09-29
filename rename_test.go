@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strings"
 	"testing"
@@ -67,19 +68,19 @@ func TestRenamingAConnectedServerIsOnlyANewName(t *testing.T) {
 	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
 		t.Fatal(err)
 	}
-	if a.conns["srv"] == nil || a.st.Panes[0].Machine != "srv" {
-		t.Fatalf("renamed, the connection moved: %v, the pane is on %q", a.conns, a.st.Panes[0].Machine)
+	if a.machines.Get("srv").Conn == nil || a.st.Panes[0].Machine != "srv" {
+		t.Fatalf("renamed, the connection moved: %v, the pane is on %q", a.machines.Connected(), a.st.Panes[0].Machine)
 	}
-	if got := a.nameOf("srv"); got != "prod" {
+	if got := a.machines.Name("srv"); got != "prod" {
 		t.Fatalf("renamed, it is called %q", got)
 	}
 	a.publish()
-	if i := slices.IndexFunc(a.st.Machines, func(m Machine) bool { return m.ID == "srv" }); i < 0 || a.st.Machines[i].Name != "prod" {
+	if i := slices.IndexFunc(a.st.Machines, func(m machines.Info) bool { return m.ID == "srv" }); i < 0 || a.st.Machines[i].Name != "prod" {
 		t.Fatalf("the window is told %+v", a.st.Machines)
 	}
 	a.handle(Disconnect{Machine: "srv"})
-	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil })
-	if a.dropped["srv"] {
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get("srv").Conn == nil })
+	if a.machines.Get("srv").Dropped {
 		t.Fatal("let go of on purpose, it is kept as dropped")
 	}
 }
@@ -94,26 +95,26 @@ func TestAQuickConnectionIsForgottenOnceNothingIsOpenOnIt(t *testing.T) {
 	a.handle(ConnectTo{Target: target})
 	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
 	id := a.st.Panes[0].Machine
-	if !strings.HasPrefix(string(id), "quick-") || a.conns[id] == nil {
+	if !strings.HasPrefix(string(id), "quick-") || a.machines.Get(id).Conn == nil {
 		t.Fatalf("typed, it is kept as %q", id)
 	}
-	if got := a.nameOf(id); got != target {
+	if got := a.machines.Name(id); got != target {
 		t.Fatalf("it is called %q, want %q", got, target)
 	}
 	a.publish()
-	if i := slices.IndexFunc(a.st.Machines, func(m Machine) bool { return m.ID == id }); i < 0 || !a.st.Machines[i].Quick {
+	if i := slices.IndexFunc(a.st.Machines, func(m machines.Info) bool { return m.ID == id }); i < 0 || !a.st.Machines[i].Quick {
 		t.Fatalf("the window is told %+v", a.st.Machines)
 	}
 	// Its connection gone, with its pane open, it is kept.
 	a.handle(Disconnect{Machine: id})
-	waitFor(t, a, "the connection to go", func() bool { return a.conns[id] == nil })
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get(id).Conn == nil })
 	a.publish()
-	if !a.isQuick(id) {
+	if !a.machines.IsQuick(id) {
 		t.Fatal("with its pane open, the quick connection was forgotten")
 	}
 	a.remove(a.st.Panes[0].ID)
 	a.publish()
-	if a.isQuick(id) || slices.ContainsFunc(a.st.Machines, func(m Machine) bool { return m.ID == id }) {
+	if a.machines.IsQuick(id) || slices.ContainsFunc(a.st.Machines, func(m machines.Info) bool { return m.ID == id }) {
 		t.Fatal("with nothing open on it, the quick connection is kept")
 	}
 }
@@ -126,14 +127,14 @@ func TestAQuickConnectionReconnectsAsItself(t *testing.T) {
 	a.handle(ConnectTo{Target: fmt.Sprintf("tester@%s:%d", h.Address, h.Port)})
 	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
 	id := a.st.Panes[0].Machine
-	_ = a.conns[id].Close() // as if the network went
-	waitFor(t, a, "the drop", func() bool { return a.conns[id] == nil })
+	_ = a.machines.Get(id).Conn.Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.machines.Get(id).Conn == nil })
 	if err := a.dialAgain(id, nil); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, a, "the connection back", func() bool { answering(); return a.conns[id] != nil })
-	if len(a.quick) != 1 {
-		t.Fatalf("reconnected, there are %d quick connections", len(a.quick))
+	waitFor(t, a, "the connection back", func() bool { answering(); return a.machines.Get(id).Conn != nil })
+	if n := quickCount(a); n != 1 {
+		t.Fatalf("reconnected, there are %d quick connections", n)
 	}
 }
 
@@ -146,13 +147,13 @@ func TestARemovedServerIsNamedWhileSomethingIsOpenOnIt(t *testing.T) {
 	if err := a.removeServer("srv"); err != nil {
 		t.Fatal(err)
 	}
-	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil })
-	if got := a.nameOf("srv"); got != "srv" {
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get("srv").Conn == nil })
+	if got := a.machines.Name("srv"); got != "srv" {
 		t.Fatalf("removed, it is called %q", got)
 	}
 	a.remove(a.st.Panes[0].ID)
 	a.publish()
-	if _, kept := a.goneNames["srv"]; kept {
+	if slices.ContainsFunc(a.machines.Infos(), func(m machines.Info) bool { return m.ID == "srv" }) {
 		t.Fatal("with nothing open on it, its name is still kept")
 	}
 }

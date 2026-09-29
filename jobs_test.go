@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"github.com/marrasen/kakel/machines"
 	"os"
 	"path/filepath"
 	"strings"
@@ -153,7 +154,7 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	a.book = book
 	desk, _ := book.Lookup("desk")
 	// By its ID, whatever it was called when the work was kept.
-	if got, err := a.machineNow("old name", desk.ID); got != MachineID(desk.ID) || err != nil {
+	if got, err := a.machineNow("old name", desk.ID); got != machines.ID(desk.ID) || err != nil {
 		t.Fatalf("kept on desk as old name, it runs on %q, %v", got, err)
 	}
 	// Removed from the list since: refused.
@@ -167,8 +168,8 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	}
 	first, _ := a.machineNow("me@typed.example", "")
 	again, _ := a.machineNow("me@typed.example", "")
-	if !strings.HasPrefix(string(first), "quick-") || again != first || a.nameOf(first) != "me@typed.example" {
-		t.Fatalf("kept on a typed address, it runs on %q then %q, called %q", first, again, a.nameOf(first))
+	if !strings.HasPrefix(string(first), "quick-") || again != first || a.machines.Name(first) != "me@typed.example" {
+		t.Fatalf("kept on a typed address, it runs on %q then %q, called %q", first, again, a.machines.Name(first))
 	}
 }
 
@@ -190,8 +191,8 @@ func TestRepeatRefusesAServerRemovedSince(t *testing.T) {
 	a.book = book
 	desk, _ := book.Lookup("desk")
 	box, _ := book.Lookup("box")
-	quick := a.newQuick("me@typed.example", false)
-	for _, m := range []MachineID{Local, quick, MachineID(desk.ID), farID(MachineID(box.ID), "k")} {
+	quick := a.machines.NewQuick("me@typed.example", false)
+	for _, m := range []machines.ID{machines.Local, quick, machines.ID(desk.ID), machines.FarID(machines.ID(box.ID), "k")} {
 		if err := a.stillSaved(m); err != nil {
 			t.Fatalf("%q is there, and it said %v", m, err)
 		}
@@ -201,7 +202,7 @@ func TestRepeatRefusesAServerRemovedSince(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, m := range []MachineID{MachineID(desk.ID), farID(MachineID(box.ID), "k")} {
+	for _, m := range []machines.ID{machines.ID(desk.ID), machines.FarID(machines.ID(box.ID), "k")} {
 		if err := a.stillSaved(m); err == nil || !strings.Contains(err.Error(), "removed") {
 			t.Fatalf("%q was removed, and it said %v", m, err)
 		}
@@ -214,17 +215,17 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	a.ctx = t.Context()
 	// A quick connection to a machine that never answers, so the
 	// repeat stays on its way.
-	quick := a.newQuick("10.255.255.1:1", false)
+	quick := a.machines.NewQuick("10.255.255.1:1", false)
 	a.running = []*running{{id: "j1", op: jobs.Op{Kind: jobs.Copy, At: "/", Into: "/", Names: []string{"a"}}, from: quick, ended: true}}
 	if err := a.repeatJob("j1"); err != nil {
 		t.Fatal(err)
 	}
 	// The same quick connection, dialled at its address.
-	if !a.running[0].repeating || !a.dialing[quick] || len(a.quick) != 1 {
-		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.dialing)
+	if !a.running[0].repeating || a.machines.Get(quick).Dialing == nil || quickCount(a) != 1 {
+		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.machines.Dialing())
 	}
-	a.dialing[quick] = false
-	if err := a.repeatJob("j1"); err != nil || a.dialing[quick] {
+	a.machines.At(quick).Dialing = nil
+	if err := a.repeatJob("j1"); err != nil || a.machines.Get(quick).Dialing != nil {
 		t.Fatalf("pressed again, %v, and it dialled again", err)
 	}
 }

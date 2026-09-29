@@ -246,8 +246,8 @@ func TestAReaderOnAServerReadsAgainAfterTheConnectionWent(t *testing.T) {
 		}
 		return false
 	})
-	_ = a.conns["srv"].Close() // as if the network went
-	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil && a.fsFor("srv") == nil })
+	_ = a.machines.Get("srv").Conn.Close() // as if the network went
+	waitFor(t, a, "the connection to go", func() bool { return a.machines.Get("srv").Conn == nil && a.fsFor("srv") == nil })
 	if err := os.WriteFile(file, []byte("one\ntwo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -307,8 +307,8 @@ func TestAReaderOnAWindowThatWentDoesNotDial(t *testing.T) {
 	a.reads["p1"] = readSpec{machine: "box:7777", window: true, path: "/notes.txt", name: "notes.txt"}
 	a.setReader("p1", Reader{Path: "/notes.txt", Name: "notes.txt", Lines: []string{"x"}, Seq: 1})
 	a.handle(ReadAgain{Pane: "p1"})
-	if len(a.dialing) != 0 || len(a.conns) != 0 {
-		t.Fatalf("reading again dialled: %v", a.dialing)
+	if len(a.machines.Dialing()) != 0 || len(a.machines.Connected()) != 0 {
+		t.Fatalf("reading again dialled: %v", a.machines.Dialing())
 	}
 	if r := a.st.Readers["p1"]; !strings.Contains(r.Err, "Connect to it again") {
 		t.Fatalf("the reader says %q", r.Err)

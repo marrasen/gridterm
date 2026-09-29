@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"io/fs"
 	"net"
 	"net/url"
@@ -25,7 +26,7 @@ import (
 
 // withLinks gives pane id's hooks what follows its links, for a pane
 // on machine.
-func (a *app) withLinks(h shellHooks, id string, machine MachineID) shellHooks {
+func (a *app) withLinks(h shellHooks, id string, machine machines.ID) shellHooks {
 	post := func(f func()) {
 		go func() {
 			select {
@@ -59,7 +60,7 @@ func (a *app) withLinks(h shellHooks, id string, machine MachineID) shellHooks {
 
 // openLink opens an address in the browser: through a tunnel when it
 // is on a server's own loopback.
-func (a *app) openLink(machine MachineID, at string) error {
+func (a *app) openLink(machine machines.ID, at string) error {
 	if err := linkIsOpenable(at); err != nil {
 		return err
 	}
@@ -70,7 +71,7 @@ func (a *app) openLink(machine MachineID, at string) error {
 	if _, ok, err := a.connOf(machine); err != nil {
 		return err
 	} else if !ok {
-		return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", a.nameOf(machine), at)
+		return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", a.machines.Name(machine), at)
 	}
 	local, err := a.tunnelTo(machine, target)
 	if err != nil {
@@ -90,7 +91,7 @@ func (a *app) openLink(machine MachineID, at string) error {
 
 // tunnelTo is the address here of a tunnel to target on machine: one
 // already open, or a new one on a free port.
-func (a *app) tunnelTo(machine MachineID, target string) (string, error) {
+func (a *app) tunnelTo(machine machines.ID, target string) (string, error) {
 	for _, t := range a.st.Tunnels {
 		open, ok := a.tunnels[t.ID]
 		if !ok || open.done || t.Machine != machine {
@@ -110,7 +111,7 @@ func (a *app) tunnelTo(machine MachineID, target string) (string, error) {
 
 // serviceOnTheFarEnd is where an address on a server's own loopback
 // points, as a target for a tunnel, and whether it is one.
-func serviceOnTheFarEnd(machine MachineID, at string) (string, bool) {
+func serviceOnTheFarEnd(machine machines.ID, at string) (string, bool) {
 	if machine == "" {
 		return "", false
 	}
@@ -222,7 +223,7 @@ type farPath struct {
 
 // findFar is the file or folder a path in a pane on machine names, as
 // far as is known yet.
-func (a *app) findFar(machine MachineID, text, dir string) (string, bool, bool) {
+func (a *app) findFar(machine machines.ID, text, dir string) (string, bool, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" || strings.ContainsAny(text, "\r\n\x00") {
 		return "", false, false
@@ -299,7 +300,7 @@ func (a *app) findFar(machine MachineID, text, dir string) (string, bool, bool) 
 // forgetFar forgets what a machine said about its paths, once the files
 // it was said through have gone: a machine reached again under the same
 // name may be another, and its files may have changed meanwhile.
-func (a *app) forgetFar(machine MachineID) {
+func (a *app) forgetFar(machine machines.ID) {
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()
 	for key := range a.far.known {
@@ -322,7 +323,7 @@ func windowsAbs(p string) bool {
 
 // openPath opens a path a link named: a folder in a file pane, a file
 // in the reader at line.
-func (a *app) openPath(machine MachineID, at string, isDir bool, line int) error {
+func (a *app) openPath(machine machines.ID, at string, isDir bool, line int) error {
 	// A server's files are opened first when no file pane has yet.
 	return a.withFiles(machine, func(f vfs.FS) {
 		if !isDir {

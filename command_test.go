@@ -137,7 +137,7 @@ func TestACommandOnAServerNotConnectedConnectsFirst(t *testing.T) {
 		answering()
 		return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == "srv" && p.Command })
 	})
-	if a.conns["srv"] == nil {
+	if a.machines.Get("srv").Conn == nil {
 		t.Fatal("the command ran with no connection to srv")
 	}
 }
@@ -149,8 +149,8 @@ func TestACommandOnAMachineNotKnownIsRefused(t *testing.T) {
 	err := a.startCommand("web:22", command{argv: []string{"true"}}, commandStart{
 		then: func(session.Session) { t.Fatal("the command started") },
 	})
-	if err == nil || len(a.dialing) != 0 {
-		t.Fatalf("a command on a machine not known said %v, and dialled %v", err, a.dialing)
+	if err == nil || len(a.machines.Dialing()) != 0 {
+		t.Fatalf("a command on a machine not known said %v, and dialled %v", err, a.machines.Dialing())
 	}
 }
 
@@ -159,7 +159,7 @@ func TestACommandOnAMachineNotKnownIsRefused(t *testing.T) {
 func TestACommandWhoseConnectionFailsSaysSo(t *testing.T) {
 	a, answering := dialApp(t)
 	failed := false
-	nowhere := a.newQuick("tester@127.0.0.1:1", false)
+	nowhere := a.machines.NewQuick("tester@127.0.0.1:1", false)
 	err := a.startCommand(nowhere, command{argv: []string{"true"}}, commandStart{
 		then:   func(session.Session) { t.Fatal("the command started") },
 		failed: func() { failed = true },
@@ -178,7 +178,7 @@ func TestASavedCommandOnARemovedServerIsNotRun(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "removed") {
 		t.Fatalf("running a command on a removed server said %v", err)
 	}
-	if len(a.dialing) != 0 {
-		t.Fatalf("it dialled %v", a.dialing)
+	if len(a.machines.Dialing()) != 0 {
+		t.Fatalf("it dialled %v", a.machines.Dialing())
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/machines"
 	"io"
 	"net"
 	"slices"
@@ -25,7 +26,7 @@ import (
 // Tunnel is a forwarded port, as the sidebar lists it.
 type Tunnel struct {
 	ID      string
-	Machine MachineID
+	Machine machines.ID
 	// Label says what it forwards, as ":8080 → db:5432".
 	Label string
 	// Note says what it is doing: the streams it carries, how many
@@ -47,7 +48,7 @@ type (
 	// asked about first; Sure is the answer. Saved says it was opened
 	// from the saved list, whose order stays as it is.
 	OpenTunnel struct {
-		Machine MachineID
+		Machine machines.ID
 		Tunnel  remote.Tunnel
 		Keep    bool
 		Sure    bool
@@ -142,14 +143,14 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	case err != nil:
 		return err
 	case !ok:
-		return fmt.Errorf("nothing is connected to %s any more", a.nameOf(in.Machine))
+		return fmt.Errorf("nothing is connected to %s any more", a.machines.Name(in.Machine))
 	}
 	t := in.Tunnel
 	if err := t.Validate(); err != nil {
 		return err
 	}
 	if (t.Exposed() || t.Kind == remote.RemoteForward) && !in.Sure {
-		go a.confirmTunnel(in, a.nameOf(in.Machine))
+		go a.confirmTunnel(in, a.machines.Name(in.Machine))
 		return nil
 	}
 	if a.settings != nil && !in.Saved {
@@ -185,9 +186,9 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	open.f = f
 	a.tunnels[id] = open
 	label := tunnelLabel(f)
-	open.say("opened " + label + " over " + a.nameOf(in.Machine))
+	open.say("opened " + label + " over " + a.machines.Name(in.Machine))
 	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
-	a.worked("Tunnel open", label+", over "+a.nameOf(in.Machine), "")
+	a.worked("Tunnel open", label+", over "+a.machines.Name(in.Machine), "")
 	a.tickTunnels()
 	return nil
 }
@@ -304,7 +305,7 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 // local one listens here, which the far end going does nothing to, so
 // each is closed. A connection let go of on purpose takes its tunnels'
 // rows with it; one that dropped leaves them, stopped, until cleared.
-func (a *app) tunnelsDiedOn(machine MachineID, letGo bool) error {
+func (a *app) tunnelsDiedOn(machine machines.ID, letGo bool) error {
 	var errs []error
 	for _, t := range slices.Clone(a.st.Tunnels) {
 		switch {
@@ -417,10 +418,10 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 }
 
 // serverID is the ID of the saved server named machine, or "".
-func (a *app) serverID(machine MachineID) string {
+func (a *app) serverID(machine machines.ID) string {
 	// Beyond a window: the window's.
 	machine, _, _ = machine.Far()
-	if _, ok := a.savedHost(machine); ok {
+	if _, ok := a.machines.Saved(machine); ok {
 		return string(machine)
 	}
 	return ""

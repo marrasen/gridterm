@@ -1062,10 +1062,11 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	addr.Placeholder, port.Placeholder = "host name or address", "22"
 	user.Placeholder, key.Placeholder = "your name here", "the usual keys in ~/.ssh"
 	// Through lists the other saved servers, to reach this one through.
+	// A kakel window is no jump host: it opens no SSH way on.
 	through := []string{"Directly"}
 	ids := []string{""}
 	for _, h := range w.saved {
-		if old == nil || h.ID != old.ID {
+		if (old == nil || h.ID != old.ID) && !h.Window {
 			through = append(through, h.Name)
 			ids = append(ids, h.ID)
 		}
@@ -1147,9 +1148,13 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		h.Window = kind.Selected == 1
 		// Left as they were, they stay as saved: a folder with a comma in
 		// its path would be split in two by reading the line back.
-		if old != nil && folders.Text() == old.FoldersJoined() {
+		// Changed, such a folder is refused, as it would be lost.
+		switch {
+		case old != nil && folders.Text() == old.FoldersJoined():
 			h.Folders = old.Folders
-		} else {
+		case old != nil && !remote.FoldersRoundTrip(old.Folders):
+			return h, "A saved folder has a comma in its path, which this line cannot keep apart. Leave the folders as they were."
+		default:
 			h.Folders = remote.FoldersFrom(folders.Text())
 		}
 		// A window keeps the agent tick it had, unused, so switching it

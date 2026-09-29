@@ -220,6 +220,8 @@ func TestRouteRefusesWhatItCannotWalk(t *testing.T) {
 		{Name: "dangling", ID: "d", Address: "a.example", Via: "gone"},
 		{Name: "p", ID: "p", Address: "p.example", Via: "q"},
 		{Name: "q", ID: "q", Address: "q.example", Via: "p"},
+		{Name: "desk", ID: "w", Address: "desk.example", Window: true},
+		{Name: "behind", ID: "b", Address: "b.example", Via: "w"},
 	}
 
 	if _, err := b.Route("nothing"); err == nil {
@@ -232,6 +234,9 @@ func TestRouteRefusesWhatItCannotWalk(t *testing.T) {
 		t.Error("Route walked a circle")
 	} else if !strings.Contains(err.Error(), "circle") {
 		t.Errorf("error = %v, want it to say the route goes round in a circle", err)
+	}
+	if _, err := b.Route("behind"); err == nil || !strings.Contains(err.Error(), "no jump host") {
+		t.Errorf("a route through a kakel window gave %v", err)
 	}
 }
 

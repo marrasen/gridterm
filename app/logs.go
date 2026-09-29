@@ -56,7 +56,7 @@ func (a *app) dialLog(machine machines.ID) *logs.Lines {
 // line of its own.
 func logLine(l *logs.Lines, colour, line string) {
 	stamp := time.Now().Format("15:04:05") + "  "
-	for _, one := range strings.Split(serve.Plain(line), "\n") {
+	for _, one := range strings.Split(strings.TrimRight(serve.Plain(line), "\r\n"), "\n") {
 		if colour != "" {
 			one = "\x1b[" + colour + "m" + one + "\x1b[0m"
 		}

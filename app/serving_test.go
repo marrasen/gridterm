@@ -451,3 +451,28 @@ func TestASavedWindowsAddressTypedIsThatWindow(t *testing.T) {
 		t.Fatalf("typed, it also connected over SSH to %v", b.machines.Connected())
 	}
 }
+
+// Only a target with no user names a saved window, and an IP address
+// matches however it is spelled.
+func TestASavedWindowIsKnownByItsAddressOnly(t *testing.T) {
+	a := fontApp(t)
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Put(remote.Host{Name: "desk", Address: "[::1]", Port: 7022, Window: true}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.book = book
+	for typed, want := range map[string]bool{
+		"::1": true, "[0:0::1]:7022": true, "[::1]:22": false, "me@[::1]": false, "::2": false,
+	} {
+		cfg, err := remote.ParseTarget(typed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, got := a.savedWindowAt(cfg); got != want {
+			t.Errorf("%q names the saved window: %v, want %v", typed, got, want)
+		}
+	}
+}

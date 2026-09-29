@@ -274,6 +274,15 @@ func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
 	if !ok || !slices.Equal(in.Host.Folders, srv.Folders) {
 		t.Fatalf("saved untouched, the folders are %q", in.Host.Folders)
 	}
+	// Edited, the line would split it in two, and is refused.
+	for _, f := range win.dialog.Body.(*widget.Form).Children() {
+		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
+			f.SetText(f.Text() + ",/home")
+		}
+	}
+	if problem := win.dialog.Check(); !strings.Contains(problem, "comma") {
+		t.Fatalf("edited, the folders are refused with %q", problem)
+	}
 }
 
 // A window saved again keeps the agent tick it came with, unused, so a

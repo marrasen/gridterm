@@ -15,6 +15,7 @@ import (
 
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
+	"github.com/marrasen/kakel/internal/update"
 	"github.com/marrasen/kakel/remote"
 )
 
@@ -329,5 +330,20 @@ func TestTheStatusNamesEveryDial(t *testing.T) {
 	a.showDialling()
 	if a.st.Status != "" {
 		t.Fatalf("both landed, the status says %q", a.st.Status)
+	}
+}
+
+// Other work that ends leaves a connection on its way said.
+func TestAnUpdateCheckLeavesADialSaid(t *testing.T) {
+	a, _ := agentApp(t)
+	was := latestRelease
+	latestRelease = func(context.Context) (update.Release, error) { return update.Release{Version: "v0.0.1"}, nil }
+	t.Cleanup(func() { latestRelease = was })
+	one := a.machines.NewQuick("one.example", false)
+	a.machines.At(one).Dialing = func() {}
+	a.handle(CheckUpdates{})
+	waitFor(t, a, "the answer", func() bool { return !a.checking })
+	if a.st.Status != "Connecting to one.example…" {
+		t.Fatalf("the check done, the status says %q", a.st.Status)
 	}
 }

@@ -100,8 +100,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			return err
 		}
 		// Typed at a saved window's address: that window, as a window,
-		// not SSH to the port it serves on.
-		if h, ok := a.savedWindowAt(cfg); ok {
+		// not SSH to the port it serves on. A quick connection made
+		// again stays SSH, as it was made.
+		if h, ok := a.savedWindowAt(cfg); ok && in.As == "" {
 			return a.connectWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID)})
 		}
 		hops = []remote.Config{cfg}
@@ -488,13 +489,14 @@ func (a *app) connOf(machine machines.ID) (*remote.Conn, bool, error) {
 
 // savedWindowAt is the saved window a typed target names by its address:
 // with the port it serves on, when one is typed, or by the address
-// alone when none is.
+// alone when none is. One typed with a user is an SSH login, as a
+// window has none.
 func (a *app) savedWindowAt(cfg remote.Config) (remote.Host, bool) {
-	if a.book == nil || cfg.Host == "" {
+	if a.book == nil || cfg.Host == "" || cfg.User != "" {
 		return remote.Host{}, false
 	}
 	for _, h := range a.book.Hosts() {
-		if !h.Window || !strings.EqualFold(h.Address, cfg.Host) {
+		if !h.Window || !sameHost(h.Address, cfg.Host) {
 			continue
 		}
 		if cfg.Port == 0 || h.ServeAddr() == net.JoinHostPort(h.Address, strconv.Itoa(cfg.Port)) {
@@ -502,6 +504,16 @@ func (a *app) savedWindowAt(cfg remote.Config) (remote.Host, bool) {
 		}
 	}
 	return remote.Host{}, false
+}
+
+// sameHost is whether two addresses name the same host: names in any
+// case, and IP addresses however they are spelled, in brackets or not.
+func sameHost(a, b string) bool {
+	a, b = strings.Trim(a, "[]"), strings.Trim(b, "[]")
+	if ipA, ipB := net.ParseIP(a), net.ParseIP(b); ipA != nil && ipB != nil {
+		return ipA.Equal(ipB)
+	}
+	return strings.EqualFold(a, b)
 }
 
 // showDialling says on the status line what is being connected to: the

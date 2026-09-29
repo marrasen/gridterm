@@ -336,7 +336,7 @@ func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func())
 		f, err := open()
 		a.events <- func() {
 			a.starting--
-			a.st.Status = ""
+			a.showDialling()
 			if err != nil {
 				failed()
 				a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())

@@ -176,7 +176,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 		// A move happens once.
 		a.clip = nil
 	}
-	a.st.Status = ""
+	a.showDialling()
 	op := jobs.Op{Kind: c.kind, From: c.from, At: c.at, Names: c.names, To: f, Into: into}
 	verb := "Copying"
 	if c.kind == jobs.Move {

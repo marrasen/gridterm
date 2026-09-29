@@ -338,6 +338,9 @@ func (b *Book) routeLocked(h Host) ([]Host, error) {
 		if !ok {
 			return nil, fmt.Errorf("the server %q is reached through is not saved", route[len(route)-1].Name)
 		}
+		if next.Window {
+			return nil, fmt.Errorf("%q is reached through %q, a kakel window, and a window is no jump host", route[len(route)-1].Name, next.Name)
+		}
 		h = next
 	}
 	slices.Reverse(route)

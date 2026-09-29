@@ -62,7 +62,7 @@ func TestANoticeIsInTheWindowLog(t *testing.T) {
 func TestALogLineIsCleanAndAskingForTheLogSaysNothing(t *testing.T) {
 	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
 	l := a.account("srv")
-	logLine(l, badly, "disconnected: \x1b]0;owned\x07bye\r\nsee you")
+	logLine(l, badly, "disconnected: \x1b]0;owned\x07bye\r\nsee you\n")
 	a.account("srv")
 	logLine(a.dialLog("srv"), "", "connecting to srv")
 	var got []string

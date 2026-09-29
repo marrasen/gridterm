@@ -86,8 +86,9 @@ func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switch
 	for i, p := range panes {
 		t := &tile{id: p.ID, title: p.Title, box: anim.NewRect(geom.Rect{}), fade: anim.NewFloat(0), ring: anim.NewFloat(0)}
 		t.label = text.Default().Shape(p.Title, 13)
-		if c := w.captions[p.ID]; w.titles && c != nil {
-			t.caption = text.Default().Shape(c.label.Text, smallText.Get(u.Theme()))
+		// Every pane lands under its caption, one never on stage as well.
+		if w.titles {
+			t.caption = text.Default().Shape(w.captionOf(p), smallText.Get(u.Theme()))
 			t.titled = true
 		}
 		s.tiles = append(s.tiles, t)
@@ -330,8 +331,10 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	p.ShadowRRect(r, radius, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
 	// The caption line, shrunk as the pane is, over it.
 	if tl.titled {
+		// Shrunk with the tile, and never taller than the line on stage:
+		// a terminal's grid can be a little shorter than its pane.
 		nat := s.natural(tl, s.size)
-		scale := r.Size().H / nat.H
+		scale := min(1, r.Size().H/nat.H)
 		line := r
 		line.Max.Y = r.Min.Y + captionHeight*scale
 		p.RRect(line, 0, paint.Solid(widget.MenuFill.Get(th)))

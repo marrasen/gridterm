@@ -179,8 +179,12 @@ func TestASwitcherTileCarriesThePanesCaption(t *testing.T) {
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	want, _ := lastUI.Bounds(win.captions["p2"])
-	if got := sw.tiles[1].box.Value(); got != want {
-		t.Fatalf("p2's tile landed at %v, but p2 and its caption stand at %v", got, want)
+	// p2 was never on stage before: its tile has the caption too, and
+	// the terminal under it stands where the tile's pane landed.
+	got := sw.tiles[1].box.Value()
+	got.Min.Y += captionHeight
+	want, _ := lastUI.Bounds(win.terms["p2"])
+	if !sw.tiles[1].titled || got != want {
+		t.Fatalf("p2's tile landed with its pane at %v (titled %v), but p2 stands at %v", got, sw.tiles[1].titled, want)
 	}
 }

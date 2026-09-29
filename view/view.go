@@ -2059,17 +2059,23 @@ func (w *Window) paneNode(id string) gunim.Node {
 	}
 	for _, p := range w.panes {
 		if p.ID == id {
-			where := w.nameOf(p.Machine)
-			switch {
-			case p.Machine == "":
-				where = "This computer"
-			case p.On != "":
-				where = w.nameOf(machines.FarID(p.Machine, p.On))
-			}
-			c.label.SetText(where + ": " + p.Title)
+			c.label.SetText(w.captionOf(p))
 		}
 	}
 	return c
+}
+
+// captionOf is the line over pane p while panes show their titles:
+// where it runs, and its title.
+func (w *Window) captionOf(p app.Pane) string {
+	where := w.nameOf(p.Machine)
+	switch {
+	case p.Machine == "":
+		where = "This computer"
+	case p.On != "":
+		where = w.nameOf(machines.FarID(p.Machine, p.On))
+	}
+	return where + ": " + p.Title
 }
 
 // bareNode returns the node that shows pane id, made on first use.

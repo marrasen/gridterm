@@ -435,6 +435,10 @@ func (a *app) removeServer(name MachineID) error {
 	// question said: a dial on its way, a window, a connection.
 	switch {
 	case a.giveUp(name):
+	case a.dropped[name]:
+		// Its connection went already: what it left goes too, and the
+		// offer to reconnect, which would bring it back.
+		a.clearMachine(name)
 	case a.windows[name] != nil:
 		return a.disconnectWindow(name)
 	case a.conns[name] != nil:

@@ -541,9 +541,11 @@ type app struct {
 	gone bool
 	// dropped are the machines whose connection went by itself, kept
 	// on the sidebar until cleared, and letGo the ones being let go of
-	// on purpose.
+	// on purpose. lost withdraws a dropped window's question offering
+	// to reconnect, once the window is cleared or connected to again.
 	dropped map[MachineID]bool
 	letGo   map[MachineID]bool
+	lost    map[MachineID]context.CancelFunc
 	// paneFiles is each file pane's view of its machine's files.
 	paneFiles map[string]wrappedFiles
 	// dialCancel gives up each connection being made, and dialWaiters
@@ -671,6 +673,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		paneFiles:   map[string]wrappedFiles{},
 		dropped:     map[MachineID]bool{},
 		letGo:       map[MachineID]bool{},
+		lost:        map[MachineID]context.CancelFunc{},
 		dialCancel:  map[MachineID]context.CancelFunc{},
 		dialWaiters: map[MachineID][]func(error){},
 		paneAt:      map[string]string{},

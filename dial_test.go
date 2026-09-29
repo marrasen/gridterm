@@ -88,6 +88,19 @@ func TestRemovingAServerClosesItsConnection(t *testing.T) {
 	}
 }
 
+// Removed after its connection went, a server takes what it left along.
+func TestRemovingADroppedServerClearsIt(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Server: "srv"})
+	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
+	_ = a.conns["srv"].Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.dropped["srv"] && a.st.Panes[0].Ended })
+	a.handle(RemoveServer{ID: "srv"})
+	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("removed, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	}
+}
+
 func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []MachineID{"srv"}, Dialing: []MachineID{"far"}})
@@ -96,6 +109,10 @@ func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	}
 	if got := win.removeSays("far"); got != "Removing it cancels the connection in progress." {
 		t.Fatalf("for a server being connected to it says %q", got)
+	}
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []MachineID{"srv"}})
+	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it closes its 1 ended pane." {
+		t.Fatalf("for a dropped server it says %q", got)
 	}
 	if got := win.removeSays("idle"); got != "" {
 		t.Fatalf("for a server holding nothing it says %q", got)

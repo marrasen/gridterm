@@ -1269,6 +1269,16 @@ func (w *window) removeSays(name MachineID) string {
 		return said + "."
 	case slices.Contains(w.dialing, name):
 		return "Removing it cancels the connection in progress."
+	case slices.Contains(w.dropped, name):
+		ended := 0
+		for _, p := range w.panes {
+			if p.Machine == name && p.Ended {
+				ended++
+			}
+		}
+		if ended > 0 {
+			return "Its connection was lost. Removing it closes its " + count(ended, "ended pane") + "."
+		}
 	}
 	return ""
 }

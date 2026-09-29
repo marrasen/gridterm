@@ -298,6 +298,7 @@ type ClearMachine struct{ ID MachineID }
 // clearMachine takes a machine whose connection went off the sidebar.
 func (a *app) clearMachine(name MachineID) {
 	delete(a.dropped, name)
+	a.withdrawLost(name)
 	for _, p := range slices.Clone(a.st.Panes) {
 		if p.Machine == name && p.Ended {
 			a.closePane(p.ID)

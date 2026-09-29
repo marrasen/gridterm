@@ -6,6 +6,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -239,5 +240,22 @@ func TestAWindowWhoseConnectionDroppedIsOfferedAgain(t *testing.T) {
 	pumpBoth(t, a, b, "the window to go", func() bool { return b.windows[name] == nil })
 	if len(b.st.Asks) != 0 {
 		t.Fatalf("let go of on purpose, it asks %+v", b.st.Asks)
+	}
+}
+
+// Cleared, a dropped window takes its offer to reconnect along.
+func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
+	a, b := connectedWindows(t)
+	name := b.st.Windows[0].Name
+	for _, c := range a.serving.clients {
+		_ = c.Close()
+	}
+	pumpBoth(t, a, b, "the question and the panes' end", func() bool {
+		return len(b.st.Asks) == 1 && !slices.ContainsFunc(b.st.Panes, func(p Pane) bool { return !p.Ended })
+	})
+	b.handle(ClearMachine{ID: name})
+	pumpBoth(t, a, b, "the question to go", func() bool { return len(b.st.Asks) == 0 })
+	if len(b.st.Panes) != 0 || b.dropped[name] || len(b.lost) != 0 {
+		t.Fatalf("cleared, there are panes %+v, dropped %v, questions %v", b.st.Panes, b.dropped, b.lost)
 	}
 }

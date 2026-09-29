@@ -106,6 +106,8 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	if _, ok := a.windows[name]; ok || a.dialing[name] {
 		return fmt.Errorf("this window is already connected to %s", a.nameOf(name))
 	}
+	// Connected to again some other way: the question is answered.
+	a.withdrawLost(name)
 	a.dialing[name] = true
 	dctx, cancel := context.WithCancel(a.ctx)
 	a.dialCancel[name] = cancel
@@ -232,7 +234,12 @@ func (a *app) windowGone(name MachineID, w *remoteWin, why error) {
 		logLine(a.accounts[name], "", "connection lost")
 		a.problem()
 		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, ID: name}
-		a.askThen(a.ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
+		ctx, cancel := context.WithCancel(a.ctx)
+		a.withdrawLost(name)
+		a.lost[name] = cancel
+		a.askThen(ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
+			delete(a.lost, name)
+			cancel()
 			if !ans.Yes {
 				return
 			}
@@ -247,6 +254,15 @@ func (a *app) windowGone(name MachineID, w *remoteWin, why error) {
 	logLine(a.accounts[name], "", "disconnected")
 	a.notify("Disconnected from the window at "+w.addr, said, "")
 	a.showWindows()
+}
+
+// withdrawLost takes back the question offering to reconnect to
+// machine, if there is one.
+func (a *app) withdrawLost(machine MachineID) {
+	if cancel, ok := a.lost[machine]; ok {
+		cancel()
+		delete(a.lost, machine)
+	}
 }
 
 // disconnectWindow lets go of a window.

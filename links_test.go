@@ -130,7 +130,8 @@ func TestTheScrollbackOpensInAReaderToSearch(t *testing.T) {
 	}
 	r := a.st.Readers[a.st.Panes[1].ID]
 	text := strings.Join(r.Lines, "\n")
-	if !r.Find || !strings.Contains(text, "\n1\n2\n3\n") || !strings.Contains(text, "\n300\n") {
+	// The last number may end the text, the prompt after it not come yet.
+	if !r.Find || !strings.Contains(text, "\n1\n2\n3\n") || !strings.Contains(text+"\n", "\n300\n") {
 		t.Fatalf("the reader holds %d lines, find %v, starting %q", len(r.Lines), r.Find, r.Lines[:5])
 	}
 	if strings.ContainsAny(filepath.Base(r.SaveAs), `/:`) || !strings.HasSuffix(r.SaveAs, " scrollback.txt") {

@@ -64,8 +64,8 @@ func (a *app) openLink(machine machines.ID, at string) error {
 	if err := links.Openable(at); err != nil {
 		return err
 	}
-	target, local := links.LocalService(at)
-	if !local || machine == machines.Local {
+	target, loopback := links.LocalService(at)
+	if !loopback || machine == machines.Local {
 		// An address anywhere, or on this machine's own loopback: the
 		// browser here reaches it.
 		return openInBrowser(at)

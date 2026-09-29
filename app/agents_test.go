@@ -214,7 +214,16 @@ func TestAnAgentOpensAPaneBesideOneItWasGiven(t *testing.T) {
 func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
 	a, _ := agentApp(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
+	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
 	a.handle(WriteSkill{Host: agenthost.ClaudeCode})
+	// The agent picked is kept, as Copy Prompt and Setup keep it.
+	if host, ok := set.AgentHost(); !ok || host != agenthost.ClaudeCode {
+		t.Fatalf("written, the agent kept is %q, %v", host, ok)
+	}
 	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "kakel", "SKILL.md")
 	body, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(body), "use_session_code") {

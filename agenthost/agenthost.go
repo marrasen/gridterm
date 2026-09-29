@@ -175,7 +175,9 @@ func (h Host) SkillPath() (string, error) {
 // as the program reads its setting from its own home and not from
 // wherever this window was started.
 func fromHome(dir string) (string, error) {
-	if filepath.IsAbs(dir) {
+	// Whole, or rooted on the current drive, as Windows reads a path
+	// that starts with a slash: left alone rather than put under home.
+	if filepath.IsAbs(dir) || (dir != "" && (dir[0] == '/' || dir[0] == '\\')) {
 		return dir, nil
 	}
 	home, err := os.UserHomeDir()

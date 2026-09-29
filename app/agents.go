@@ -742,6 +742,9 @@ type WriteSkill struct {
 // over one edited since.
 func (a *app) writeSkill(in WriteSkill) error {
 	host := agenthost.Named(in.Host)
+	if a.settings != nil {
+		a.keep("the agent picked", a.settings.PutAgentHost(host.Name))
+	}
 	path, err := host.SkillPath()
 	if err != nil {
 		return err

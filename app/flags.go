@@ -236,6 +236,12 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		// nothing and reaches nothing until the agent gives it a code.
 		return true, mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
 	case opts.mcpSkill:
+		// Refused rather than printed with the bare name, as Write Skill
+		// refuses: a skill naming no program to start goes on failing
+		// long after this is forgotten.
+		if _, ok := exeKnown(); !ok {
+			return true, errors.New("-mcp-skill: the path to kakel could not be found, so the skill would name no program to start")
+		}
 		_, err := io.WriteString(os.Stdout, agenthost.Named(agenthost.ClaudeCode).Skill(exePath()))
 		return true, err
 	case opts.listFonts:

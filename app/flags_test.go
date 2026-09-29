@@ -52,3 +52,15 @@ func TestDashEOpensTheCommandInsteadOfAShell(t *testing.T) {
 		t.Fatalf("the first pane is %+v", a.st.Panes)
 	}
 }
+
+// -mcp-skill refuses to print a skill when kakel's own path cannot be
+// found, as Write Skill refuses to write one.
+func TestTheSkillIsNotPrintedWithNoPathToKakel(t *testing.T) {
+	was := exeKnown
+	exeKnown = func() (string, bool) { return "", false }
+	t.Cleanup(func() { exeKnown = was })
+	did, err := RunAlone(t.Context(), Options{mcpSkill: true})
+	if !did || err == nil {
+		t.Fatalf("it did %v, and said %v", did, err)
+	}
+}

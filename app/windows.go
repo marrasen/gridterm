@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/session"
 
@@ -81,6 +82,31 @@ func serveAddr(addr string) string {
 	return addr
 }
 
+// windowAt is the window known at addr, a served window's address with
+// its port: one connected to or being connected to, or one saved; ""
+// for none.
+func (a *app) windowAt(addr string) machines.ID {
+	for _, id := range a.machines.IDs(func(m machines.Machine) bool { return m.Window != nil || m.Dialing != nil }) {
+		if w := a.machines.Get(id).Window; w != nil && links.SameTarget(serveAddr(w.Addr), addr) {
+			return id
+		}
+		if target, window, ok := a.machines.Quick(id); ok && window && links.SameTarget(serveAddr(target), addr) {
+			return id
+		}
+		if h, ok := a.machines.Saved(id); ok && h.Window && links.SameTarget(h.ServeAddr(), addr) {
+			return id
+		}
+	}
+	if a.book != nil {
+		for _, h := range a.book.Hosts() {
+			if h.Window && links.SameTarget(h.ServeAddr(), addr) {
+				return machines.ID(h.ID)
+			}
+		}
+	}
+	return ""
+}
+
 // connectWindow connects to a served window, and opens a terminal on
 // it once it has.
 func (a *app) connectWindow(in ConnectWindow) error { return a.reachWindow(in, true) }
@@ -93,6 +119,11 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 		return errors.New("type the address of the window to connect to")
 	}
 	name := in.ID
+	if name == "" {
+		// Typed: a window known at that address already is that one,
+		// rather than a second connection under a second heading.
+		name = a.windowAt(addr)
+	}
 	if _, saved := a.machines.Saved(name); name == "" || (!saved && !a.machines.IsQuick(name)) {
 		// A quick one, or one again that was forgotten meanwhile, as
 		// when its row was cleared before the reconnect was answered.
@@ -102,8 +133,12 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			a.machines.KeepQuick(name, addr, true)
 		}
 	}
-	if a.machines.Get(name).Window != nil || a.machines.Get(name).Dialing != nil {
+	switch {
+	case a.machines.Get(name).Window != nil:
 		return fmt.Errorf("this window is already connected to %s", a.machines.Name(name))
+	case a.machines.Get(name).Dialing != nil:
+		// On its way already: that connection is the one asked for.
+		return nil
 	}
 	// Connected to again some other way: the question is answered.
 	a.withdrawLost(name)

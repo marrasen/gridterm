@@ -31,6 +31,9 @@ var toaster = sync.OnceValue(func() notify.Toaster { return notify.New(ProgramNa
 // toasted says whether toaster was made, for closing it.
 var toasted atomic.Bool
 
+// openedForNote is what the row of a pane opened for another window says.
+const openedForNote = "opened from another window"
+
 // notePanes puts on each terminal's row what its program says, and who
 // else is watching it, and passes a new message on.
 func (a *app) notePanes() {
@@ -41,6 +44,11 @@ func (a *app) notePanes() {
 			continue
 		}
 		var say []string
+		if a.openedFor[p.ID] {
+			// Said for as long as the pane is open, whatever its
+			// program calls it.
+			say = append(say, openedForNote)
+		}
 		if note := progressNote(t.Progress()); note != "" {
 			say = append(say, note)
 		}

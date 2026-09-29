@@ -2125,6 +2125,11 @@ type sideItem struct {
 	fill    float32
 	filling bool
 	traffic *meter.Meter
+	// shared says, for a pane's row, whether an agent works in the pane
+	// and another window watches it, for the row's stripe to glow in
+	// their colours, as the pane's rings do.
+	shared func() (agent, watched bool)
+	hues   look.Marks
 }
 
 // sidebarRows lists the panes under their machines, this computer
@@ -2170,14 +2175,18 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 		shown[t.ID] = true
 	}
 	paneRow := func(p app.Pane) sideItem {
+		// An agent's note and the pane's own, such as who else is
+		// watching it, both.
 		note := notes[p.ID]
 		switch {
 		case p.Ended:
 			note = "ended"
 		case p.Rang:
 			note = "bell"
-		case note == "" && p.Note != "":
+		case note == "":
 			note = p.Note
+		case p.Note != "":
+			note += ", " + p.Note
 		}
 		return sideItem{key: p.ID, text: p.Title, note: note, pane: p.ID, click: app.FocusPane{Pane: p.ID}, closes: app.ClosePane{Pane: p.ID}, dim: p.Ended}
 	}

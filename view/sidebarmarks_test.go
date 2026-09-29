@@ -228,3 +228,12 @@ func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 		t.Fatalf("said anew, the note is %q", row.note.Text)
 	}
 }
+
+// A pane an agent works in and another window watches says both.
+func TestAPaneSaysBothAnAgentAndAWatcher(t *testing.T) {
+	rows := sidebarRows([]app.Pane{{ID: "p1", Title: "Terminal 1", Note: "watched by 1"}}, nil,
+		app.Share{Panes: []app.SharedPane{{Pane: "p1", Note: "agent working"}}}, nil, nil, nil)
+	if rows[1].note != "agent working, watched by 1" {
+		t.Fatalf("the sidebar row says %q", rows[1].note)
+	}
+}

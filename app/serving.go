@@ -235,10 +235,12 @@ func (a *app) disconnectClients() error {
 
 // disconnectClient hangs up on one window this one is served to.
 func (a *app) disconnectClient(in DisconnectClient) error {
+	found := false
 	for _, c := range a.serving.clients {
 		if c.Name != in.Name || c.Addr != in.From {
 			continue
 		}
+		found = true
 		if a.serving.server != nil {
 			a.serving.server.GoingTo(c, serve.GoingKicked)
 		}
@@ -246,7 +248,18 @@ func (a *app) disconnectClient(in DisconnectClient) error {
 			return err
 		}
 	}
-	return nil
+	if found {
+		return nil
+	}
+	// Gone before the button was pressed: said, rather than a button
+	// that did nothing. One that came back is named, as its row reads
+	// the same.
+	for _, c := range a.serving.clients {
+		if c.Name == in.Name {
+			return fmt.Errorf("%s had already gone and has connected again since, from %s, so nothing was disconnected. Disconnect it again to hang up on the one connected now", in.Name, c.Addr)
+		}
+	}
+	return fmt.Errorf("%s had already gone, so there was nothing to disconnect", in.Name)
 }
 
 func (a *app) clientCame(c *serve.Client) {
@@ -441,7 +454,7 @@ func (a *app) openFor(cols, rows int) (session.Session, serve.Attached, error) {
 		if err := a.openThen("", Placement{}, func(pane string, _ error) { id = pane }); err != nil {
 			return opened{}, err
 		}
-		a.setPane(id, func(p *Pane) { p.Title += " (opened from another window)" })
+		a.openedFor[id] = true
 		sess, err := a.watchPane(a.terminal(id), cols, rows)
 		return opened{sess, id}, err
 	})
@@ -489,7 +502,7 @@ func (a *app) openOnFor(host, command, dir string, cols, rows int) (session.Sess
 		if t == nil {
 			return nil, errors.New("it closed here before it could be shown")
 		}
-		a.setPane(got.id, func(p *Pane) { p.Title += " (opened from another window)" })
+		a.openedFor[got.id] = true
 		return a.watchPane(t, cols, rows)
 	})
 	if err != nil {
@@ -659,6 +672,11 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 		id, known := a.machines.Find(host)
 		if known {
 			if c, ok, err := a.connOf(id); ok {
+				if err == nil && a.parked[c] >= mostParked {
+					// A machine that has stopped answering is given no
+					// more to leave waiting.
+					return nil, fmt.Errorf("%d file sessions to %s are still waiting to end, as it has stopped answering", a.parked[c], a.machines.Name(id))
+				}
 				return c, err
 			}
 			host = a.machines.Name(id)
@@ -679,7 +697,41 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 	if errors.Is(first, io.EOF) {
 		first = nil
 	}
-	return errors.Join(first, relay.Close())
+	closed := relay.Close()
+	// The other copy ends once the close is answered. A machine that
+	// has stopped answering never answers it: the copy is left waiting,
+	// counted against the connection until it ends, which it does when
+	// the connection goes.
+	select {
+	case <-done:
+	case <-time.After(relayGrace):
+		go func() {
+			post(a, func() { a.parked[conn]++ })
+			<-done
+			post(a, func() {
+				if a.parked[conn]--; a.parked[conn] <= 0 {
+					delete(a.parked, conn)
+				}
+			})
+		}()
+	}
+	return errors.Join(first, closed)
+}
+
+// mostParked is how many file sessions may be left waiting to end on a
+// connection before another is refused, and relayGrace how long one is
+// given to end once closed.
+const (
+	mostParked = 4
+	relayGrace = 5 * time.Second
+)
+
+// post runs f on the program's goroutine, unless the program is closing.
+func post(a *app, f func()) {
+	select {
+	case a.events <- f:
+	case <-a.ctx.Done():
+	}
 }
 
 // keptOpen keeps the SFTP server from closing the channel, which the

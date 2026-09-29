@@ -142,8 +142,15 @@ func TestAnotherWindowOpensAShellHere(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = sess.Close() }()
-	if len(a.st.Panes) != 2 || !strings.HasSuffix(a.st.Panes[1].Title, "(opened from another window)") {
+	// Said on its row for as long as it is open, whatever its program
+	// calls it.
+	if len(a.st.Panes) != 2 {
 		t.Fatalf("opened from elsewhere, the panes are %+v", a.st.Panes)
+	}
+	a.retitle(a.st.Panes[1].ID, "vim notes.txt")
+	a.notePanes()
+	if p := a.st.Panes[1]; !strings.HasPrefix(p.Note, openedForNote) || p.Title != "vim notes.txt" {
+		t.Fatalf("retitled, the pane is %+v", p)
 	}
 	// The program's loop publishes after every change, which is when
 	// windows connected hear of it.
@@ -487,4 +494,50 @@ func TestAWindowSaysWhichMachinesItIsConnectedTo(t *testing.T) {
 		a.publish()
 		return len(b.st.Windows) == 1 && slices.Contains(b.st.Windows[0].Machines, "srv")
 	})
+}
+
+// A machine that holds as many file sessions left waiting to end as it
+// may is given no more.
+func TestAFileRelayIsRefusedWhileTooManyAreLeftWaiting(t *testing.T) {
+	a, conn, _ := tunnelApp(t)
+	a.machines.At("srv").Conn = conn
+	a.parked[conn] = mostParked
+	here, there := net.Pipe()
+	defer func() { _ = here.Close(); _ = there.Close() }()
+	errs := make(chan error, 1)
+	go func() { errs <- a.serveFiles(t.Context(), "srv", there) }()
+	var err error
+	waitFor(t, a, "the refusal", func() bool {
+		select {
+		case err = <-errs:
+			return true
+		default:
+			return false
+		}
+	})
+	if err == nil || !strings.Contains(err.Error(), "still waiting to end") {
+		t.Fatalf("it said %v", err)
+	}
+}
+
+// A window's address typed again while it is connected is that window:
+// no second connection under a second heading.
+func TestAWindowConnectedToIsKnownByItsAddress(t *testing.T) {
+	a, b := connectedWindows(t)
+	err := b.connectWindow(ConnectWindow{Addr: a.st.Serving.Addr})
+	if err == nil || !strings.Contains(err.Error(), "already connected") {
+		t.Fatalf("typed again, it said %v", err)
+	}
+	if n := len(b.machines.Windows()); n != 1 {
+		t.Fatalf("typed again, the window holds %d windows", n)
+	}
+}
+
+// Disconnecting a window that has gone already says so.
+func TestDisconnectingAWindowAlreadyGoneSaysSo(t *testing.T) {
+	a, _ := agentApp(t)
+	err := a.disconnectClient(DisconnectClient{Name: "desk", From: "10.0.0.2:5000"})
+	if err == nil || !strings.Contains(err.Error(), "had already gone") {
+		t.Fatalf("it said %v", err)
+	}
 }

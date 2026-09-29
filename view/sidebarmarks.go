@@ -38,6 +38,8 @@ type rowMarks struct {
 	fill     float32
 	filling  bool
 	traffic  *meter.Meter
+	shared   func() (agent, watched bool)
+	hues     look.Marks
 	depth    int
 	heading  bool
 	closable bool
@@ -55,6 +57,7 @@ func (m *rowMarks) set(it sideItem) {
 		m.rate = meter.Rate{}
 	}
 	m.kind, m.live, m.fill, m.filling, m.traffic = it.kind, it.live, it.fill, it.filling, it.traffic
+	m.shared, m.hues = it.shared, it.hues
 	m.depth, m.heading, m.closable = it.depth, it.heading, it.closes != nil && !it.heading
 }
 
@@ -147,6 +150,7 @@ func (m *rowMarks) paintUnder(p *paint.Painter, f gunim.Frame, inset geom.Rect) 
 func (m *rowMarks) paint(p *paint.Painter, f gunim.Frame, r *sideRow) {
 	now := f.Now
 	mid := m.height / 2
+	m.paintStripe(p, now)
 	if m.live != nil {
 		colour := markColour(m.live(now), now, f)
 		p.RRect(geom.Rc(m.markX-3.5, mid-3.5, 7, 7), 3.5, paint.Solid(colour))
@@ -165,6 +169,29 @@ func (m *rowMarks) paint(p *paint.Painter, f gunim.Frame, r *sideRow) {
 			ink.A = uint8(float32(0xc0) * min(t, 1))
 			paintCross(p, m.cross, ink)
 		}
+	}
+}
+
+// paintStripe draws, at the row's start, a stripe for each of an agent
+// working in the pane and another window watching it, glowing in their
+// colours as the pane's rings do.
+func (m *rowMarks) paintStripe(p *paint.Painter, now time.Time) {
+	if m.shared == nil {
+		return
+	}
+	agent, watched := m.shared()
+	var hues []color.NRGBA
+	if agent {
+		hues = append(hues, m.hues.Agent)
+	}
+	if watched {
+		hues = append(hues, m.hues.Watched)
+	}
+	const dim, bright = 0x90, 0xe0
+	a := uint8(dim + int(float64(bright-dim)*glowAt(now)+0.5))
+	for i, c := range hues {
+		c.A = a
+		p.RRect(geom.Rc(float32(2+3*i), 5, 2, m.height-10), 1, paint.Solid(c))
 	}
 }
 
@@ -302,6 +329,9 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 			if sh != nil {
 				// What goes past, as a graph, as for a tunnel.
 				r.traffic = sh.Traffic()
+			}
+			if t, ok := w.terms[p.ID]; ok {
+				r.shared, r.hues = t.shared, t.marks
 			}
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {

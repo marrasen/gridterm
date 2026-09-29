@@ -37,7 +37,9 @@ func (w *Window) servingDialog(s app.Serving, u *gunim.UI) {
 	if s.Anywhere {
 		where.Selected = 1
 	}
-	form.Add("Port", port).Add("Listen on", where)
+	// Said beside the field, as the field opens with a port in it and
+	// a placeholder would never show.
+	form.Add("Port", port).Add("", widget.NewLabel("0 picks a free port.")).Add("Listen on", where)
 	d := widget.NewDialog("Serve This Window")
 	d.Body = form
 	d.SetButtons("Serve", "Cancel")

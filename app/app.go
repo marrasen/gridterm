@@ -460,6 +460,12 @@ type app struct {
 	// saying what else is said there, by what says it.
 	jobLines []string
 	saying   map[string]string
+	// openedFor are the panes opened here for another window, which
+	// their rows say for as long as they are open.
+	openedFor map[string]bool
+	// parked counts the file sessions relayed for another window that
+	// are left waiting to end, by the connection they ride on.
+	parked map[*remote.Conn]int
 	// listing counts the listings asked for each file pane, so one that
 	// lands after a later one was asked for is dropped: a pane is never
 	// sent back to where it was.
@@ -633,6 +639,8 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		listing:   map[string]int{},
 		listingAt: map[string]string{},
 		saying:    map[string]string{},
+		openedFor: map[string]bool{},
+		parked:    map[*remote.Conn]int{},
 		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
@@ -1619,6 +1627,7 @@ func (a *app) remove(id string) {
 	delete(a.notRun, id)
 	delete(a.listing, id)
 	delete(a.listingAt, id)
+	delete(a.openedFor, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)

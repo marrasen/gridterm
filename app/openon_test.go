@@ -171,6 +171,8 @@ func TestAFarMachinesLogShowsThroughItsWindow(t *testing.T) {
 	logLine(a.account("srv"), "", "first line of srv")
 	win := b.st.Windows[0].Name
 	far := machines.FarID(win, "srv")
+	// Asked twice before it lands, as a double click does: one pane.
+	b.handle(ShowLog{Machine: far})
 	b.handle(ShowLog{Machine: far})
 	// A log's pane is read as its shell, which terminal leaves out.
 	shows := func(pane, text string) func() bool {
@@ -179,7 +181,7 @@ func TestAFarMachinesLogShowsThroughItsWindow(t *testing.T) {
 			return sh != nil && strings.Contains(sh.T.AllText(), text)
 		}
 	}
-	pumpBoth(t, a, b, "the log's pane", func() bool { return len(b.st.Panes) == 2 })
+	pumpBoth(t, a, b, "the log's pane", func() bool { return len(b.st.Panes) == 2 && len(b.farLogs) == 0 })
 	log := b.st.Panes[1]
 	if log.Kind != KindLog || log.Machine != win || log.On != "srv" {
 		t.Fatalf("the log's pane is %+v", log)

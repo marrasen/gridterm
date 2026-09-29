@@ -91,6 +91,11 @@ func (a *app) showFarLog(window machines.ID, key string) {
 		a.notify("Its log is kept through "+a.machines.Name(window), "Connect to "+a.machines.Name(window)+" first.", "")
 		return
 	}
+	if a.farLogs[far] {
+		// Asked for already: it lands in a moment.
+		return
+	}
+	a.farLogs[far] = true
 	a.next++
 	id := "p" + itoa(a.next)
 	a.starting++
@@ -98,6 +103,7 @@ func (a *app) showFarLog(window machines.ID, key string) {
 		sess, err := w.Serve.OpenLog(key)
 		a.events <- func() {
 			a.starting--
+			delete(a.farLogs, far)
 			if err != nil {
 				a.failed("Couldn't show the log of "+a.machines.Name(far), err.Error())
 				a.stayIfEmpty()

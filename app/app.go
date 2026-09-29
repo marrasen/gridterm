@@ -445,6 +445,9 @@ type app struct {
 	intents    chan windowIn
 	openWindow WindowOpener
 	opening    int
+	// farLogs are the logs of machines beyond windows on their way here,
+	// so a second ask waits for the first rather than opening another.
+	farLogs map[machines.ID]bool
 	// starting counts the panes on their way, a shell on a server being
 	// started, which keep an empty window open for them; stayEmpty keeps
 	// it open with none, as when the first pane could not be opened,
@@ -598,6 +601,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		noticed:   map[string]uint64{},
 		paneFiles: map[string]wrappedFiles{},
 		paneAt:    map[string]string{},
+		farLogs:   map[machines.ID]bool{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
 		typed:     map[string]*typedLog{},

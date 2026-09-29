@@ -30,6 +30,13 @@ const (
 	// exitStatus.
 	reqExitStatus = "exit-status"
 
+	// reqExitSignal says the program ended with no exit status: killed
+	// by a signal, or ended some way that gave none. Its payload is
+	// exitSignal, the shape SSH uses for the same thing. It comes before
+	// reqExitStatus, which says 1 for a window of an older build, which
+	// knows only that.
+	reqExitSignal = "exit-signal"
+
 	// reqOpened says what the served window calls what it just opened.
 	// Its payload is opened, and it is sent once, before any of the
 	// program's own bytes, so a client drawing a pane for it can tell
@@ -168,6 +175,15 @@ type windowChange struct {
 	Rows     uint32
 	WidthPx  uint32
 	HeightPx uint32
+}
+
+// exitSignal is how a program ended that gave no exit status: the
+// signal, "" when it was not one, and the rest of SSH's shape, unused.
+type exitSignal struct {
+	Signal     string
+	CoreDumped bool
+	Error      string
+	Lang       string
 }
 
 // exitStatus is how a program ended.

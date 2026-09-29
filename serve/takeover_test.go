@@ -394,7 +394,10 @@ func TestABadEndingCrossesTheWire(t *testing.T) {
 	if err == nil {
 		t.Fatal("a program that fell over is reported as a clean finish")
 	}
-	if !strings.Contains(err.Error(), "status 1") {
+	// It gave no status, and that is what crosses: not a status of 1
+	// the program never gave.
+	var ended *SignalError
+	if !errors.As(err, &ended) || ended.Signal != "" {
 		t.Errorf("it said %v, without saying how it ended", err)
 	}
 }

@@ -571,6 +571,9 @@ type remoteSession struct {
 	done   chan struct{}
 	status uint32
 	gotOne bool
+	// ended says it ended with no status, and signal what stopped it.
+	ended  bool
+	signal string
 
 	closeOnce sync.Once
 	closeErr  error
@@ -642,12 +645,25 @@ func (s *remoteSession) Resize(cols, rows int) error {
 func (s *remoteSession) Wait() error {
 	<-s.done
 	switch {
+	case s.ended:
+		return &SignalError{Signal: s.signal}
 	case !s.gotOne:
 		return errors.New("serve: the connection went before it said how that ended")
 	case s.status != 0:
 		return &ExitError{Status: int(s.status)}
 	}
 	return nil
+}
+
+// SignalError is how a program another window ran ended when it gave no
+// exit status: stopped by Signal, or some way that says none.
+type SignalError struct{ Signal string }
+
+func (e *SignalError) Error() string {
+	if e.Signal == "" {
+		return "serve: it ended with no exit status"
+	}
+	return "serve: it was stopped by signal " + e.Signal
 }
 
 // ExitError is how a program another window ran ended, when it failed:
@@ -685,6 +701,12 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 				// Once. A second one would name the pane something else
 				// while it is still drawing the first.
 				s.named = nil
+			}
+		}
+		if req.Type == reqExitSignal {
+			var got exitSignal
+			if err := ssh.Unmarshal(req.Payload, &got); err == nil {
+				s.ended, s.signal = true, got.Signal
 			}
 		}
 		if req.Type == reqExitStatus {

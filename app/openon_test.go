@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 )
 
@@ -429,5 +430,17 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	})
 	if len(a.machines.Dialing()) != 0 || !b.terminal(onFar).Exited() {
 		t.Fatalf("the window dials %v, and the pane ended %v", a.machines.Dialing(), b.terminal(onFar).Exited())
+	}
+}
+
+// A program another window ran that gave no exit status, as one killed
+// by a signal, is said as having stopped, as that window says it; one
+// that gave a status says that status.
+func TestAnEndingFromAnotherWindowReadsAsItsOwn(t *testing.T) {
+	if status, known := exitStatus(&serve.SignalError{Signal: "KILL"}, true); known {
+		t.Fatalf("stopped by a signal, it reads as status %d", status)
+	}
+	if status, known := exitStatus(&serve.ExitError{Status: 3}, true); !known || status != 3 {
+		t.Fatalf("with status 3, it reads as %d, %v", status, known)
 	}
 }

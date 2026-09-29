@@ -496,6 +496,14 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 		status = 1
 		if code, ok := exitCode(why); ok && code > 0 {
 			status = uint32(code)
+		} else {
+			// No status to give: said so, for the client to say what
+			// this window does, before the 1 a client of an older build
+			// reads.
+			_, err := ch.SendRequest(reqExitSignal, false, ssh.Marshal(exitSignal{Signal: signalOf(why)}))
+			if err != nil && !errors.Is(err, io.EOF) {
+				s.onError(fmt.Errorf("serve: say how a session ended: %w", err))
+			}
 		}
 	}
 	_, err := ch.SendRequest(reqExitStatus, false, ssh.Marshal(exitStatus{Status: status}))
@@ -535,6 +543,18 @@ func exitCode(err error) (int, bool) {
 		return e.ExitCode(), true
 	}
 	return 0, false
+}
+
+// signalOf is the signal that ended a program, as SSH names one, "" for
+// one that gives none.
+func signalOf(err error) string {
+	if e, ok := errors.AsType[interface {
+		error
+		Signal() string
+	}](err); ok {
+		return e.Signal()
+	}
+	return ""
 }
 
 // Attached names something a client asked to work in, as the client was

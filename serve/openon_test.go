@@ -146,3 +146,37 @@ func TestAWindowAsksTheOtherToDisconnect(t *testing.T) {
 		t.Fatalf("with no way to disconnect, it said %v", err)
 	}
 }
+
+// signalled is a program's ending by a signal, as SSH says one.
+type signalled string
+
+func (e signalled) Error() string  { return "signal " + string(e) }
+func (e signalled) Signal() string { return string(e) }
+
+// A program stopped by a signal crosses as that, with no status, for the
+// other window to say it as this one does.
+func TestAProgramStoppedByASignalCrosses(t *testing.T) {
+	_, w := takenOverServing(t, Config{OpenOn: func(_, _, _ string, cols, rows int) (session.Session, Attached, error) {
+		s := newEchoSession(cols, rows)
+		s.endWith = signalled("KILL")
+		return s, Attached{}, nil
+	}})
+	sess, err := w.OpenOn("", "sleep 100", "", 80, 24, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read(t, sess, "started at")
+	if _, err := sess.Write([]byte("bye")); err != nil {
+		t.Fatal(err)
+	}
+	var ended *SignalError
+	if err := waited(t, sess); !errors.As(err, &ended) || ended.Signal != "KILL" {
+		t.Fatalf("it ended with %v", err)
+	}
+	if _, ok := errors.AsType[interface {
+		error
+		ExitStatus() int
+	}](err); ok {
+		t.Fatal("an ending with no status says one")
+	}
+}

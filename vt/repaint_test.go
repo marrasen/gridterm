@@ -56,6 +56,17 @@ func TestTheCursorComesBackWhereItWas(t *testing.T) {
 	}
 }
 
+// The cursor keeps its shape, and whether it blinks.
+func TestTheCursorKeepsItsShape(t *testing.T) {
+	for _, set := range []string{"\x1b[1 q", "\x1b[2 q", "\x1b[3 q", "\x1b[4 q", "\x1b[5 q", "\x1b[6 q"} {
+		was := drawn(t, 20, 5, "abc"+set)
+		again := drawn(t, 20, 5, Repaint(was, Screenful{Wrap: true}))
+		if got, want := again.Cursor(), was.Cursor(); got.Style != want.Style || got.Blink != want.Blink {
+			t.Errorf("%q came back as %v blinking %v, want %v blinking %v", set, got.Style, got.Blink, want.Style, want.Blink)
+		}
+	}
+}
+
 // A hidden cursor stays hidden.
 func TestAHiddenCursorStaysHidden(t *testing.T) {
 	was := drawn(t, 20, 5, "abc\x1b[?25l")

@@ -145,6 +145,19 @@ func writeCursor(b *strings.Builder, g *grid.Grid, m Screenful) {
 	} else {
 		b.WriteString("\x1b[?25l")
 	}
+	// Its shape and whether it blinks, as DECSCUSR spells them: an
+	// editor's bar in insert mode stays a bar for whoever is watching.
+	shape := 1
+	switch cur.Style {
+	case grid.CursorUnderline:
+		shape = 3
+	case grid.CursorBar:
+		shape = 5
+	}
+	if !cur.Blink {
+		shape++
+	}
+	fmt.Fprintf(b, "\x1b[%d q", shape)
 }
 
 // Screenful is what a screen carries that its grid does not.

@@ -196,6 +196,9 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 		return
 	}
 	a.machines.At(name).Window = nil
+	if err := a.tunnelsDiedOn(name, w.Leaving); err != nil {
+		a.failed("Trouble closing the tunnels through "+a.machines.Name(name), err.Error())
+	}
 	a.machines.Each(func(key machines.ID, m *machines.Machine) {
 		if m.Files != nil && key.Of(name) {
 			_ = m.Files.Close()

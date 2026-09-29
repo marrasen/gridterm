@@ -56,6 +56,12 @@ const (
 	// not know by name, and the client says that it cannot, rather than
 	// both ends misreading each other.
 	SessionOnChannel = "session-on@gridterm"
+
+	// chanDial carries one stream of a tunnel: the served window dials
+	// Addr from a machine it reaches, and the channel carries the bytes
+	// both ways. Its payload is dialOn. It is refused, saying why, when
+	// the dial fails.
+	chanDial = "tcp@gridterm"
 )
 
 // opened names what the served window opened, in the same three parts a
@@ -119,6 +125,14 @@ type openOn struct {
 	Host    string
 	Command string
 	Dir     string
+}
+
+// dialOn is what a client asks for when it opens a stream: the machine,
+// as the served window's Open named it, "" for its own, and the address
+// to reach from there.
+type dialOn struct {
+	Host string
+	Addr string
 }
 
 // windowChange is the size of the pane a session is drawn in.

@@ -27,7 +27,7 @@ import (
 // tunnelDialog asks for a tunnel over the focused pane's server: a
 // forwarded port, or with socks a SOCKS proxy.
 func (w *Window) tunnelDialog(socks bool, u *gunim.UI) {
-	w.tunnelDialogOn(w.machineOf(w.focused), socks, u)
+	w.tunnelDialogOn(w.filesKeyOf(w.focused), socks, u)
 }
 
 // tunnelDialogOn asks for a tunnel over machine's connection.
@@ -51,7 +51,13 @@ func (w *Window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 		note := widget.NewLabel("A SOCKS port here. Connections go out from " + called + ".")
 		form.Add("", note).Add("Listen on", listen)
 	} else {
-		form.Add("Listen on", listen).Add("Forward to", target).Add("Direction", way)
+		form.Add("Listen on", listen).Add("Forward to", target)
+		// Through a kakel window, the far end cannot be asked to
+		// listen: only a connection of this window's own can.
+		through, _, _ := machine.Far()
+		if !slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == through }) {
+			form.Add("Direction", way)
+		}
 	}
 	// The tunnels kept for this server, so one is a pick away rather
 	// than two addresses to remember.

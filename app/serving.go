@@ -152,6 +152,7 @@ func (a *app) startServing(in StartServing) error {
 		Attach:     a.attachFor,
 		Open:       a.openFor,
 		OpenOn:     a.openOnFor,
+		Dial:       a.dialFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
 		Picture:    func(png []byte) error { return takePicture(png) },
@@ -416,6 +417,27 @@ func (a *app) openOnFor(host, command, dir string, cols, rows int) (session.Sess
 		return nil, serve.Attached{}, err
 	}
 	return sess, serve.Attached{ID: got.id, Host: host, Kind: "Terminal"}, nil
+}
+
+// dialFor opens a stream to addr from a machine this window reaches,
+// for a tunnel a connected window holds: from this machine for host "",
+// or over the connection to a server connected here.
+func (a *app) dialFor(ctx context.Context, host, addr string) (net.Conn, error) {
+	conn, err := onApp(a, func() (*remote.Conn, error) {
+		machine, err := a.servedMachine(host)
+		if err != nil || machine == machines.Local {
+			return nil, err
+		}
+		return a.machines.Get(machine).Conn, nil
+	})
+	switch {
+	case err != nil:
+		return nil, err
+	case conn == nil:
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", addr)
+	}
+	return conn.Dial(ctx, addr)
 }
 
 // servedMachine is the machine a connected window asks for something

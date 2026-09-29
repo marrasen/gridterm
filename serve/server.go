@@ -108,6 +108,11 @@ type Config struct {
 	// this machine. A nil one refuses, and a client is told so.
 	OpenOn func(host, command, dir string, cols, rows int) (session.Session, Attached, error)
 
+	// Dial opens a stream to addr from a machine this window reaches,
+	// host as its Open named it, "" for this machine, for a tunnel a
+	// client holds. A nil one refuses, and the client is told so.
+	Dial func(ctx context.Context, host, addr string) (net.Conn, error)
+
 	// StartAgain starts again the program of something this window has
 	// open whose program has ended, in the pane it ended in, for a
 	// client that was working in it. A nil one refuses. It is called

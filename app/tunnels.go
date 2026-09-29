@@ -1,8 +1,10 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
 	"strconv"
 	"time"
@@ -90,12 +92,23 @@ func (a *app) setTunnel(id string, change func(*Tunnel)) {
 // one, since the far machine picks where it listens, is asked about
 // first.
 func (a *app) openTunnel(in OpenTunnel) error {
-	conn, ok, err := a.connOf(in.Machine)
-	switch {
-	case err != nil:
-		return err
-	case !ok:
-		return fmt.Errorf("nothing is connected to %s any more", a.machines.Name(in.Machine))
+	// Through a kakel window, to its own machine or one it reaches, the
+	// window dials each stream; otherwise the connection does.
+	through, key, far := in.Machine.Far()
+	if !far {
+		through = in.Machine
+	}
+	w := a.machines.Get(through).Window
+	var conn *remote.Conn
+	if w == nil {
+		c, ok, err := a.connOf(in.Machine)
+		switch {
+		case err != nil:
+			return err
+		case !ok:
+			return fmt.Errorf("nothing is connected to %s any more", a.machines.Name(in.Machine))
+		}
+		conn = c
 	}
 	t := in.Tunnel
 	if err := t.Validate(); err != nil {
@@ -122,7 +135,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	a.tunnelSeq++
 	id := "t" + strconv.Itoa(a.tunnelSeq)
 	open := tunnel.New()
-	f, err := conn.OpenTunnel(a.ctx, remote.TunnelConfig{
+	cfg := remote.TunnelConfig{
 		Tunnel: t,
 		Count:  open.Counter(),
 		OnError: func(err error) {
@@ -131,7 +144,15 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		OnStopped: func(err error) {
 			a.events <- func() { _ = a.tunnelStopped(id, "stopped: "+err.Error(), err) }
 		},
-	})
+	}
+	var f *remote.Forwarder
+	var err error
+	if w != nil {
+		dial := func(_ context.Context, target string) (net.Conn, error) { return w.Serve.DialOn(key, target) }
+		f, err = remote.OpenTunnelThrough(a.machines.Name(in.Machine), dial, cfg)
+	} else {
+		f, err = conn.OpenTunnel(a.ctx, cfg)
+	}
 	if err != nil {
 		return err
 	}
@@ -220,7 +241,8 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 	return closeErr
 }
 
-// tunnelsDiedOn stops the tunnels over a connection that has gone. A
+// tunnelsDiedOn stops the tunnels over a connection that has gone, a
+// window's taking those to the machines beyond it along. A
 // local one listens here, which the far end going does nothing to, so
 // each is closed. A connection let go of on purpose takes its tunnels'
 // rows with it; one that dropped leaves them, stopped, until cleared.
@@ -228,7 +250,7 @@ func (a *app) tunnelsDiedOn(machine machines.ID, letGo bool) error {
 	var errs []error
 	for _, t := range slices.Clone(a.st.Tunnels) {
 		switch {
-		case t.Machine != machine:
+		case !t.Machine.Of(machine):
 		case letGo:
 			errs = append(errs, a.closeTunnel(t.ID))
 		case t.Live:

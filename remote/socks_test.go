@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"encoding/binary"
 	"errors"
 	"io"
@@ -384,5 +385,36 @@ func TestATunnelCarriesOnlySoManyAtOnce(t *testing.T) {
 	})
 	if got := f.Streams(); got > maxStreams+1 {
 		t.Fatalf("the tunnel is carrying %d streams, want no more than %d", got, maxStreams)
+	}
+}
+
+// A tunnel through another way of reaching a machine, as through a
+// kakel window, dials each stream with what it was given: a SOCKS proxy
+// reaches what each stream asks. It cannot ask the far machine to
+// listen.
+func TestATunnelThroughADialReachesWhatItIsAsked(t *testing.T) {
+	echo := echoServer(t)
+	var asked []string
+	f, err := OpenTunnelThrough("desk through laptop", func(ctx context.Context, target string) (net.Conn, error) {
+		asked = append(asked, target)
+		var d net.Dialer
+		return d.DialContext(ctx, "tcp", target)
+	}, TunnelConfig{Tunnel: Tunnel{Kind: DynamicForward, Listen: "127.0.0.1:0"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.Close() })
+	code, stream := socksDial(t, f.Addr(), echo, socksIPv4)
+	if code != socksOK {
+		t.Fatalf("the tunnel answered %d", code)
+	}
+	if got := say(t, stream, "hello"); got != "HELLO" || len(asked) != 1 || asked[0] != echo {
+		t.Fatalf("the echo said %q, having been dialled at %q", got, asked)
+	}
+	if got := f.String(); !strings.HasSuffix(got, " on desk through laptop") {
+		t.Fatalf("it is called %q", got)
+	}
+	if _, err := OpenTunnelThrough("desk", nil, TunnelConfig{Tunnel: Tunnel{Kind: RemoteForward, Listen: "127.0.0.1:0", Target: echo}}); err == nil {
+		t.Fatal("a remote forward opened through a dial")
 	}
 }

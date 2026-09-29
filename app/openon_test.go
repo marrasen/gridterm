@@ -1,11 +1,15 @@
 package app
 
 import (
+	"fmt"
+	"io"
+	"net"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/remote"
 )
 
 // A window connected to another opens a terminal and runs a command on
@@ -63,5 +67,63 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 	})
 	if len(a.st.Panes) != 5 {
 		t.Fatalf("refused, the other window opened %+v", a.st.Panes)
+	}
+}
+
+// A tunnel through a window reaches what a server beyond it reaches,
+// and what the window's own machine does; letting go of the window
+// takes them along.
+func TestATunnelGoesThroughAWindow(t *testing.T) {
+	_, conn, echo := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	win := b.st.Windows[0].Name
+	ping := func(id string) {
+		t.Helper()
+		c, err := net.Dial("tcp", b.tunnels[id].Forwarder().Addr())
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer c.Close()
+		done := make(chan error, 1)
+		go func() {
+			if _, err := c.Write([]byte("ping")); err != nil {
+				done <- err
+				return
+			}
+			buf := make([]byte, 4)
+			_, err := io.ReadFull(c, buf)
+			if err == nil && !strings.EqualFold(string(buf), "ping") {
+				err = fmt.Errorf("read back %q", buf)
+			}
+			done <- err
+		}()
+		pumpBoth(t, a, b, "the echo", func() bool {
+			select {
+			case err := <-done:
+				if err != nil {
+					t.Fatal(err)
+				}
+				return true
+			default:
+				return false
+			}
+		})
+	}
+	for _, on := range []machines.ID{machines.FarID(win, "srv"), win} {
+		if err := b.openTunnel(OpenTunnel{Machine: on, Tunnel: remote.Tunnel{Kind: remote.LocalForward, Listen: "127.0.0.1:0", Target: echo}}); err != nil {
+			t.Fatal(err)
+		}
+		ping(b.st.Tunnels[len(b.st.Tunnels)-1].ID)
+	}
+	if err := b.openTunnel(OpenTunnel{Machine: win, Tunnel: remote.Tunnel{Kind: remote.RemoteForward, Listen: "127.0.0.1:0", Target: echo}, Sure: true}); err == nil {
+		t.Fatal("a window listened for a tunnel from here")
+	}
+	if err := b.disconnectWindow(win); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the window to go", func() bool { return b.machines.Get(win).Window == nil })
+	if len(b.st.Tunnels) != 0 || len(b.tunnels) != 0 {
+		t.Fatalf("let go of, the window leaves tunnels %+v", b.st.Tunnels)
 	}
 }

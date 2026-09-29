@@ -7,6 +7,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 
@@ -18,6 +19,14 @@ import (
 // than trusted: the machine that sent it is not the one that has to
 // make a terminal that size.
 const mostCells = 10000
+
+// How many streams one connection may have carried at once, for its
+// tunnels: each is a socket on this machine or a channel on a connection
+// it holds, and a client must not be able to use them all up.
+const mostStreams = 256
+
+// dialWait is how long a stream's far end has to answer.
+const dialWait = 15 * time.Second
 
 // How many file sessions one connection may have at once.
 //
@@ -45,8 +54,28 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 	// Counted rather than held in a list: nothing needs to name them,
 	// only to know how many there are. Written by the goroutines that
 	// finish and read by this one.
-	var files atomic.Int32
+	var files, streams atomic.Int32
 	for nch := range chans {
+		if nch.ChannelType() == chanDial {
+			var want dialOn
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not a stream request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			if streams.Load() >= mostStreams {
+				_ = nch.Reject(ssh.ResourceShortage,
+					"this kakel is already carrying as many streams as it will on one connection")
+				continue
+			}
+			streams.Add(1)
+			running.Go(func() {
+				defer streams.Add(-1)
+				s.runDial(ctx, nch, want)
+			})
+			continue
+		}
 		if nch.ChannelType() == chanControl {
 			ch, reqs, err := nch.Accept()
 			if err != nil {
@@ -143,6 +172,50 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 	// from saying the client has gone while a shell it started is still
 	// being hung up on.
 	running.Wait()
+}
+
+// runDial dials what a client asked for and carries the stream until
+// one end or the other closes it, or the client's connection goes.
+func (s *Server) runDial(ctx context.Context, nch ssh.NewChannel, want dialOn) {
+	if s.cfg.Dial == nil {
+		_ = nch.Reject(ssh.Prohibited, "this kakel does not carry tunnels to the machines it reaches")
+		return
+	}
+	dctx, cancel := context.WithTimeout(ctx, dialWait)
+	far, err := s.cfg.Dial(dctx, want.Host, want.Addr)
+	cancel()
+	if err != nil {
+		// Said to the client, whose tunnel reports it on its own row.
+		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		_ = far.Close()
+		s.onError(fmt.Errorf("serve: take a stream: %w", err))
+		return
+	}
+	go ssh.DiscardRequests(reqs)
+	var once sync.Once
+	both := func() {
+		once.Do(func() {
+			_ = ch.Close()
+			_ = far.Close()
+		})
+	}
+	// Gone with the connection, whichever copy is waiting.
+	stop := context.AfterFunc(ctx, both)
+	defer stop()
+	var copies sync.WaitGroup
+	copies.Go(func() {
+		_, _ = io.Copy(ch, far)
+		both()
+	})
+	copies.Go(func() {
+		_, _ = io.Copy(far, ch)
+		both()
+	})
+	copies.Wait()
 }
 
 // runFiles gives a client the files of a machine and carries the

@@ -728,3 +728,44 @@ func (w *Window) SendPicture(png []byte) error {
 // mostSaid caps what a window can say went wrong, so a window that
 // answers with a stream rather than a sentence cannot fill this one.
 const mostSaid = 4 << 10
+
+// ErrCannotForward is what DialOn says when the window over there does
+// not know how: a build from before it could.
+var ErrCannotForward = errors.New("serve: that window cannot carry tunnels to the machines it reaches: it is a kakel from before that")
+
+// DialOn opens a stream to addr from host, a machine the other window
+// reaches as its Open named it, "" for its own: one stream of a tunnel
+// through that window.
+func (w *Window) DialOn(host, addr string) (net.Conn, error) {
+	if w.isClosed() {
+		return nil, errors.New("serve: that window has been let go of")
+	}
+	ch, reqs, err := w.client.OpenChannel(chanDial, ssh.Marshal(dialOn{Host: host, Addr: addr}))
+	var open *ssh.OpenChannelError
+	switch {
+	case errors.As(err, &open) && open.Reason == ssh.UnknownChannelType:
+		return nil, ErrCannotForward
+	case errors.As(err, &open):
+		return nil, errors.New(Plain(open.Message))
+	case err != nil:
+		return nil, fmt.Errorf("serve: open a stream on %s: %w", w.addr, err)
+	}
+	go ssh.DiscardRequests(reqs)
+	return channelConn{Channel: ch, from: w.client.LocalAddr(), to: w.client.RemoteAddr()}, nil
+}
+
+// channelConn is a stream on the connection to another window, as a
+// network connection: the tunnels carry it as they do any other.
+type channelConn struct {
+	ssh.Channel
+	from, to net.Addr
+}
+
+func (c channelConn) LocalAddr() net.Addr  { return c.from }
+func (c channelConn) RemoteAddr() net.Addr { return c.to }
+
+// The deadlines are not kept: a channel has none, and the tunnels close
+// a stream rather than wait on one.
+func (channelConn) SetDeadline(time.Time) error      { return nil }
+func (channelConn) SetReadDeadline(time.Time) error  { return nil }
+func (channelConn) SetWriteDeadline(time.Time) error { return nil }

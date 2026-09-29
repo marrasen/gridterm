@@ -2691,7 +2691,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	for _, f := range w.foldersOn(m) {
 		add(icon.Folder, f, send(app.FilesOn{Machine: m, Path: f}))
 	}
-	if m != "" && !window {
+	if m != "" {
 		heading("Forward")
 		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })
 		add(icon.Network, "SOCKS Proxy…", func(u *gunim.UI) { w.tunnelDialogOn(m, true, u) })

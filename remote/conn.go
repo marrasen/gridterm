@@ -401,6 +401,16 @@ func (c *Conn) carryTheAgent(ag agent.Agent, why error) error {
 // String names the connection the way a user would: user@host:port.
 func (c *Conn) String() string { return c.user + "@" + c.addr }
 
+// Dial opens a stream to target, as the far machine reaches it: its own
+// loopback for "localhost", and anything its network does.
+func (c *Conn) Dial(ctx context.Context, target string) (net.Conn, error) {
+	conn, err := c.client.DialContext(ctx, "tcp", target)
+	if err != nil {
+		return nil, fmt.Errorf("reach %s from %s: %w", target, c, err)
+	}
+	return conn, nil
+}
+
 // Closed reports whether the connection is no longer usable, so a caller
 // can tell a session that ended by itself from the connection going under
 // it.

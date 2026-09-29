@@ -182,8 +182,13 @@ func (t Tunnel) String() string {
 // It rides on the connection: closing the connection closes the tunnel
 // and every stream going through it.
 type Forwarder struct {
-	conn *Conn
-	t    Tunnel
+	// conn is the connection it rides on, nil for one through another
+	// way of reaching the far machine. via names that machine, and
+	// dialVia opens a stream from it.
+	conn    *Conn
+	via     string
+	dialVia func(ctx context.Context, target string) (net.Conn, error)
+	t       Tunnel
 
 	// ln accepts connections. For a local tunnel it listens on this
 	// machine; for a remote one it is the far machine's listener,
@@ -301,6 +306,8 @@ func (c *Conn) OpenTunnel(ctx context.Context, cfg TunnelConfig) (*Forwarder, er
 
 	f := &Forwarder{
 		conn:      c,
+		via:       c.String(),
+		dialVia:   c.Dial,
 		t:         t,
 		ln:        ln,
 		onError:   cfg.OnError,
@@ -314,6 +321,44 @@ func (c *Conn) OpenTunnel(ctx context.Context, cfg TunnelConfig) (*Forwarder, er
 	if err := c.register(f); err != nil {
 		_ = f.stopListening()
 		return nil, err
+	}
+	go f.serve()
+	return f, nil
+}
+
+// OpenTunnelThrough forwards a port here, or a SOCKS proxy, to what
+// dial reaches from another machine, called via: one this window reaches
+// some other way than a connection of its own, such as through another
+// kakel window. The far machine listening, a remote forward, is refused:
+// only a connection of its own can ask that. Closing the tunnel is the
+// caller's, when that way of reaching the machine goes.
+func OpenTunnelThrough(via string, dial func(ctx context.Context, target string) (net.Conn, error), cfg TunnelConfig) (*Forwarder, error) {
+	if err := cfg.Tunnel.Validate(); err != nil {
+		return nil, fmt.Errorf("remote: %w", err)
+	}
+	if cfg.Tunnel.Kind == RemoteForward {
+		return nil, fmt.Errorf("remote: %s cannot listen for a tunnel from here, only forward to it", via)
+	}
+	addr, err := cfg.Tunnel.listenAddr()
+	if err != nil {
+		return nil, fmt.Errorf("remote: %w", err)
+	}
+	t := cfg.Tunnel
+	t.Listen = addr
+	if t.Kind != DynamicForward {
+		if t.Target, err = t.targetAddr(); err != nil {
+			return nil, fmt.Errorf("remote: %w", err)
+		}
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		return nil, fmt.Errorf("remote: listen on %s for %s: %w", addr, cfg.Tunnel, err)
+	}
+	t.Listen = ln.Addr().String()
+	f := &Forwarder{
+		via: via, dialVia: dial, t: t, ln: ln, count: cfg.Count,
+		onError: cfg.OnError, onStopped: cfg.OnStopped,
+		live: make(map[io.Closer]struct{}),
 	}
 	go f.serve()
 	return f, nil
@@ -334,7 +379,7 @@ func (f *Forwarder) Streams() int { return int(f.streams.Load()) }
 func (f *Forwarder) Served() int { return int(f.served.Load()) }
 
 // String describes the tunnel and the machine it runs over.
-func (f *Forwarder) String() string { return f.t.String() + " on " + f.conn.String() }
+func (f *Forwarder) String() string { return f.t.String() + " on " + f.via }
 
 // maxStreams is how many connections one tunnel carries at a time.
 //
@@ -527,11 +572,7 @@ func (f *Forwarder) dial(target string) (net.Conn, error) {
 		}
 		return c, nil
 	default:
-		c, err := f.conn.client.DialContext(ctx, "tcp", target)
-		if err != nil {
-			return nil, fmt.Errorf("reach %s from %s: %w", target, f.conn, err)
-		}
-		return c, nil
+		return f.dialVia(ctx, target)
 	}
 }
 
@@ -599,7 +640,9 @@ func (f *Forwarder) stopped(err error) {
 // lets go of the connection's record of it.
 func (f *Forwarder) Close() error {
 	err := f.closeRider()
-	f.conn.drop(f)
+	if f.conn != nil {
+		f.conn.drop(f)
+	}
 	return err
 }
 
@@ -624,7 +667,7 @@ func (f *Forwarder) stopListening() error {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), channelTimeout)
 	defer cancel()
-	what := "stop listening for " + f.t.String() + " on " + f.conn.String()
+	what := "stop listening for " + f.t.String() + " on " + f.via
 	if err := doWithin(ctx, what, f.ln.Close); err != nil && !errors.Is(err, net.ErrClosed) {
 		return err
 	}

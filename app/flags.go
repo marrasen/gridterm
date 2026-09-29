@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -77,6 +78,9 @@ func ParseOptions(args []string) (Options, error) {
 		}
 	})
 	o.fontSize = min(max(o.fontSize, 8), 40)
+	if o.fontFiles != "" && o.fontFamily != "" {
+		return o, errors.New("-font and -font-family both name a typeface; use one")
+	}
 	if o.scrollback < 0 {
 		return o, fmt.Errorf("-scrollback %d: a count of lines cannot be below zero", o.scrollback)
 	}

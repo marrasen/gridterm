@@ -2,6 +2,7 @@ package view
 
 import (
 	"image"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -188,5 +189,42 @@ func TestAReadersRowSaysHowItsFileStands(t *testing.T) {
 		if got := readerNote(c.rd); got != c.want {
 			t.Errorf("%+v says %q, want %q", c.rd, got, c.want)
 		}
+	}
+}
+
+// A machine a window is connected to has a heading under it, with
+// nothing open on it.
+func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
+	rows := sidebarRows(nil, nil, app.Share{}, []app.RemoteWindow{{Name: "desk", Machines: []string{"db"}}}, nil, nil)
+	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:"+string(machines.FarID("desk", "db")) && r.heading }) {
+		t.Fatalf("the rows are %+v", rows)
+	}
+}
+
+// A row's note goes quiet once it has stood a while, and the pointer
+// brings it out again; a note that says something new is up again.
+func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := app.State{Sidebar: true, SidebarWidth: 220, Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFiles, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
+	publish(st)
+	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("p1"))
+	if !ok || row.note.Text != "42%" {
+		t.Fatalf("the note is %q", row.note.Text)
+	}
+	row.saidAt = row.saidAt.Add(-noteFor)
+	win.quietNotes(lastUI)
+	if row.note.Text != "" {
+		t.Fatalf("settled, the note still says %q", row.note.Text)
+	}
+	row.Handle(gi.PointerEnter{}, lastUI)
+	if row.note.Text != "42%" {
+		t.Fatalf("pointed at, the note says %q", row.note.Text)
+	}
+	row.Handle(gi.PointerLeave{}, lastUI)
+	st.Panes[0].Note = "43%"
+	publish(st)
+	if row.note.Text != "43%" {
+		t.Fatalf("said anew, the note is %q", row.note.Text)
 	}
 }

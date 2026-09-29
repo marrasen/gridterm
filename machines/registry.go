@@ -70,6 +70,8 @@ type Window struct {
 	// this window last told it of.
 	Folders map[string][]string
 	Told    []serve.TunnelNote
+	// Reaches are the machines it last said it is connected to.
+	Reaches []serve.Machine
 }
 
 // quick is a connection made without a saved server: the address typed,

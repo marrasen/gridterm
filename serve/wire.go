@@ -321,6 +321,11 @@ type Snapshot struct {
 	// to, by the key its Opens name each by, for a client to offer.
 	Folders map[string][]string `json:"folders,omitempty"`
 
+	// Machines are the machines it is connected to, by that same key,
+	// with their names, for a client to give each a heading with
+	// nothing open there too. A window of an older build sends none.
+	Machines []Machine `json:"machines,omitempty"`
+
 	// Going says the window is about to close the connection on
 	// purpose, and why. Empty in an ordinary snapshot, and the only
 	// field set when it is not: a client that reads one of these leaves
@@ -330,6 +335,13 @@ type Snapshot struct {
 	// dropped look the same at the other end, and the client shows a
 	// socket error for something the user did on purpose.
 	Going string `json:"going,omitempty"`
+}
+
+// Machine is a machine a window is connected to: Key as its Opens name
+// it, and Name as the window calls it.
+type Machine struct {
+	Key  string `json:"key"`
+	Name string `json:"name"`
 }
 
 // Why a window closes a connection on purpose. A client that is told

@@ -476,3 +476,15 @@ func TestASavedWindowIsKnownByItsAddressOnly(t *testing.T) {
 		}
 	}
 }
+
+// A window tells a client the machines it is connected to, so each
+// has a heading there with nothing open on it.
+func TestAWindowSaysWhichMachinesItIsConnectedTo(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	pumpBoth(t, a, b, "srv listed", func() bool {
+		a.publish()
+		return len(b.st.Windows) == 1 && slices.Contains(b.st.Windows[0].Machines, "srv")
+	})
+}

@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"net"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,6 +57,8 @@ type Window struct {
 	open []Open
 	// folders are the folders it last said were saved, by machine.
 	folders map[string][]string
+	// machines are the machines it is connected to.
+	machines []Machine
 
 	// going is why the other window closed the connection, when it said
 	// so before closing it.
@@ -242,6 +245,13 @@ func (w *Window) Folders() map[string][]string {
 	return maps.Clone(w.folders)
 }
 
+// Machines are the machines the other window says it is connected to.
+func (w *Window) Machines() []Machine {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.machines)
+}
+
 // OpenNamed is what this window says about one thing it has open, and
 // whether it still has it.
 //
@@ -295,7 +305,7 @@ func (w *Window) watch() {
 				// so what is open is left as it was.
 				w.going = snap.Going
 			} else {
-				w.open, w.folders = snap.Open, snap.Folders
+				w.open, w.folders, w.machines = snap.Open, snap.Folders, snap.Machines
 			}
 			w.mu.Unlock()
 		}

@@ -38,6 +38,9 @@ type RemoteWindow struct {
 	// Folders are the folders it has saved for the machines it reaches,
 	// by its key for each, to offer under their headings.
 	Folders map[string][]string
+	// Machines are the machines it is connected to, by its key for
+	// each, each a heading here with nothing open on it too.
+	Machines []string
 }
 
 // Intents for other windows.
@@ -184,7 +187,7 @@ func (a *app) holdWindow(name machines.ID, addr, keyFile string, win *serve.Wind
 			}
 			a.events <- func() {
 				if a.machines.Get(name).Window == w && (!slices.Equal(w.Seen, win.Opens()) ||
-					!maps.EqualFunc(w.Folders, win.Folders(), slices.Equal)) {
+					!maps.EqualFunc(w.Folders, win.Folders(), slices.Equal) || !slices.Equal(w.Reaches, win.Machines())) {
 					a.showWindows()
 				} else {
 					a.quiet = true
@@ -310,13 +313,17 @@ func (a *app) showWindows() {
 	var out []RemoteWindow
 	for _, name := range a.machines.Windows() {
 		w := a.machines.Get(name).Window
-		w.Seen, w.Folders = w.Serve.Opens(), w.Serve.Folders()
+		w.Seen, w.Folders, w.Reaches = w.Serve.Opens(), w.Serve.Folders(), w.Serve.Machines()
 		for _, o := range w.Seen {
 			if o.Key() != "" {
 				a.machines.NameFar(name, o.Key(), o.Host)
 			}
 		}
 		rw := RemoteWindow{Name: name, Addr: w.Addr, Folders: w.Folders}
+		for _, m := range w.Reaches {
+			a.machines.NameFar(name, m.Key, m.Name)
+			rw.Machines = append(rw.Machines, m.Key)
+		}
 		for _, o := range w.Seen {
 			if !o.HasScreen() {
 				continue

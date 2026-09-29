@@ -250,6 +250,10 @@ func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine machines.ID) {
 
 // restarted puts a new session in a pane.
 func (a *app) restarted(id string, t *uiterm.Terminal, sess session.Session) error {
+	if sh := a.shells.Get(id); sh != nil {
+		// Counted on the sidebar as the first was.
+		sess = sh.Counted(sess)
+	}
 	if err := t.Restart(sess); err != nil {
 		return errors.Join(err, sess.Close())
 	}

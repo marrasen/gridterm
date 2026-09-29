@@ -10,6 +10,7 @@ import (
 
 	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/internal/build"
+	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/session"
 	"github.com/marrasen/kakel/ui"
 	uiterm "github.com/marrasen/kakel/ui/term"
@@ -29,6 +30,9 @@ type Shell struct {
 	// wrote is when the program last wrote, in nanoseconds, for the
 	// sidebar's mark to breathe while output comes.
 	wrote *atomic.Int64
+	// traffic counts what the program wrote and was sent, for the
+	// sidebar's graph.
+	traffic *meter.Meter
 }
 
 // Hooks are what a shell tells the program: that it wrote, that
@@ -66,6 +70,8 @@ var ScrollbackLines = vt.DefaultScrollback
 // drawing with pal.
 func Open(sess session.Session, pal vt.Palette, hooks Hooks) *Shell {
 	wrote := new(atomic.Int64)
+	traffic := meter.New()
+	sess = counted(sess, traffic)
 	program := hooks.Program
 	if program == "" {
 		program = build.Name
@@ -97,7 +103,49 @@ func Open(sess session.Session, pal vt.Palette, hooks Hooks) *Shell {
 	// cursor into the view; the pane draws it hollow when it lacks the
 	// keyboard.
 	t.SetFocus(true)
-	return &Shell{T: t, view: grid.New(Cols, Rows, pal.FG, pal.BG), wrote: wrote}
+	return &Shell{T: t, view: grid.New(Cols, Rows, pal.FG, pal.BG), wrote: wrote, traffic: traffic}
+}
+
+// Traffic counts what the program wrote and was sent.
+func (sh *Shell) Traffic() *meter.Meter { return sh.traffic }
+
+// Counted is sess, counted in the shell's traffic: a session started
+// again in the pane is counted as the first was.
+func (sh *Shell) Counted(sess session.Session) session.Session { return counted(sess, sh.traffic) }
+
+// countedSession counts the bytes that cross a session.
+type countedSession struct {
+	session.Session
+	m *meter.Meter
+}
+
+func counted(sess session.Session, m *meter.Meter) session.Session {
+	return countedSession{Session: sess, m: m}
+}
+
+func (c countedSession) Read(b []byte) (int, error) {
+	n, err := c.Session.Read(b)
+	if n > 0 {
+		c.m.Moved(n, 0, time.Now())
+	}
+	return n, err
+}
+
+// ReportLate passes on to the session a failure no caller can be given,
+// such as a resize that failed after the drag that asked for it, when
+// the session reports any.
+func (c countedSession) ReportLate(report func(error)) {
+	if late, ok := c.Session.(interface{ ReportLate(func(error)) }); ok {
+		late.ReportLate(report)
+	}
+}
+
+func (c countedSession) Write(b []byte) (int, error) {
+	n, err := c.Session.Write(b)
+	if n > 0 {
+		c.m.Moved(0, n, time.Now())
+	}
+	return n, err
 }
 
 // Drawn draws the screen into its grid, at the size the screen is, and

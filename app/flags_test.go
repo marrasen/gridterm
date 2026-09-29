@@ -21,6 +21,7 @@ func TestTheCommandLineIsReadAsGridtermReadsIt(t *testing.T) {
 		{"-shot", "until"},
 		{"-shot", "key:ctrl+nosuchkey"},
 		{"-shot", "require:ok"},
+		{"-font", "a.ttf", "-font-family", "Mono"},
 	} {
 		if _, err := ParseOptions(bad); err == nil {
 			t.Errorf("%q was taken", strings.Join(bad, " "))

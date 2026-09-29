@@ -194,3 +194,12 @@ func TestSavingAServerWithItsKeyUntouchedKeepsNothing(t *testing.T) {
 		t.Fatalf("saved with a new key, the kept keys are %v", a.st.KeyFiles)
 	}
 }
+
+// Pop Out on a pane that is not in a split says so.
+func TestPopOutOnAPaneNotInASplitSaysSo(t *testing.T) {
+	a, _ := agentApp(t)
+	a.handle(PopOut{})
+	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Nothing to pop out" {
+		t.Fatalf("the notices are %+v", a.st.Notices)
+	}
+}

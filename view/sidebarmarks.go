@@ -299,6 +299,10 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 				r.note = readerNote(rd)
 			}
 			sh := w.shells.Get(p.ID)
+			if sh != nil {
+				// What goes past, as a graph, as for a tunnel.
+				r.traffic = sh.Traffic()
+			}
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {
 				switch {

@@ -369,6 +369,13 @@ func (a *app) tellServed() {
 	// The folders saved for each server connected to, which a client
 	// offers under its heading, by the ID the Opens name it by.
 	for _, id := range a.machines.Connected() {
+		// By the key the Opens name it by: its ID when saved, its
+		// name when not.
+		key := a.machines.Name(id)
+		if _, saved := a.machines.Saved(id); saved {
+			key = string(id)
+		}
+		snap.Machines = append(snap.Machines, serve.Machine{Key: key, Name: a.machines.Name(id)})
 		if h, ok := a.machines.Saved(id); ok && len(h.Folders) > 0 {
 			if snap.Folders == nil {
 				snap.Folders = map[string][]string{}
@@ -377,7 +384,7 @@ func (a *app) tellServed() {
 		}
 	}
 	a.serving.mu.Lock()
-	same := slices.Equal(a.serving.snap.Open, snap.Open) &&
+	same := slices.Equal(a.serving.snap.Open, snap.Open) && slices.Equal(a.serving.snap.Machines, snap.Machines) &&
 		maps.EqualFunc(a.serving.snap.Folders, snap.Folders, slices.Equal)
 	a.serving.snap = snap
 	a.serving.mu.Unlock()

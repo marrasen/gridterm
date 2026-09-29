@@ -1661,7 +1661,12 @@ func (a *app) nextPane(back bool) {
 // popOut moves the focused pane onto a stage of its own.
 func (a *app) popOut() {
 	id := a.st.Focus
-	if b := a.groups[a.groupOf[id]]; b == nil || b.Pane == id {
+	b := a.groups[a.groupOf[id]]
+	if b == nil {
+		return
+	}
+	if b.Pane == id {
+		a.notify("Nothing to pop out", "This pane is not in a split: it has a stage of its own already.", "")
 		return
 	}
 	a.take(id)

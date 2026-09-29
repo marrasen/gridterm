@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/winkeys"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -370,6 +372,13 @@ func (s *switcher) Handle(e input.Event, u *gunim.UI) bool {
 			s.pick(s.hot, u)
 		case input.KeyEscape:
 			s.cancel(u)
+		default:
+			// Its shortcut again closes it.
+			if ev, ok := winkeys.Event(e); ok {
+				if id, bound := s.w.keys.Lookup(ui.ChordOf(ev)); bound && id == "view.switcher" {
+					s.cancel(u)
+				}
+			}
 		}
 		return true
 	case input.PointerMove:

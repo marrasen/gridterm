@@ -80,7 +80,13 @@ type Window struct {
 	// sidebarShown is whether the sidebar shows, as last published, and
 	// sideWidth the width it has while it does, or 0 while it is hidden.
 	sidebarShown bool
-	sideWidth    float32
+	// sideOver shows the sidebar in full screen, at sideWanted, the
+	// width it has when shown.
+	sideOver   bool
+	sideWanted float32
+	// stopQuiet cancels the wake for the next sidebar note to go quiet.
+	stopQuiet func()
+	sideWidth float32
 	// presenting says the window fills the screen with the stage alone:
 	// the menu bar, the sidebar and the status line slide away. barShade
 	// holds the menu bar, to slide it up.
@@ -324,7 +330,22 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "pane.splitRight", "pane.splitDown":
 		w.askSplit(id == "pane.splitDown", u)
 		return true
+	case "sidebar.toggle":
+		if w.presenting {
+			// In full screen the sidebar comes and goes over the stage,
+			// and the window stays full screen.
+			w.sideOver = !w.sideOver
+			w.placeSidebar(u)
+			return true
+		}
+		// Otherwise the program's, as any other.
 	case "palette.open":
+		// Its shortcut again closes it, when the key reaches the window:
+		// gunim hands the keys typed in the palette to the palette alone.
+		if w.palette.IsOpen() {
+			w.palette.Close(u)
+			return true
+		}
 		w.palette.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 		return true
 	case "menu.open":
@@ -391,7 +412,13 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		w.focusSidebar(u)
 		return true
 	case "sidebar.closeRow":
-		if row, ok := u.Focused().(*sideRow); ok && row.closes != nil {
+		row, ok := u.Focused().(*sideRow)
+		switch {
+		case !ok:
+			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the sidebar has the keyboard on."}, u)
+		case row.closes == nil:
+			w.toasts.Show(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
+		default:
 			u.Send(row, row.closes)
 		}
 		return true
@@ -1608,6 +1635,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			row.setActive(r.pane != "" && r.pane == st.Focus, u)
 		}
 	}
+	w.quietNotes(u)
 	if st.Focus != w.revealed {
 		// The sidebar follows the stage: the row of the pane in front
 		// scrolls into view.
@@ -1793,7 +1821,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 
-	w.sideWidth = 0
+	w.sideWidth, w.sideWanted = 0, st.SidebarWidth
 	if st.Sidebar {
 		w.sideWidth = st.SidebarWidth
 		w.side.least = st.SidebarWidth
@@ -2190,6 +2218,17 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 				far = append(far, p.On)
 			}
 		}
+		// And the machines it is connected to with nothing open there.
+		for _, w := range windows {
+			if w.Name != m {
+				continue
+			}
+			for _, key := range w.Machines {
+				if !slices.Contains(far, key) {
+					far = append(far, key)
+				}
+			}
+		}
 		// Each machine the window reached, under a heading of its own a
 		// step in: this window's panes on it, and what the window has
 		// open there.
@@ -2221,6 +2260,31 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 	return out
 }
 
+// quietNotes takes the notes that have stood long enough off their
+// rows, and wakes again for the next to.
+func (w *Window) quietNotes(u *gunim.UI) {
+	if w.stopQuiet != nil {
+		w.stopQuiet()
+		w.stopQuiet = nil
+	}
+	now := time.Now()
+	var next time.Duration
+	for _, key := range w.list.Keys() {
+		row, ok := widget.RowOf[*sideRow](w.list, key)
+		if !ok || row.said == "" || row.pointed || row.typed {
+			continue
+		}
+		row.showNote(now)
+		if left := noteFor - now.Sub(row.saidAt); left > 0 && (next == 0 || left < next) {
+			next = left
+		}
+	}
+	u.Invalidate()
+	if next > 0 {
+		w.stopQuiet = u.After(next, w.quietNotes)
+	}
+}
+
 // sideRow is a row in the sidebar. A pane's row shows its title, lit
 // while the pane has the keyboard, and a click brings the pane
 // forward. A machine's heading is small and dim.
@@ -2249,6 +2313,32 @@ type sideRow struct {
 	// marks is what the row shows besides its words: its mark, icon,
 	// fill and traffic.
 	marks rowMarks
+	// said is the row's note, said since saidAt; once it has stood for
+	// noteFor it comes off the row, giving the name its width back,
+	// and the pointer or the keyboard on the row brings it out again.
+	said           string
+	saidAt         time.Time
+	pointed, typed bool
+}
+
+// noteFor is how long a sidebar row's note stands before it goes quiet.
+const noteFor = 4 * time.Second
+
+// quiet reports whether the row's note has stood long enough, at now,
+// to come off the row.
+func (r *sideRow) quiet(now time.Time) bool {
+	return r.said != "" && now.Sub(r.saidAt) >= noteFor && !r.pointed && !r.typed
+}
+
+// showNote shows the note, or nothing once it has gone quiet.
+func (r *sideRow) showNote(now time.Time) {
+	text := r.said
+	if r.quiet(now) {
+		text = ""
+	}
+	if r.note.Text != text {
+		r.note.SetText(text)
+	}
 }
 
 func (w *Window) newSideRow(it sideItem) *sideRow {
@@ -2267,7 +2357,10 @@ func (w *Window) newSideRow(it sideItem) *sideRow {
 // set shows it on the row.
 func (r *sideRow) set(it sideItem) {
 	r.title.SetText(it.text)
-	r.note.SetText(it.note)
+	if it.note != r.said {
+		r.said, r.saidAt = it.note, time.Now()
+	}
+	r.showNote(time.Now())
 	r.click, r.local, r.closes, r.key = it.click, it.local, it.closes, it.key
 	r.marks.set(it)
 	if m, ok := strings.CutPrefix(it.key, "machine:"); ok && it.heading {
@@ -2369,8 +2462,13 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
 	case input.PointerEnter:
 		r.hover.Animate(1, widget.Quick.Get(u.Theme()))
+		r.pointed = true
+		r.showNote(time.Now())
 	case input.PointerLeave:
 		r.hover.Animate(0, widget.Settle.Get(u.Theme()))
+		r.pointed = false
+		r.showNote(time.Now())
+		r.w.quietNotes(u)
 	case input.PointerDown:
 		if e.Button == input.ButtonPrimary {
 			if r.closes != nil && r.marks.onCross(e.Pos) {
@@ -2384,8 +2482,13 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		return false
 	case input.FocusGained:
 		r.ring.Animate(1, widget.Quick.Get(u.Theme()))
+		r.typed = true
+		r.showNote(time.Now())
 	case input.FocusLost:
 		r.ring.Animate(0, widget.Settle.Get(u.Theme()))
+		r.typed = false
+		r.showNote(time.Now())
+		r.w.quietNotes(u)
 	case input.KeyPress:
 		switch {
 		case e.Key == input.KeyUp, e.Key == input.KeyDown:
@@ -2949,7 +3052,7 @@ func (w *Window) present(on bool, u *gunim.UI) {
 	if on == w.presenting {
 		return
 	}
-	w.presenting = on
+	w.presenting, w.sideOver = on, false
 	u.SetFullScreen(on)
 	spring := widget.Settle.Get(u.Theme())
 	w.barShade.show(!on, spring)
@@ -2965,7 +3068,10 @@ func (w *Window) present(on bool, u *gunim.UI) {
 // hidden or the window is presenting.
 func (w *Window) placeSidebar(u *gunim.UI) {
 	width := w.sideWidth
-	if w.presenting {
+	switch {
+	case w.presenting && w.sideOver:
+		width = w.sideWanted
+	case w.presenting:
 		width = 0
 	}
 	if w.outer.Share() != width {

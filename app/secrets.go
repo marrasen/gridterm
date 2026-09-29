@@ -458,8 +458,7 @@ func (a *app) onSecret(id, what string, do func(it secrets.Item, value string)) 
 // in half a minute unless something else has been copied since.
 func (a *app) copySecret(id string) {
 	a.onSecret(id, "Couldn't copy the secret", func(it secrets.Item, value string) {
-		a.notices++
-		a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: it.Name + " copied",
+		a.post(Notice{Title: it.Name + " copied",
 			Body: fmt.Sprintf("The clipboard clears in %d seconds.", ClipboardHolds), Clipboard: value, Forget: true})
 		a.copied, a.copiedAt = value, time.Now()
 	})

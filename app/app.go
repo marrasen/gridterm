@@ -1319,15 +1319,23 @@ func (a *app) failed(title, why string) { a.notice(NoticeFailed, title, why, "")
 
 // notice tells the user something, once, in a toast of its kind.
 func (a *app) notice(kind NoticeKind, title, body, clip string) {
+	a.post(Notice{Title: title, Body: body, Kind: kind, Clipboard: clip})
+}
+
+// post shows n in the window in front, numbered after the last.
+func (a *app) post(n Notice) {
 	// Into the Window Log too, where it stays once the toast has gone:
-	// a failure is read again there, or copied.
-	if body != "" {
-		log.Printf("%s: %s", title, body)
+	// a failure is read again there, or copied. What it puts on the
+	// clipboard is not: that may be a secret.
+	if n.Body != "" {
+		log.Printf("%s: %s", n.Title, n.Body)
 	} else {
-		log.Print(title)
+		log.Print(n.Title)
 	}
 	a.notices++
-	a.st.Notices = append(a.st.Notices, Notice{ID: a.notices, Title: title, Body: body, Kind: kind, Clipboard: clip, win: a.frontID()})
+	// A window shows only the notices meant for it.
+	n.ID, n.win = a.notices, a.frontID()
+	a.st.Notices = append(a.st.Notices, n)
 	// The window has shown all but the newest few by now.
 	if n := len(a.st.Notices); n > 8 {
 		a.st.Notices = slices.Delete(a.st.Notices, 0, n-8)

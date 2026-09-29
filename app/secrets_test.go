@@ -86,6 +86,11 @@ func TestASecretIsKeptAndOnlyItsNameIsShown(t *testing.T) {
 	if n.Clipboard != "hunter2" || !n.Forget || strings.Contains(n.Title+n.Body, "hunter2") {
 		t.Fatalf("copying said %+v", n)
 	}
+	// And it reaches the window in front, which is what puts it on the
+	// clipboard: a window shows only the notices meant for it.
+	if got := a.stateFor(a.cur, a.st).Notices; len(got) == 0 || got[len(got)-1].Clipboard != "hunter2" {
+		t.Fatalf("the window in front was shown %+v", got)
+	}
 
 	a.handle(PutSecret{ID: id, Name: "database", User: "admin", Kind: secrets.Password})
 	if got := a.st.Secrets.Items; len(got) != 1 || got[0].Name != "database" || got[0].ID != id {

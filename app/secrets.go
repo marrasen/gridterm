@@ -336,7 +336,9 @@ func secretKey(k secrets.KeySlot) SecretKey {
 	}
 	name, note := k.KeyFile, ""
 	if name == "" {
-		name = k.Fingerprint
+		// Named by nothing but its fingerprint, which has a column of
+		// its own, wide enough for all of it.
+		name = "A key with no file named"
 	}
 	if vaultkeys.Here(k) {
 		note = "on this machine"
@@ -375,6 +377,10 @@ func (a *app) putSecret(in PutSecret) {
 				return secrets.ErrNoSuchItem
 			}
 			it = items[i]
+			if in.Value == "" && it.Name == in.Name && it.User == in.User {
+				// Nothing changed, and nothing is said.
+				return nil
+			}
 			it.Name, it.User = in.Name, in.User
 			if in.Value == "" {
 				if _, err := v.PutDetails(it); err != nil {
@@ -417,7 +423,9 @@ func (a *app) removeSecrets(what string, ids []string) {
 			gone = append(gone, name)
 		}
 		switch {
-		case len(gone) == 1 && gone[0] != "":
+		case len(gone) == 1 && gone[0] == "":
+			a.notify("That secret was removed from somewhere else already", "", "")
+		case len(gone) == 1:
 			a.worked(gone[0]+" removed", "", "")
 		case len(gone) > 1:
 			a.worked(strconv.Itoa(len(gone))+" secrets removed", "", "")

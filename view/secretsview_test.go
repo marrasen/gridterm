@@ -41,6 +41,9 @@ func TestTheSecretsPaneFindsAndShowsWholly(t *testing.T) {
 	if k, ok := p.table.Cursor(); !ok || k != "2" {
 		t.Fatalf("finding, the cursor is on %q, %v", k, ok)
 	}
+	if said := p.act.label.Text; !strings.HasPrefix(said, "1 of 3 secrets") {
+		t.Fatalf("finding, the count says %q", said)
+	}
 }
 
 // Typed into who a secret is for, a server's name completes.
@@ -85,12 +88,17 @@ func TestAPathCompletes(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, "keys"), 0o700); err != nil {
 		t.Fatal(err)
 	}
+	// A link to a folder completes as the folder it leads to.
+	if err := os.Symlink(filepath.Join(dir, "keys"), filepath.Join(dir, "linked")); err != nil {
+		t.Fatal(err)
+	}
 	sep := string(filepath.Separator)
 	for typed, want := range map[string]string{
 		filepath.Join(dir, "secr"): "ets.csv",
 		filepath.Join(dir, "se"):   "c",
 		filepath.Join(dir, "k"):    "eys" + sep,
 		filepath.Join(dir, "x"):    "",
+		filepath.Join(dir, "lin"):  "ked" + sep,
 		dir + sep:                  "",
 	} {
 		if got := restOfPath(typed); got != want {
@@ -122,5 +130,9 @@ func TestANewKeyWhereOneIsStaysOpenSayingSo(t *testing.T) {
 	path.SetText(filepath.Join(t.TempDir(), "new_ed25519"))
 	if said := win.dialog.Check(); said != "" {
 		t.Fatalf("with nothing there, the dialog says %q", said)
+	}
+	path.SetText(filepath.Join("keys", "new_ed25519"))
+	if said := win.dialog.Check(); !strings.Contains(said, "is not a full path") {
+		t.Fatalf("with a path that is not full, the dialog says %q", said)
 	}
 }

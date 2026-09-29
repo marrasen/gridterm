@@ -1,6 +1,7 @@
 package view
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -160,7 +161,14 @@ func (p *secretsPane) show(st app.Secrets, u *gunim.UI) {
 		p.act.set("No secrets yet. Add one to keep it here, locked by your key.", u)
 	default:
 		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
-		p.act.set(words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
+		switch shown := len(keys); {
+		case shown == len(st.Items):
+			p.act.set(words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
+		case shown == 0:
+			p.act.set("None of the "+words.Count(len(st.Items), "secret")+" matches.", u)
+		default:
+			p.act.set(strconv.Itoa(shown)+" of "+words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
+		}
 	}
 }
 
@@ -205,7 +213,7 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 	}
 	// Who or what it is for, completed from the servers' names.
 	servers := w.serverNames()
-	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOf(true, servers, text) }
+	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOf(false, servers, text) }
 	form := widget.NewForm().Add("", widget.NewLabel("Only your key opens the secrets.")).Add("Name", name).Add("For", user).Add(label, value)
 	d := widget.NewDialog(title)
 	if kind != secrets.Note {
@@ -402,7 +410,7 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 		}
 		// What would make it fail, said now, while what was typed is
 		// still here to change.
-		at, err := conf.ExpandHome(path.Text())
+		at, err := conf.Tilde(path.Text())
 		if err == nil {
 			err = remote.KeyPathProblem(at)
 		}
@@ -438,9 +446,9 @@ func secretFor(it app.SecretItem) string {
 }
 
 // keyFingerprint is a key's fingerprint as the list shows it: none for
-// the passphrase, and none again for a key named by it.
+// the passphrase.
 func keyFingerprint(k app.SecretKey) string {
-	if k.Passphrase || k.Name == k.Fingerprint {
+	if k.Passphrase {
 		return ""
 	}
 	return k.Fingerprint
@@ -464,35 +472,63 @@ func (w *Window) serverNames() []string {
 // completesPaths has a field that takes a path on this machine offer
 // the rest of a file's or folder's name as it is typed, as Go To does.
 func completesPaths(f *widget.TextField) {
-	f.OnEdit = func(text string, _ *gunim.UI) { f.Ghost = restOfPath(text) }
+	var c pathCompleter
+	f.OnEdit = func(text string, _ *gunim.UI) { f.Ghost = c.rest(text) }
 }
 
-// restOfPath is what completes typed into a path on this machine, ""
-// for none: the rest of the one name in its folder that starts so, or
-// of the part the names that do share.
-func restOfPath(typed string) string {
+// pathCompleter completes paths on this machine, reading each folder
+// once while it is typed in, rather than on every key: a folder of
+// thousands, or one on a slow mount, would hold up the window each time.
+type pathCompleter struct {
+	dir   string
+	names []string
+}
+
+// rest is what completes typed into a path on this machine, "" for
+// none: the rest of the one name in its folder that starts so, or of
+// the part the names that do share.
+func (c *pathCompleter) rest(typed string) string {
 	at, err := conf.ExpandHome(typed)
 	if err != nil || typed == "" {
 		return ""
 	}
 	dir, leaf := filepath.Split(at)
-	if strings.HasSuffix(typed, string(filepath.Separator)) || strings.HasSuffix(typed, "/") {
-		dir, leaf = at, ""
-	}
-	if leaf == "" {
+	// Typed up to a separator: a folder, with no name begun in it.
+	if leaf == "" || strings.HasSuffix(typed, string(filepath.Separator)) || strings.HasSuffix(typed, "/") {
 		return ""
 	}
+	if dir != c.dir {
+		c.dir, c.names = dir, namesIn(dir)
+	}
+	return restOf(runtime.GOOS == "windows", c.names, leaf)
+}
+
+// restOfPath is a completer's rest, for a path typed once.
+func restOfPath(typed string) string {
+	var c pathCompleter
+	return c.rest(typed)
+}
+
+// namesIn are the names in folder dir, a folder's, or a link's to one,
+// ending in the separator.
+func namesIn(dir string) []string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
-		return ""
+		return nil
 	}
 	var names []string
 	for _, e := range entries {
 		n := e.Name()
-		if e.IsDir() {
+		isDir := e.IsDir()
+		if e.Type()&fs.ModeSymlink != 0 {
+			if info, err := os.Stat(filepath.Join(dir, n)); err == nil {
+				isDir = info.IsDir()
+			}
+		}
+		if isDir {
 			n += string(filepath.Separator)
 		}
 		names = append(names, n)
 	}
-	return restOf(runtime.GOOS == "windows", names, leaf)
+	return names
 }

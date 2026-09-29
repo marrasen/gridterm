@@ -670,7 +670,13 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 	case "secrets.removeKey":
 		choices := make([]widget.PaletteItem, len(st.Keys))
 		for i, k := range st.Keys {
-			choices[i] = widget.PaletteItem{Title: k.Name, Hint: strings.TrimPrefix(strings.Join([]string{k.Note, keyFingerprint(k)}, " · "), " · ")}
+			var hint []string
+			for _, part := range []string{k.Note, keyFingerprint(k)} {
+				if part != "" {
+					hint = append(hint, part)
+				}
+			}
+			choices[i] = widget.PaletteItem{Title: k.Name, Hint: strings.Join(hint, " · ")}
 		}
 		keys := st.Keys
 		w.chooseFrom("Which key?", choices, func(i int, u *gunim.UI) { w.confirmRemoveKey(st, keys[i], u) }, u)

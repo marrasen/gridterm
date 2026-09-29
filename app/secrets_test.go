@@ -279,10 +279,12 @@ func TestSecretsGoOutToACSVFileAndComeBackIn(t *testing.T) {
 	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("the file can be read by others: %v", info.Mode())
 	}
+	// A file there already is refused before anything is asked.
 	notices := len(a.st.Notices)
 	a.handle(ExportSecrets{Path: at})
-	answer(t, a, "Export every secret to "+at+"?", true)
-	waitFor(t, a, "the refusal", func() bool { return len(a.st.Notices) > notices })
+	if len(a.st.Asks) != 0 {
+		t.Fatalf("with the file there, it asks %+v", a.st.Asks)
+	}
 	if last := a.st.Notices[len(a.st.Notices)-1]; len(a.st.Notices) != notices+1 || !strings.Contains(last.Body, "already there") {
 		t.Fatalf("exporting over the file said %+v", last)
 	}
@@ -376,9 +378,18 @@ func TestWhatIsDoneToASecretIsSaid(t *testing.T) {
 	if !said("database changed") {
 		t.Fatalf("changed, it said %+v", a.st.Notices)
 	}
+	notices := len(a.st.Notices)
+	a.handle(PutSecret{ID: items[0].ID, Name: "database", User: "admin", Kind: secrets.Password})
+	if len(a.st.Notices) != notices {
+		t.Fatalf("changing nothing, it said %+v", a.st.Notices[notices:])
+	}
 	a.handle(RemoveSecret{ID: items[1].ID})
 	if !said(items[1].Name + " removed") {
 		t.Fatalf("removed, it said %+v", a.st.Notices)
+	}
+	a.handle(RemoveSecret{ID: items[1].ID})
+	if !said("That secret was removed from somewhere else already") {
+		t.Fatalf("removing one gone, it said %+v", a.st.Notices)
 	}
 	a.handle(CopySecret{ID: items[1].ID})
 	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Body == "That secret has been removed from somewhere else." }) {

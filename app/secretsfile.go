@@ -40,15 +40,24 @@ func (a *app) exportSecrets(in ExportSecrets) {
 		a.failed("Couldn't export the secrets", err.Error())
 		return
 	}
-	// Asked, naming the file, and opening on Cancel: this is the one
-	// thing that takes every secret out of what keeps them.
-	go func() {
-		ans, err := a.ask(a.ctx, Ask{Title: "Export every secret to " + at + "?", Text: "Anyone who can read the file can read them all.", Yes: "Export", Careful: true})
-		if err != nil || !ans.Yes {
-			return
+	// The secrets open first, and a file there already is refused,
+	// before anything is asked: a question answered for nothing is worse
+	// than none.
+	a.withSecrets("Couldn't export the secrets", func(*secrets.Vault) error {
+		if _, err := os.Lstat(at); err == nil {
+			return fmt.Errorf("%s is already there; the export writes a new file only", at)
 		}
-		a.events <- func() { a.exportSecretsTo(at) }
-	}()
+		// Asked, naming the file, and opening on Cancel: this is the
+		// one thing that takes every secret out of what keeps them.
+		go func() {
+			ans, err := a.ask(a.ctx, Ask{Title: "Export every secret to " + at + "?", Text: "Anyone who can read the file can read them all.", Yes: "Export", Careful: true})
+			if err != nil || !ans.Yes {
+				return
+			}
+			a.events <- func() { a.exportSecretsTo(at) }
+		}()
+		return nil
+	})
 }
 
 // exportSecretsTo writes every secret to at, a file that is not there.

@@ -36,7 +36,9 @@ const mostKeptKeys = 20
 
 // makeKey writes a new key pair.
 func (a *app) makeKey(in MakeKey) error {
-	at, err := conf.ExpandHome(in.Path)
+	// ~ read as home, and nothing else guessed: a key's place is part
+	// of what keeps it private, so one not given in full is refused.
+	at, err := conf.Tilde(in.Path)
 	if err != nil {
 		return err
 	}

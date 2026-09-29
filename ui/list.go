@@ -625,7 +625,7 @@ func (l *List) paintRow(v grid.View, row ListRow, selected, hovered bool, y, row
 
 	at := min(row.Depth*2, max(cols-1, 0))
 	// The icon goes where the text would start, and the text moves along
-	// to make room: a picture of what a row is says it in one column
+	// to make room: an image of what a row is says it in one column
 	// where the word for it took eight.
 	drewIcon := row.Icon.Kind != grid.ArtNone && at+2 < room
 	if drewIcon {

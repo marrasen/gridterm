@@ -28,7 +28,7 @@ func needsClipboard(t *testing.T) {
 }
 
 // Text written to the clipboard reads back as itself, and the clipboard
-// is then holding text rather than a picture.
+// is then holding text rather than an image.
 func TestClipboardCarriesTextBothWays(t *testing.T) {
 	needsClipboard(t)
 
@@ -47,19 +47,19 @@ func TestClipboardCarriesTextBothWays(t *testing.T) {
 		t.Error("the clipboard holds text and did not say so")
 	}
 	if _, have, err := Image(); err != nil || have {
-		t.Errorf("the clipboard holds text, and it reported a picture: have=%v err=%v", have, err)
+		t.Errorf("the clipboard holds text, and it reported an image: have=%v err=%v", have, err)
 	}
 }
 
-// A picture written to the clipboard reads back with its size and its
+// An image written to the clipboard reads back with its size and its
 // colours, alpha included.
-func TestClipboardCarriesAPictureBothWays(t *testing.T) {
+func TestClipboardCarriesAnImageBothWays(t *testing.T) {
 	needsClipboard(t)
 
 	want := image.NewRGBA(image.Rect(0, 0, 4, 3))
 	want.Set(0, 0, color.RGBA{R: 0xff, A: 0xff})
 	want.Set(3, 2, color.RGBA{G: 0x80, B: 0x40, A: 0xff})
-	// A see-through pixel, because a picture that loses its alpha on
+	// A see-through pixel, because an image that loses its alpha on
 	// the way through looks right until it is pasted onto something.
 	//
 	// It is left black. Go holds a colour multiplied by its alpha, so a
@@ -68,14 +68,14 @@ func TestClipboardCarriesAPictureBothWays(t *testing.T) {
 	want.Set(1, 1, color.RGBA{})
 
 	if err := SetImage(want); err != nil {
-		t.Fatalf("put the picture on the clipboard: %v", err)
+		t.Fatalf("put the image on the clipboard: %v", err)
 	}
 	got, have, err := Image()
 	if err != nil {
-		t.Fatalf("read the picture: %v", err)
+		t.Fatalf("read the image: %v", err)
 	}
 	if !have {
-		t.Fatal("the picture was put on the clipboard and did not come back")
+		t.Fatal("the image was put on the clipboard and did not come back")
 	}
 	if got.Bounds() != want.Bounds() {
 		t.Fatalf("it came back %v, want %v", got.Bounds(), want.Bounds())
@@ -90,15 +90,15 @@ func TestClipboardCarriesAPictureBothWays(t *testing.T) {
 	}
 }
 
-// A clipboard holding a picture holds no text, so a paste into a field
+// A clipboard holding an image holds no text, so a paste into a field
 // is told there is nothing for it rather than pasting the bytes.
-func TestAClipboardHoldingAPictureHoldsNoText(t *testing.T) {
+func TestAClipboardHoldingAnImageHoldsNoText(t *testing.T) {
 	needsClipboard(t)
 
 	if err := SetImage(image.NewRGBA(image.Rect(0, 0, 2, 2))); err != nil {
-		t.Fatalf("put the picture on the clipboard: %v", err)
+		t.Fatalf("put the image on the clipboard: %v", err)
 	}
 	if HasText() {
-		t.Error("the clipboard holds a picture and said it holds text")
+		t.Error("the clipboard holds an image and said it holds text")
 	}
 }

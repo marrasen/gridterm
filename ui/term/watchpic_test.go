@@ -10,9 +10,9 @@ import (
 	"testing"
 )
 
-// anInlinePicture is the sequence a program sends to put a picture in
+// anInlineImage is the sequence a program sends to put an image in
 // its output, at the size in cells asked for.
-func anInlinePicture(t *testing.T, cols, rows int) string {
+func anInlineImage(t *testing.T, cols, rows int) string {
 	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 320, 160))
 	for i := range img.Pix {
@@ -27,14 +27,14 @@ func anInlinePicture(t *testing.T, cols, rows int) string {
 		base64.StdEncoding.EncodeToString(b.Bytes()) + "\x07"
 }
 
-// A picture in one window's pane reaches a window watching that pane,
+// An image in one window's pane reaches a window watching that pane,
 // with the screen it sits on.
-func TestAPictureReachesAWatcher(t *testing.T) {
+func TestAnImageReachesAWatcher(t *testing.T) {
 	here, f := newTestTerm(t, 40, 10, Config{})
 	f.feed(t, here, "output above\r\n")
-	f.feed(t, here, anInlinePicture(t, 10, 4))
-	if len(here.Pictures()) != 1 {
-		t.Fatal("the pane did not take the picture")
+	f.feed(t, here, anInlineImage(t, 10, 4))
+	if len(here.Images()) != 1 {
+		t.Fatal("the pane did not take the image")
 	}
 
 	w := &screenWatcher{}
@@ -49,11 +49,11 @@ func TestAPictureReachesAWatcher(t *testing.T) {
 	there, g := newTestTerm(t, 40, 10, Config{})
 	g.feed(t, there, w.text())
 
-	got := there.Pictures()
+	got := there.Images()
 	if len(got) != 1 {
-		t.Fatalf("the watching window has %d pictures, want one", len(got))
+		t.Fatalf("the watching window has %d images, want one", len(got))
 	}
-	want := here.Pictures()[0]
+	want := here.Images()[0]
 	if got[0].Top != want.Top || got[0].Cols != want.Cols || got[0].Rows != want.Rows {
 		t.Errorf("it landed at row %d as %dx%d cells, want row %d as %dx%d",
 			got[0].Top, got[0].Cols, got[0].Rows, want.Top, want.Cols, want.Rows)
@@ -65,14 +65,14 @@ func TestAPictureReachesAWatcher(t *testing.T) {
 		t.Errorf("a pixel came out as %v, want %v", color.RGBAModel.Convert(at), color.RGBAModel.Convert(was))
 	}
 	if got := rowText(draw(there, 40, 10), 0); got != "output above" {
-		t.Errorf("row 0 reads %q, want the text above the picture", got)
+		t.Errorf("row 0 reads %q, want the text above the image", got)
 	}
 }
 
-// A picture a program sends while somebody is watching reaches them
+// An image a program sends while somebody is watching reaches them
 // as it happens, because the sequence carrying it is part of what the
 // program said and that is what a watcher is sent.
-func TestAPictureSentWhileWatchingArrivesAsItHappens(t *testing.T) {
+func TestAnImageSentWhileWatchingArrivesAsItHappens(t *testing.T) {
 	here, f := newTestTerm(t, 40, 10, Config{})
 	w := &screenWatcher{}
 	stop, err := here.Watch(w)
@@ -81,16 +81,16 @@ func TestAPictureSentWhileWatchingArrivesAsItHappens(t *testing.T) {
 	}
 	defer stop()
 
-	f.feed(t, here, anInlinePicture(t, 10, 4))
-	f.feed(t, here, "under the picture")
+	f.feed(t, here, anInlineImage(t, 10, 4))
+	f.feed(t, here, "under the image")
 
 	there, g := newTestTerm(t, 40, 10, Config{})
 	g.feed(t, there, w.text())
 
-	if got := there.Pictures(); len(got) != 1 {
-		t.Fatalf("the watching window has %d pictures, want one", len(got))
+	if got := there.Images(); len(got) != 1 {
+		t.Fatalf("the watching window has %d images, want one", len(got))
 	}
-	if got := rowText(draw(there, 40, 10), 4); got != "under the picture" {
-		t.Errorf("row 4 reads %q, want the text under the picture", got)
+	if got := rowText(draw(there, 40, 10), 4); got != "under the image" {
+		t.Errorf("row 4 reads %q, want the text under the image", got)
 	}
 }

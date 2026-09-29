@@ -7,24 +7,24 @@ import (
 	"strings"
 )
 
-// WirePicBudget is how many bytes of picture one repaint carries.
+// WirePicBudget is how many bytes of image one repaint carries.
 //
-// A pane may hold sixty-four pictures of sixteen megabytes each, and a
+// A pane may hold sixty-four images of sixteen megabytes each, and a
 // whole screen is sent every time a window starts watching. The
-// pictures past the budget are left out, and the watcher sees the text
+// images past the budget are left out, and the watcher sees the text
 // with a gap where they were.
 const WirePicBudget = 4 << 20
 
 // setWirePic takes OSC 1338, which is how one kakel window hands a
-// picture to another along with the screen it is on.
+// image to another along with the screen it is on.
 //
-// "clear" forgets the pictures the pane is holding.
+// "clear" forgets the images the pane is holding.
 // "place;row;col;cols;rows;<base64>" puts one at a row of the screen
-// and leaves the cursor alone: a screen sent over the wire is a picture
+// and leaves the cursor alone: a screen sent over the wire is an image
 // of a terminal, and the cursor in it is put where the program left it
 // once everything else has been drawn.
 //
-// Only inline pictures ever come this way, so the same caps apply as to
+// Only inline images ever come this way, so the same caps apply as to
 // the sequence a program sends: the same decoder, the same size limit
 // and the same count.
 func (t *Terminal) setWirePic(params [][]byte) {
@@ -40,7 +40,7 @@ func (t *Terminal) setWirePic(params [][]byte) {
 	}
 }
 
-// placeWirePic puts one picture at the row the sender said it was on.
+// placeWirePic puts one image at the row the sender said it was on.
 func (t *Terminal) placeWirePic(params [][]byte) {
 	if len(params) < 7 {
 		return
@@ -55,7 +55,7 @@ func (t *Terminal) placeWirePic(params [][]byte) {
 	if col < 0 || cols <= 0 || rows <= 0 {
 		return
 	}
-	// The row is turned back into a line number here, so the picture
+	// The row is turned back into a line number here, so the image
 	// keeps its place as the screen scrolls on from what was sent. A
 	// row above the top of history names no line.
 	line := int64(t.scr.gone) + int64(row)
@@ -83,11 +83,11 @@ func wireNum(b []byte) (int, bool) {
 	return n, err == nil
 }
 
-// writeImages writes the pictures on a screen, after saying to forget
-// whatever pictures the far end was holding.
+// writeImages writes the images on a screen, after saying to forget
+// whatever images the far end was holding.
 //
 // The clear goes out even when there are none: a repaint replaces the
-// screen, and a picture from the screen before it would otherwise sit
+// screen, and an image from the screen before it would otherwise sit
 // on a line that now says something else.
 func writeImages(b *strings.Builder, placed []Placement) {
 	b.WriteString("\x1b]1338;clear\x07")

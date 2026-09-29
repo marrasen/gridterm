@@ -122,7 +122,7 @@ func (t *Terminal) liveScreen() string {
 			full.Under = under
 		}
 	}
-	// The pictures of the ordinary screen, which travel as the escape
+	// The images of the ordinary screen, which travel as the escape
 	// sequence that draws one: the watcher's emulator reads it, so
 	// nothing new is needed on the wire.
 	full.Images = t.term.LivePlaced()
@@ -223,14 +223,14 @@ func (t *Terminal) revive() {
 	t.watchMu.Unlock()
 }
 
-// Pictures are the inline pictures on the screen as it stands, with
+// Images are the inline images on the screen as it stands, with
 // where each one sits in the pane's own rows.
 //
 // The top may be negative and the bottom may run past the screen: a
-// picture half scrolled off is drawn in part, and whoever draws it
+// image half scrolled off is drawn in part, and whoever draws it
 // clips. The line above the screen is counted in, so the rows are the
 // pane's rather than the program's.
-func (t *Terminal) Pictures() []vt.Placement {
+func (t *Terminal) Images() []vt.Placement {
 	t.mu.Lock()
 	placed := t.term.Placed()
 	t.mu.Unlock()
@@ -322,10 +322,10 @@ type Reading struct {
 	// shell that sends none leaves it zero.
 	Cmd vt.Command
 
-	// Pictures are the pictures on the screen, by the rows they cover.
+	// Images are the images on the screen, by the rows they cover.
 	// A reader outside this window sees text and would otherwise read
-	// the cells under a picture as blank.
-	Pictures []Picture
+	// the cells under an image as blank.
+	Images []Image
 
 	// Line names the line the cursor was on, counted from the first line
 	// the screen ever had. It does not change as the screen scrolls, so
@@ -405,14 +405,14 @@ func dropLast(text string, n int) string {
 	return text
 }
 
-// Picture is one picture on the screen, as something reading the pane
+// Image is one image on the screen, as something reading the pane
 // as text is told about it.
 //
 // The rows are the screen's own, counted from zero at the top, the
-// way the cursor is. Width and Height are the pixels the picture
+// way the cursor is. Width and Height are the pixels the image
 // holds, which is what says whether the one that arrived is the one
 // that was sent.
-type Picture struct {
+type Image struct {
 	Top, Rows, Cols int
 	Width, Height   int
 
@@ -421,17 +421,17 @@ type Picture struct {
 	Wire bool
 }
 
-// picturesLocked is what is on the screen in pixels. The emulator's
+// imagesLocked is what is on the screen in pixels. The emulator's
 // lock is already held.
-func (t *Terminal) picturesLocked() []Picture {
+func (t *Terminal) imagesLocked() []Image {
 	placed := t.term.Placed()
 	if len(placed) == 0 {
 		return nil
 	}
-	out := make([]Picture, 0, len(placed))
+	out := make([]Image, 0, len(placed))
 	for _, at := range placed {
 		b := at.Img.Bounds()
-		out = append(out, Picture{
+		out = append(out, Image{
 			Top: at.Top, Rows: at.Rows, Cols: at.Cols,
 			Width: b.Dx(), Height: b.Dy(), Wire: at.Wire,
 		})
@@ -445,17 +445,17 @@ func (t *Terminal) readingLocked(n int) Reading {
 	text, before := t.linesLocked(n, row, col)
 	_, rows := t.g.Size()
 	return Reading{
-		Text:     text,
-		Row:      row,
-		Col:      col,
-		Alt:      scr.OnAltBuffer(),
-		Said:     t.said.Load(),
-		Cmd:      t.term.Command(),
-		Pictures: t.picturesLocked(),
-		Line:     scr.LineNumber(row),
-		Before:   before,
-		Floor:    scr.Floor(),
-		Bottom:   scr.LineNumber(max(rows-1, 0)),
+		Text:   text,
+		Row:    row,
+		Col:    col,
+		Alt:    scr.OnAltBuffer(),
+		Said:   t.said.Load(),
+		Cmd:    t.term.Command(),
+		Images: t.imagesLocked(),
+		Line:   scr.LineNumber(row),
+		Before: before,
+		Floor:  scr.Floor(),
+		Bottom: scr.LineNumber(max(rows-1, 0)),
 	}
 }
 
@@ -553,7 +553,7 @@ func plainRow(g *grid.Grid, y, cols int) string {
 // Said counts how many times the program has said anything.
 //
 // It is how something watching from outside knows a screen has moved
-// without comparing it: output that redraws the same picture is still
+// without comparing it: output that redraws the same image is still
 // the program working.
 func (t *Terminal) Said() uint64 { return t.said.Load() }
 

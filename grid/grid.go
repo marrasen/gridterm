@@ -94,12 +94,12 @@ const (
 	// each ArtGraphBits wide, oldest on the left.
 	ArtGraph
 
-	// ArtIcon is a small picture standing for a kind of thing. Data says
+	// ArtIcon is a small image standing for a kind of thing. Data says
 	// which one.
 	ArtIcon
 )
 
-// IconKind names a small picture drawn in code.
+// IconKind names a small image drawn in code.
 //
 // Drawn rather than looked up in a font: no character stands for "a
 // terminal" or "a filesystem", and the ones that come close are arrows
@@ -152,7 +152,7 @@ const (
 // Icon is a piece of art standing for a kind of thing.
 func Icon(k IconKind) Art { return Art{Kind: ArtIcon, Data: uint64(k)} }
 
-// Icon returns which picture a piece of art is, and whether it is one.
+// Icon returns which image a piece of art is, and whether it is one.
 func (a Art) Icon() (IconKind, bool) {
 	if a.Kind != ArtIcon || a.Data >= uint64(NumIcons) {
 		return 0, false

@@ -28,7 +28,7 @@ type (
 )
 
 // KnownTerminals are names a user may give instead, for a program that
-// shows pictures only in a terminal it knows.
+// shows images only in a terminal it knows.
 var KnownTerminals = []string{"iTerm.app", "WezTerm", "vscode", "Apple_Terminal"}
 
 // startLocalSession starts argv here, or the user's shell when it is

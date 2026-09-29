@@ -70,7 +70,7 @@ func TestAClickOnATilePicksIt(t *testing.T) {
 }
 
 // A tile dragged away lifts off, and let go outside every window asks
-// for a window of its own, where the picture was let go.
+// for a window of its own, where the image was let go.
 func TestATileLetGoOutsideAsksForAWindow(t *testing.T) {
 	win := switcherStage(t)
 	sw := win.sw

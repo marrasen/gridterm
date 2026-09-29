@@ -16,7 +16,7 @@ import (
 	_ "golang.org/x/image/webp"
 )
 
-// MostImages is how many inline pictures a pane keeps, and
+// MostImages is how many inline images a pane keeps, and
 // MostImageBytes the largest one it will decode.
 //
 // A program can send as many as it likes, and each one is pixels held
@@ -28,7 +28,7 @@ const (
 	MostImageBytes = 16 << 20
 )
 
-// Image is a picture a program put in the output, and where it sits.
+// Image is an image a program put in the output, and where it sits.
 //
 // Line is the line it starts on, counted the way LineNumber counts,
 // so it names the same place however far the screen has scrolled
@@ -41,29 +41,29 @@ type Image struct {
 	Rows int
 	Img  image.Image
 
-	// Raw is the picture file as the program sent it, kept so that a
+	// Raw is the image file as the program sent it, kept so that a
 	// window watching this pane can be handed the same bytes rather
 	// than the pixels encoded all over again.
 	Raw []byte
 
-	// Wire says the picture came from another window's screen, as
+	// Wire says the image came from another window's screen, as
 	// OSC 1338, rather than from a program in this pane as OSC 1337.
 	// Anything reading the pane says which, because a program that
 	// meant to draw one wants to know its own sequence arrived.
 	Wire bool
 }
 
-// Images are the pictures the pane is holding, oldest first.
+// Images are the images the pane is holding, oldest first.
 //
 // The slice is the terminal's. A caller may read it and must not
 // write to it or keep it past the next write to the pane.
 func (t *Terminal) Images() []Image { return t.images }
 
 // setImage takes OSC 1337, which is how iTerm2 and the terminals that
-// followed it put a picture in the output.
+// followed it put an image in the output.
 //
 // The payload is "File=key=value;key=value:<base64>". Only inline
-// pictures are taken: the same sequence is used to send a file to the
+// images are taken: the same sequence is used to send a file to the
 // machine the terminal is on, which is not something a pane should be
 // able to make this window do.
 func (t *Terminal) setImage(params [][]byte) {
@@ -79,7 +79,7 @@ func (t *Terminal) setImage(params [][]byte) {
 	}
 	args := imageArgs(head)
 	if !strings.EqualFold(args["__name"], "File") || args["inline"] != "1" {
-		// Not an inline picture. A File= without inline=1 asks the
+		// Not an inline image. A File= without inline=1 asks the
 		// terminal to save a file, which this does not do.
 		return
 	}
@@ -110,7 +110,7 @@ func imageArgs(head string) map[string]string {
 	return out
 }
 
-// decodeImage reads the base64 a program sent and decodes the picture
+// decodeImage reads the base64 a program sent and decodes the image
 // in it.
 func decodeImage(encoded string) (image.Image, []byte, bool) {
 	encoded = strings.TrimSpace(encoded)
@@ -138,11 +138,11 @@ func decodeImage(encoded string) (image.Image, []byte, bool) {
 	return img, raw, true
 }
 
-// mostImagePixels is the largest picture decoded, which is what stops
+// mostImagePixels is the largest image decoded, which is what stops
 // a small file holding a very large one.
 const mostImagePixels = 16 << 20
 
-// placeImage puts a picture where the cursor is and moves the cursor
+// placeImage puts an image where the cursor is and moves the cursor
 // past it, so what the program prints next lands below rather than
 // on top.
 func (t *Terminal) placeImage(img image.Image, raw []byte, args map[string]string) {
@@ -158,16 +158,16 @@ func (t *Terminal) placeImage(img image.Image, raw []byte, args map[string]strin
 		Img:  img,
 		Raw:  raw,
 	})
-	// The rows the picture sits on are left blank and stepped over, so
+	// The rows the image sits on are left blank and stepped over, so
 	// the program's next line lands under it. Written as line feeds so
-	// the screen scrolls and the picture's line number stays right.
+	// the screen scrolls and the image's line number stays right.
 	for range rows {
 		t.scr.LineFeed()
 	}
 	t.scr.CarriageReturn()
 }
 
-// holdImage adds a picture to the ones the pane is holding, dropping
+// holdImage adds an image to the ones the pane is holding, dropping
 // the oldest once it is holding too many.
 func (t *Terminal) holdImage(at Image) {
 	t.images = append(t.images, at)
@@ -179,10 +179,10 @@ func (t *Terminal) holdImage(at Image) {
 	}
 }
 
-// imageCells is how many cells a picture was given.
+// imageCells is how many cells an image was given.
 //
 // A program may say in cells, in pixels or as a share of the screen.
-// Saying nothing means as big as the picture is, at the cell size
+// Saying nothing means as big as the image is, at the cell size
 // terminals are usually asked about, and capped at the screen.
 func (t *Terminal) imageCells(img image.Image, args map[string]string) (cols, rows int) {
 	b := img.Bounds()
@@ -204,7 +204,7 @@ const (
 
 // imageSide reads one of iTerm2's size arguments: "20" is cells, "20px"
 // is pixels, "20%" is a share of the screen, and "auto" or nothing is
-// as big as the picture is.
+// as big as the image is.
 func imageSide(arg string, screen, pixels, perCell int) int {
 	arg = strings.ToLower(strings.TrimSpace(arg))
 	switch {
@@ -230,7 +230,7 @@ func imageSide(arg string, screen, pixels, perCell int) int {
 	return n
 }
 
-// dropOldImages forgets the pictures whose lines have fallen out of
+// dropOldImages forgets the images whose lines have fallen out of
 // history, because nothing can scroll back to them any more.
 func (t *Terminal) dropOldImages() {
 	oldest := t.scr.gone - uint64(min(t.scr.History(), int(t.scr.gone)))
@@ -244,24 +244,24 @@ func (t *Terminal) dropOldImages() {
 	t.images = keep
 }
 
-// Placement is where a picture sits on the screen right now: the row
+// Placement is where an image sits on the screen right now: the row
 // its top is on, counted from the top of the view, and which row of
-// the picture that is.
+// the image that is.
 //
-// Top may be negative and Rows may run past the bottom: a picture
+// Top may be negative and Rows may run past the bottom: an image
 // half scrolled off is drawn in part, and the caller clips it.
 type Placement struct {
 	Image
 
-	// Top is the screen row the picture's first row would be on.
+	// Top is the screen row the image's first row would be on.
 	Top int
 }
 
-// Placed is where each picture the pane holds sits on the screen as
+// Placed is where each image the pane holds sits on the screen as
 // it stands, leaving out the ones scrolled entirely out of sight.
 //
 // The alternate screen has none: a full-screen program has its own
-// picture of the world and the lines these sit on are not on it.
+// image of the world and the lines these sit on are not on it.
 func (t *Terminal) Placed() []Placement {
 	if t.scr.OnAltBuffer() {
 		return nil
@@ -270,12 +270,12 @@ func (t *Terminal) Placed() []Placement {
 	return t.placedAt(t.scr.scrollOff)
 }
 
-// LivePlaced is where the pictures sit on the ordinary screen as the
+// LivePlaced is where the images sit on the ordinary screen as the
 // program left it, whatever the view has scrolled back to and whatever
 // a full-screen program is covering it with.
 //
 // It is what a watching window is sent, along with the ordinary screen
-// itself, so that the full-screen program quitting leaves the pictures
+// itself, so that the full-screen program quitting leaves the images
 // behind rather than a gap nothing will fill.
 func (t *Terminal) LivePlaced() []Placement {
 	if !t.scr.OnAltBuffer() {
@@ -284,7 +284,7 @@ func (t *Terminal) LivePlaced() []Placement {
 	return t.placedAt(0)
 }
 
-// placedAt is where the pictures sit with the view scrolled back the
+// placedAt is where the images sit with the view scrolled back the
 // given number of lines, leaving out the ones entirely out of sight.
 func (t *Terminal) placedAt(off int) []Placement {
 	var out []Placement

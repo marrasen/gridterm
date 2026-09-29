@@ -13,50 +13,50 @@ import (
 	"github.com/marrasen/kakel/vfs"
 )
 
-// A picture on the clipboard is handed to the program in a terminal: by
+// An image on the clipboard is handed to the program in a terminal: by
 // pressing paste, for a program here that reads the clipboard itself; by
 // putting it on the clipboard of a window this one is connected to, and
 // pressing paste there; or as a file, whose path is typed, where there
 // is no clipboard to hand it to.
 
-// Intents for pictures on the clipboard.
+// Intents for images on the clipboard.
 type (
-	// PasteImage writes the picture on the clipboard to a file on the
+	// PasteImageAsFile writes the image on the clipboard to a file on the
 	// machine a terminal pane runs on, and types the path. An empty
 	// Pane is the focused one.
-	PasteImage struct{ Pane string }
-	// PastePicture hands the picture on the clipboard to the program in
+	PasteImageAsFile struct{ Pane string }
+	// PasteImage hands the image on the clipboard to the program in
 	// a terminal pane, for a paste that found no text.
-	PastePicture struct{ Pane string }
+	PasteImage struct{ Pane string }
 	// NoTextToPaste says a middle click found no text to paste, which
-	// is said when the clipboard holds a picture: that paste takes text.
+	// is said when the clipboard holds an image: that paste takes text.
 	NoTextToPaste struct{}
 	// ClipboardUnreadable says a paste found the clipboard could not be
 	// read, and why: not the same as a clipboard with nothing on it.
 	ClipboardUnreadable struct{ Why string }
 )
 
-// readPicture reads the picture on the clipboard. It is read off the
+// readImage reads the image on the clipboard. It is read off the
 // program's goroutine, since the program holding it may be slow to hand
-// it over. A test puts a picture of its own in its place.
-var readPicture = clip.Image
+// it over. A test puts an image of its own in its place.
+var readImage = clip.Image
 
-// takePicture puts a picture another window pasted on this machine's
+// takeImage puts an image another window pasted on this machine's
 // clipboard, for the program in the pane it was pasted into. A test
 // puts a function of its own in its place.
-var takePicture = clip.SetPNG
+var takeImage = clip.SetPNG
 
-// pastePicture hands the picture on the clipboard to the program in a
+// pasteImage hands the image on the clipboard to the program in a
 // pane: as a file when asFile, and otherwise by whichever route reaches
 // that program.
-func (a *app) pastePicture(id string, asFile bool) error {
+func (a *app) pasteImage(id string, asFile bool) error {
 	if id == "" {
 		id = a.st.Focus
 	}
 	if a.terminal(id) == nil {
 		return errors.New("an image is pasted into a terminal, and this pane is none")
 	}
-	read := readPicture
+	read := readImage
 	go func() {
 		img, have, err := read()
 		a.events <- func() {
@@ -69,7 +69,7 @@ func (a *app) pastePicture(id string, asFile bool) error {
 				// An empty clipboard, and pasting nothing is what was
 				// asked for.
 			default:
-				if err := a.handPicture(id, img, asFile); err != nil {
+				if err := a.handImage(id, img, asFile); err != nil {
 					a.failed("Couldn't paste the image", err.Error())
 				}
 			}
@@ -78,8 +78,8 @@ func (a *app) pastePicture(id string, asFile bool) error {
 	return nil
 }
 
-// handPicture hands a picture read off the clipboard to a pane.
-func (a *app) handPicture(id string, img image.Image, asFile bool) error {
+// handImage hands an image read off the clipboard to a pane.
+func (a *app) handImage(id string, img image.Image, asFile bool) error {
 	t := a.terminal(id)
 	if t == nil {
 		// Closed while the clipboard was read.
@@ -95,7 +95,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			t.Paste(a.pathForPane(id, path))
 			return nil
 		}
-		// The picture is on this machine's clipboard already, and the
+		// The image is on this machine's clipboard already, and the
 		// program runs here: pressing paste is the whole of it.
 		t.PressPaste()
 		return nil
@@ -107,9 +107,9 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	if w := a.machines.Get(machine).Window; w != nil && !asFile && a.farHost[id] == "" {
 		// Onto that window's clipboard, then paste pressed, once it has
 		// landed: pressing first would paste what was there before.
-		sent := a.sendingPicture(a.machines.Name(machine))
+		sent := a.sendingImage(a.machines.Name(machine))
 		go func() {
-			err := w.Serve.SendPicture(raw)
+			err := w.Serve.SendImage(raw)
 			a.events <- func() {
 				sent()
 				switch {
@@ -124,11 +124,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	}
 	// A file, on the machine the program runs on: a server, a window
 	// asked for a file, or a machine a window reached, which has no
-	// clipboard this window can hand the picture to.
+	// clipboard this window can hand the image to.
 	key := a.filesKey(id)
 	return a.withFiles(key, func(f vfs.FS) {
 		at := time.Now()
-		sent := a.sendingPicture(a.machines.Name(key))
+		sent := a.sendingImage(a.machines.Name(key))
 		go func() {
 			path, err := pasted.WriteOn(f, raw, at)
 			a.events <- func() {
@@ -146,12 +146,12 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	})
 }
 
-// sendingPicture says on the status line that a picture is on its way
-// to the machine named to, and counts it, as a picture is megabytes and
+// sendingImage says on the status line that an image is on its way
+// to the machine named to, and counts it, as an image is megabytes and
 // the machine may be far: there is a moment with nothing else to show
 // for the paste. It gives back what to call once it has landed or
 // failed.
-func (a *app) sendingPicture(to string) func() {
+func (a *app) sendingImage(to string) func() {
 	a.sending++
 	a.sendingTo = to
 	a.showStatus()
@@ -210,7 +210,7 @@ func (a *app) distroOf(id string) string {
 // noTextToPaste says why a middle click pasted nothing, when there is
 // something to say: an empty clipboard says nothing.
 func (a *app) noTextToPaste() {
-	if img, have, err := readPicture(); err == nil && have && img != nil {
+	if img, have, err := readImage(); err == nil && have && img != nil {
 		a.failed("Could not paste", "The clipboard holds an image rather than text, and this takes text.")
 	}
 }

@@ -72,8 +72,8 @@ type Reader struct {
 	// for it.
 	Read func(then func(lines []string, cut bool, err error))
 
-	// ReadPic is the same for a file the reader shows as a picture. The
-	// two are separate because a picture is decoded rather than split
+	// ReadPic is the same for a file the reader shows as an image. The
+	// two are separate because an image is decoded rather than split
 	// into lines.
 	ReadPic func(then func(pic Pic, err error))
 
@@ -114,7 +114,7 @@ type Reader struct {
 	cut   bool
 	err   error
 
-	// isPic says the file is shown as a picture, and pic is the picture
+	// isPic says the file is shown as an image, and pic is the image
 	// once it has been read.
 	isPic bool
 	pic   Pic
@@ -215,7 +215,7 @@ type Reader struct {
 func NewReader(name, at string) *Reader {
 	return &Reader{
 		name: name, at: at,
-		isPic:  IsPicture(name),
+		isPic:  IsImage(name),
 		colour: colourerFor(name),
 		found:  -1,
 		// The strip is on to begin with. It costs one column of a pane
@@ -279,7 +279,7 @@ func (r *Reader) Open() bool {
 		if r.ReadPic == nil {
 			return false
 		}
-		r.openPicture()
+		r.openImage()
 		return true
 	}
 	if r.Read == nil {
@@ -438,7 +438,7 @@ func readLine(in *bufio.Reader) (line string, clipped bool, err error) {
 // Size is the room the reader was last given.
 func (r *Reader) Size() ui.Size { return r.size }
 
-// The switcher draws a picture of a reader at the size it says it has,
+// The switcher draws an image of a reader at the size it says it has,
 // so a method here with the wrong shape would leave its tile empty.
 var _ ui.Sized = (*Reader)(nil)
 
@@ -528,7 +528,7 @@ func (r *Reader) AtEnd() bool { return r.top >= r.lastTop() }
 // pane away from whoever is reading it.
 func (r *Reader) Follow(on bool) {
 	if r.isPic {
-		// A picture is not appended to, so there is nothing to follow.
+		// An image is not appended to, so there is nothing to follow.
 		// Without this, tailing one from the browser leaves a pane
 		// labelled "(following)" for good, asking a machine at the far
 		// end about the file three times a second.
@@ -571,7 +571,7 @@ func (r *Reader) widest() int {
 // keys is what the bar offers for this file.
 func (r *Reader) keys() []Key {
 	if r.isPic {
-		return PictureKeys()
+		return ImageKeys()
 	}
 	keys := ReaderKeys()
 	// One of the two, never both: the bar divides the room it has
@@ -667,7 +667,7 @@ func (r *Reader) HandleKey(ev input.Event) (bool, error) {
 		}
 	}
 	if r.isPic {
-		return r.pictureKey(ev)
+		return r.imageKey(ev)
 	}
 	if r.asking != askingNothing {
 		return r.askKey(ev)
@@ -926,8 +926,8 @@ func (r *Reader) Draw(v grid.View) {
 	case r.err != nil:
 		v.SetString(0, 1, grid.TrimTail(r.err.Error(), cols), r.Style.ErrorFG, r.Style.BG, 0)
 	case r.isPic:
-		// The picture goes on a layer over the pane, so the body is left
-		// as it is: a picture is pixels, and the grid is for text.
+		// The image goes on a layer over the pane, so the body is left
+		// as it is: an image is pixels, and the grid is for text.
 	default:
 		r.paintLines(v, r.bodyCols(), rows)
 		r.paintMap(v, cols, rows)
@@ -1108,7 +1108,7 @@ func (r *Reader) Gone(why string) {
 }
 
 // Where is what the top line says about where in the file the reader is,
-// or how big the picture is, for a row elsewhere that has to say the
+// or how big the image is, for a row elsewhere that has to say the
 // same thing.
 func (r *Reader) Where() string { return r.place() }
 
@@ -1120,7 +1120,7 @@ func (r *Reader) place() string {
 		return ""
 	}
 	if r.isPic {
-		if note := r.pictureNote(); note != "" {
+		if note := r.imageNote(); note != "" {
 			return note
 		}
 		return r.reading()

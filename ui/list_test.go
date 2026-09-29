@@ -855,7 +855,7 @@ func TestListMarksTheCurrentRowWithoutTheKeys(t *testing.T) {
 // A row's icon goes where its text would start, and the text moves along
 // to make room.
 //
-// The picture is not a character in the text: nothing copies it out,
+// The image is not a character in the text: nothing copies it out,
 // and nothing measures the row by it.
 func TestListDrawsAnIconInFrontOfTheText(t *testing.T) {
 	l := newTestList(t, []ListRow{
@@ -914,7 +914,7 @@ func TestListDrawsAnIconInItsOwnColour(t *testing.T) {
 		t.Fatalf("the icon is drawn in %v, want the colour the row gave it", got)
 	}
 	// The blank after it is not the icon, so the colour ends with the
-	// picture.
+	// image.
 	if got := g.At(3, 1).FG; got == green {
 		t.Fatal("the blank after the icon took the icon's colour")
 	}

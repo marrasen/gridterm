@@ -124,7 +124,7 @@ func Speed(perSec uint64) string {
 // Scaled to itself rather than to an absolute speed, because what the
 // graph is for is the shape: a shell printing a few bytes a second and a
 // copy moving megabytes both have quiet spells and busy ones, and the
-// same picture should show either.
+// same image should show either.
 func Bars(speeds []uint64, max int) []int {
 	if max <= 0 {
 		return nil

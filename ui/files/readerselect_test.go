@@ -555,8 +555,8 @@ func TestEveryShiftKeyMovesTheLooseEnd(t *testing.T) {
 	}
 }
 
-// A picture takes no selection. There are no lines in it to pick out.
-func TestAPictureTakesNoSelection(t *testing.T) {
+// An image takes no selection. There are no lines in it to pick out.
+func TestAnImageTakesNoSelection(t *testing.T) {
 	r := NewReader("shot.png", "/tmp/shot.png")
 	r.Style = readerStyle()
 	r.Layout(ui.Size{Cols: 40, Rows: 10})
@@ -567,7 +567,7 @@ func TestAPictureTakesNoSelection(t *testing.T) {
 	drag(t, r, 0, 1, 10, 2)
 
 	if r.Selected() {
-		t.Errorf("a picture left %q picked out", r.SelectedText())
+		t.Errorf("an image left %q picked out", r.SelectedText())
 	}
 }
 

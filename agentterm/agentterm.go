@@ -130,9 +130,9 @@ func LastLines(text string, n int) string {
 
 // ImagesIn are the images on the lines lastRow and the lines-1
 // above it.
-func ImagesIn(on []uiterm.Picture, lastRow, lines int) []agent.Image {
+func ImagesIn(on []uiterm.Image, lastRow, lines int) []agent.Image {
 	first := lastRow - lines + 1
-	var keep []uiterm.Picture
+	var keep []uiterm.Image
 	for _, p := range on {
 		if p.Top <= lastRow && p.Top+p.Rows-1 >= first {
 			keep = append(keep, p)
@@ -142,7 +142,7 @@ func ImagesIn(on []uiterm.Picture, lastRow, lines int) []agent.Image {
 }
 
 // ImagesSeen are the images on, as an agent is told of them.
-func ImagesSeen(on []uiterm.Picture) []agent.Image {
+func ImagesSeen(on []uiterm.Image) []agent.Image {
 	var out []agent.Image
 	for _, p := range on {
 		out = append(out, agent.Image{Top: p.Top, Rows: p.Rows, Cols: p.Cols, Width: p.Width, Height: p.Height, Wire: p.Wire})

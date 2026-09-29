@@ -333,15 +333,15 @@ func TestTheReaderShowsWhatArrivesAndWhatFollows(t *testing.T) {
 	}
 }
 
-func TestTheReaderShowsAPicture(t *testing.T) {
+func TestTheReaderShowsAnImage(t *testing.T) {
 	win, _, publish := windowStage(t)
 	img := image.NewRGBA(image.Rect(0, 0, 40, 20))
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "dot.png", Kind: app.KindReader}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
 	st.Readers = map[string]app.Reader{"p1": {Path: "/x/dot.png", Name: "dot.png", Pic: &files.Pic{Img: img, Kind: "PNG", Was: image.Pt(40, 20)}, Seq: 1}}
 	publish(st)
 	rd := win.readers["p1"]
-	if rd == nil || rd.r == nil || !rd.r.ShowsAPicture() || rd.r.Picture() == nil {
-		t.Fatal("the picture is not shown")
+	if rd == nil || rd.r == nil || !rd.r.ShowsAnImage() || rd.r.Image() == nil {
+		t.Fatal("the image is not shown")
 	}
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
@@ -353,7 +353,7 @@ func TestTheReaderShowsAPicture(t *testing.T) {
 		}
 	}
 	if !drawn {
-		t.Fatal("the picture was never painted")
+		t.Fatal("the image was never painted")
 	}
 }
 

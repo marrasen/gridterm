@@ -140,7 +140,7 @@ is running on:
 
 So ctrl+V is kept for the case it is good for -- a program is running
 and the shell says so -- and the image goes as a file otherwise.
-`shellWouldQuoteIt` in `app/pictures.go` asks both questions. A
+`shellWouldQuoteIt` in `app/images.go` asks both questions. A
 shell that sends no marks lands on the file too: not knowing is not a
 reason to send a key that breaks a shell silently, and a path is
 something every program here reads already, which is what a pane on a

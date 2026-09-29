@@ -424,7 +424,7 @@ func commandIntent(id string) (gunim.Intent, bool) {
 	case "pane.close":
 		return app.ClosePane{}, true
 	case "edit.pasteImage":
-		return app.PasteImage{}, true
+		return app.PasteImageAsFile{}, true
 	case "pane.nextInSidebar":
 		return app.NextPane{}, true
 	case "pane.previousInSidebar":

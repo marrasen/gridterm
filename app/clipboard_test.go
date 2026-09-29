@@ -21,8 +21,8 @@ var testBoard struct {
 // The window's side copies through its gunim window, and an offscreen
 // window has a clipboard of its own. The program's side reaches the
 // system's clipboard through clip, in four places: clearing a copied
-// secret as the window closes, reading a picture to paste, checking
-// for one when a middle click finds no text, and putting a picture
+// secret as the window closes, reading an image to paste, checking
+// for one when a middle click finds no text, and putting an image
 // another window sent. A test that reached one of them with the real
 // ones in place would read or replace what the user had copied.
 func onAClipboardOfTheirOwn() {
@@ -37,8 +37,8 @@ func onAClipboardOfTheirOwn() {
 		testBoard.text = s
 		return nil
 	}
-	readPicture = func() (image.Image, bool, error) { return nil, false, nil }
-	takePicture = func(png []byte) error {
+	readImage = func() (image.Image, bool, error) { return nil, false, nil }
+	takeImage = func(png []byte) error {
 		testBoard.mu.Lock()
 		defer testBoard.mu.Unlock()
 		testBoard.png = append([]byte(nil), png...)
@@ -51,10 +51,10 @@ func onAClipboardOfTheirOwn() {
 // reached the system would have replaced what the user had copied.
 func TestTheTestsCopyToAClipboardOfTheirOwn(t *testing.T) {
 	for what, pair := range map[string][2]any{
-		"reading text":      {readClipboard, clip.Text},
-		"writing text":      {writeClipboard, clip.SetText},
-		"reading a picture": {readPicture, clip.Image},
-		"putting a picture": {takePicture, clip.SetPNG},
+		"reading text":     {readClipboard, clip.Text},
+		"writing text":     {writeClipboard, clip.SetText},
+		"reading an image": {readImage, clip.Image},
+		"putting an image": {takeImage, clip.SetPNG},
 	} {
 		if reflect.ValueOf(pair[0]).Pointer() == reflect.ValueOf(pair[1]).Pointer() {
 			t.Errorf("%s goes to the system's clipboard", what)

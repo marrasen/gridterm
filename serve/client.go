@@ -750,12 +750,12 @@ func (s *remoteSession) readRequests(reqs <-chan *ssh.Request) {
 	}
 }
 
-// SendPicture puts a picture on the clipboard of the window being
+// SendImage puts an image on the clipboard of the window being
 // served, so a program running there can be pasted it.
 //
-// It blocks until the window has said whether the picture landed, so it
+// It blocks until the window has said whether the image landed, so it
 // is called from a goroutine of its own rather than from whatever draws.
-func (w *Window) SendPicture(png []byte) error {
+func (w *Window) SendImage(png []byte) error {
 	if w.isClosed() {
 		return errors.New("serve: that window has been let go of")
 	}

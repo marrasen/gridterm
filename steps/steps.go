@@ -8,7 +8,7 @@
 //
 // Not every step means something to both. A screenshot script cannot
 // wait for a command to finish, and an agent has nowhere to put a
-// picture, so each refuses the steps it cannot do -- by name, rather
+// image, so each refuses the steps it cannot do -- by name, rather
 // than by quietly doing nothing.
 //
 // A step is a word, a colon, and the rest of the line:

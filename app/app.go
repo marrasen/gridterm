@@ -466,7 +466,7 @@ type app struct {
 	// notRun are the command panes whose connection was not made when
 	// they were asked to run again, for their question to say so.
 	notRun map[string]bool
-	// sending counts the pasted pictures on their way to another
+	// sending counts the pasted images on their way to another
 	// machine, and sendingTo names where the last went, for the status
 	// line.
 	sending   int
@@ -602,7 +602,7 @@ type app struct {
 	// commands are what each command pane runs, to run it again.
 	commands map[string]command
 	// argvs are what each local pane runs, to start it again and to
-	// know how to hand it a picture.
+	// know how to hand it an image.
 	argvs map[string][]string
 	// farHost is the machine a pane attached from another window runs
 	// on, when that is a machine the window reached rather than its own.
@@ -866,7 +866,7 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't paste the files"
 	case DropFiles:
 		return "Couldn't take the files dropped"
-	case PasteImage, PastePicture:
+	case PasteImageAsFile, PasteImage:
 		return "Couldn't paste the image"
 	case SaveServer:
 		return "Couldn't save the server"
@@ -1268,10 +1268,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.askAction(in)
 	case DropFiles:
 		err = a.dropFiles(in)
+	case PasteImageAsFile:
+		err = a.pasteImage(in.Pane, true)
 	case PasteImage:
-		err = a.pastePicture(in.Pane, true)
-	case PastePicture:
-		err = a.pastePicture(in.Pane, false)
+		err = a.pasteImage(in.Pane, false)
 	case ShowScrollback:
 		err = a.showScrollback(in.Pane)
 	case ReloadServers:

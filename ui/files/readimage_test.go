@@ -31,9 +31,9 @@ func pngOf(t *testing.T, name string, w, h int) string {
 	return at
 }
 
-// The names a picture goes by are known, and other files are not
-// pictures.
-func TestIsPicture(t *testing.T) {
+// The names an image goes by are known, and other files are not
+// images.
+func TestIsImage(t *testing.T) {
 	for name, want := range map[string]bool{
 		"a.png":   true,
 		"A.PNG":   true,
@@ -44,15 +44,15 @@ func TestIsPicture(t *testing.T) {
 		"a":       false,
 		"a.png.z": false,
 	} {
-		if got := IsPicture(name); got != want {
-			t.Errorf("IsPicture(%q) = %v, want %v", name, got, want)
+		if got := IsImage(name); got != want {
+			t.Errorf("IsImage(%q) = %v, want %v", name, got, want)
 		}
 	}
 }
 
-// A picture reads back at its own size, and says what kind it is.
-func TestReadPictureGivesThePicture(t *testing.T) {
-	pic, err := ReadPicture(vfs.NewLocal(), pngOf(t, "a.png", 12, 7), 4096)
+// An image reads back at its own size, and says what kind it is.
+func TestReadImageGivesTheImage(t *testing.T) {
+	pic, err := ReadImage(vfs.NewLocal(), pngOf(t, "a.png", 12, 7), 4096)
 
 	if err != nil {
 		t.Fatalf("read it: %v", err)
@@ -61,115 +61,115 @@ func TestReadPictureGivesThePicture(t *testing.T) {
 		t.Errorf("it read a %q, want a png", pic.Kind)
 	}
 	if got := pic.Img.Bounds(); got.Dx() != 12 || got.Dy() != 7 {
-		t.Errorf("the picture is %v, want 12 by 7", got)
+		t.Errorf("the image is %v, want 12 by 7", got)
 	}
 	if want := image.Pt(12, 7); pic.Was != want {
-		t.Errorf("it says the picture is %v in the file, want %v", pic.Was, want)
+		t.Errorf("it says the image is %v in the file, want %v", pic.Was, want)
 	}
 }
 
-// A picture wider than a texture can be is shrunk to fit, keeping its
+// An image wider than a texture can be is shrunk to fit, keeping its
 // shape, and still says how big it is in the file.
 //
 // A texture past the limit is not an error the window can catch: asking
 // for one brings the window down.
-func TestAPictureTooWideForATextureIsShrunk(t *testing.T) {
-	pic, err := ReadPicture(vfs.NewLocal(), pngOf(t, "wide.png", 800, 200), 100)
+func TestAnImageTooWideForATextureIsShrunk(t *testing.T) {
+	pic, err := ReadImage(vfs.NewLocal(), pngOf(t, "wide.png", 800, 200), 100)
 
 	if err != nil {
 		t.Fatalf("read it: %v", err)
 	}
 	got := pic.Img.Bounds()
 	if got.Dx() > 100 || got.Dy() > 100 {
-		t.Errorf("the picture came out %v, want it inside 100 by 100", got)
+		t.Errorf("the image came out %v, want it inside 100 by 100", got)
 	}
 	if got.Dx() != 100 || got.Dy() != 25 {
-		t.Errorf("the picture came out %v, want 100 by 25: the same shape", got)
+		t.Errorf("the image came out %v, want 100 by 25: the same shape", got)
 	}
 	if want := image.Pt(800, 200); pic.Was != want {
-		t.Errorf("it says the picture is %v in the file, want %v", pic.Was, want)
+		t.Errorf("it says the image is %v in the file, want %v", pic.Was, want)
 	}
 }
 
-// A picture that fits comes back at its own size.
-func TestAPictureThatFitsKeepsItsSize(t *testing.T) {
-	pic, err := ReadPicture(vfs.NewLocal(), pngOf(t, "small.png", 64, 64), 4096)
+// An image that fits comes back at its own size.
+func TestAnImageThatFitsKeepsItsSize(t *testing.T) {
+	pic, err := ReadImage(vfs.NewLocal(), pngOf(t, "small.png", 64, 64), 4096)
 
 	if err != nil {
 		t.Fatalf("read it: %v", err)
 	}
 	if got := pic.Img.Bounds(); got.Dx() != 64 || got.Dy() != 64 {
-		t.Errorf("the picture came out %v, want 64 by 64", got)
+		t.Errorf("the image came out %v, want 64 by 64", got)
 	}
 }
 
-// A file that is not there is an error rather than an empty picture.
-func TestAPictureThatIsNotThereIsAnError(t *testing.T) {
-	_, err := ReadPicture(vfs.NewLocal(), filepath.Join(t.TempDir(), "nope.png"), 4096)
+// A file that is not there is an error rather than an empty image.
+func TestAnImageThatIsNotThereIsAnError(t *testing.T) {
+	_, err := ReadImage(vfs.NewLocal(), filepath.Join(t.TempDir(), "nope.png"), 4096)
 
 	if err == nil {
-		t.Fatal("a picture that is not there read as one that is")
+		t.Fatal("an image that is not there read as one that is")
 	}
 }
 
-// A file that is not a picture says so rather than coming back blank.
-func TestAFileThatIsNotAPictureSaysSo(t *testing.T) {
+// A file that is not an image says so rather than coming back blank.
+func TestAFileThatIsNotAnImageSaysSo(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "a.png")
 	if err := os.WriteFile(at, []byte("this is not a png"), 0o600); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
 
-	_, err := ReadPicture(vfs.NewLocal(), at, 4096)
+	_, err := ReadImage(vfs.NewLocal(), at, 4096)
 
 	if err == nil {
-		t.Fatal("a file of words read as a picture")
+		t.Fatal("a file of words read as an image")
 	}
 	if !strings.Contains(err.Error(), "image") {
 		t.Errorf("it said %q, want it to say what it could not do", err)
 	}
 }
 
-// A picture with more pixels than the reader shows is refused by its
+// An image with more pixels than the reader shows is refused by its
 // header, before any pixel is asked for.
 //
 // The test writes the header and nothing else, which is how it can name
-// a picture of forty thousand square without building one.
-func TestAPictureOfTooManyPixelsIsRefused(t *testing.T) {
+// an image of forty thousand square without building one.
+func TestAnImageOfTooManyPixelsIsRefused(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "huge.png")
 	if err := os.WriteFile(at, pngHeader(40000, 40000), 0o600); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
 
-	_, err := ReadPicture(vfs.NewLocal(), at, 4096)
+	_, err := ReadImage(vfs.NewLocal(), at, 4096)
 
 	if err == nil {
-		t.Fatal("a picture of 40000 by 40000 was decoded")
+		t.Fatal("an image of 40000 by 40000 was decoded")
 	}
 	if !strings.Contains(err.Error(), "more than this shows") {
-		t.Errorf("it said %q, want it to say the picture is too big", err)
+		t.Errorf("it said %q, want it to say the image is too big", err)
 	}
 }
 
-// A picture of nought by nought is refused. A BMP that size decodes
+// An image of nought by nought is refused. A BMP that size decodes
 // without complaint, and asking for a texture that size brings the
 // window down.
-func TestAPictureWithNoPixelsIsRefused(t *testing.T) {
+func TestAnImageWithNoPixelsIsRefused(t *testing.T) {
 	at := filepath.Join(t.TempDir(), "empty.bmp")
 	if err := os.WriteFile(at, emptyBMP(), 0o600); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
 
-	pic, err := ReadPicture(vfs.NewLocal(), at, 4096)
+	pic, err := ReadImage(vfs.NewLocal(), at, 4096)
 
 	if err == nil {
-		t.Fatalf("a picture of nought by nought came back as %v", pic.Img.Bounds())
+		t.Fatalf("an image of nought by nought came back as %v", pic.Img.Bounds())
 	}
 	if !strings.Contains(err.Error(), "nothing to show") {
 		t.Errorf("it said %q, want it to say there is nothing there", err)
 	}
 }
 
-// pngHeader is a PNG signature and an IHDR chunk saying the picture is
+// pngHeader is a PNG signature and an IHDR chunk saying the image is
 // this big, and nothing after it. DecodeConfig reads no further.
 func pngHeader(w, h uint32) []byte {
 	var ihdr bytes.Buffer
@@ -188,7 +188,7 @@ func pngHeader(w, h uint32) []byte {
 	return out.Bytes()
 }
 
-// emptyBMP is a BMP header saying the picture is nought by nought, which
+// emptyBMP is a BMP header saying the image is nought by nought, which
 // the decoder takes without complaint.
 func emptyBMP() []byte {
 	out := make([]byte, 54)

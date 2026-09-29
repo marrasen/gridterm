@@ -13,12 +13,12 @@ import (
 // no room for the gap, the rule and a name inside them.
 const (
 	leastTileCols = 16
-	// Six leaves two rows of picture inside the rule. Any less and the
+	// Six leaves two rows of image inside the rule. Any less and the
 	// tile has a name and nothing to go with it.
 	leastTileRows = 6
 )
 
-// tileGap is the room left around a tile, in cells, so two pictures side
+// tileGap is the room left around a tile, in cells, so two images side
 // by side do not touch.
 const tileGap = 1
 
@@ -42,7 +42,7 @@ type TilesStyle struct {
 // Tiles lays a name out per pane on a grid, for picking one by eye.
 //
 // It draws the frames and the names. What goes inside a tile is the
-// caller's: Inside says where each picture goes, within the rule rather
+// caller's: Inside says where each image goes, within the rule rather
 // than over it.
 type Tiles struct {
 	Style TilesStyle
@@ -105,9 +105,9 @@ func (t *Tiles) Mark(at int) {
 // what a click lands in, and it takes in the gap around the tile.
 func (t *Tiles) Areas() []Rect { return t.areas }
 
-// Inside is the box a tile's picture goes in: its own box, less the gap
+// Inside is the box a tile's image goes in: its own box, less the gap
 // between tiles and the rule around it, so the rule is around the
-// picture rather than under it. It is empty when there is no room left.
+// image rather than under it. It is empty when there is no room left.
 func (t *Tiles) Inside(i int) Rect {
 	if i < 0 || i >= len(t.areas) {
 		return Rect{}

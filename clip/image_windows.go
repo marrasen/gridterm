@@ -15,7 +15,7 @@ import (
 	win "golang.org/x/sys/windows"
 )
 
-// The clipboard formats a picture arrives in. CF_DIB is a device
+// The clipboard formats an image arrives in. CF_DIB is a device
 // independent bitmap; CF_DIBV5 is the same with a header that can carry
 // an alpha channel, which is what a screenshot tool puts there.
 const (
@@ -82,12 +82,12 @@ var (
 // The thread is locked for the whole of it. Windows gives the clipboard
 // to the thread that opened it rather than to the process, and Go moves
 // a goroutine from one thread to another whenever it likes. A close that
-// landed on another thread fails, and a picture put on the clipboard is
+// landed on another thread fails, and an image put on the clipboard is
 // then never committed.
 //
-// That is what happened to a picture sent from another window: it
+// That is what happened to an image sent from another window: it
 // arrives on a goroutine of the server's, where nothing holds the
-// thread still. A picture pasted at this machine went through the
+// thread still. An image pasted at this machine went through the
 // goroutine that draws, which ebiten keeps on one thread, so it worked.
 func withClipboard(f func() error) (err error) {
 	runtime.LockOSThread()
@@ -134,7 +134,7 @@ func HasText() bool {
 	return false
 }
 
-// Image returns the picture on the clipboard.
+// Image returns the image on the clipboard.
 //
 // It reports whether there is one separately from whether reading it
 // failed: an empty clipboard is an ordinary thing to meet and a locked
@@ -188,7 +188,7 @@ func Image() (image.Image, bool, error) {
 // pixels, bottom row first unless the height is negative.
 //
 // It reads the 24 and 32 bit uncompressed forms, which is what a
-// screenshot and a copied picture arrive as. Anything else is refused by
+// screenshot and a copied image arrive as. Anything else is refused by
 // name rather than drawn wrongly.
 func imageFromDIB(dib []byte) (image.Image, error) {
 	const headerLeast = headerSize
@@ -252,7 +252,7 @@ func imageFromDIB(dib []byte) (image.Image, error) {
 	}
 	// A 32-bit bitmap whose alpha is zero everywhere has no alpha at
 	// all: plenty of programs leave that byte unwritten, and taking it
-	// at its word would make the whole picture see-through.
+	// at its word would make the whole image see-through.
 	if step == 4 && !anyOpaque(img) {
 		for i := 3; i < len(img.Pix); i += 4 {
 			img.Pix[i] = 0xff
@@ -271,7 +271,7 @@ func anyOpaque(img *image.RGBA) bool {
 	return false
 }
 
-// Putting a picture on the clipboard.
+// Putting an image on the clipboard.
 const (
 	gmemMoveable = 0x0002
 	headerSize   = 40
@@ -285,7 +285,7 @@ var (
 	globalFree  = kernel32.NewProc("GlobalFree")
 )
 
-// SetImage puts a picture on the clipboard, as the bitmap every
+// SetImage puts an image on the clipboard, as the bitmap every
 // Windows program knows how to read.
 func SetImage(img image.Image) error {
 	dib := dibFrom(img)
@@ -317,13 +317,13 @@ func SetImage(img image.Image) error {
 			return fmt.Errorf("put the image on the clipboard: %w", err)
 		}
 		// The clipboard owns it now, and freeing it would take the
-		// picture out from under whoever pastes it.
+		// image out from under whoever pastes it.
 		handed = true
 		return nil
 	})
 }
 
-// dibFrom lays a picture out as a device independent bitmap: a header
+// dibFrom lays an image out as a device independent bitmap: a header
 // and then the pixels, bottom row first, thirty-two bits a pixel.
 //
 // Thirty-two rather than twenty-four so the alpha survives, and rows of
@@ -356,7 +356,7 @@ func dibFrom(img image.Image) []byte {
 	return out
 }
 
-// unmultiply takes a colour back out of its alpha, for a picture Go
+// unmultiply takes a colour back out of its alpha, for an image Go
 // holds multiplied by it and Windows does not.
 func unmultiply(c, a uint32) uint8 {
 	if a == 0 {

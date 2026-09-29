@@ -112,7 +112,7 @@ type Terminal struct {
 	links []string
 	byURL map[string]uint32
 
-	// images are the pictures a program put in the output, oldest
+	// images are the images a program put in the output, oldest
 	// first, each one holding the line it sits on.
 	images []Image
 
@@ -130,7 +130,7 @@ type Terminal struct {
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
 
-	// long reads the sequences carrying a picture, which are longer
+	// long reads the sequences carrying an image, which are longer
 	// than the parser will hold.
 	long longOSC
 }

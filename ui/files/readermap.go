@@ -68,7 +68,7 @@ func (r *Reader) mapWidth() int {
 func (r *Reader) bodyCols() int { return max(r.size.Cols-r.mapWidth(), 0) }
 
 // MapRoom is where the strip goes, in the reader's own cells, and empty
-// when there is none. The window draws MapPicture there.
+// when there is none. The window draws MapImage there.
 func (r *Reader) MapRoom() ui.Rect {
 	w := r.mapWidth()
 	body := r.size.Rows - readerChrome
@@ -78,7 +78,7 @@ func (r *Reader) MapRoom() ui.Rect {
 	return ui.Rect{X: r.size.Cols - w, Y: 1, Cols: w, Rows: body}
 }
 
-// MapPicture is the strip drawn w by h pixels, and nil when there is no
+// MapImage is the strip drawn w by h pixels, and nil when there is no
 // strip.
 //
 // Pixels rather than characters. The grid is for text, and a strip of
@@ -90,7 +90,7 @@ func (r *Reader) MapRoom() ui.Rect {
 //
 // The same image comes back until the lines, the size, the width of the
 // file or the colours change, so the window builds a texture only then.
-func (r *Reader) MapPicture(w, h int) *image.RGBA {
+func (r *Reader) MapImage(w, h int) *image.RGBA {
 	if r.mapWidth() == 0 || w <= 0 || h <= 0 {
 		return nil
 	}
@@ -195,7 +195,7 @@ func (r *Reader) worstIn(from, to int) colour {
 // paintMap draws the ground of the strip down the right of the file:
 // blank cells, with the rows the pane is showing on a ground of their
 // own. What is in the file is drawn over them in pixels, by whatever
-// puts MapPicture on screen.
+// puts MapImage on screen.
 //
 // In the place a code editor puts its minimap and doing the same job:
 // showing the shape of the whole file at once, so a run of errors is

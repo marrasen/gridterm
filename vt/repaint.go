@@ -14,13 +14,13 @@ import (
 // being drawn: a window taken over shows what is already on the far end
 // rather than an empty pane waiting for the program to say something.
 //
-// What comes out is the same picture, not the same records: a space
+// What comes out is the same image, not the same records: a space
 // keeps whatever background and attributes it had, and loses a
 // foreground that was never going to be drawn in.
 //
 // What it writes is a screen, not a session. The scrollback above it
 // does not come, and a program holding state of its own -- a pager part
-// way through a file -- is not told anything. It is the picture, which
+// way through a file -- is not told anything. It is the image, which
 // is what a terminal is showing anyway.
 //
 // Colours are written as 24-bit SGR. The grid has already resolved
@@ -57,7 +57,7 @@ func Repaint(g *grid.Grid, m Screenful) string {
 	}
 	writeCells(&b, g)
 
-	// The pictures after the text, because the text is what they sit
+	// The images after the text, because the text is what they sit
 	// over. They are placed by row rather than at the cursor, so it
 	// does not matter that the cursor is still wherever the last cell
 	// left it.
@@ -153,7 +153,7 @@ func writeCursor(b *strings.Builder, g *grid.Grid, m Screenful) {
 // back. The scroll region, origin mode, insert mode, bracketed paste
 // and the mouse modes do not travel: a program that set one of them set
 // it on the terminal it was talking to, and what is sent here is a
-// picture of that terminal rather than a copy of it.
+// image of that terminal rather than a copy of it.
 type Screenful struct {
 	// Alt says the program is drawing in the alternate buffer, which is
 	// where a full-screen program draws.
@@ -178,7 +178,7 @@ type Screenful struct {
 	// on.
 	WrapNext bool
 
-	// Images are the pictures on the ordinary screen, with Top counted
+	// Images are the images on the ordinary screen, with Top counted
 	// from its top row. They travel even when Alt is set, for the same
 	// reason Under does: the full-screen program quitting leaves them
 	// behind.
@@ -201,7 +201,7 @@ func lastShowing(g *grid.Grid, y, cols int) int {
 //
 // The foreground is not part of it: nothing is drawn in it on a cell
 // with no character, so a red space and a plain one are the same
-// picture. The background and the attributes are, because a space can
+// image. The background and the attributes are, because a space can
 // be coloured, underlined or reversed and every one of those shows.
 func blank(c grid.Cell, g *grid.Grid) bool {
 	return (c.Rune == ' ' || c.Rune == 0) && len(c.Comb) == 0 &&

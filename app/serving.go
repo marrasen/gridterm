@@ -168,7 +168,7 @@ func (a *app) startServing(in StartServing) error {
 		Disconnect: a.disconnectFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
-		Picture:    func(png []byte) error { return takePicture(png) },
+		Image:      func(png []byte) error { return takeImage(png) },
 		OnJoin:     func(c *serve.Client) { post(func() { a.clientCame(c) }) },
 		Tunnels: func(c *serve.Client, notes []serve.TunnelNote) {
 			post(func() { a.clientsTunnels(c, notes) })

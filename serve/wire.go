@@ -217,19 +217,19 @@ type exitStatus struct {
 // carries the bytes; what runs on it is the window's business.
 const chanFiles = "files@gridterm"
 
-// chanClipboard carries a picture from a client to the clipboard of the
+// chanClipboard carries an image from a client to the clipboard of the
 // window being served, so a program running there can be pasted one.
 //
 // A channel of its own rather than a line down the control channel: a
 // screenshot is megabytes, and the control channel is what says what a
 // window has open. One would hold up the other.
 //
-// The client writes the picture as a PNG and stops writing. The window
-// answers with nothing when the picture landed, and with why it did not
+// The client writes the image as a PNG and stops writing. The window
+// answers with nothing when the image landed, and with why it did not
 // when it did not, so there is no framing to agree on beyond that.
 const chanClipboard = "clipboard@gridterm"
 
-// mostClipboardBytes is the largest picture a window will take. A
+// mostClipboardBytes is the largest image a window will take. A
 // screenshot of a large screen is a few megabytes; this is well past
 // that, and it is what stops a client filling this window's memory.
 const mostClipboardBytes = 64 << 20

@@ -43,13 +43,13 @@ func heldClipboard(t *testing.T, open func() error) (opened, closed *uint32) {
 // Windows gives the clipboard to the thread that opened it rather than
 // to the process, and Go moves a goroutine from one thread to another
 // whenever it likes. A close that lands on another thread fails, and a
-// picture put on the clipboard is then never committed. That is what
-// happened to a picture sent from another window: it arrives on a
+// image put on the clipboard is then never committed. That is what
+// happened to an image sent from another window: it arrives on a
 // goroutine of the server's, where nothing holds the thread still.
 func TestTheClipboardIsHeldOnOneThread(t *testing.T) {
 	opened, closed := heldClipboard(t, func() error { return nil })
 
-	// On a goroutine of its own, the way a picture from another window
+	// On a goroutine of its own, the way an image from another window
 	// arrives, and with every chance in the middle to be moved.
 	done := make(chan error, 1)
 	go func() {
@@ -99,12 +99,12 @@ func TestBothTheWorkAndTheCloseAreSaid(t *testing.T) {
 	clipOpen = func() error { return nil }
 	clipClose = func() error { return errors.New("the close went") }
 
-	err := withClipboard(func() error { return errors.New("the picture went") })
+	err := withClipboard(func() error { return errors.New("the image went") })
 
 	if err == nil {
 		t.Fatal("neither failure was said")
 	}
-	for _, want := range []string{"the picture went", "the close went"} {
+	for _, want := range []string{"the image went", "the close went"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("it said %q, want it to say %q as well", err, want)
 		}

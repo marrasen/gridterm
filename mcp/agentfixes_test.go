@@ -76,10 +76,10 @@ func TestNothingTellsTheCallerToPutAReturnInTheText(t *testing.T) {
 	}
 }
 
-// A picture on the screen is named in the trailer. The cells under
-// one read back as blank, so without this a picture that arrived and
+// An image on the screen is named in the trailer. The cells under
+// one read back as blank, so without this an image that arrived and
 // one that never did look the same.
-func TestAPictureIsNamedInTheTrailer(t *testing.T) {
+func TestAnImageIsNamedInTheTrailer(t *testing.T) {
 	got := showScreen(Screen{
 		Screen: "some text",
 		Images: []Image{{Top: 2, Rows: 13, Cols: 40, Width: 400, Height: 200}},
@@ -95,7 +95,7 @@ func TestAPictureIsNamedInTheTrailer(t *testing.T) {
 
 // One that came from another window's screen says the sequence it
 // really came by.
-func TestAPictureFromAnotherWindowSaysSo(t *testing.T) {
+func TestAnImageFromAnotherWindowSaysSo(t *testing.T) {
 	got := showScreen(Screen{
 		Images: []Image{{Top: 0, Rows: 4, Width: 10, Height: 10, Wire: true}},
 	}, Ending{}, false)
@@ -105,12 +105,12 @@ func TestAPictureFromAnotherWindowSaysSo(t *testing.T) {
 	}
 }
 
-// A screen with no pictures says nothing about pictures.
-func TestAScreenWithNoPicturesSaysNothing(t *testing.T) {
+// A screen with no images says nothing about images.
+func TestAScreenWithNoImagesSaysNothing(t *testing.T) {
 	got := showScreen(Screen{Screen: "some text"}, Ending{}, false)
 
 	if strings.Contains(got, "image") {
-		t.Errorf("the trailer mentions a picture:\n%s", got)
+		t.Errorf("the trailer mentions an image:\n%s", got)
 	}
 }
 

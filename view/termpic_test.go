@@ -19,7 +19,7 @@ import (
 	"github.com/marrasen/kakel/vt"
 )
 
-func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
+func TestAnImageInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	var file bytes.Buffer
 	if err := png.Encode(&file, image.NewRGBA(image.Rect(0, 0, 40, 20))); err != nil {
@@ -33,14 +33,14 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 
 	deadline := time.Now().Add(5 * time.Second)
-	for len(sh.Get("p1").T.Pictures()) == 0 {
+	for len(sh.Get("p1").T.Images()) == 0 {
 		if time.Now().After(deadline) {
-			t.Fatal("the terminal never took the picture")
+			t.Fatal("the terminal never took the image")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	lastWindow.Frame(time.Second / 60)
-	at := sh.Get("p1").T.Pictures()[0]
+	at := sh.Get("p1").T.Images()[0]
 	var drawn *paint.ImageOp
 	for _, op := range lastWindow.Offscreen().Ops() {
 		if im, ok := op.(*paint.ImageOp); ok {
@@ -48,10 +48,10 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 		}
 	}
 	if drawn == nil {
-		t.Fatal("the picture was never painted")
+		t.Fatal("the image was never painted")
 	}
 	if w, h := drawn.Image.Size(); w != 40 || h != 20 {
-		t.Fatalf("painted a %dx%d picture, want the 40x20 one", w, h)
+		t.Fatalf("painted a %dx%d image, want the 40x20 one", w, h)
 	}
 	cell := win.terms["p1"].cells.CellSize()
 	want := geom.Rc(float32(at.Col)*cell.W, float32(at.Top)*cell.H, 4*cell.W, 2*cell.H)

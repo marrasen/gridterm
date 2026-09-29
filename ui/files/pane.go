@@ -634,7 +634,7 @@ func (p *Pane) Up() {
 // Size is the room the pane was last given.
 func (p *Pane) Size() ui.Size { return p.size }
 
-// The switcher draws a picture of a pane at the size it says it has, so
+// The switcher draws an image of a pane at the size it says it has, so
 // a method here with the wrong shape would leave its tile empty.
 var _ ui.Sized = (*Pane)(nil)
 

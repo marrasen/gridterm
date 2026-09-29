@@ -26,7 +26,7 @@ import (
 
 // What a sidebar row shows besides its words: a mark in front saying how
 // the thing is doing, green while it is there, breathing while bytes go
-// past, grey once it has finished; a little picture of what kind of
+// past, grey once it has finished; a little image of what kind of
 // thing it is; how far a piece of work has got, filling the row; the
 // last seconds of a tunnel's traffic, as a graph; and, while the pointer
 // is on a row that can close, a cross that closes it.
@@ -236,7 +236,7 @@ func paintCross(p *paint.Painter, r geom.Rect, c color.NRGBA) {
 	drawIcon(p, icon.X, r, c, 1.5)
 }
 
-// kindIcons are the pictures for the kinds of row: a terminal, a
+// kindIcons are the images for the kinds of row: a terminal, a
 // command, a folder, a page, a log, a tunnel, a lock, a window, and one
 // for each kind of file work.
 var kindIcons = map[string]*icon.Icon{
@@ -256,7 +256,7 @@ var kindIcons = map[string]*icon.Icon{
 	"split":    icon.Columns2,
 }
 
-// paintIcon draws the little picture for a kind of row in r.
+// paintIcon draws the little image for a kind of row in r.
 func paintIcon(p *paint.Painter, kind string, r geom.Rect, c color.NRGBA) {
 	ic, ok := kindIcons[kind]
 	if !ok {
@@ -422,7 +422,7 @@ func (w *Window) anyBreathing(now time.Time) bool {
 }
 
 // readerNote is what a reader's row says beside its name: why the file
-// would not read, that it is reading, how big a picture is, or how many
+// would not read, that it is reading, how big an image is, or how many
 // lines the file has, with a plus when there is more than was read.
 func readerNote(rd app.Reader) string {
 	switch {

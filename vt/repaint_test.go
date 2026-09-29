@@ -118,13 +118,13 @@ func gridDiff(a, b *grid.Grid) string {
 //
 // The foreground of a cell with no character in it is not compared:
 // nothing is drawn in it, so a red space and a plain one are the same
-// picture, and a screen written out need not carry a colour that will
+// image, and a screen written out need not carry a colour that will
 // never be seen.
 func sameToLookAt(a, b grid.Cell) bool {
 	if a.Rune != b.Rune || a.BG != b.BG || a.Attr != b.Attr || a.Width != b.Width {
 		return false
 	}
-	// What sits on the letter is part of the picture: without it a word
+	// What sits on the letter is part of the image: without it a word
 	// comes back spelled differently.
 	if len(a.Comb) != len(b.Comb) {
 		return false

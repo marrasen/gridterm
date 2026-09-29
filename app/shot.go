@@ -27,7 +27,7 @@ import (
 //	shot:out.png     write the window to a file
 //
 // The window closes when the script ends. A script whose until ran out
-// fails the run, so nothing reads last time's pictures as new ones.
+// fails the run, so nothing reads last time's images as new ones.
 
 // longestUntil is how long an until step waits before the script gives
 // up.

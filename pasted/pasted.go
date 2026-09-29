@@ -1,8 +1,8 @@
-// Package pasted writes pictures and dropped files where the program in
+// Package pasted writes images and dropped files where the program in
 // a pane can open them: a file of its own, whose path is typed into the
 // pane.
 //
-// A program reading a terminal cannot be handed a picture, so what it
+// A program reading a terminal cannot be handed an image, so what it
 // is handed is somewhere to find one. Claude Code and the rest read the
 // path and open the file.
 package pasted
@@ -21,12 +21,12 @@ import (
 	"github.com/marrasen/kakel/vfs"
 )
 
-// DirName is the directory pictures and dropped files are written in:
+// DirName is the directory images and dropped files are written in:
 // under the temporary directory on this machine, and under the home
 // directory on another.
 const DirName = "kakel-pasted"
 
-// PNG is a picture as the bytes that go over a connection.
+// PNG is an image as the bytes that go over a connection.
 func PNG(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
@@ -35,7 +35,7 @@ func PNG(img image.Image) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// WriteHere puts a picture in a file of its own on this machine and
+// WriteHere puts an image in a file of its own on this machine and
 // returns the path. now is the window's clock, so a test does not
 // depend on the wall clock; nil is the wall clock.
 func WriteHere(img image.Image, now func() time.Time) (string, error) {
@@ -58,7 +58,7 @@ func WriteHere(img image.Image, now func() time.Time) (string, error) {
 	path := f.Name()
 	if err := png.Encode(f, img); err != nil {
 		// Closed on the way out, and the half-written file taken away:
-		// a path typed into a shell has to name a picture that opens.
+		// a path typed into a shell has to name an image that opens.
 		return "", fmt.Errorf("write the image: %w",
 			errors.Join(err, f.Close(), os.Remove(path)))
 	}
@@ -68,7 +68,7 @@ func WriteHere(img image.Image, now func() time.Time) (string, error) {
 	return path, nil
 }
 
-// WriteOn writes a picture, as PNG bytes, into a directory of its own
+// WriteOn writes an image, as PNG bytes, into a directory of its own
 // under the home directory of whoever fs logs in as, and returns the
 // path.
 //
@@ -95,7 +95,7 @@ func WriteOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
 	return path, nil
 }
 
-// DirOn is the directory pasted pictures and dropped files go in on a
+// DirOn is the directory pasted images and dropped files go in on a
 // machine, made if it is not there yet.
 func DirOn(fs vfs.FS) (string, error) {
 	home, err := fs.Home()

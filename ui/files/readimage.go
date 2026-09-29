@@ -21,30 +21,30 @@ import (
 	"github.com/marrasen/kakel/vfs"
 )
 
-// MostPictureBytes is the largest picture file a reader will read, and
-// MostPicturePixels the most pixels it will decode one into.
+// MostImageBytes is the largest image file a reader will read, and
+// MostImagePixels the most pixels it will decode one into.
 //
-// Both are needed: a small file can hold a very large picture, and the
+// Both are needed: a small file can hold a very large image, and the
 // decoded pixels cost four bytes each.
 const (
-	MostPictureBytes  = 64 << 20
-	MostPicturePixels = 32 << 20
+	MostImageBytes  = 64 << 20
+	MostImagePixels = 32 << 20
 )
 
-// Pic is a picture a reader holds.
+// Pic is an image a reader holds.
 type Pic struct {
 	// Img is what is drawn, and Kind what sort of file it came from.
 	Img  image.Image
 	Kind string
 
-	// Was is how big the picture is in the file, which is not how big
-	// Img is when the picture had to be shrunk to fit a texture.
+	// Was is how big the image is in the file, which is not how big
+	// Img is when the image had to be shrunk to fit a texture.
 	Was image.Point
 }
 
-// IsPicture reports whether a file is one a reader can show as a
-// picture, by what it is called.
-func IsPicture(name string) bool {
+// IsImage reports whether a file is one a reader can show as a
+// image, by what it is called.
+func IsImage(name string) bool {
 	switch strings.ToLower(path.Ext(name)) {
 	case ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".tif", ".tiff", ".webp":
 		return true
@@ -52,27 +52,27 @@ func IsPicture(name string) bool {
 	return false
 }
 
-// ReadPicture reads a picture file and decodes it, shrinking one bigger
+// ReadImage reads an image file and decodes it, shrinking one bigger
 // than side either way so that it fits on a texture.
 //
 // The caller runs it somewhere that is not the goroutine that draws, so
 // the shrinking happens there too.
-func ReadPicture(f vfs.FS, at string, side int) (pic Pic, err error) {
-	return ReadPictureWatched(f, at, side, nil)
+func ReadImage(f vfs.FS, at string, side int) (pic Pic, err error) {
+	return ReadImageWatched(f, at, side, nil)
 }
 
-// ReadPictureWatched is ReadPicture with somebody counting the bytes as
+// ReadImageWatched is ReadImage with somebody counting the bytes as
 // they arrive.
 //
 // It counts the reading, not the decoding. The reading is what takes
-// the time: a picture is allowed to be sixty-four megabytes, and over a
+// the time: an image is allowed to be sixty-four megabytes, and over a
 // tunnelled link at fifty kilobytes a second that is hours. The decode
 // that follows is work this machine does and is over in moments beside
 // it, so the count sits at the full size while it happens.
 //
 // watch is called from the goroutine doing the reading, the same as
 // ReadFileWatched's.
-func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (pic Pic, err error) {
+func ReadImageWatched(f vfs.FS, at string, side int, watch func(read int64)) (pic Pic, err error) {
 	rc, err := f.Open(at)
 	if err != nil {
 		return Pic{}, err
@@ -84,12 +84,12 @@ func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (
 	// The whole file, because a decoder reads it twice: once for its
 	// size and once for its pixels, and a file on another machine cannot
 	// be wound back.
-	raw, err := io.ReadAll(&counter{from: io.LimitReader(rc, MostPictureBytes+1), watch: watch})
+	raw, err := io.ReadAll(&counter{from: io.LimitReader(rc, MostImageBytes+1), watch: watch})
 	if err != nil {
 		return Pic{}, err
 	}
-	if len(raw) > MostPictureBytes {
-		return Pic{}, fmt.Errorf("the file is over %d bytes, which is more than this shows", MostPictureBytes)
+	if len(raw) > MostImageBytes {
+		return Pic{}, fmt.Errorf("the file is over %d bytes, which is more than this shows", MostImageBytes)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
@@ -101,7 +101,7 @@ func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (
 		// for a texture that size brings the window down.
 		return Pic{}, fmt.Errorf("the image is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)
 	}
-	if n := int64(cfg.Width) * int64(cfg.Height); n > MostPicturePixels {
+	if n := int64(cfg.Width) * int64(cfg.Height); n > MostImagePixels {
 		return Pic{}, fmt.Errorf("the image is %d by %d, which is more than this shows", cfg.Width, cfg.Height)
 	}
 
@@ -114,15 +114,15 @@ func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (
 		// The header said one thing and the pixels another.
 		return Pic{}, errors.New("the image has no pixels in it")
 	}
-	return Pic{Img: fitPicture(img, side), Kind: kind, Was: image.Pt(b.Dx(), b.Dy())}, nil
+	return Pic{Img: fitImage(img, side), Kind: kind, Was: image.Pt(b.Dx(), b.Dy())}, nil
 }
 
-// fitPicture shrinks a picture bigger than side either way, keeping its
+// fitImage shrinks an image bigger than side either way, keeping its
 // shape, and leaves a smaller one alone.
 //
 // A texture has a largest size, and asking for one past it is not an
 // error the window can catch: it brings the window down.
-func fitPicture(img image.Image, side int) image.Image {
+func fitImage(img image.Image, side int) image.Image {
 	b := img.Bounds()
 	if side <= 0 || (b.Dx() <= side && b.Dy() <= side) {
 		return img

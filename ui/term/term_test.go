@@ -1115,7 +1115,7 @@ func (*nothing) Draw(grid.View) {}
 //
 // The host is drawing a held screen that does not fit that room, shrunk
 // to fit, on a layer of its own. Whatever the tree last painted there
-// would otherwise show around the picture.
+// would otherwise show around the image.
 func TestATerminalDrawnElsewhereBlanksItsRoom(t *testing.T) {
 	term, f := newTestTerm(t, 20, 4, Config{})
 	f.feed(t, term, "hello")

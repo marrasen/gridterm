@@ -20,7 +20,7 @@ import (
 // A split's chooser: the new half of a split, made at once, before
 // anything is put in it. It offers new terminals as buttons, "+
 // Terminal" and one for each shell and machine, and the other panes as
-// small live pictures of themselves, to move there. What is picked takes
+// small live images of themselves, to move there. What is picked takes
 // the chooser's place. Escape, or closing it, gives its half back.
 
 // chooser is the node a chooser pane shows.
@@ -36,7 +36,7 @@ type chooser struct {
 	heading *widget.Label
 	// ring shows round the chooser while Tab has put the keyboard in it.
 	ring *anim.Float
-	// made keeps each button and picture by what it offers, so one that
+	// made keeps each button and image by what it offers, so one that
 	// stays is the same node from one change to the next, and the
 	// keyboard stays on it.
 	made map[string]gunim.Node
@@ -50,7 +50,7 @@ func newChooser(w *Window, id string) *chooser {
 	return c
 }
 
-// refresh brings the buttons and the pictures up to date with what
+// refresh brings the buttons and the images up to date with what
 // there is to offer: the shells here, the machines reached, the panes
 // open. Those new arrive and those gone leave, through u once the
 // chooser is in the tree; before, u is nil.
@@ -223,7 +223,7 @@ const (
 )
 
 // Layout implements [gunim.Node]: the heading, the buttons in rows that
-// wrap, and under them the pictures in a grid, each as wide as fits.
+// wrap, and under them the images in a grid, each as wide as fits.
 func (c *chooser) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	box := cs.Max
 	width := max(box.W-2*chooserPad, 0)
@@ -285,7 +285,7 @@ func (c *chooser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	}
 }
 
-// thumb is a pane offered in a chooser: a small live picture of it and
+// thumb is a pane offered in a chooser: a small live image of it and
 // its title, which a click or Enter moves into the chooser's place.
 type thumb struct {
 	anim.Group
@@ -294,7 +294,7 @@ type thumb struct {
 	title string
 	label text.Run
 	hover *anim.Float
-	// walked lights the picture while the chooser's arrows have the
+	// walked lights the image while the chooser's arrows have the
 	// keyboard on it.
 	walked *anim.Float
 }
@@ -306,7 +306,7 @@ func newThumb(c *chooser, p app.Pane) *thumb {
 	return t
 }
 
-// retitle names the picture after its pane, as the pane is called now.
+// retitle names the image after its pane, as the pane is called now.
 func (t *thumb) retitle(title string) {
 	if title != t.title || t.label.Advance == 0 {
 		t.title = title

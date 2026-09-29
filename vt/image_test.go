@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-// aPNG is a picture of a given size, base64'd the way a program
+// aPNG is an image of a given size, base64'd the way a program
 // sends one.
 func aPNG(t *testing.T, w, h int) string {
 	t.Helper()
@@ -23,7 +23,7 @@ func aPNG(t *testing.T, w, h int) string {
 	return base64.StdEncoding.EncodeToString(b.Bytes())
 }
 
-// aBigPNG is a picture that does not compress, so it is megabytes of
+// aBigPNG is an image that does not compress, so it is megabytes of
 // PNG rather than bytes of it.
 func aBigPNG(t *testing.T) string {
 	t.Helper()
@@ -40,34 +40,34 @@ func aBigPNG(t *testing.T) string {
 	return base64.StdEncoding.EncodeToString(b.Bytes())
 }
 
-// sendImage writes an inline picture the way iTerm2's sequence does.
+// sendImage writes an inline image the way iTerm2's sequence does.
 func sendImage(t *testing.T, term *Terminal, args, body string) {
 	t.Helper()
 	feed(t, term, "\x1b]1337;File="+args+":"+body+"\x07")
 }
 
-// A program puts a picture in the output and the pane holds it, on
+// A program puts an image in the output and the pane holds it, on
 // the line the cursor was on.
-func TestAnInlinePictureIsHeld(t *testing.T) {
+func TestAnInlineImageIsHeld(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
 	sendImage(t, term, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 
 	got := term.Images()
 	if len(got) != 1 {
-		t.Fatalf("the pane holds %d pictures, want one", len(got))
+		t.Fatalf("the pane holds %d images, want one", len(got))
 	}
 	if got[0].Cols != 10 || got[0].Rows != 4 {
 		t.Errorf("it was given %dx%d cells, want 10x4", got[0].Cols, got[0].Rows)
 	}
 	if got[0].Img == nil {
-		t.Error("the picture has no pixels")
+		t.Error("the image has no pixels")
 	}
 }
 
-// The cursor moves past the picture, so what the program prints next
+// The cursor moves past the image, so what the program prints next
 // lands under it rather than on top.
-func TestTheCursorMovesPastAPicture(t *testing.T) {
+func TestTheCursorMovesPastAnImage(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
 	sendImage(t, term, "inline=1;width=10;height=4", aPNG(t, 80, 64))
@@ -81,14 +81,14 @@ func TestTheCursorMovesPastAPicture(t *testing.T) {
 		}
 	}
 	if got := row.String(); !strings.HasPrefix(got, "after") {
-		t.Errorf("row 4 is %q, want the text under the picture", got)
+		t.Errorf("row 4 is %q, want the text under the image", got)
 	}
 }
 
-// A picture says where it is in lines that keep their meaning as the
+// An image says where it is in lines that keep their meaning as the
 // screen scrolls.
-func TestAPictureKeepsItsPlaceAsTheScreenScrolls(t *testing.T) {
-	// Tall enough that the lines below move the picture up without
+func TestAnImageKeepsItsPlaceAsTheScreenScrolls(t *testing.T) {
+	// Tall enough that the lines below move the image up without
 	// pushing it off: what is tested is that it moves.
 	term := New(40, 12, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=6", aPNG(t, 32, 96))
@@ -115,9 +115,9 @@ func TestAPictureKeepsItsPlaceAsTheScreenScrolls(t *testing.T) {
 	}
 }
 
-// A picture scrolled off the top is not placed, and one scrolled back
+// An image scrolled off the top is not placed, and one scrolled back
 // to is placed again.
-func TestAPictureScrolledOffIsNotPlaced(t *testing.T) {
+func TestAnImageScrolledOffIsNotPlaced(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 	for range 20 {
@@ -134,57 +134,57 @@ func TestAPictureScrolledOffIsNotPlaced(t *testing.T) {
 	}
 }
 
-// A picture whose line has fallen out of history is forgotten, so a
+// An image whose line has fallen out of history is forgotten, so a
 // pane does not hold pixels nothing can reach.
-func TestAPictureThatFellOutOfHistoryIsForgotten(t *testing.T) {
+func TestAnImageThatFellOutOfHistoryIsForgotten(t *testing.T) {
 	term := New(40, 5, DefaultPalette(), 8, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 	if len(term.Images()) != 1 {
-		t.Fatal("the picture was not held")
+		t.Fatal("the image was not held")
 	}
 
 	// Past the batch the scrollback trims in, not just past the
 	// limit it trims to: until then the lines are still there and
-	// the picture is still reachable.
+	// the image is still reachable.
 	for range 400 {
 		feed(t, term, "a line\r\n")
 	}
 	term.Placed()
 
 	if got := term.Images(); len(got) != 0 {
-		t.Errorf("the pane still holds %d pictures nothing can scroll back to", len(got))
+		t.Errorf("the pane still holds %d images nothing can scroll back to", len(got))
 	}
 }
 
-// Only an inline picture is taken. The same sequence asks a terminal
+// Only an inline image is taken. The same sequence asks a terminal
 // to save a file, which is not something a pane should make this
 // window do.
-func TestOnlyAnInlinePictureIsTaken(t *testing.T) {
+func TestOnlyAnInlineImageIsTaken(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
 	sendImage(t, term, "name=cGF5bG9hZA==;size=99", aPNG(t, 16, 16))
 
 	if got := term.Images(); len(got) != 0 {
-		t.Errorf("a file transfer was taken as %d pictures", len(got))
+		t.Errorf("a file transfer was taken as %d images", len(got))
 	}
 }
 
-// Something that is not a picture is not one, however it is labelled.
-func TestSomethingThatIsNotAPictureIsNotTaken(t *testing.T) {
+// Something that is not an image is not one, however it is labelled.
+func TestSomethingThatIsNotAnImageIsNotTaken(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 
-	sendImage(t, term, "inline=1", base64.StdEncoding.EncodeToString([]byte("not a picture")))
+	sendImage(t, term, "inline=1", base64.StdEncoding.EncodeToString([]byte("not an image")))
 	sendImage(t, term, "inline=1", "!!!not base64!!!")
 	sendImage(t, term, "inline=1", "")
 
 	if got := term.Images(); len(got) != 0 {
-		t.Errorf("%d pictures were taken from things that are not pictures", len(got))
+		t.Errorf("%d images were taken from things that are not images", len(got))
 	}
 }
 
-// Past the cap the oldest goes, so a program sending picture after
-// picture does not hold every one of them for ever.
-func TestPastTheCapTheOldestPictureGoes(t *testing.T) {
+// Past the cap the oldest goes, so a program sending image after
+// image does not hold every one of them for ever.
+func TestPastTheCapTheOldestImageGoes(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 10000, Callbacks{})
 
 	for range MostImages + 10 {
@@ -192,12 +192,12 @@ func TestPastTheCapTheOldestPictureGoes(t *testing.T) {
 	}
 
 	if got := len(term.Images()); got != MostImages {
-		t.Errorf("the pane holds %d pictures, want the cap of %d", got, MostImages)
+		t.Errorf("the pane holds %d images, want the cap of %d", got, MostImages)
 	}
 }
 
 // A size in cells, in pixels and as a share of the screen are all
-// read, and nothing said means as big as the picture is.
+// read, and nothing said means as big as the image is.
 func TestTheSizesAProgramCanAskFor(t *testing.T) {
 	for _, tc := range []struct {
 		args       string
@@ -214,7 +214,7 @@ func TestTheSizesAProgramCanAskFor(t *testing.T) {
 
 		got := term.Images()
 		if len(got) != 1 {
-			t.Errorf("%q: %d pictures", tc.args, len(got))
+			t.Errorf("%q: %d images", tc.args, len(got))
 			continue
 		}
 		if got[0].Cols != tc.cols || got[0].Rows != tc.rows {
@@ -224,24 +224,24 @@ func TestTheSizesAProgramCanAskFor(t *testing.T) {
 	}
 }
 
-// A picture never asks for more cells than the screen has.
-func TestAPictureIsHeldInsideTheScreen(t *testing.T) {
+// An image never asks for more cells than the screen has.
+func TestAnImageIsHeldInsideTheScreen(t *testing.T) {
 	term := New(10, 4, DefaultPalette(), 100, Callbacks{})
 
 	sendImage(t, term, "inline=1;width=500;height=500", aPNG(t, 64, 64))
 
 	got := term.Images()
 	if len(got) != 1 {
-		t.Fatalf("%d pictures", len(got))
+		t.Fatalf("%d images", len(got))
 	}
 	if got[0].Cols > 10 || got[0].Rows > 4 {
 		t.Errorf("it was given %dx%d cells on a 10x4 screen", got[0].Cols, got[0].Rows)
 	}
 }
 
-// A full-screen program has its own picture of the world, and the
+// A full-screen program has its own image of the world, and the
 // lines these sit on are not on it.
-func TestTheAlternateScreenPlacesNoPictures(t *testing.T) {
+func TestTheAlternateScreenPlacesNoImages(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 
@@ -253,13 +253,13 @@ func TestTheAlternateScreenPlacesNoPictures(t *testing.T) {
 }
 
 // A reset forgets them, the same as it forgets the title.
-func TestAResetForgetsThePictures(t *testing.T) {
+func TestAResetForgetsTheImages(t *testing.T) {
 	term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, term, "inline=1;width=4;height=2", aPNG(t, 32, 32))
 
 	feed(t, term, "\x1bc")
 
 	if got := term.Images(); len(got) != 0 {
-		t.Errorf("%d pictures survived a reset", len(got))
+		t.Errorf("%d images survived a reset", len(got))
 	}
 }

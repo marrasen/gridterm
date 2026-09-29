@@ -5,11 +5,11 @@ import (
 	"encoding/base64"
 )
 
-// longOSC pulls the sequences that carry a picture out of the stream
+// longOSC pulls the sequences that carry an image out of the stream
 // before the parser sees them.
 //
 // The parser keeps a kilobyte of an OSC payload and throws the rest
-// away, which is nothing next to a picture. These two are read here
+// away, which is nothing next to an image. These two are read here
 // instead, byte by byte, and everything else reaches the parser as it
 // always did.
 type longOSC struct {
@@ -23,7 +23,7 @@ type longOSC struct {
 	// body is the payload read so far.
 	body []byte
 
-	// over says the payload has outgrown what a picture may be. The
+	// over says the payload has outgrown what an image may be. The
 	// rest is read and thrown away, so that it does not print as text.
 	over bool
 
@@ -33,15 +33,15 @@ type longOSC struct {
 }
 
 // longOSCMarkers are the sequences read here rather than by the
-// parser: the one a program sends a picture with, and the one a window
-// hands a picture to a window watching it with.
+// parser: the one a program sends an image with, and the one a window
+// hands an image to a window watching it with.
 var longOSCMarkers = [][]byte{
 	[]byte("\x1b]1337;"),
 	[]byte("\x1b]1338;"),
 }
 
 // mostLongOSC is the largest payload held, which is the largest
-// picture allowed with room for the arguments in front of it.
+// image allowed with room for the arguments in front of it.
 var mostLongOSC = base64.StdEncoding.EncodedLen(MostImageBytes) + 1024
 
 // how a run of bytes matches the markers.
@@ -52,7 +52,7 @@ const (
 )
 
 // feed puts one write through, handing every byte that is not part of
-// a picture sequence to pass and each finished picture sequence to
+// an image sequence to pass and each finished image sequence to
 // take.
 func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 	for _, b := range p {
@@ -69,7 +69,7 @@ func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 				s.finish(take)
 			} else {
 				// The sequence was abandoned. What was read is not a
-				// picture, and the escape starts something else.
+				// image, and the escape starts something else.
 				s.drop()
 				pass(0x1b)
 				s.match(b, pass)
@@ -84,7 +84,7 @@ func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 	}
 }
 
-// match takes one byte while no picture sequence is being read, either
+// match takes one byte while no image sequence is being read, either
 // growing the start of a marker or letting the byte through.
 func (s *longOSC) match(b byte, pass func(byte)) {
 	s.lead = append(s.lead, b)
@@ -130,7 +130,7 @@ func matchMarker(lead []byte) int {
 	return out
 }
 
-// add keeps one byte of the payload, up to the largest picture
+// add keeps one byte of the payload, up to the largest image
 // allowed. Past that the bytes are read and dropped, because a payload
 // nobody can use still has to be read to find where it ends.
 func (s *longOSC) add(b byte) {
@@ -154,7 +154,7 @@ func (s *longOSC) drop() {
 	s.num, s.body, s.over, s.esc = nil, nil, false, false
 }
 
-// longOSCDone hands a picture sequence to the ordinary OSC handling,
+// longOSCDone hands an image sequence to the ordinary OSC handling,
 // cut into parameters the way the parser would have cut it.
 func (t *Terminal) longOSCDone(num, body []byte) {
 	params := make([][]byte, 0, 16)

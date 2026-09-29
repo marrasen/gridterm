@@ -161,9 +161,9 @@ func TestTheStripDrawsTheShapeOfTheFile(t *testing.T) {
 	r := readerOn(t, "notes.txt", lines, 40, 12)
 	r.Style = readerStyle()
 
-	img := r.MapPicture(8, 100)
+	img := r.MapImage(8, 100)
 	if img == nil {
-		t.Fatal("the strip drew no picture")
+		t.Fatal("the strip drew no image")
 	}
 	if top, bottom := barLength(img, 10), barLength(img, 90); top >= bottom {
 		t.Errorf("the empty half drew a bar %d long and the full half %d", top, bottom)
@@ -182,7 +182,7 @@ func barLength(img *image.RGBA, y int) int {
 }
 
 // The strip's own cells carry no characters: what is in the file is in
-// the picture, and the cells only say where the pane is.
+// the image, and the cells only say where the pane is.
 func TestTheStripHasNoCharactersInIt(t *testing.T) {
 	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
 	r.Style = readerStyle()
@@ -200,22 +200,22 @@ func TestTheStripHasNoCharactersInIt(t *testing.T) {
 	}
 }
 
-// The picture is drawn once for a file and a size, not on every frame:
+// The image is drawn once for a file and a size, not on every frame:
 // a file of a million lines is measured once, and the window builds a
 // texture only when it changes.
-func TestThePictureIsKeptUntilItChanges(t *testing.T) {
+func TestTheImageIsKeptUntilItChanges(t *testing.T) {
 	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
 
-	one := r.MapPicture(8, 100)
-	if two := r.MapPicture(8, 100); two != one {
+	one := r.MapImage(8, 100)
+	if two := r.MapImage(8, 100); two != one {
 		t.Error("the strip was drawn twice for the same file and size")
 	}
-	if three := r.MapPicture(8, 90); three == one {
+	if three := r.MapImage(8, 90); three == one {
 		t.Error("the strip was kept for a size it was not drawn at")
 	}
-	kept := r.MapPicture(8, 100)
+	kept := r.MapImage(8, 100)
 	r.Hex(true)
-	if again := r.MapPicture(8, 100); again == kept {
+	if again := r.MapImage(8, 100); again == kept {
 		t.Error("the strip was kept after the lines it stands for changed")
 	}
 }
@@ -231,7 +231,7 @@ func TestTheWorstLineInABandShows(t *testing.T) {
 	r := readerOn(t, "app.log", lines, 40, 12)
 	r.Style = readerStyle()
 
-	img := r.MapPicture(8, 100)
+	img := r.MapImage(8, 100)
 
 	var bad []int
 	for y := range 100 {
@@ -334,20 +334,20 @@ func TestAMoveWithNothingHeldEndsADragOfTheStrip(t *testing.T) {
 }
 
 // The strip is drawn again in a new theme's colours, and against a new
-// width of the file: both are baked into the picture.
+// width of the file: both are baked into the image.
 func TestTheStripIsDrawnAgainForNewColoursOrWidth(t *testing.T) {
 	r := readerOn(t, "notes.txt", aLongFile(1000), 40, 12)
 	r.Style = readerStyle()
-	one := r.MapPicture(8, 100)
+	one := r.MapImage(8, 100)
 
 	r.Style.NoteFG = color.RGBA{R: 1, G: 2, B: 3, A: 0xff}
-	two := r.MapPicture(8, 100)
+	two := r.MapImage(8, 100)
 	if two == one {
 		t.Fatal("the strip kept the old theme's colours")
 	}
 
 	r.Layout(ui.Size{Cols: 60, Rows: 12})
-	if three := r.MapPicture(8, 100); three == two {
+	if three := r.MapImage(8, 100); three == two {
 		t.Error("the strip kept bars measured against the old width")
 	}
 }

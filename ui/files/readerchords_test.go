@@ -118,14 +118,14 @@ func TestCtrlShiftCDoesNotCopyTwice(t *testing.T) {
 	}
 }
 
-// The same rule on a picture, which has its own three keys.
-func TestAPictureDeclinesAChordTheBarNeverOffered(t *testing.T) {
-	r := aPictureFile(t, 64, 64, 40, 10)
+// The same rule on an image, which has its own three keys.
+func TestAnImageDeclinesAChordTheBarNeverOffered(t *testing.T) {
+	r := anImageFile(t, 64, 64, 40, 10)
 
 	chordKey(t, r, input.KeyH, input.ModCtrl|input.ModShift)
 
-	if !r.ShowsAPicture() {
-		t.Error("Ctrl+Shift+H showed the picture as bytes")
+	if !r.ShowsAnImage() {
+		t.Error("Ctrl+Shift+H showed the image as bytes")
 	}
 }
 
@@ -311,9 +311,9 @@ func TestOnceTheFileArrivesTheTopRowSaysWhereItIs(t *testing.T) {
 	}
 }
 
-// A picture that has not come back says it is being read too, rather
+// An image that has not come back says it is being read too, rather
 // than leaving the corner blank.
-func TestAPictureStillBeingReadSaysSo(t *testing.T) {
+func TestAnImageStillBeingReadSaysSo(t *testing.T) {
 	r := NewReader("shot.png", "/tmp/shot.png")
 	r.Style = readerStyle()
 	r.ReadPic = func(then func(Pic, error)) {}
@@ -324,7 +324,7 @@ func TestAPictureStillBeingReadSaysSo(t *testing.T) {
 	top := readerRow(drawReader(r, 40, 8), 0)
 
 	if !strings.Contains(top, "reading") {
-		t.Errorf("the top row is %q, want it to say the picture is being read", top)
+		t.Errorf("the top row is %q, want it to say the image is being read", top)
 	}
 }
 

@@ -1745,7 +1745,7 @@ func (t *Terminal) SetPalette(pal vt.Palette) {
 
 // PressPaste sends the key a program reads as paste, which is Ctrl+V.
 //
-// It is for a picture that has been put on the machine's clipboard from
+// It is for an image that has been put on the machine's clipboard from
 // somewhere else: the program reads that clipboard itself, so what it
 // needs is the keystroke rather than any text.
 func (t *Terminal) PressPaste() {

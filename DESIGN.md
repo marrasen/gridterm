@@ -25,7 +25,7 @@ The window and the program:
 The terminal:
 
 - `vt`: the VT emulator: parser, screen model, two buffers, scrollback,
-  pictures.
+  images.
 - `grid`: the character grid, damage tracking and selection.
 - `input`: key, text, mouse and paste events turned into VT bytes.
 - `session`: a program as a byte stream, and the local pty.
@@ -55,7 +55,7 @@ Machines and connections:
 - `jobs`: copying, moving and deleting in the background.
 - `ui/files`: the reader, and the file panes' keys. `view` draws the
   file panes themselves.
-- `pasted`: where a pasted picture or a dropped file is written.
+- `pasted`: where a pasted image or a dropped file is written.
 
 Agents:
 
@@ -76,7 +76,7 @@ Keeping things:
 - `secrets`, `vaultkeys`: the secrets file, and the SSH keys that open
   it.
 - `logs`: what the window logged, for the Window Log.
-- `clip`: pictures on the clipboard, and text for the secrets.
+- `clip`: images on the clipboard, and text for the secrets.
 - `notify`: a message outside the window.
 
 `ui` is the old app's text-mode toolkit. What is left of it in use is
@@ -95,7 +95,7 @@ grid of characters, so the grid is what the emulator writes into and
 what the window draws. That is right for text.
 
 It is not a limit on what can be drawn. The window is drawn by gunim,
-whose painter draws rounded rectangles, strokes, shadows and pictures in
+whose painter draws rounded rectangles, strokes, shadows and images in
 pixels. Anything that is a shape rather than a character belongs there.
 
 Reaching for cells because the thing in front of you is already a grid
@@ -112,7 +112,7 @@ The rule of thumb: if you are about to ask which *character* draws
 something, or how many *cells* thick it is, it is a shape and it wants
 pixels.
 
-A picture is the plainest case of it. The reader draws a picture file on
+An image is the plainest case of it. The reader draws an image file on
 a layer with no grid at all, over the rows the pane gave it, shrunk to
 fit and centred. Nothing about it is measured in cells.
 
@@ -153,44 +153,44 @@ asks for. `fonts/README.md` says where the second came from and what its
 licence asks of anyone shipping it.
 
 **Paste takes whatever is on the clipboard.** Text when there is text,
-and the picture when there is none. A clipboard holding both is text:
+and the image when there is none. A clipboard holding both is text:
 that is what copying from a browser leaves, and the words are what was
 meant far more often. `edit.pasteImage` asks for the other one.
 
-**A picture goes by the clipboard where there is one to reach, and by a
+**An image goes by the clipboard where there is one to reach, and by a
 file where there is not.** A program reading a terminal cannot be handed
 an image: the pipe carries text. But most of the programs that take a
-pasted picture read the clipboard of the machine they run on, so the
+pasted image read the clipboard of the machine they run on, so the
 question is whether this window can put one there.
 
-- A pane on this machine: the picture is already on the clipboard that
+- A pane on this machine: the image is already on the clipboard that
   program reads, so the paste key is pressed and that is all of it.
 - A pane on this machine whose shell is at its prompt: readline reads
-  the paste key as quoted-insert, so the picture is written to a file
+  the paste key as quoted-insert, so the image is written to a file
   and the path typed instead (`shellWouldQuoteIt`).
-- A pane on a kakel window this one is connected to: the picture is sent
+- A pane on a kakel window this one is connected to: the image is sent
   over a channel of its own on the connection that is already open, put
   on that machine's clipboard, and then the paste key is pressed. Only
   once it has landed, or it would paste whatever was there before.
 - A pane on a machine reached by SSH, or beyond a connected window:
-  there is no clipboard over there to reach, so the picture is written
+  there is no clipboard over there to reach, so the image is written
   on that machine and the path typed names a file it can open.
 
-`edit.pasteImage` asks for the other thing: the picture written to a
+`edit.pasteImage` asks for the other thing: the image written to a
 file on whatever machine the pane is on, and the path typed. That is
 what a name at a prompt wants -- `magick <paste>` -- rather than a
-picture for something that reads the clipboard itself. It is also what
+image for something that reads the clipboard itself. It is also what
 the ordinary paste falls back to where there is no clipboard to reach.
 
 Reading the clipboard is per-platform. `clip/image_windows.go` asks
 the operating system for a device independent bitmap and turns it into
 an image, and `clip/clip_linux.go` reads one through X11. Everywhere
-else reports that there is no picture, so the command says so rather
+else reports that there is no image, so the command says so rather
 than failing in a way that reads like a fault.
 
 There is no standard for this. OSC 52 is the standard for a clipboard
 over a terminal and it carries text only; Sixel and the rest draw a
-picture rather than putting one anywhere. So this is kakel's own
+image rather than putting one anywhere. So this is kakel's own
 channel between two kakel windows.
 
 The file an SSH pane gets goes under the home directory of whoever the
@@ -266,11 +266,11 @@ once with raw bytes through `cmd /c type`, which agreed.
 | OSC 7, where the shell is | APC, which is the kitty protocol |
 | OSC 9, a message | DCS, which is sixel |
 | OSC 133, the prompt marks | |
-| OSC 1337 and OSC 1338, the pictures | |
+| OSC 1337 and OSC 1338, the images | |
 
 What follows from it:
 
-- **Everything kakel reads today is passed on.** The pictures and
+- **Everything kakel reads today is passed on.** The images and
   the prompt marks are in the left column, which is why they work.
 
 - **DA1 is answered by ConPTY from its own model.** It asks this
@@ -287,7 +287,7 @@ What follows from it:
   `src/inc/conpty-static.h`, and they are about glyph width.
 
 - **A passed-on sequence can arrive out of order** against the text
-  around it -- microsoft/terminal#17314 and #11220. If a picture ever
+  around it -- microsoft/terminal#17314 and #11220. If an image ever
   lands a line off, that is where it comes from.
 
 ## Settled, do not re-open

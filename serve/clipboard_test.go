@@ -10,8 +10,8 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-// servingPictures is a window that takes pictures, and what it took.
-func servingPictures(t *testing.T, put PicturePutter) (*Server, *Window) {
+// servingImages is a window that takes images, and what it took.
+func servingImages(t *testing.T, put ImagePutter) (*Server, *Window) {
 	t.Helper()
 	mine, line := aKey(t, "marcus@laptop")
 	host, err := HostKey(t.TempDir() + "/host_key")
@@ -24,7 +24,7 @@ func servingPictures(t *testing.T, put PicturePutter) (*Server, *Window) {
 	}
 	s, err := Listen(Config{
 		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Picture: put,
+		Image:   put,
 		OnError: func(error) {},
 	})
 	if err != nil {
@@ -43,25 +43,25 @@ func servingPictures(t *testing.T, put PicturePutter) (*Server, *Window) {
 	return s, w
 }
 
-// A picture sent from a client reaches the window being served, whole
+// An image sent from a client reaches the window being served, whole
 // and in one piece.
-func TestAPictureSentReachesTheWindowBeingServed(t *testing.T) {
+func TestAnImageSentReachesTheWindowBeingServed(t *testing.T) {
 	var mu sync.Mutex
 	var got []byte
-	_, w := servingPictures(t, func(png []byte) error {
+	_, w := servingImages(t, func(png []byte) error {
 		mu.Lock()
 		defer mu.Unlock()
 		got = append([]byte(nil), png...)
 		return nil
 	})
-	// Longer than one packet, so a picture that arrived in pieces and
+	// Longer than one packet, so an image that arrived in pieces and
 	// was put together wrongly shows up.
 	want := make([]byte, 300<<10)
 	for i := range want {
 		want[i] = byte(i)
 	}
 
-	if err := w.SendPicture(want); err != nil {
+	if err := w.SendImage(want); err != nil {
 		t.Fatalf("send it: %v", err)
 	}
 
@@ -77,71 +77,71 @@ func TestAPictureSentReachesTheWindowBeingServed(t *testing.T) {
 	}
 }
 
-// What the window could not do with a picture reaches the client, so the
+// What the window could not do with an image reaches the client, so the
 // user is told rather than left thinking it landed.
-func TestAPictureTheWindowWouldNotTakeIsSaidBack(t *testing.T) {
-	_, w := servingPictures(t, func([]byte) error {
+func TestAnImageTheWindowWouldNotTakeIsSaidBack(t *testing.T) {
+	_, w := servingImages(t, func([]byte) error {
 		return errors.New("the clipboard is held by something else")
 	})
 
-	err := w.SendPicture([]byte("a picture"))
+	err := w.SendImage([]byte("an image"))
 
 	if err == nil {
-		t.Fatal("a picture the window refused came back as sent")
+		t.Fatal("an image the window refused came back as sent")
 	}
 	if !strings.Contains(err.Error(), "held by something else") {
 		t.Errorf("it says %q, want what the window said", err)
 	}
 }
 
-// A window that takes no pictures turns one away by name.
-func TestAWindowThatTakesNoPicturesSaysSo(t *testing.T) {
-	_, w := servingPictures(t, nil)
+// A window that takes no images turns one away by name.
+func TestAWindowThatTakesNoImagesSaysSo(t *testing.T) {
+	_, w := servingImages(t, nil)
 
-	err := w.SendPicture([]byte("a picture"))
+	err := w.SendImage([]byte("an image"))
 
 	if err == nil {
-		t.Fatal("a window taking no pictures took one")
+		t.Fatal("a window taking no images took one")
 	}
 	if !strings.Contains(err.Error(), "does not take images") {
 		t.Errorf("it says %q", err)
 	}
 }
 
-// A picture larger than a window takes is refused before it is sent, so
+// An image larger than a window takes is refused before it is sent, so
 // a client cannot fill the other end's memory by trying.
-func TestAPictureTooLargeIsRefusedBeforeItIsSent(t *testing.T) {
+func TestAnImageTooLargeIsRefusedBeforeItIsSent(t *testing.T) {
 	var sent bool
-	_, w := servingPictures(t, func([]byte) error {
+	_, w := servingImages(t, func([]byte) error {
 		sent = true
 		return nil
 	})
 
-	err := w.SendPicture(make([]byte, mostClipboardBytes+1))
+	err := w.SendImage(make([]byte, mostClipboardBytes+1))
 
 	if err == nil {
-		t.Fatal("a picture past the limit was sent")
+		t.Fatal("an image past the limit was sent")
 	}
 	if sent {
-		t.Error("the window was given a picture past the limit it takes")
+		t.Error("the window was given an image past the limit it takes")
 	}
 }
 
-// An empty picture is refused rather than emptying the other end's
+// An empty image is refused rather than emptying the other end's
 // clipboard for nothing.
-func TestAnEmptyPictureIsRefused(t *testing.T) {
+func TestAnEmptyImageIsRefused(t *testing.T) {
 	var given bool
-	_, w := servingPictures(t, func([]byte) error {
+	_, w := servingImages(t, func([]byte) error {
 		given = true
 		return nil
 	})
 
-	err := w.SendPicture(nil)
+	err := w.SendImage(nil)
 
 	if err == nil {
-		t.Fatal("an empty picture was sent")
+		t.Fatal("an empty image was sent")
 	}
 	if given {
-		t.Error("the window was given an empty picture")
+		t.Error("the window was given an empty image")
 	}
 }

@@ -29,9 +29,9 @@ import (
 // reader shows a file on kakel's own reader: its lines, coloured by
 // the file's kind, with find, going to a line, following, a hex view,
 // a view of a JSON log as columns, a minimap along the side, selecting
-// and copying, and saving what it shows; or a picture. It draws into a
+// and copying, and saving what it shows; or an image. It draws into a
 // grid of its own, copied into the pane as a terminal's is, with the
-// picture and the minimap painted over it.
+// image and the minimap painted over it.
 //
 // The file is read on the program's side. The reader asks for it, and
 // the lines arrive in the window's state; a file followed arrives again
@@ -67,7 +67,7 @@ type reader struct {
 	// was last brought up to date in.
 	send func(gunim.Intent)
 	ui   *gunim.UI
-	// pic and mapPic are the picture and the minimap as the painter
+	// pic and mapPic are the image and the minimap as the painter
 	// holds them, made from picFrom and mapFrom.
 	pic, mapPic      *paint.Image
 	picFrom, mapFrom image.Image
@@ -177,8 +177,8 @@ func (rd *reader) make(st app.Reader) {
 			rd.waiting = false
 			return
 		}
-		// Lines asked of a file named as a picture: it was not one.
-		rd.send(app.ReadAgain{Pane: rd.id, Text: files.IsPicture(name)})
+		// Lines asked of a file named as an image: it was not one.
+		rd.send(app.ReadAgain{Pane: rd.id, Text: files.IsImage(name)})
 	}
 	r.ReadPic = func(then func(files.Pic, error)) {
 		if rd.fresh != nil {
@@ -208,7 +208,7 @@ func (rd *reader) make(st app.Reader) {
 	r.Scrolls = []string{"view.scrollUp", "view.scrollDown"}
 	rd.r = r
 	if st.Text {
-		r.NotAPicture()
+		r.NotAnImage()
 	}
 	r.Follow(st.Follow)
 	rd.follow = st.Follow
@@ -232,7 +232,7 @@ func (rd *reader) handOver(then func([]string, bool, error)) {
 	then(f.Lines, f.Cut, err)
 }
 
-// handOverPic gives the reader the picture that arrived.
+// handOverPic gives the reader the image that arrived.
 func (rd *reader) handOverPic(then func(files.Pic, error)) {
 	f := rd.fresh
 	rd.fresh = nil
@@ -311,7 +311,7 @@ func readerStyle(f gunim.Frame) files.Style {
 	}
 }
 
-// Paint implements [gunim.Node]: the cells, and over them the picture
+// Paint implements [gunim.Node]: the cells, and over them the image
 // and the minimap.
 func (rd *reader) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
 	kids.At(0).Paint(p)
@@ -322,12 +322,12 @@ func (rd *reader) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 	room := func(r ui.Rect) geom.Rect {
 		return geom.Rc(float32(r.X)*cell.W, float32(r.Y)*cell.H, float32(r.Cols)*cell.W, float32(r.Rows)*cell.H)
 	}
-	if rd.r.ShowsAPicture() {
-		if img := rd.r.Picture(); img != nil {
+	if rd.r.ShowsAnImage() {
+		if img := rd.r.Image(); img != nil {
 			if img != rd.picFrom {
 				rd.picFrom, rd.pic = img, paint.NewImage(img)
 			}
-			at := room(rd.r.PictureRoom())
+			at := room(rd.r.ImageRoom())
 			if at.Size().W > 0 {
 				p.Image(rd.pic, fitted(at, img.Bounds().Size()), paint.ImageOpts{Opacity: 1})
 			}
@@ -336,7 +336,7 @@ func (rd *reader) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 	if rd.r.MapShowing() {
 		at := room(rd.r.MapRoom())
 		if w, h := int(at.Size().W), int(at.Size().H); w > 0 && h > 0 {
-			if img := rd.r.MapPicture(w, h); img != nil {
+			if img := rd.r.MapImage(w, h); img != nil {
 				if image.Image(img) != rd.mapFrom {
 					rd.mapFrom, rd.mapPic = img, paint.NewImage(img)
 				}
@@ -346,7 +346,7 @@ func (rd *reader) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 	}
 }
 
-// fitted is the largest rectangle of a picture's shape that fits in
+// fitted is the largest rectangle of an image's shape that fits in
 // room, in its middle.
 func fitted(room geom.Rect, size image.Point) geom.Rect {
 	if size.X <= 0 || size.Y <= 0 {

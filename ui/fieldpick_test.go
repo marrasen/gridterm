@@ -637,7 +637,7 @@ func TestTypingLeavesTheCaretOnABoundary(t *testing.T) {
 }
 
 // Pasting nothing over a selection leaves the field alone. A clipboard
-// holding a picture rather than text reads as empty, and replacing the
+// holding an image rather than text reads as empty, and replacing the
 // selection with nothing is text the user cannot get back.
 func TestPastingNothingLeavesTheSelectionAlone(t *testing.T) {
 	for what, ev := range map[string]input.Event{

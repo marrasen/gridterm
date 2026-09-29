@@ -67,8 +67,8 @@ type term struct {
 	small      [2]int
 	smallSince time.Time
 	settle     *anim.Float
-	// pics are the inline pictures on screen as the painter holds
-	// them, by the picture each was made from.
+	// pics are the inline images on screen as the painter holds
+	// them, by the image each was made from.
 	pics map[image.Image]*paint.Image
 	// agent says the pane is shared with an agent, and marks are the
 	// colours of the rings that say so.
@@ -198,7 +198,7 @@ func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) g
 }
 
 // Paint implements [gunim.Node]: the cells, and over them the
-// pictures programs put in the output.
+// images programs put in the output.
 func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	func() {
 		if t.scale < 1 {
@@ -206,15 +206,15 @@ func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.
 			defer p.Push(paint.Scale(t.scale, geom.Point{}))()
 		}
 		kids.At(0).Paint(p)
-		t.paintPictures(p)
+		t.paintImages(p)
 	}()
 	t.paintRings(p, f, box)
 }
 
-// paintPictures draws the inline pictures on screen, each over the
-// cells it was given. A picture half scrolled off is drawn in part.
-func (t *term) paintPictures(p *paint.Painter) {
-	placed := t.sh.T.Pictures()
+// paintImages draws the inline images on screen, each over the
+// cells it was given. An image half scrolled off is drawn in part.
+func (t *term) paintImages(p *paint.Painter) {
+	placed := t.sh.T.Images()
 	if len(placed) == 0 && len(t.pics) == 0 {
 		return
 	}
@@ -235,7 +235,7 @@ func (t *term) paintPictures(p *paint.Painter) {
 		if top >= bottom || left >= right {
 			continue
 		}
-		// The part of the picture that shows, in its own pixels.
+		// The part of the image that shows, in its own pixels.
 		w, h := img.Size()
 		sx, sy := float32(w)/float32(at.Cols), float32(h)/float32(at.Rows)
 		src := geom.Rc(float32(left-at.Col)*sx, float32(top-at.Top)*sy, float32(right-left)*sx, float32(bottom-top)*sy)
@@ -483,7 +483,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		// clicked at a place nobody aimed for.
 		return true
 	case e.Button == gi.ButtonMiddle && !t.sh.T.MouseTaken(mods):
-		// Text alone, the X11 way: a picture is pasted with the key.
+		// Text alone, the X11 way: an image is pasted with the key.
 		s, err := u.ReadClipboard()
 		switch {
 		case err != nil:
@@ -580,7 +580,7 @@ func clipboardWhy(err error) string {
 }
 
 // pasteClipboard pastes the text on the clipboard, and with no text
-// there, asks the program to hand over the picture that may be there
+// there, asks the program to hand over the image that may be there
 // instead. A clipboard holding both is text: copying from a browser
 // leaves both, and the words are what was meant.
 func (t *term) pasteClipboard(u *gunim.UI) {
@@ -592,7 +592,7 @@ func (t *term) pasteClipboard(u *gunim.UI) {
 	case s != "":
 		t.paste(s)
 	default:
-		u.Send(t, app.PastePicture{Pane: t.id})
+		u.Send(t, app.PasteImage{Pane: t.id})
 	}
 }
 

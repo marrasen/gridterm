@@ -842,7 +842,7 @@ func TestGraphSaysHowManyBarsAreReal(t *testing.T) {
 	}
 }
 
-// Filling a region never fills it with one cell's art: a little picture
+// Filling a region never fills it with one cell's art: a little image
 // belongs to one cell, not to everything behind it.
 func TestFillDoesNotSpreadArt(t *testing.T) {
 	g := New(4, 2, fg, bg)

@@ -846,7 +846,7 @@ func (s *Server) turnedAwaySoFar() int {
 // A client that has not kept up is sent the latest snapshot, not every
 // one it missed.
 //
-// What it wants is a picture of the window now. A queue of pictures it
+// What it wants is an image of the window now. A queue of images it
 // is already too late for would put it further behind with every one.
 func TestAClientBehindIsSentTheLatestSnapshot(t *testing.T) {
 	w := newWatcher(nil, nil)

@@ -111,9 +111,9 @@ func TestAFollowedFileThatGoesSaysSo(t *testing.T) {
 	})
 }
 
-// A file named as a picture that is not one is read as lines once the
+// A file named as an image that is not one is read as lines once the
 // reader asks for them.
-func TestAPictureThatIsNotOneIsReadAsLines(t *testing.T) {
+func TestAnImageThatIsNotOneIsReadAsLines(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
@@ -124,7 +124,7 @@ func TestAPictureThatIsNotOneIsReadAsLines(t *testing.T) {
 	id := a.readOn("", vfs.NewLocal(), file, false, 0, Placement{})
 	waitFor(t, a, "the first read", func() bool { return a.st.Readers[id].Seq > 0 })
 	if a.st.Readers[id].Err == "" {
-		t.Fatal("a picture that is not one was read without a complaint")
+		t.Fatal("an image that is not one was read without a complaint")
 	}
 	a.handle(ReadAgain{Pane: id, Text: true})
 	waitFor(t, a, "the lines", func() bool { return slices.Contains(lines(a, id), "plain text") })

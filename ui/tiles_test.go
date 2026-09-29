@@ -82,7 +82,7 @@ func TestTheTilesCoverTheRoomWithoutOverlapping(t *testing.T) {
 }
 
 // A full grid of tiles leaves no cell of the window unused, so the
-// pictures are as big as the room allows.
+// images are as big as the room allows.
 func TestAFullGridOfTilesUsesEveryCell(t *testing.T) {
 	size := Size{Cols: 120, Rows: 40}
 	// Four tiles go two by two, which fills the window exactly.
@@ -345,35 +345,35 @@ func TestThePointerPassingOverDoesNotMoveTheMark(t *testing.T) {
 	}
 }
 
-// The picture goes inside the rule, not over it. A picture the size of
+// The image goes inside the rule, not over it. An image the size of
 // the whole tile covered the rule above and below it, and the name with
 // them.
-func TestThePictureGoesInsideTheRule(t *testing.T) {
+func TestTheImageGoesInsideTheRule(t *testing.T) {
 	size := Size{Cols: 120, Rows: 40}
 	tiles := aTiles(tileNames(4), size)
 
 	for i, area := range tiles.Areas() {
 		inside := tiles.Inside(i)
 		if inside.Empty() {
-			t.Fatalf("tile %d has no room for a picture", i)
+			t.Fatalf("tile %d has no room for an image", i)
 		}
 		// Strictly inside the tile, with room for the rule and the gap.
 		if inside.X <= area.X || inside.Y <= area.Y {
-			t.Errorf("tile %d: the picture starts at %d,%d and the tile at %d,%d",
+			t.Errorf("tile %d: the image starts at %d,%d and the tile at %d,%d",
 				i, inside.X, inside.Y, area.X, area.Y)
 		}
 		if inside.X+inside.Cols >= area.X+area.Cols ||
 			inside.Y+inside.Rows >= area.Y+area.Rows {
-			t.Errorf("tile %d: the picture ends at %d,%d and the tile at %d,%d",
+			t.Errorf("tile %d: the image ends at %d,%d and the tile at %d,%d",
 				i, inside.X+inside.Cols, inside.Y+inside.Rows,
 				area.X+area.Cols, area.Y+area.Rows)
 		}
 	}
 }
 
-// The name goes on the rule below the picture, so a picture drawn in the
+// The name goes on the rule below the image, so an image drawn in the
 // tile cannot cover it.
-func TestTheNameIsBelowThePicture(t *testing.T) {
+func TestTheNameIsBelowTheImage(t *testing.T) {
 	size := Size{Cols: 120, Rows: 40}
 	tiles := aTiles([]string{"one pane", "two", "three", "four"}, size)
 	g := grid.New(size.Cols, size.Rows, color.RGBA{}, color.RGBA{})
@@ -392,18 +392,18 @@ func TestTheNameIsBelowThePicture(t *testing.T) {
 		t.Fatal("the first tile has no name")
 	}
 	if row < inside.Y+inside.Rows {
-		t.Errorf("the name is on row %d, inside the picture's rows %d..%d",
+		t.Errorf("the name is on row %d, inside the image's rows %d..%d",
 			row, inside.Y, inside.Y+inside.Rows-1)
 	}
 }
 
-// Two tiles side by side leave room between their pictures, so the
+// Two tiles side by side leave room between their images, so the
 // panes do not touch.
-func TestTwoTilesLeaveRoomBetweenTheirPictures(t *testing.T) {
+func TestTwoTilesLeaveRoomBetweenTheirImages(t *testing.T) {
 	size := Size{Cols: 120, Rows: 40}
 	tiles := aTiles(tileNames(4), size)
 
-	// The rules, not the pictures: two rules touching would read as one
+	// The rules, not the images: two rules touching would read as one
 	// heavy line rather than as two tiles.
 	left, right := framed(tiles.Areas()[0]), framed(tiles.Areas()[1])
 	if left.Empty() || right.Empty() {
@@ -416,26 +416,26 @@ func TestTwoTilesLeaveRoomBetweenTheirPictures(t *testing.T) {
 	if gap := below.Y - (above.Y + above.Rows); gap < 1 {
 		t.Errorf("the two rules are %d rows apart, want room between them", gap)
 	}
-	// And the pictures stand off the rules as well as each other.
+	// And the images stand off the rules as well as each other.
 	if gap := tiles.Inside(1).X - (tiles.Inside(0).X + tiles.Inside(0).Cols); gap < 2+2*tileGap {
-		t.Errorf("the two pictures are %d columns apart, want %d", gap, 2+2*tileGap)
+		t.Errorf("the two images are %d columns apart, want %d", gap, 2+2*tileGap)
 	}
 }
 
-// A tile too small for a rule and a picture inside it has no picture
+// A tile too small for a rule and an image inside it has no image
 // box, rather than one that has turned itself inside out.
-func TestATileTooSmallHasNoPictureBox(t *testing.T) {
+func TestATileTooSmallHasNoImageBox(t *testing.T) {
 	tiles := NewTiles(tileNames(2))
 	tiles.Layout(Size{Cols: 6, Rows: 3})
 
 	for i := range tiles.Len() {
 		if got := tiles.Inside(i); !got.Empty() {
-			t.Errorf("tile %d in a window that small has a picture box %v", i, got)
+			t.Errorf("tile %d in a window that small has an image box %v", i, got)
 		}
 	}
 	// And one asked for out of range.
 	if got := tiles.Inside(99); !got.Empty() {
-		t.Errorf("tile 99 of 2 has a picture box %v", got)
+		t.Errorf("tile 99 of 2 has an image box %v", got)
 	}
 }
 

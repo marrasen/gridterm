@@ -15,7 +15,7 @@ import (
 
 // Dragging a pane out of the switcher, to another of kakel's windows or
 // out of them all. The tile lifts off and follows the pointer as a
-// picture of the pane; a window it is over lights up, saying it takes
+// image of the pane; a window it is over lights up, saying it takes
 // it. Let go there, the pane moves in; let go over no window, it opens
 // a window of its own where it was let go.
 
@@ -60,7 +60,7 @@ func (s *switcher) dragEnded(e input.DragEnd, u *gunim.UI) {
 	case e.Taken:
 		s.lose(t, u)
 	case e.Out && len(s.tiles) > 1:
-		// The pane's top left corner where the picture's was, and the
+		// The pane's top left corner where the image's was, and the
 		// window as large as this one.
 		u.Send(s, app.PaneToNewWindow{Pane: t.id, At: e.At.Sub(s.grab), Size: s.size})
 		s.lose(t, u)
@@ -94,7 +94,7 @@ func (s *switcher) lose(t *tile, u *gunim.UI) {
 	u.Invalidate()
 }
 
-// paneGhost is the picture of a pane that follows the pointer while it
+// paneGhost is the image of a pane that follows the pointer while it
 // is dragged, ringed while it is over a window that takes it.
 type paneGhost struct {
 	anim.Group

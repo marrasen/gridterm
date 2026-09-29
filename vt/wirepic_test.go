@@ -24,15 +24,15 @@ func screenOf(t *testing.T, term *Terminal, cols, rows int) string {
 	return Repaint(g, full)
 }
 
-// A picture a program put in a pane reaches a window watching it, on
+// An image a program put in a pane reaches a window watching it, on
 // the row it is on and at the size it was given.
-func TestAPictureReachesAWatchingWindow(t *testing.T) {
+func TestAnImageReachesAWatchingWindow(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	feed(t, here, "before\r\n")
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 	want := here.LivePlaced()
 	if len(want) != 1 {
-		t.Fatalf("%d pictures on the screen that is sent", len(want))
+		t.Fatalf("%d images on the screen that is sent", len(want))
 	}
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
@@ -40,7 +40,7 @@ func TestAPictureReachesAWatchingWindow(t *testing.T) {
 
 	got := there.Placed()
 	if len(got) != 1 {
-		t.Fatalf("the watching window has %d pictures, want one", len(got))
+		t.Fatalf("the watching window has %d images, want one", len(got))
 	}
 	if got[0].Top != want[0].Top || got[0].Col != want[0].Col {
 		t.Errorf("it landed at row %d column %d, want row %d column %d",
@@ -55,13 +55,13 @@ func TestAPictureReachesAWatchingWindow(t *testing.T) {
 	}
 }
 
-// The text around a picture still lands where it should. The picture
+// The text around an image still lands where it should. The image
 // is placed by row, so it does not push the screen about the way the
 // sequence a program sends does.
-func TestAPictureOnTheWireDoesNotMoveTheText(t *testing.T) {
+func TestAnImageOnTheWireDoesNotMoveTheText(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
-	feed(t, here, "under the picture")
+	feed(t, here, "under the image")
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	feed(t, there, screenOf(t, here, 40, 10))
@@ -84,31 +84,31 @@ func liveGrid(t *testing.T, term *Terminal, cols, rows int) *grid.Grid {
 	return g
 }
 
-// A screen sent again takes away the pictures the one before it left,
-// so a picture does not sit on a line that now says something else.
-func TestANewScreenForgetsTheOldPictures(t *testing.T) {
+// A screen sent again takes away the images the one before it left,
+// so an image does not sit on a line that now says something else.
+func TestANewScreenForgetsTheOldImages(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	feed(t, there, screenOf(t, here, 40, 10))
 	if len(there.Placed()) != 1 {
-		t.Fatal("the picture did not arrive in the first place")
+		t.Fatal("the image did not arrive in the first place")
 	}
 
-	// The same pane, with the picture gone and only text on it.
+	// The same pane, with the image gone and only text on it.
 	plain := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	feed(t, plain, "just text\r\n")
 	feed(t, there, screenOf(t, plain, 40, 10))
 
 	if got := there.Images(); len(got) != 0 {
-		t.Errorf("%d pictures from the screen before are still held", len(got))
+		t.Errorf("%d images from the screen before are still held", len(got))
 	}
 }
 
-// A picture on the ordinary screen travels while a full-screen program
+// An image on the ordinary screen travels while a full-screen program
 // is covering it, so quitting that program leaves it behind.
-func TestAPictureTravelsUnderAFullScreenProgram(t *testing.T) {
+func TestAnImageTravelsUnderAFullScreenProgram(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	sendImage(t, here, "inline=1;width=10;height=4", aPNG(t, 80, 64))
 	feed(t, here, "\x1b[?1049h")
@@ -117,17 +117,17 @@ func TestAPictureTravelsUnderAFullScreenProgram(t *testing.T) {
 	feed(t, there, screenOf(t, here, 40, 10))
 
 	if got := there.Placed(); len(got) != 0 {
-		t.Errorf("%d pictures placed on the alternate screen", len(got))
+		t.Errorf("%d images placed on the alternate screen", len(got))
 	}
 	feed(t, there, "\x1b[?1049l")
 	if got := there.Placed(); len(got) != 1 {
-		t.Errorf("%d pictures once the full-screen program quit, want one", len(got))
+		t.Errorf("%d images once the full-screen program quit, want one", len(got))
 	}
 }
 
-// Past the budget the pictures are left out, so a screenful of large
+// Past the budget the images are left out, so a screenful of large
 // ones is not a repaint of a gigabyte.
-func TestPicturesPastTheBudgetAreLeftOut(t *testing.T) {
+func TestImagesPastTheBudgetAreLeftOut(t *testing.T) {
 	here := New(40, 10, DefaultPalette(), 100, Callbacks{})
 	// Each of these is well over a megabyte of PNG, so the budget runs
 	// out partway through the screen.
@@ -139,7 +139,7 @@ func TestPicturesPastTheBudgetAreLeftOut(t *testing.T) {
 		sent += len(at.Raw)
 	}
 	if sent <= WirePicBudget {
-		t.Fatalf("the pictures are %d bytes, which is inside the budget of %d", sent, WirePicBudget)
+		t.Fatalf("the images are %d bytes, which is inside the budget of %d", sent, WirePicBudget)
 	}
 
 	there := New(40, 10, DefaultPalette(), 100, Callbacks{})
@@ -148,10 +148,10 @@ func TestPicturesPastTheBudgetAreLeftOut(t *testing.T) {
 
 	got := len(there.Placed())
 	if got == 0 {
-		t.Error("no pictures came at all")
+		t.Error("no images came at all")
 	}
 	if got == len(here.LivePlaced()) {
-		t.Errorf("all %d pictures came, want the budget to stop some", got)
+		t.Errorf("all %d images came, want the budget to stop some", got)
 	}
 }
 
@@ -171,7 +171,7 @@ func TestAPlacementThatMakesNoSenseIsDropped(t *testing.T) {
 		term := New(40, 10, DefaultPalette(), 100, Callbacks{})
 		feed(t, term, "\x1b]1338;"+args+"\x07")
 		if got := term.Images(); len(got) != 0 {
-			t.Errorf("%q was taken as %d pictures", args, len(got))
+			t.Errorf("%q was taken as %d images", args, len(got))
 		}
 	}
 }

@@ -19,13 +19,13 @@ import (
 	"github.com/marrasen/kakel/pasted"
 )
 
-// onClipboard puts a picture on the clipboard as the program reads it,
+// onClipboard puts an image on the clipboard as the program reads it,
 // for the length of a test.
 func onClipboard(t *testing.T, img image.Image) {
 	t.Helper()
-	was := readPicture
-	readPicture = func() (image.Image, bool, error) { return img, img != nil, nil }
-	t.Cleanup(func() { readPicture = was })
+	was := readImage
+	readImage = func() (image.Image, bool, error) { return img, img != nil, nil }
+	t.Cleanup(func() { readImage = was })
 }
 
 // localPane is a program side with one local pane, p1, running argv,
@@ -45,10 +45,10 @@ func localPane(t *testing.T, out string, argv ...string) (*app, *sessiontest.Pri
 	return a, sess
 }
 
-func TestPasteImageAsFileTypesThePathOfThePicture(t *testing.T) {
+func TestPasteImageAsFileTypesThePathOfTheImage(t *testing.T) {
 	a, sess := localPane(t, "", "/bin/bash")
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 3, 2)))
-	a.handle(PasteImage{})
+	a.handle(PasteImageAsFile{})
 	waitFor(t, a, "the path typed", func() bool { return strings.Contains(sess.Sent(), ".png") })
 	path := strings.NewReplacer("\x1b[200~", "", "\x1b[201~", "").Replace(sess.Sent())
 	if filepath.Base(filepath.Dir(path)) != pasted.DirName {
@@ -64,13 +64,13 @@ func TestPasteImageAsFileTypesThePathOfThePicture(t *testing.T) {
 	}
 }
 
-func TestAPasteWithOnlyAPicturePressesPasteForAProgram(t *testing.T) {
+func TestAPasteWithOnlyAnImagePressesPasteForAProgram(t *testing.T) {
 	// A program that reads the clipboard itself, as Claude Code does,
 	// on the full screen, which says a program is running.
 	a, sess := localPane(t, "\x1b[?1049h", "/bin/bash")
 	waitFor(t, a, "the program's screen", func() bool { return a.terminal("p1").RunningAProgram() })
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 3, 2)))
-	a.handle(PastePicture{Pane: "p1"})
+	a.handle(PasteImage{Pane: "p1"})
 	waitFor(t, a, "paste pressed", func() bool { return sess.Sent() != "" })
 	if got := sess.Sent(); got != "\x16" {
 		t.Fatalf("the program was sent %q, want Ctrl+V", got)
@@ -81,7 +81,7 @@ func TestAShellAtItsPromptIsHandedAFileInstead(t *testing.T) {
 	// bash reads Ctrl+V at its prompt as quoting the next key.
 	a, sess := localPane(t, "", "/bin/bash")
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 3, 2)))
-	a.handle(PastePicture{Pane: "p1"})
+	a.handle(PasteImage{Pane: "p1"})
 	waitFor(t, a, "the path typed", func() bool { return strings.Contains(sess.Sent(), ".png") })
 	if strings.Contains(sess.Sent(), "\x16") {
 		t.Fatalf("the shell was sent Ctrl+V: %q", sess.Sent())
@@ -91,8 +91,8 @@ func TestAShellAtItsPromptIsHandedAFileInstead(t *testing.T) {
 func TestAnEmptyClipboardPastesNothing(t *testing.T) {
 	a, sess := localPane(t, "", "/bin/bash")
 	onClipboard(t, nil)
-	a.handle(PastePicture{Pane: "p1"})
 	a.handle(PasteImage{Pane: "p1"})
+	a.handle(PasteImageAsFile{Pane: "p1"})
 	waitFor(t, a, "the notice", func() bool { return len(a.st.Notices) > 0 })
 	if sess.Sent() != "" || len(a.st.Notices) != 1 {
 		t.Fatalf("with nothing to paste, the pane was sent %q, and the notices are %+v", sess.Sent(), a.st.Notices)
@@ -115,18 +115,18 @@ func connectedWindows(t *testing.T) (a, b *app) {
 	return a, b
 }
 
-func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
+func TestAnImageGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
 	// Taken on the goroutine serving the other window.
 	took := make(chan []byte, 1)
-	was := takePicture
-	takePicture = func(png []byte) error { took <- png; return nil }
-	t.Cleanup(func() { takePicture = was })
+	was := takeImage
+	takeImage = func(png []byte) error { took <- png; return nil }
+	t.Cleanup(func() { takeImage = was })
 	a, b := connectedWindows(t)
 
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 5, 4)))
-	b.handle(PastePicture{Pane: b.st.Panes[0].ID})
+	b.handle(PasteImage{Pane: b.st.Panes[0].ID})
 	var got []byte
-	pumpBoth(t, a, b, "the picture on the first window's clipboard", func() bool {
+	pumpBoth(t, a, b, "the image on the first window's clipboard", func() bool {
 		select {
 		case got = <-took:
 			return true
@@ -141,7 +141,7 @@ func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
 
 	// As a file, it is written on the window's machine, and its path
 	// typed into the shell there.
-	b.handle(PasteImage{Pane: b.st.Panes[0].ID})
+	b.handle(PasteImageAsFile{Pane: b.st.Panes[0].ID})
 	there := a.st.Panes[1].ID
 	pumpBoth(t, a, b, "the path typed there", func() bool {
 		if len(b.st.Notices) > 0 {
@@ -153,7 +153,7 @@ func TestAPictureGoesOnTheClipboardOfTheWindowItIsPastedInto(t *testing.T) {
 }
 
 // A pane attached from a window, running on a server that window
-// reached, has its picture written on that server, through the window,
+// reached, has its image written on that server, through the window,
 // and its files are that server's.
 func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 	// The test server's files start in the folder the test runs in.
@@ -186,7 +186,7 @@ func TestAPaneOnAServerAWindowReachedWorksOnThatServer(t *testing.T) {
 	}
 
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 3, 2)))
-	b.handle(PastePicture{Pane: id})
+	b.handle(PasteImage{Pane: id})
 	pumpBoth(t, a, b, "the path typed on the server", func() bool {
 		if len(b.st.Notices) > 0 {
 			t.Fatalf("pasting said %+v", b.st.Notices)
@@ -262,17 +262,17 @@ func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
 	}
 }
 
-// While a pasted picture is on its way to another window, the status
+// While a pasted image is on its way to another window, the status
 // line says so, and stops saying so once it has landed.
-func TestAPictureOnItsWayIsSaid(t *testing.T) {
+func TestAnImageOnItsWayIsSaid(t *testing.T) {
 	took, landed := make(chan struct{}, 1), make(chan struct{})
-	was := takePicture
-	takePicture = func([]byte) error { took <- struct{}{}; <-landed; return nil }
-	t.Cleanup(func() { takePicture = was })
+	was := takeImage
+	takeImage = func([]byte) error { took <- struct{}{}; <-landed; return nil }
+	t.Cleanup(func() { takeImage = was })
 	a, b := connectedWindows(t)
 	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 5, 4)))
-	b.handle(PastePicture{Pane: b.st.Panes[0].ID})
-	pumpBoth(t, a, b, "the picture on its way", func() bool {
+	b.handle(PasteImage{Pane: b.st.Panes[0].ID})
+	pumpBoth(t, a, b, "the image on its way", func() bool {
 		select {
 		case <-took:
 			return true

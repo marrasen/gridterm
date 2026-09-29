@@ -41,7 +41,7 @@ func TestTheIconComesAtEverySize(t *testing.T) {
 		t.Error("the icon file has no 256 pixel icon")
 	}
 	// Every size a window is offered is in the file too, so the two
-	// cannot show different pictures at the same size.
+	// cannot show different images at the same size.
 	for _, want := range windowSizes {
 		if !slices.Contains(Sizes, want) {
 			t.Errorf("the icon file has no %d pixel icon", want)
@@ -98,8 +98,8 @@ func TestTheMarkIsOnTheIcon(t *testing.T) {
 	}
 }
 
-// Drawing it twice gives the same picture, so a build is repeatable.
-func TestDrawingItTwiceGivesTheSamePicture(t *testing.T) {
+// Drawing it twice gives the same image, so a build is repeatable.
+func TestDrawingItTwiceGivesTheSameImage(t *testing.T) {
 	first, again := Draw(48), Draw(48)
 
 	if !bytes.Equal(first.Pix, again.Pix) {
@@ -183,7 +183,7 @@ func TestTheWindowsResourceHoldsTheIconAsItIsDrawnNow(t *testing.T) {
 
 	// Every image the icon holds has to be in there, compared as
 	// pixels rather than as bytes. Two PNG encoders can spell the same
-	// picture differently, and Go 1.27 did: the images were identical
+	// image differently, and Go 1.27 did: the images were identical
 	// and every compressed byte had changed, which failed this test for
 	// a toolchain bump rather than for a drawing that had drifted.
 	count := int(binary.LittleEndian.Uint16(raw[4:]))

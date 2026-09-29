@@ -849,8 +849,8 @@ func escapedEnding(text string) string {
 
 // imageNotes say what is on the screen in pixels.
 //
-// The cells a picture covers read back as spaces, so without this a
-// picture that arrived and one that never did look the same. A
+// The cells an image covers read back as spaces, so without this a
+// image that arrived and one that never did look the same. A
 // program that meant to draw one is usually being debugged by whoever
 // is reading, and the size is what says whether the right one came.
 func imageNotes(on []Image) []string {

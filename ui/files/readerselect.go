@@ -91,7 +91,7 @@ func snapCols(line string, from, to int) (int, int) {
 func (r *Reader) Selected() bool { return r.sel.on && r.picking() }
 
 // picking reports whether there is text on screen to pick out: lines,
-// rather than a picture or the reason the file could not be read.
+// rather than an image or the reason the file could not be read.
 func (r *Reader) picking() bool {
 	return !r.isPic && r.err == nil && len(r.shown) > 0
 }

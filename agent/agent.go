@@ -190,7 +190,7 @@ type Pane struct {
 // one keeps the window from drawing; this is what one read may cost.
 const MostLines = 500
 
-// Image is one picture on a pane's screen, for a reader that sees
+// Image is one image on a pane's screen, for a reader that sees
 // text and would otherwise see blank cells where the pixels are.
 type Image struct {
 	// Top is the screen row its first row is on, counted from zero,
@@ -222,7 +222,7 @@ type Look struct {
 
 	// Changed counts how many times the pane has said anything. Waiting
 	// for a screen to settle watches this rather than comparing text,
-	// so output that redraws the same picture still counts as movement.
+	// so output that redraws the same image still counts as movement.
 	Changed uint64 `json:"changed"`
 
 	// Row and Col are where the cursor is on the screen, counted from
@@ -252,7 +252,7 @@ type Look struct {
 
 	// Images are the images on the screen. The cells under one
 	// read back as blank, so without this a reader cannot tell a
-	// picture that arrived from one that never did.
+	// image that arrived from one that never did.
 	Images []Image `json:"images,omitempty"`
 
 	// Note is what the window has to say about this answer beyond the

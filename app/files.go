@@ -65,7 +65,7 @@ type Reader struct {
 	// Line is the line to show first, counted from 1, and 0 for the top.
 	Line int
 	// Name is the file's name, for telling its kind; Pic is it, read as
-	// a picture; SoFar is how much of it a read has got through.
+	// an image; SoFar is how much of it a read has got through.
 	Name  string
 	Pic   *files.Pic
 	SoFar int64
@@ -87,7 +87,7 @@ type Reader struct {
 	// Gone says why a scrollback's reader has nothing left to read
 	// again, its pane having closed.
 	Gone string
-	// Text says a file named as a picture is read as lines: it was not
+	// Text says a file named as an image is read as lines: it was not
 	// one.
 	Text bool
 }
@@ -95,7 +95,7 @@ type Reader struct {
 // Intents for readers.
 type (
 	// ReadAgain reads a reader pane's file again: as lines with Text,
-	// for a file named as a picture that is not one.
+	// for a file named as an image that is not one.
 	ReadAgain struct {
 		Pane string
 		Text bool
@@ -524,8 +524,8 @@ func (a *app) readFile(in ReadFile) {
 }
 
 // readOn opens path on a machine's files in a reader, at line when it
-// is past zero, placed at at, and returns its pane. A picture is read
-// as a picture. A file followed is read again each time it changes.
+// is past zero, placed at at, and returns its pane. An image is read
+// as an image. A file followed is read again each time it changes.
 func (a *app) readOn(machine machines.ID, f vfs.FS, path string, follow bool, line int, at Placement) string {
 	path = vfs.Spelled(f, path)
 	a.next++
@@ -564,7 +564,7 @@ type readSpec struct {
 	// reaches, which is connected to again from the sidebar, never by a
 	// read: its name may be an address, and not one to sign in at.
 	window bool
-	// text reads a file named as a picture as lines, asked for once it
+	// text reads a file named as an image as lines, asked for once it
 	// was not one.
 	text bool
 	// reading says a read is out, and again that another was asked for
@@ -573,11 +573,11 @@ type readSpec struct {
 	reading, again bool
 }
 
-// mostPictureSide bounds a picture read.
-const mostPictureSide = 4096
+// mostImageSide bounds an image read.
+const mostImageSide = 4096
 
 // readOnce reads a reader pane's file in the background, and publishes
-// it: its lines, or its picture, with how far the read has got as it
+// it: its lines, or its image, with how far the read has got as it
 // goes. A server whose connection went is connected to again first.
 func (a *app) readOnce(id string) {
 	a.readerFiles(id, true, func(f vfs.FS) { a.readWith(id, f) })
@@ -653,9 +653,9 @@ func (a *app) readWith(id string, f vfs.FS) {
 	go func() {
 		r := Reader{Path: spec.path, Name: spec.name, Line: spec.line, Text: spec.text}
 		var err error
-		if files.IsPicture(spec.name) && !spec.text {
+		if files.IsImage(spec.name) && !spec.text {
 			var pic files.Pic
-			pic, err = files.ReadPictureWatched(f, spec.path, mostPictureSide, watch)
+			pic, err = files.ReadImageWatched(f, spec.path, mostImageSide, watch)
 			r.Pic = &pic
 		} else {
 			r.Lines, r.Cut, err = files.ReadFileWatched(f, spec.path, watch)

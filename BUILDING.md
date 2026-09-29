@@ -90,7 +90,7 @@ capture several states from one window launch. The window closes when
 the script ends.
 
 A shot holds the window itself. A popup, such as the command palette or
-a menu, is a window of its own, and stays out of the picture.
+a menu, is a window of its own, and stays out of the image.
 
 **Prefer `until:` to `wait:`.** A wait is a guess about how long a shell
 takes to draw its prompt, and the guess is wrong on the machine that is

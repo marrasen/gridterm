@@ -22,11 +22,11 @@ import (
 // Shelling out is what atotto/clipboard does, and it leaves the
 // clipboard dead on any machine where neither xclip nor xsel is
 // installed. Neither is part of a desktop, so that is an ordinary
-// machine rather than a broken one. It also cannot carry a picture.
+// machine rather than a broken one. It also cannot carry an image.
 //
 // One library for both is not only tidier. X11 hands the clipboard to a
 // single owning process, so text written by a helper process and
-// pictures written by this one would take the clipboard from each other
+// images written by this one would take the clipboard from each other
 // on every copy.
 
 // wait bounds a read.
@@ -81,7 +81,7 @@ func HasText() bool {
 	return has
 }
 
-// Image returns the picture on the clipboard.
+// Image returns the image on the clipboard.
 //
 // Whether there is one is reported separately from whether reading it
 // failed, because the paste command says different things about them:
@@ -112,7 +112,7 @@ func Image() (image.Image, bool, error) {
 	if len(raw) == 0 {
 		return nil, true, errors.New("the image on the clipboard is empty")
 	}
-	// Pictures are handed over PNG-encoded whatever the program that
+	// Images are handed over PNG-encoded whatever the program that
 	// copied one used.
 	img, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
@@ -121,11 +121,11 @@ func Image() (image.Image, bool, error) {
 	return img, true, nil
 }
 
-// SetImage puts a picture on the clipboard, PNG-encoded, which
-// is how the library exchanges pictures and what carries the alpha.
+// SetImage puts an image on the clipboard, PNG-encoded, which
+// is how the library exchanges images and what carries the alpha.
 //
 // X11 gives the clipboard to the process that wrote it, which then
-// serves the bytes to whoever pastes. So the picture is there for as
+// serves the bytes to whoever pastes. So the image is there for as
 // long as this window is open, and a clipboard manager is what carries
 // it past that.
 func SetImage(img image.Image) error {

@@ -14,7 +14,7 @@ import (
 // watcher is one client listening for what this window has open.
 //
 // What it is sent is the latest snapshot, not every snapshot. A client
-// on a slow link is behind by one picture of the window rather than by
+// on a slow link is behind by one image of the window rather than by
 // a queue of them, and the window it is watching never waits for it.
 type watcher struct {
 	// client is whose connection this control channel is on, so a

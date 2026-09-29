@@ -12,7 +12,7 @@ import (
 
 // Split Right splits at once, and the new half is a chooser: a new
 // terminal from its buttons, or a pane already open moved in from its
-// pictures, and Escape gives the half back.
+// images, and Escape gives the half back.
 func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "right", Kind: app.KindFiles}},
@@ -52,7 +52,7 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	if in, ok := nextIntent(t).(app.SplitPane); !ok || in != (app.SplitPane{Instead: "c1"}) {
 		t.Fatalf("+ Terminal sent %#v", in)
 	}
-	// Along to the picture of p2, and Enter moves it in.
+	// Along to the image of p2, and Enter moves it in.
 	lastUI.Focus(c.thumbs[0])
 	press(gi.KeyEnter)
 	if in, ok := nextIntent(t).(app.MovePane); !ok || in != (app.MovePane{Pane: "p2", Instead: "c1"}) {
@@ -65,7 +65,7 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 }
 
 // A chooser on stage follows the panes: a pane opened while it shows
-// arrives as a picture, one retitled is renamed, one closed leaves.
+// arrives as an image, one retitled is renamed, one closed leaves.
 func TestAChooserFollowsThePanes(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
@@ -97,7 +97,7 @@ func TestAChooserFollowsThePanes(t *testing.T) {
 		t.Fatalf("with p3 closed and p2 renamed, the chooser offers %+v", c.thumbs)
 	}
 	if lastUI.Presence(c.thumbs[0]) == gunim.Exiting {
-		t.Fatal("the picture offered is not in the tree")
+		t.Fatal("the image offered is not in the tree")
 	}
 }
 
@@ -126,7 +126,7 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 	}
 	// Tab out, which shows the rings, and back in by gunim's Tab order
 	// (the file pane beside takes Tab itself, to go to the next pane):
-	// the chooser rings, and the picture it left from is lit again.
+	// the chooser rings, and the image it left from is lit again.
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Time: time.Now()})
 	run()
 	run()
@@ -136,6 +136,6 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 	lastUI.FocusNext(false)
 	run()
 	if lastUI.Focused() != pic || c.ring.Value() < 0.9 || pic.walked.Value() < 0.9 {
-		t.Fatalf("back in: on %T, the chooser's ring at %v, the picture lit %v", lastUI.Focused(), c.ring.Value(), pic.walked.Value())
+		t.Fatalf("back in: on %T, the chooser's ring at %v, the image lit %v", lastUI.Focused(), c.ring.Value(), pic.walked.Value())
 	}
 }

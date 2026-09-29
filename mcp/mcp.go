@@ -213,7 +213,7 @@ type Screen struct {
 	Yours bool `json:"the_last_finish_is_yours,omitempty"`
 }
 
-// Image is one picture on a pane's screen.
+// Image is one image on a pane's screen.
 type Image struct {
 	Top, Rows, Cols int
 	Width, Height   int

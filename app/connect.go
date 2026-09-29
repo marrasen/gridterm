@@ -536,7 +536,7 @@ func sameHost(a, b string) bool {
 // showStatus says on the status line what is going on in the
 // background: the connections on their way, all of them, so one that
 // lands does not clear the line while another is still being made;
-// the pictures on their way; and the jobs running.
+// the images on their way; and the jobs running.
 func (a *app) showStatus() {
 	var names []string
 	for _, id := range a.machines.Dialing() {

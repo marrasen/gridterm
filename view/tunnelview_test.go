@@ -24,7 +24,7 @@ func TestATunnelThroughAWindowListensHere(t *testing.T) {
 		for range 3 {
 			lastWindow.Frame(time.Second / 60)
 		}
-		form, ok := win.dialog.Body.(*widget.Form)
+		form, ok := formOf(win.dialog.Body), formOf(win.dialog.Body) != nil
 		if !ok {
 			t.Fatalf("the dialog's body is a %T", win.dialog.Body)
 		}

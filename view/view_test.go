@@ -251,7 +251,7 @@ func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
 	for range 3 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	fields := win.dialog.Body.(*widget.Form).Focusables()
+	fields := formOf(win.dialog.Body).Focusables()
 	if len(fields) != 5 {
 		t.Fatalf("the dialog has %d fields, want listen, target, direction, saved and the box", len(fields))
 	}

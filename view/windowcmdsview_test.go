@@ -188,7 +188,7 @@ func TestTheServerFormFitsItsType(t *testing.T) {
 	for range 3 {
 		lastWindow.Frame(time.Second / 60)
 	}
-	form, ok := win.dialog.Body.(*widget.Form)
+	form, ok := formOf(win.dialog.Body), formOf(win.dialog.Body) != nil
 	if !ok {
 		t.Fatalf("the form is a %T", win.dialog.Body)
 	}
@@ -275,7 +275,7 @@ func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
 		t.Fatalf("saved untouched, the folders are %q", in.Host.Folders)
 	}
 	// Edited, the line would split it in two, and is refused.
-	for _, f := range win.dialog.Body.(*widget.Form).Children() {
+	for _, f := range formOf(win.dialog.Body).Children() {
 		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
 			f.SetText(f.Text() + ",/home")
 		}
@@ -284,7 +284,7 @@ func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
 		t.Fatalf("edited, the folders are refused with %q", problem)
 	}
 	// With that folder taken out, the line is read as it stands.
-	for _, f := range win.dialog.Body.(*widget.Form).Children() {
+	for _, f := range formOf(win.dialog.Body).Children() {
 		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
 			f.SetText("/srv, /home")
 		}

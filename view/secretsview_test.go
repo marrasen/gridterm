@@ -118,7 +118,7 @@ func TestANewKeyWhereOneIsStaysOpenSayingSo(t *testing.T) {
 	}
 	win.makeKeyDialog(lastUI)
 	var path *widget.TextField
-	for _, c := range win.dialog.Body.(*widget.Form).Children() {
+	for _, c := range formOf(win.dialog.Body).Children() {
 		if f, ok := c.(*widget.TextField); ok && path == nil {
 			path = f
 		}

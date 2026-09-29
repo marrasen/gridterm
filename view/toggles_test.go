@@ -184,7 +184,7 @@ func TestAPreformattedQuestionKeepsItsLinesWhole(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Asks: []app.Ask{{ID: 1, Title: "api-key", Text: "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGx0 me@desk", Preformatted: true, Yes: "Done"}}})
 	var note *widget.Label
-	for _, f := range win.dialog.Body.(*widget.Form).Children() {
+	for _, f := range formOf(win.dialog.Body).Children() {
 		if l, ok := f.(*widget.Label); ok && strings.HasPrefix(l.Text, "ssh-ed25519") {
 			note = l
 		}
@@ -382,5 +382,36 @@ func TestTheThemePickerPreviewsWhatItIsOn(t *testing.T) {
 	lastWindow.Frame(time.Second / 60)
 	if in, ok := nextIntent(t).(app.PreviewTheme); !ok || in.Name != "" {
 		t.Fatalf("closed, the picker sent %#v", in)
+	}
+}
+
+// A dialog whose form is taller than the window fits in it, the form
+// scrolling in the room the dialog can spare, and Tab still reaches
+// its fields.
+func TestATallDialogFitsTheWindowAndScrolls(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Sidebar: true, SidebarWidth: 220})
+	form := widget.NewForm()
+	for range 40 {
+		form.Add("Field", widget.NewTextField())
+	}
+	d := widget.NewDialog("Tall")
+	d.Body = form
+	d.SetButtons("OK", "Cancel")
+	win.openDialog(d, lastUI)
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	s, ok := d.Body.(*scrollingForm)
+	if !ok {
+		t.Fatalf("the form is shown as %T", d.Body)
+	}
+	at, ok := lastUI.Bounds(s)
+	size := lastWindow.Offscreen().Size()
+	if !ok || at.Min.Y < 0 || at.Max.Y > size.H {
+		t.Fatalf("the form stands at %v in a window %v high", at, size.H)
+	}
+	if len(s.Focusables()) != 40 {
+		t.Fatalf("Tab reaches %d of the 40 fields", len(s.Focusables()))
 	}
 }

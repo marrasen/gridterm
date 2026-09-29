@@ -25,7 +25,7 @@ func TestTheCommandDialogOffersEverySavedCommand(t *testing.T) {
 			{Line: "top", Dir: "/home/me"},
 		}})
 	win.commandDialogOn("", lastUI)
-	form := win.dialog.Body.(*widget.Form)
+	form := formOf(win.dialog.Body)
 	var pick *widget.Dropdown
 	var fields []*widget.TextField
 	var keep *widget.Checkbox

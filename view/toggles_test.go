@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 
@@ -189,4 +190,40 @@ func TestAPreformattedQuestionKeepsItsLinesWhole(t *testing.T) {
 	if note == nil || !note.NoWrap || !note.Selectable || note.Face.Key() != widget.MonoFont.Key() {
 		t.Fatalf("the text is shown as %+v", note)
 	}
+}
+
+// The divider between two file panes drags, as any split's does, and
+// the new share goes to the program.
+func TestTheDividerBetweenFilePanesDrags(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}}})
+	for range 10 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	sp := win.splits["s1"]
+	size := lastWindow.Offscreen().Size()
+	y := size.H / 2
+	for x := float32(0); x < size.W; x += 2 {
+		lastWindow.Input(gi.PointerMove{Pos: geom.Pt(x, y)})
+		lastWindow.Input(gi.PointerDown{Pos: geom.Pt(x, y), Button: gi.ButtonPrimary, Clicks: 1, Time: time.Now()})
+		lastWindow.Frame(time.Second / 60)
+		if !sp.Held() {
+			lastWindow.Input(gi.PointerUp{Pos: geom.Pt(x, y), Button: gi.ButtonPrimary})
+			lastWindow.Frame(time.Second / 60)
+			continue
+		}
+		for len(lastWindow.Client().Intents()) > 0 {
+			<-lastWindow.Client().Intents()
+		}
+		lastWindow.Input(gi.PointerMove{Pos: geom.Pt(x+60, y)})
+		lastWindow.Input(gi.PointerUp{Pos: geom.Pt(x+60, y), Button: gi.ButtonPrimary})
+		lastWindow.Frame(time.Second / 60)
+		if in, ok := nextIntent(t).(app.SplitMoved); !ok || in.Split != "s1" || in.Share <= 0.5 {
+			t.Fatalf("dragged right, the divider sent %#v", in)
+		}
+		return
+	}
+	t.Fatal("no divider to take hold of between the file panes")
 }

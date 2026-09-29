@@ -778,7 +778,7 @@ func (a *app) loadSettings() {
 			a.st.SavedCopies = s.Copies()
 			a.st.KeyFiles = s.Keys()
 			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
-				a.st.FontSize = min(max(float32(size), 8), 40)
+				a.st.FontSize = fontSizeIn(float32(size))
 			}
 		} else {
 			a.unreadable("the settings", path+" is repaired or removed, and kakel is started again", err)
@@ -1014,7 +1014,7 @@ func (a *app) handle(in gunim.Intent) {
 	case FontSize:
 		size := defaultFontSize
 		if in.Step != 0 {
-			size = min(max(a.st.FontSize+float32(in.Step), 8), 40)
+			size = fontSizeIn(a.st.FontSize + float32(in.Step))
 		}
 		a.st.FontSize = size
 		if a.settings != nil {
@@ -1710,8 +1710,17 @@ func (a *app) retitle(id, title string) {
 	}
 }
 
-// defaultFontSize is the terminals' font size to begin with.
-const defaultFontSize float32 = 15
+// defaultFontSize is the terminals' font size to begin with, and
+// minFontSize and maxFontSize the smallest and largest it is set to, in
+// logical pixels: 6 to 72 points, as the old app took.
+const (
+	defaultFontSize float32 = 15
+	minFontSize     float32 = 8
+	maxFontSize     float32 = 96
+)
+
+// fontSizeIn is size kept between the smallest and largest font sizes.
+func fontSizeIn(size float32) float32 { return min(max(size, minFontSize), maxFontSize) }
 
 // WindowTopic is what the program publishes the window's state to.
 const WindowTopic = "window"

@@ -412,6 +412,11 @@ func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 // openFilesOn opens a file pane on a machine whose files are open, at
 // path, or at home when path is empty.
 func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
+	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
+		// One folder saved for the machine is where its files open,
+		// however they are asked for: it is the one the user wants.
+		path = saved[0]
+	}
 	if path == "" {
 		home, err := f.Home()
 		if err != nil {
@@ -430,6 +435,21 @@ func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
 	}
 	a.addPane(a.paneOn(machine, Pane{ID: id, Title: vfs.Base(f, path), Kind: KindFiles}), nil, at)
 	a.browse(Browse{Pane: id, Path: path})
+	return nil
+}
+
+// savedFolders are the folders saved for machine: a saved server's, or
+// for a machine a window reached, the ones that window saved for it.
+func (a *app) savedFolders(machine machines.ID) []string {
+	if window, key, far := machine.Far(); far {
+		if w := a.machines.Get(window).Window; w != nil {
+			return w.Folders[key]
+		}
+		return nil
+	}
+	if h, ok := a.machines.Saved(machine); ok {
+		return h.Folders
+	}
 	return nil
 }
 

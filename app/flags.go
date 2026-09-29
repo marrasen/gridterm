@@ -78,7 +78,7 @@ func ParseOptions(args []string) (Options, error) {
 			o.sizeSet = true
 		}
 	})
-	o.fontSize = min(max(o.fontSize, 8), 40)
+	o.fontSize = float64(fontSizeIn(float32(o.fontSize)))
 	if o.fontFiles != "" && o.fontFamily != "" {
 		return o, errors.New("-font and -font-family both name a typeface; use one")
 	}
@@ -282,7 +282,7 @@ func (o Options) WindowSize() geom.Size {
 	} else if path, err := settings.Path(); err == nil {
 		if s, err := settings.Load(path); err == nil {
 			if kept, ok := s.FontSize(); ok {
-				size = min(max(float32(kept), 8), 40)
+				size = fontSizeIn(float32(kept))
 			}
 		}
 	}

@@ -180,7 +180,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 				return
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
-			log.Printf("connected to the window at %s", addr)
+			log.Printf("connected to the window %s at %s", oneLine(a.machines.Name(name)), addr)
 			a.done()
 			a.holdWindow(name, addr, in.KeyFile, win)
 			a.dialed(logPane, name, terminal)
@@ -275,6 +275,7 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 			text += "\n\n" + serve.Plain(why.Error())
 		}
 		logLine(a.machines.Get(name).Log, "", "connection lost")
+		log.Printf("lost the connection to the window %s", oneLine(a.machines.Name(name)))
 		a.problem()
 		again := ConnectWindow{Addr: w.Addr, KeyFile: w.KeyFile, ID: name}
 		ctx, cancel := context.WithCancel(a.ctx)

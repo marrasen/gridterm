@@ -15,6 +15,7 @@ import (
 	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/mcp"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 
 	"github.com/marrasen/kakel/machines"
@@ -293,4 +294,16 @@ func (o Options) WindowSize() geom.Size {
 
 // CaptureLog keeps what kakel logs for the window log to show, and
 // still writes it to stderr.
-func CaptureLog() { log.SetOutput(windowLog) }
+func CaptureLog() { log.SetOutput(plainLog{windowLog}) }
+
+// plainLog cleans each line on its way into the window log of anything
+// a terminal would act on: the log is shown in a terminal pane, and is
+// served to other windows, and a line may carry what a far end said.
+type plainLog struct{ to io.Writer }
+
+func (p plainLog) Write(b []byte) (int, error) {
+	if _, err := p.to.Write([]byte(serve.Plain(string(b)))); err != nil {
+		return 0, err
+	}
+	return len(b), nil
+}

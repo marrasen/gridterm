@@ -59,7 +59,10 @@ func (a *app) paneEnded(id string) {
 	if t.Asking() == question {
 		return
 	}
-	log.Printf("%s ended: %s", a.titleOf(id), question)
+	// Once, as the status comes in: the first telling knows none.
+	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); known && i >= 0 {
+		log.Printf("%s ended, exit %d", a.paneForLog(a.st.Panes[i]), status)
+	}
 	// Ended out of sight, with its status in: an echo says how it went.
 	if known && a.st.Focus != id {
 		if status == 0 {

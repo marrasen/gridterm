@@ -117,3 +117,24 @@ func TestTheWindowLogTellsOfPanes(t *testing.T) {
 		}
 	}
 }
+
+// A line is cleaned on its way into the Window Log of what a terminal
+// would act on, as it may carry what a far end said.
+func TestTheWindowLogIsCleaned(t *testing.T) {
+	var got strings.Builder
+	l := log.New(plainLog{&got}, "", 0)
+	l.Printf("closed %s", "\x1b]0;owned\x07bye\x1b[2J")
+	if got.String() != "closed ]0;ownedbye[2J\n" {
+		t.Fatalf("the log got %q", got.String())
+	}
+}
+
+// A command's line may hold a password, so the log names no more than
+// that it was a command.
+func TestTheWindowLogKeepsACommandLineOut(t *testing.T) {
+	a, _ := agentApp(t)
+	said := a.paneForLog(Pane{Title: "mysql --password=hunter2", Command: true})
+	if strings.Contains(said, "hunter2") || !strings.Contains(said, "a command") {
+		t.Fatalf("a command pane is logged as %q", said)
+	}
+}

@@ -307,10 +307,11 @@ func oneLine(s string) string {
 func (a *app) clientWent(c *serve.Client, why error) {
 	a.serving.clients = slices.DeleteFunc(a.serving.clients, func(have *serve.Client) bool { return have == c })
 	delete(a.serving.carried, c)
-	log.Printf("%s disconnected", c.Name)
 	if why != nil && !serve.Ended(why) {
 		a.failed("Connection to "+c.Name+" lost", why.Error())
 		a.problem()
+	} else {
+		log.Printf("%s disconnected", oneLine(c.Name))
 	}
 	a.showServing()
 }

@@ -1330,15 +1330,20 @@ func (a *app) notice(kind NoticeKind, title, body, clip string) {
 	}
 }
 
-// describePane says what a pane opened is, for the window log: its
-// title, its kind when it is no terminal, and where it runs.
-func describePane(p Pane, where string) string {
-	s := fmt.Sprintf("%q", p.Title)
+// paneForLog says what a pane is, for the window log: its title, its
+// kind when it is no terminal, and where it runs. A command's title is
+// its command line, which may hold a password, so a command is only
+// called one.
+func (a *app) paneForLog(p Pane) string {
+	s := fmt.Sprintf("%q", oneLine(p.Title))
+	if p.Command {
+		s = "a command"
+	}
 	if p.Kind != KindTerminal {
 		s += " (" + p.Kind + ")"
 	}
-	if p.Machine != "" {
-		s += " on " + where
+	if m := paneMachine(p); m != "" {
+		s += " on " + oneLine(a.machines.Name(m))
 	}
 	return s
 }
@@ -1524,8 +1529,8 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 		a.front(w)
 	}
 	a.st.Panes = append(a.st.Panes, p)
-	if p.Kind != KindChooser {
-		log.Printf("opened %s", describePane(p, a.machines.Name(paneMachine(p))))
+	if p.Kind != KindChooser && p.Kind != KindLog {
+		log.Printf("opened %s", a.paneForLog(p))
 	}
 	a.stayEmpty = false
 	a.winOf[p.ID] = a.frontID()
@@ -1739,8 +1744,10 @@ func (a *app) remove(id string) {
 	if i < 0 {
 		return
 	}
-	if p := a.st.Panes[i]; p.Kind != KindChooser {
-		log.Printf("closed %q", p.Title)
+	// Not each pane as the program exits: that is one line, where it
+	// exits.
+	if p := a.st.Panes[i]; p.Kind != KindChooser && p.Kind != KindLog && !a.leaving {
+		log.Printf("closed %s", a.paneForLog(p))
 	}
 	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" && p.On == "" {
 		// Closing the log of a connection being made gives it up: it is

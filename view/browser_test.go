@@ -304,3 +304,27 @@ func TestFileDialogsRefuseAPathAndNameTheMachine(t *testing.T) {
 		t.Fatalf("the Delete question says %+v", win.dialog.Body)
 	}
 }
+
+// With a dialog open, the window's shortcuts are still: Ctrl+Shift+K
+// opens no palette over it, from which a second dialog could be opened
+// on top of the first. The dialog's field has the keyboard.
+func TestADialogKeepsTheShortcutsFromTheWindow(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1, Sep: "/", Roots: []string{"/"}}}})
+	b := win.browsers["p1"]
+	b.askGoTo(lastUI)
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if lastUI.Focused() != b.goTo {
+		t.Fatalf("the dialog opened with the keyboard on %T", lastUI.Focused())
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyK, Mods: gi.ModControl | gi.ModShift, Time: time.Now()})
+	for range 20 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if win.palette.IsOpen() {
+		t.Fatal("Ctrl+Shift+K opened the palette over the dialog")
+	}
+}

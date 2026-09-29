@@ -623,8 +623,9 @@ func (w *Window) openDialog(d *widget.Dialog, u *gunim.UI) {
 		// with the buttons.
 		d.Body = &scrollingForm{Scroll: widget.NewScroll(f), form: f}
 	}
+	// The dialog takes the keyboard itself as it arrives, to its first
+	// field, and holds it until it closes.
 	u.Insert(w, d)
-	u.Focus(d)
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""

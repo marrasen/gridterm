@@ -211,6 +211,9 @@ type Window struct {
 	saved      []remote.Host
 	serverIDs  []string
 	paletteIDs []string
+	// secretCopies counts secrets copied, so only the last one copied
+	// clears the clipboard when its time is up.
+	secretCopies uint64
 }
 
 func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
@@ -651,12 +654,12 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 			w.toasts.Show(widget.Toast{Title: "There are no secrets yet", Body: "Add Secret keeps the first one."}, u)
 			return
 		}
-		titles := make([]string, len(st.Items))
+		choices := make([]widget.PaletteItem, len(st.Items))
 		for i, it := range st.Items {
-			titles[i] = it.Name
+			choices[i] = widget.PaletteItem{Title: it.Name, Hint: secretFor(it)}
 		}
 		items := st.Items
-		w.choose("Which secret?", titles, func(i int, u *gunim.UI) {
+		w.chooseFrom("Which secret?", choices, func(i int, u *gunim.UI) {
 			it := items[i]
 			if id == "secrets.change" {
 				w.secretForm(it.Kind, &it, u)
@@ -665,12 +668,12 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 			w.confirmRemoveSecret(it, u)
 		}, u)
 	case "secrets.removeKey":
-		titles := make([]string, len(st.Keys))
+		choices := make([]widget.PaletteItem, len(st.Keys))
 		for i, k := range st.Keys {
-			titles[i] = k.Name
+			choices[i] = widget.PaletteItem{Title: k.Name, Hint: strings.TrimPrefix(strings.Join([]string{k.Note, keyFingerprint(k)}, " · "), " · ")}
 		}
 		keys := st.Keys
-		w.choose("Which key?", titles, func(i int, u *gunim.UI) { w.confirmRemoveKey(st, keys[i], u) }, u)
+		w.chooseFrom("Which key?", choices, func(i int, u *gunim.UI) { w.confirmRemoveKey(st, keys[i], u) }, u)
 	case "secrets.addPassphrase":
 		if st.Passphrase {
 			w.toasts.Show(widget.Toast{Title: "The secrets already take a passphrase", Body: "Remove Secrets Key takes it away first."}, u)
@@ -682,10 +685,16 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 
 // choose offers titles in a palette, and runs then with the one picked.
 func (w *Window) choose(placeholder string, titles []string, then func(i int, u *gunim.UI), u *gunim.UI) {
-	p := &widget.Palette{Placeholder: placeholder, Pick: then}
-	for _, t := range titles {
-		p.Items = append(p.Items, widget.PaletteItem{Title: t})
+	items := make([]widget.PaletteItem, len(titles))
+	for i, t := range titles {
+		items[i] = widget.PaletteItem{Title: t}
 	}
+	w.chooseFrom(placeholder, items, then, u)
+}
+
+// chooseFrom is choose with items that say more than their titles.
+func (w *Window) chooseFrom(placeholder string, items []widget.PaletteItem, then func(i int, u *gunim.UI), u *gunim.UI) {
+	p := &widget.Palette{Placeholder: placeholder, Pick: then, Items: items}
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 
@@ -746,6 +755,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	form := widget.NewForm()
 	if q.Text != "" {
 		note := widget.NewLabel(q.Text)
+		if q.Preformatted {
+			note.Face, note.Selectable = widget.MonoFont, true
+		}
 		form.Add("", note)
 	}
 	var fields []*widget.TextField
@@ -1785,9 +1797,12 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			u.SetClipboard(n.Clipboard)
 			if n.Forget {
 				copied := n.Clipboard
+				w.secretCopies++
+				mine := w.secretCopies
 				u.After(app.ClipboardHolds*time.Second, func(u *gunim.UI) {
-					// Only the secret goes; what was copied since stays.
-					if u.Clipboard() == copied {
+					// Only the secret goes; what was copied since stays,
+					// and a copy of it made since has its own time.
+					if u.Clipboard() == copied && w.secretCopies == mine {
 						u.SetClipboard("")
 					}
 				})

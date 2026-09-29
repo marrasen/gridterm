@@ -43,6 +43,9 @@ type Ask struct {
 	// button so. Careful opens on Cancel without the colour. Plain has
 	// Yes alone, for something only told.
 	Danger, Careful, Plain bool
+	// Preformatted shows Text as it was written, in the fixed-width
+	// face, to be selected: a secret, not a sentence.
+	Preformatted bool
 	// win is the window it is asked in.
 	win int
 	// Icon is the Lucide name of the icon before the title, one of

@@ -1,10 +1,12 @@
 package view
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -28,8 +30,11 @@ type secretsPane struct {
 	opens *buttonBar
 	keys  *widget.Table
 	col   *widget.Flex
-	st    app.Secrets
-	byID  map[widget.Key]app.SecretItem
+	// find narrows the list to the secrets whose name or what they are
+	// for holds what is typed in it.
+	find *widget.TextField
+	st   app.Secrets
+	byID map[widget.Key]app.SecretItem
 	// The header's buttons and the bar's.
 	add, note, lock, unlock         *widget.Button
 	typ, cp, reveal, change, remove *widget.Button
@@ -51,13 +56,19 @@ func newSecretsPane(w *Window) *secretsPane {
 		if it.File != "" {
 			kind = "key passphrase"
 		}
-		return widget.TableRow{Cells: []string{it.Name, it.User, kind}}
+		return widget.TableRow{Cells: []string{it.Name, secretFor(it), kind}}
 	}
+	p.find = widget.NewTextField()
+	p.find.Placeholder, p.find.Icon, p.find.Clearable = "Find a secret", icon.Search, true
+	p.find.OnEdit = func(_ string, u *gunim.UI) { p.show(p.st, u) }
 	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: string(k)}) }
-	p.keys = widget.NewTable(widget.TableColumn{Title: "Key"}, widget.TableColumn{Title: "", Width: 340})
+	// The fingerprint in a column of its own, wide enough for all of
+	// it: half of one can seem to match the wrong key.
+	p.keys = widget.NewTable(widget.TableColumn{Title: "Key"}, widget.TableColumn{Title: "", Width: 150},
+		widget.TableColumn{Title: "Fingerprint", Width: 470})
 	p.keys.Row = func(k widget.Key) widget.TableRow {
 		s := p.keyNames[k]
-		return widget.TableRow{Cells: []string{s.Name, s.Note}, Faint: s.Passphrase}
+		return widget.TableRow{Cells: []string{s.Name, s.Note, keyFingerprint(s)}, Faint: s.Passphrase}
 	}
 	button := iconButton
 	p.add, p.note = button(icon.Plus, "Add Secret"), button(icon.StickyNote, "Add Note")
@@ -105,7 +116,7 @@ func newSecretsPane(w *Window) *secretsPane {
 			p.w.confirmRemoveKey(p.st, p.keyNames[k], u)
 		}
 	})
-	p.col = widget.Column(p.head, p.table, p.act, p.opens, p.keys).Grow(p.table, 3).Grow(p.keys, 1)
+	p.col = widget.Column(p.head, p.find, p.table, p.act, p.opens, p.keys).Grow(p.table, 3).Grow(p.keys, 1)
 	p.col.Cross, p.col.Gap = widget.CrossStretch, noGap
 	return p
 }
@@ -115,8 +126,12 @@ func (p *secretsPane) show(st app.Secrets, u *gunim.UI) {
 	p.st = st
 	clear(p.byID)
 	keys := make([]widget.Key, 0, len(st.Items))
+	finding := strings.ToLower(strings.TrimSpace(p.find.Text()))
 	for _, it := range st.Items {
 		p.byID[widget.Key(it.ID)] = it
+		if finding != "" && !strings.Contains(strings.ToLower(it.Name+" "+secretFor(it)), finding) {
+			continue
+		}
 		keys = append(keys, widget.Key(it.ID))
 	}
 	p.table.SetKeys(keys, u)
@@ -184,6 +199,9 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 		// is nearly always for.
 		user.SetText(w.nameOf(m))
 	}
+	// Who or what it is for, completed from the servers' names.
+	servers := w.serverNames()
+	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOfName(servers, text) }
 	form := widget.NewForm().Add("", widget.NewLabel("Only your key opens the secrets.")).Add("Name", name).Add("For", user).Add(label, value)
 	d := widget.NewDialog(title)
 	if kind != secrets.Note {
@@ -375,4 +393,57 @@ func secretsHeading(st app.Secrets) string {
 		return "Secrets — " + st.Waiting + " is waiting for one"
 	}
 	return "Secrets"
+}
+
+// secretFor is who or what a secret is for, as the list shows it: the
+// key a passphrase opens by its whole path, which tells two keys with
+// the same file name apart.
+func secretFor(it app.SecretItem) string {
+	if it.File != "" {
+		return it.File
+	}
+	return it.User
+}
+
+// keyFingerprint is a key's fingerprint as the list shows it: none for
+// the passphrase, and none again for a key named by it.
+func keyFingerprint(k app.SecretKey) string {
+	if k.Passphrase || k.Name == k.Fingerprint {
+		return ""
+	}
+	return k.Fingerprint
+}
+
+// serverNames are the names a secret may be for: the saved servers',
+// and the machines connected.
+func (w *Window) serverNames() []string {
+	var out []string
+	for _, h := range w.saved {
+		out = append(out, h.Name)
+	}
+	for _, m := range w.machines() {
+		if n := w.nameOf(m); m != machines.Local && !slices.Contains(out, n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// restOfName is what completes typed into one of names, "" for none or
+// for several that go on differently.
+func restOfName(names []string, typed string) string {
+	if typed == "" {
+		return ""
+	}
+	rest, found := "", false
+	for _, n := range names {
+		if len(n) <= len(typed) || !strings.EqualFold(n[:len(typed)], typed) {
+			continue
+		}
+		if found && rest != n[len(typed):] {
+			return ""
+		}
+		rest, found = n[len(typed):], true
+	}
+	return rest
 }

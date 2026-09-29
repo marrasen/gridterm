@@ -284,10 +284,10 @@ func (w *Window) fileLocationsDialog(u *gunim.UI) {
 		{"Settings", settings.File}, {"Saved servers", remote.BookFile}, {"Themes", themes.File},
 		{"Shortcuts", keys.File}, {"Authorized keys", serve.AuthFile}, {"Known windows", app.KnownWindowsFile},
 	} {
-		form.Add(f.what, widget.NewLabel(filepath.Join(dir, f.name)))
+		form.Add(f.what, selectable(filepath.Join(dir, f.name)))
 	}
 	if key, err := serve.HostKeyPath(); err == nil {
-		form.Add("Serving key", widget.NewLabel(key))
+		form.Add("Serving key", selectable(key))
 	}
 	form.Add("", widget.NewLabel("SSH keys and known_hosts stay in ~/.ssh."))
 	if own, beside, err := conf.CarriesItsOwn(); err == nil && own {
@@ -309,4 +309,11 @@ func (w *Window) fileLocationsDialog(u *gunim.UI) {
 	}
 	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
+}
+
+// selectable is a label whose words can be selected, to copy.
+func selectable(text string) *widget.Label {
+	l := widget.NewLabel(text)
+	l.Selectable = true
+	return l
 }

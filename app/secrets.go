@@ -334,12 +334,12 @@ func secretKey(k secrets.KeySlot) SecretKey {
 	if k.ByPassphrase() {
 		return SecretKey{Name: "Passphrase", Note: "a way in without a key", Fingerprint: k.Fingerprint, Passphrase: true}
 	}
-	name, note := k.KeyFile, k.Fingerprint
+	name, note := k.KeyFile, ""
 	if name == "" {
-		name, note = k.Fingerprint, ""
+		name = k.Fingerprint
 	}
 	if vaultkeys.Here(k) {
-		note = "on this machine · " + note
+		note = "on this machine"
 	}
 	return SecretKey{Name: name, Note: note, Fingerprint: k.Fingerprint}
 }
@@ -503,7 +503,9 @@ func (a *app) revealSecret(id string) {
 		if value == "" {
 			value = "Nothing is saved under this name."
 		}
-		go func() { _, _ = a.ask(a.ctx, Ask{Title: it.Name, Text: value, Yes: "Done", Plain: true}) }()
+		// As it was written: a recovery code in columns is read wrong
+		// when rewrapped to fit.
+		go func() { _, _ = a.ask(a.ctx, Ask{Title: it.Name, Text: value, Yes: "Done", Plain: true, Preformatted: true}) }()
 	})
 }
 

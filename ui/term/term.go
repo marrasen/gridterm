@@ -1223,19 +1223,21 @@ func (t *Terminal) pathUnder(joined []rune, at int) (open string, line, from, to
 	if t.cfg.FindPath == nil {
 		return "", 0, 0, 0, false
 	}
-	text, line, from, to, found := findPathText(joined, at)
-	if !found {
-		return "", 0, 0, 0, false
-	}
 	t.mu.Lock()
 	dir, _ := t.term.Dir()
 	t.mu.Unlock()
-	open, isDir, real := t.cfg.FindPath(text, dir)
-	_ = isDir
-	if !real {
-		return "", 0, 0, 0, false
+	// A path in quotes, which may hold a space, and then the run of
+	// characters under the pointer.
+	for _, find := range []func([]rune, int) (string, int, int, int, bool){findQuotedPath, findPathText} {
+		text, line, from, to, found := find(joined, at)
+		if !found {
+			continue
+		}
+		if open, _, real := t.cfg.FindPath(text, dir); real {
+			return open, line, from, to, true
+		}
 	}
-	return open, line, from, to, true
+	return "", 0, 0, 0, false
 }
 
 // joinedRow is the whole logical line a row belongs to, one rune per

@@ -130,8 +130,9 @@ The whole list. The [README](README.md) has the short version.
   the pointer and writes where it goes along the bottom row, because a
   program can put any address under any words. A file opens in the
   viewer and a directory in the browser, at the line a compiler named
-  when it named one. A path is checked against the disk before it
-  counts as a link, so a run of characters naming nothing is just
+  when it named one. A path with a space in it counts when it is in
+  quotes, as in "My Notes/todo.md". A path is checked against the disk
+  before it counts as a link, so a run of characters naming nothing is just
   text. It works on a server too: the machine at the far end is asked
   over the connection the window already has, and what it says is kept,
   so a path lights up a moment after the pointer reaches it. A relative

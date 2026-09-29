@@ -107,3 +107,38 @@ func TestAColumnOnASpaceIsInNoPath(t *testing.T) {
 		t.Error("a space was taken as part of a path")
 	}
 }
+
+// A path in quotes may hold a space, as a shell or a compiler writes
+// one, and a line after the closing quote is read off.
+func TestAQuotedPathMayHoldASpace(t *testing.T) {
+	for _, tc := range []struct {
+		line string
+		at   int
+		want string
+		num  int
+	}{
+		{`cannot open "My Documents/notes.txt": no such file`, 20, "My Documents/notes.txt", 0},
+		{`Copied 'C:\Program Files\app\log.txt' here`, 12, `C:\Program Files\app\log.txt`, 0},
+		{`"src/my file.go":12:3: undefined`, 3, "src/my file.go", 12},
+	} {
+		text, num, _, _, ok := findQuotedPath([]rune(tc.line), tc.at)
+		if !ok || text != tc.want || num != tc.num {
+			t.Errorf("%q at %d gave %q line %d (%v), want %q line %d", tc.line, tc.at, text, num, ok, tc.want, tc.num)
+		}
+	}
+	// Outside the quotes, on the quote itself, and quotes round no
+	// space are left to the run of characters.
+	for _, tc := range []struct {
+		line string
+		at   int
+	}{
+		{`say "hello there" to it`, 1},
+		{`say "hello there" to it`, 4},
+		{`open "notes.txt" now`, 8},
+		{`it's in the 'other file' now`, 1},
+	} {
+		if text, _, _, _, ok := findQuotedPath([]rune(tc.line), tc.at); ok {
+			t.Errorf("%q at %d gave %q", tc.line, tc.at, text)
+		}
+	}
+}

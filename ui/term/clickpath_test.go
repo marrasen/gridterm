@@ -44,6 +44,30 @@ func TestCtrlClickOnAPathOpensIt(t *testing.T) {
 	}
 }
 
+// A path in quotes with a space in it opens whole, with the line after
+// the quote; a word of it alone names nothing.
+func TestCtrlClickOnAQuotedPathOpensIt(t *testing.T) {
+	var opened string
+	var openedLine int
+	term, f := newTestTerm(t, 60, 6, Config{
+		FindPath: func(text, dir string) (string, bool, bool) {
+			if text == "/home/marcus/My Notes/todo.md" {
+				return text, false, true
+			}
+			return "", false, false
+		},
+		OnPath: func(at string, _ bool, line int) { opened, openedLine = at, line },
+	})
+	f.feed(t, term, `in "/home/marcus/My Notes/todo.md":7 here`)
+	draw(term, 60, 6)
+	if _, err := term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 26, Row: 0, Mods: input.ModCtrl}); err != nil {
+		t.Fatal(err)
+	}
+	if opened != "/home/marcus/My Notes/todo.md" || openedLine != 7 {
+		t.Errorf("it opened %q at line %d", opened, openedLine)
+	}
+}
+
 // The cursor keeps off the row the address is written on. A shell
 // sitting at its prompt on the bottom row puts the cursor exactly
 // where a browser writes where a link goes.

@@ -1,6 +1,9 @@
 package term
 
-import "strings"
+import (
+	"slices"
+	"strings"
+)
 
 // linkSchemes are the starts of an address worth finding in ordinary
 // output, and the ones a browser is the right answer for.
@@ -190,6 +193,61 @@ func findPathText(row []rune, at int) (text string, line, from, to int, ok bool)
 		return "", 0, 0, 0, false
 	}
 	return text, line, from, from + len([]rune(text)), true
+}
+
+// findQuotedPath is the text between the quotes around a column, when
+// it has a space in it: how a shell, a compiler or a person writes a
+// path that holds one, such as "C:\Program Files\app\log.txt". A line
+// reference just after the closing quote is read off, as in
+// "my file.go":12.
+//
+// The quotes are paired by counting: the column is inside a quoted
+// run when an odd number of that quote stand before it on the line.
+// An apostrophe in a word throws the count, and then the disk says no
+// and the run of characters under the column is tried instead.
+func findQuotedPath(row []rune, at int) (text string, line, from, to int, ok bool) {
+	if at < 0 || at >= len(row) {
+		return "", 0, 0, 0, false
+	}
+	for _, q := range []rune{'"', '\''} {
+		if row[at] == q {
+			continue
+		}
+		open, n := -1, 0
+		for i := range at {
+			if row[i] == q {
+				open, n = i, n+1
+			}
+		}
+		if n%2 == 0 {
+			continue
+		}
+		end := slices.Index(row[at:], q)
+		if end < 0 {
+			continue
+		}
+		end += at
+		inner := row[open+1 : end]
+		if !slices.Contains(inner, ' ') || inner[0] == ' ' || inner[len(inner)-1] == ' ' ||
+			slices.ContainsFunc(inner, func(r rune) bool { return r < ' ' || r == 0x7f }) {
+			continue
+		}
+		return string(inner), lineAfter(row[end+1:]), open + 1, end, true
+	}
+	return "", 0, 0, 0, false
+}
+
+// lineAfter is the line of a ":42" or ":42:8" at the start of rest,
+// or zero.
+func lineAfter(rest []rune) int {
+	if len(rest) < 2 || rest[0] != ':' {
+		return 0
+	}
+	d := 1
+	for d < len(rest) && rest[d] >= '0' && rest[d] <= '9' {
+		d++
+	}
+	return atoi(string(rest[1:d]))
 }
 
 // splitLineRef takes a "file:42" or "file:42:8" apart, which is how

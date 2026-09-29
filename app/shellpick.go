@@ -45,7 +45,7 @@ func (a *app) scanShells() {
 			if err != nil {
 				a.failed("Couldn't list the shells here", err.Error())
 			}
-			a.found = found
+			a.found, a.scanned = found, err == nil
 			a.st.Shells = nil
 			for _, s := range found {
 				choice := ShellChoice{ID: s.ID, Title: s.Title}
@@ -69,15 +69,22 @@ func (a *app) localShell() []string {
 	if !chosen {
 		return nil
 	}
-	return a.shellCommand(id)
+	argv := a.shellCommand(id)
+	if argv == nil && !a.shellGoneSaid {
+		// The default shell opens instead, and the user is told once.
+		a.shellGoneSaid = true
+		a.failed("Shell not found", strings.TrimPrefix(id, "wsl:")+" is no longer installed. The default shell was opened. Choose another in the palette, under Start … in New Terminals.")
+	}
+	return argv
 }
 
 // shellCommand is the command that starts shell id, or nil when this
-// machine has no such shell.
+// machine has no such shell. Before the shells have been looked for,
+// a shell is taken as it is named; after, only one that was found.
 func (a *app) shellCommand(id string) []string {
 	i := slices.IndexFunc(a.found, func(s shellfind.Shell) bool { return s.ID == id })
 	if i < 0 {
-		if s, ok := shellfind.Named(id); ok {
+		if s, ok := shellfind.Named(id); ok && !a.scanned {
 			return s.Command("")
 		}
 		return nil

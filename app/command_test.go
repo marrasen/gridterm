@@ -182,3 +182,26 @@ func TestASavedCommandOnARemovedServerIsNotRun(t *testing.T) {
 		t.Fatalf("it dialled %v", a.machines.Dialing())
 	}
 }
+
+// A kept shell no longer on this machine opens the default shell, and
+// says so once a run.
+func TestAKeptShellThatHasGoneIsSaidOnce(t *testing.T) {
+	a := fontApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := set.PutShell("wsl:Gone"); err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.scanned = true
+	for range 2 {
+		if argv := a.localShell(); argv != nil {
+			t.Fatalf("with the kept shell gone, a terminal starts %q", argv)
+		}
+	}
+	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Shell not found" || !strings.HasPrefix(a.st.Notices[0].Body, "Gone is no longer installed.") {
+		t.Fatalf("the notices are %+v", a.st.Notices)
+	}
+}

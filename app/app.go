@@ -582,8 +582,12 @@ type app struct {
 	following map[string]bool
 	// nextShell is the command the next terminal here starts, once.
 	nextShell []string
-	// found are the shells on this machine.
-	found []shellfind.Shell
+	// found are the shells on this machine, once scanned says they have
+	// been looked for; shellGoneSaid says the kept shell was found gone,
+	// which is said once a run.
+	found         []shellfind.Shell
+	scanned       bool
+	shellGoneSaid bool
 	// registerThemes names themes to the window, for reading them
 	// again.
 	registerThemes func([]look.Themed)

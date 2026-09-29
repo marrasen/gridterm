@@ -347,3 +347,26 @@ func TestAnUpdateCheckLeavesADialSaid(t *testing.T) {
 		t.Fatalf("the check done, the status says %q", a.st.Status)
 	}
 }
+
+// A server's shell started again is taught again to say what it is
+// doing, as the new shell knows nothing of the old one's setup.
+func TestAServersShellStartedAgainIsTaughtAgain(t *testing.T) {
+	a, answering := dialApp(t)
+	h, _ := a.book.Lookup("srv")
+	h.Setup = true
+	if err := a.book.Put(h, "srv"); err != nil {
+		t.Fatal(err)
+	}
+	a.st.Saved = a.book.Hosts()
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
+	id := a.st.Panes[0].ID
+	taught := func() int { return strings.Count(a.terminal(id).Text(), "__gt_d(){") }
+	waitFor(t, a, "the setup typed", func() bool { return taught() == 1 })
+	a.terminal(id).Send([]byte("bye\n"))
+	waitFor(t, a, "the shell to end", func() bool { return a.terminal(id).Exited() })
+	if err := a.startAgain(id); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the setup typed again", func() bool { return taught() == 2 })
+}

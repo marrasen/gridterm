@@ -1,8 +1,10 @@
 package app
 
 import (
+	"os"
 	"os/exec"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/screen"
@@ -94,5 +96,22 @@ func TestAPaneKeepsItsShellWithoutTheFolderItStartedIn(t *testing.T) {
 	}
 	if got := withoutFolder([]string{"cmd.exe"}); !slices.Equal(got, []string{"cmd.exe"}) {
 		t.Fatalf("kept %v", got)
+	}
+}
+
+// A shell that names this computer with its domain, or without, is on
+// this computer.
+func TestThisMachineIsKnownWithOrWithoutItsDomain(t *testing.T) {
+	name, err := os.Hostname()
+	if err != nil {
+		t.Skip(err)
+	}
+	short, _, _ := strings.Cut(name, ".")
+	for host, want := range map[string]bool{
+		"": true, "localhost": true, short: true, short + ".example.org": true, strings.ToUpper(short): true, "not-" + short: false, "10.0.0.1": false,
+	} {
+		if got := isThisMachine(host); got != want {
+			t.Errorf("%q is this machine: %v, want %v", host, got, want)
+		}
 	}
 }

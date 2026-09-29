@@ -218,6 +218,9 @@ func (a *app) startAgainOr(id string, dial bool) error {
 		sess, err := conn.Shell(a.ctx, a.shellConfig(machine, size.Cols, size.Rows))
 		a.events <- func() {
 			if err == nil {
+				// Taught again, as the shell is new: its paths and the
+				// ends of its commands are said again.
+				a.teachFar(machine, sess)
 				err = a.restarted(id, t, sess)
 			}
 			if err != nil {

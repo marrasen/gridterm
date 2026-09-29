@@ -1,6 +1,7 @@
 package app
 
 import (
+	"net"
 	"os"
 	"strings"
 
@@ -62,7 +63,9 @@ func (a *app) teachFar(machine machines.ID, sess session.Session) {
 	for _, h := range a.st.Saved {
 		if machines.ID(h.ID) == machine && h.Setup {
 			if typed := shellsetup.Typed(shellsetup.RouteFor(nil)); len(typed) > 0 {
-				_, _ = sess.Write(typed)
+				if _, err := sess.Write(typed); err != nil {
+					a.failed("Couldn't set up the shell on "+a.machines.Name(machine), err.Error())
+				}
 			}
 		}
 	}
@@ -88,14 +91,34 @@ func (a *app) dirHere() string {
 		return ""
 	}
 	dir, host := t.Dir()
-	switch strings.ToLower(host) {
-	case "", "localhost", "127.0.0.1", "::1":
-	default:
-		if h, err := os.Hostname(); err != nil || !strings.EqualFold(h, host) {
-			return ""
-		}
+	if !isThisMachine(host) {
+		return ""
 	}
 	return a.localDir(a.st.Focus, dir)
+}
+
+// isThisMachine reports whether a host a shell named is this computer.
+// By the short name, as a shell sends what hostname gives it, which may
+// or may not carry the domain.
+func isThisMachine(host string) bool {
+	switch strings.ToLower(host) {
+	case "", "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	name, err := os.Hostname()
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(shortHost(name), shortHost(host))
+}
+
+// shortHost is a host name up to its first dot: an address is whole.
+func shortHost(host string) string {
+	if net.ParseIP(host) != nil {
+		return host
+	}
+	short, _, _ := strings.Cut(host, ".")
+	return short
 }
 
 // localDir is a folder a pane says it is in, as this computer names

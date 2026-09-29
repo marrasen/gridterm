@@ -54,8 +54,9 @@ func TestAWindowThatOpensNothingElsewhereSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	read(t, sess, "srv is not connected here")
-	if err := waited(t, sess); err == nil {
-		t.Fatal("a session refused ended as if it ran")
+	var failed *ExitError
+	if err := waited(t, sess); !errors.As(err, &failed) || failed.ExitStatus() != 1 {
+		t.Fatalf("a session refused ended with %v, want status 1", err)
 	}
 
 	_, none := takenOverServing(t, Config{})

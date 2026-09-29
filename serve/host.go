@@ -477,8 +477,9 @@ func (s *Server) refuseSession(ch ssh.Channel, reqs <-chan *ssh.Request, why err
 	if _, err := io.WriteString(ch.Stderr(), "kakel: "+why.Error()+"\r\n"); err != nil {
 		s.onError(fmt.Errorf("serve: say why a session could not start: %w", err))
 	}
-	// A failure, not a program that ended cleanly.
-	s.endSession(ch, why)
+	// A failure, not a program that ended cleanly, nor one that ended
+	// with no status: said as status 1.
+	s.endSession(ch, refused{why})
 	s.onError(fmt.Errorf("serve: open a session: %w", why))
 }
 
@@ -526,6 +527,12 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 		s.onError(fmt.Errorf("serve: close a session: %w", err))
 	}
 }
+
+// refused is a session that could not start, which crosses as the
+// failure it is: status 1.
+type refused struct{ error }
+
+func (refused) ExitStatus() int { return 1 }
 
 // exitCode is the exit status an error carries, as a program that ended
 // here, on a server, or in another window says one.

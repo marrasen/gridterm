@@ -264,8 +264,29 @@ func (a *app) clientsTunnels(c *serve.Client, notes []serve.TunnelNote) {
 	if a.serving.carried == nil {
 		a.serving.carried = map[*serve.Client][]serve.TunnelNote{}
 	}
-	a.serving.carried[c] = notes
+	// What a client says is shown here: kept to so many rows, each one
+	// line of plain words.
+	if len(notes) > mostCarried {
+		notes = notes[:mostCarried]
+	}
+	clean := make([]serve.TunnelNote, 0, len(notes))
+	for _, n := range notes {
+		clean = append(clean, serve.TunnelNote{Host: oneLine(n.Host), Label: oneLine(n.Label)})
+	}
+	a.serving.carried[c] = clean
 	a.showServing()
+}
+
+// mostCarried is how many tunnels of one client are shown.
+const mostCarried = 50
+
+// oneLine is what a client said, as one line of plain words, cut short.
+func oneLine(s string) string {
+	s = strings.Join(strings.Fields(serve.Plain(s)), " ")
+	if r := []rune(s); len(r) > 120 {
+		s = string(r[:120]) + "…"
+	}
+	return s
 }
 
 func (a *app) clientWent(c *serve.Client, why error) {
@@ -499,13 +520,13 @@ func (a *app) logFor(host string) (session.Session, error) {
 		id, ok := a.machines.Find(host)
 		switch {
 		case host == "" || !ok || id == machines.Local:
-			return nil, fmt.Errorf("this window keeps no connection log for %q", host)
+			return nil, fmt.Errorf("that window keeps no connection log for %q", host)
 		case a.machines.IsWindow(id):
 			return nil, fmt.Errorf("%s is another kakel window, which keeps its own logs", a.machines.Name(id))
 		}
 		l := a.machines.Get(id).Log
 		if l == nil {
-			return nil, fmt.Errorf("%s has not been connected to here, so there is no log of it", a.machines.Name(id))
+			return nil, fmt.Errorf("that window has not connected to %s, so it has no log of it", a.machines.Name(id))
 		}
 		return l.Open(), nil
 	})
@@ -535,7 +556,8 @@ func (a *app) disconnectFor(c *serve.Client, host string) error {
 // servedMachine is the machine a connected window asks for something
 // on, as this window's list names it: this machine for "", or a server
 // connected here. A kakel window beyond this one is refused: what it
-// has is its own to open.
+// has is its own to open. What it says is read in the window that
+// asked, so it calls this one "that window".
 func (a *app) servedMachine(host string) (machines.ID, error) {
 	if host == "" {
 		return machines.Local, nil
@@ -543,18 +565,19 @@ func (a *app) servedMachine(host string) (machines.ID, error) {
 	id, ok := a.machines.Find(host)
 	switch {
 	case !ok:
-		return "", fmt.Errorf("this window knows no machine called %s", host)
+		return "", fmt.Errorf("that window knows no machine called %s", host)
 	case a.machines.IsWindow(id):
 		return "", fmt.Errorf("%s is another kakel window, which opens what it has itself", a.machines.Name(id))
 	case a.machines.Get(id).Conn == nil:
-		return "", fmt.Errorf("%s is not connected here", a.machines.Name(id))
+		return "", fmt.Errorf("that window is not connected to %s", a.machines.Name(id))
 	}
 	return id, nil
 }
 
 // startAgainFor starts again a pane's program, for a connected window
-// working in it, connecting again to its server first only with dial.
-func (a *app) startAgainFor(want serve.Attached, dial bool) error {
+// working in it, over a connection this window holds. Whether the
+// window asked to have it dialled makes no difference: it never is.
+func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 	type count struct{ restarts, endings int }
 	was, err := onApp(a, func() (count, error) {
 		if a.terminal(want.ID) == nil {
@@ -562,11 +585,15 @@ func (a *app) startAgainFor(want serve.Attached, dial bool) error {
 			return count{}, serve.ErrNotOpen
 		}
 		c := count{a.restarts[want.ID], a.endings[want.ID]}
-		if machine := a.machineOf(want.ID); !dial && machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
+		// Never dialled for another window, whichever it asked for: a
+		// connection this window makes is for someone at it to make,
+		// where its questions are asked. A window of an older build asks
+		// with dial set, and is refused as well.
+		if machine := a.machineOf(want.ID); machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 			// Said so that it reads right in the window that asked.
 			return c, fmt.Errorf("the window it runs in is no longer connected to %s. Reconnect to %s from that window first", a.machines.Name(machine), a.machines.Name(machine))
 		}
-		return c, a.startAgainOr(want.ID, dial)
+		return c, a.startAgainOr(want.ID, false)
 	})
 	if err != nil {
 		return err

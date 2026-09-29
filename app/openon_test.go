@@ -430,6 +430,22 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 		t.Fatalf("refused, it said %v, with notices %+v, and the window dials %v", err, b.st.Notices, a.machines.Dialing())
 	}
 
+	// Nor is a window of an older build, which asks with dial set.
+	old := make(chan error, 1)
+	go func() { old <- a.startAgainFor(serve.Attached{ID: thereID, Kind: "Terminal"}, true) }()
+	var oldErr error
+	pumpBoth(t, a, b, "the older window's restart", func() bool {
+		select {
+		case oldErr = <-old:
+			return true
+		default:
+			return false
+		}
+	})
+	if oldErr == nil || !strings.Contains(oldErr.Error(), "Reconnect to srv from that window first") || len(a.machines.Dialing()) != 0 {
+		t.Fatalf("asked to dial by an older window, it said %v, and dials %v", oldErr, a.machines.Dialing())
+	}
+
 	// Nor does the user's own Reconnect dial there: it says to reconnect
 	// from that window.
 	notices := len(b.st.Notices)
@@ -506,5 +522,22 @@ func TestALocalhostLinkBeyondAWindowOpensThroughIt(t *testing.T) {
 	})
 	if len(b.st.Tunnels) != 1 || b.st.Tunnels[0].Machine != far || strings.Contains(got, ":"+port+"/") || !strings.HasSuffix(got, "/app") {
 		t.Fatalf("opened %q over tunnels %+v", got, b.st.Tunnels)
+	}
+}
+
+// What a connected window says of its tunnels is shown kept short: so
+// many rows, each one line of plain words.
+func TestATunnelsNoteIsShownPlainAndShort(t *testing.T) {
+	a := &app{}
+	c := &serve.Client{Name: "laptop", Addr: "10.0.0.2:5000"}
+	a.serving.clients = []*serve.Client{c}
+	notes := []serve.TunnelNote{{Host: "srv", Label: ":8080 →\n\x1b[31mdb:5432"}}
+	for range mostCarried + 10 {
+		notes = append(notes, serve.TunnelNote{Label: strings.Repeat("x", 500)})
+	}
+	a.clientsTunnels(c, notes)
+	got := a.serving.carried[c]
+	if len(got) != mostCarried || strings.ContainsAny(got[0].Label, "\n\x1b") || len([]rune(got[1].Label)) > 121 {
+		t.Fatalf("kept %d, the first %q, the second %d long", len(got), got[0].Label, len([]rune(got[1].Label)))
 	}
 }

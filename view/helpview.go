@@ -11,6 +11,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
@@ -58,14 +59,24 @@ func everyCommand() [][2]string {
 // menu shows follow, then the file pane's and the reader's, from
 // kakel's own lists. Typing finds one by its title.
 type helpPane struct {
+	w     *Window
 	table *widget.Table
 	rows  map[widget.Key][3]string
 	// heads are the rows that head a group.
 	heads map[widget.Key]bool
 }
 
+// Handle implements [gunim.Handler]: the keyboard coming into the pane
+// makes it the one in front.
+func (p *helpPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.FocusEntered); ok {
+		p.w.entered(p.w.paneOfKind(app.KindHelp), u)
+	}
+	return false
+}
+
 func newHelpPane(w *Window) *helpPane {
-	p := &helpPane{rows: map[widget.Key][3]string{}, heads: map[widget.Key]bool{}}
+	p := &helpPane{w: w, rows: map[widget.Key][3]string{}, heads: map[widget.Key]bool{}}
 	p.table = widget.NewTable(
 		widget.TableColumn{Title: "Command"},
 		widget.TableColumn{Title: "Shortcut", Width: 190},

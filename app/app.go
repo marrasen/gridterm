@@ -1758,7 +1758,7 @@ func (a *app) remove(id string) {
 	}
 	// Not each pane as the program exits: that is one line, where it
 	// exits.
-	if p := a.st.Panes[i]; p.Kind != KindChooser && p.Kind != KindLog && !a.leaving {
+	if p := a.st.Panes[i]; p.Kind != KindChooser && p.Kind != KindLog && !a.gone {
 		log.Printf("closed %s", a.paneForLog(p))
 	}
 	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" && p.On == "" {

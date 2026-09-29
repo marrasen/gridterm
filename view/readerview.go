@@ -361,6 +361,10 @@ func fitted(room geom.Rect, size image.Point) geom.Rect {
 // Handle implements [gunim.Handler]: keys and the mouse go to the
 // reader; the wheel scrolls it.
 func (rd *reader) Handle(e gi.Event, u *gunim.UI) bool {
+	switch e.(type) {
+	case gi.FocusGained, gi.FocusEntered:
+		rd.w.entered(rd.id, u)
+	}
 	if rd.r == nil {
 		return false
 	}

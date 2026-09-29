@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
@@ -27,6 +28,15 @@ import (
 // secretsPane lists what is in the vault, by name, over a bar of what
 // can be done with the one the cursor is on. Enter copies it. Under
 // the list are the keys that open the vault.
+// Handle implements [gunim.Handler]: the keyboard coming into the pane
+// makes it the one in front.
+func (p *secretsPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.FocusEntered); ok {
+		p.w.entered(p.w.paneOfKind(app.KindSecrets), u)
+	}
+	return false
+}
+
 type secretsPane struct {
 	w     *Window
 	head  *buttonBar

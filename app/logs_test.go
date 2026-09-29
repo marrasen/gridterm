@@ -138,3 +138,16 @@ func TestTheWindowLogKeepsACommandLineOut(t *testing.T) {
 		t.Fatalf("a command pane is logged as %q", said)
 	}
 }
+
+// Exiting closes every pane, and says so once rather than once a pane.
+func TestExitingLogsNoPaneClosing(t *testing.T) {
+	a, _ := agentApp(t)
+	var got strings.Builder
+	log.SetOutput(&got)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	a.gone = true
+	a.closeAll()
+	if strings.Contains(got.String(), "closed ") {
+		t.Fatalf("exiting logged %q", got.String())
+	}
+}

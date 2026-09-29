@@ -30,18 +30,31 @@ func menuAt(title string) int {
 
 // withAccessKeys marks the access keys in a bar menu: its title's from
 // menuKeys, and on each line the first letter of a word that no line
-// above has taken, or else any letter free. A caption is no line to
-// pick and takes none.
-func withAccessKeys(m widget.BarMenu) widget.BarMenu {
+// before it has taken, or else any letter free. The lines in first go
+// before the rest, so lines always there keep their letters whatever
+// is listed with them, such as the saved servers. A caption is no line
+// to pick and takes none.
+func withAccessKeys(m widget.BarMenu, first ...int) widget.BarMenu {
 	m.Title = markKey(m.Title, map[rune]bool{}, menuKeys[m.Title])
 	taken := map[rune]bool{}
 	items := make([]string, len(m.Items))
-	for i, it := range m.Items {
-		if isCaption(m, i) {
-			items[i] = escapeAmp(it)
-			continue
+	done := make([]bool, len(m.Items))
+	mark := func(i int) {
+		if i < 0 || i >= len(m.Items) || done[i] {
+			return
 		}
-		items[i] = markKey(it, taken, 0)
+		done[i] = true
+		if isCaption(m, i) {
+			items[i] = escapeAmp(m.Items[i])
+			return
+		}
+		items[i] = markKey(m.Items[i], taken, 0)
+	}
+	for _, i := range first {
+		mark(i)
+	}
+	for i := range m.Items {
+		mark(i)
 	}
 	m.Items = items
 	return m

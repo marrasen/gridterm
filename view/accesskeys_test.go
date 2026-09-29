@@ -112,3 +112,31 @@ func TestMenuLinesThatCannotActAreGreyed(t *testing.T) {
 		t.Fatal("on a pane on a server, Disconnect or its log is greyed")
 	}
 }
+
+// The lines always in the Servers menu keep their letters, whatever the
+// saved servers are called.
+func TestTheServersMenusOwnLinesKeepTheirLetters(t *testing.T) {
+	m := withAccessKeys(widget.BarMenu{Title: "Servers",
+		Items: []string{"quark", "alpha", "rho", "Quick Connect…", "Add Server…", "Reload Server List"}}, 3, 4, 5)
+	for i, want := range map[int]rune{3: 'q', 4: 'a', 5: 'r'} {
+		if k, _ := accessKeyOf(m.Items[i]); k != want {
+			t.Errorf("%q has access key %q, want %q", shownText(m.Items[i]), k, want)
+		}
+	}
+}
+
+// A click in a file pane's list makes it the pane in front, as a click
+// in a terminal does: the menus act on it.
+func TestTheKeyboardComingIntoAFilePaneFrontsIt(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	lastUI.Focus(win.browsers["p2"].table)
+	if in, ok := nextIntent(t).(app.FocusPane); !ok || in.Pane != "p2" {
+		t.Fatalf("the keyboard coming into p2 sent %#v", in)
+	}
+}

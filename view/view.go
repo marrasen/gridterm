@@ -981,7 +981,9 @@ func (w *Window) servers(saved []remote.Host) {
 	m.Icons = append(m.Icons, icon.Plug, icon.Plus, icon.RefreshCw)
 	w.serverIDs = append(w.serverIDs, "server.connect", "server.add", "server.reload")
 	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
-		w.bar.Menus[i] = withAccessKeys(m)
+		// The three lines always there first.
+		n := len(m.Items)
+		w.bar.Menus[i] = withAccessKeys(m, n-3, n-2, n-1)
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
@@ -2004,8 +2006,8 @@ func (w *Window) applies(id string) bool {
 		return ok
 	case "view.scrollUp", "view.scrollDown":
 		_, term := w.terms[w.focused]
-		_, reader := w.readers[w.focused]
-		return term || reader
+		rd, reader := w.readers[w.focused]
+		return term || reader && rd.r != nil
 	case "pane.close", "pane.rename":
 		return w.focused != ""
 	case "sshkey.forget":
@@ -2120,7 +2122,8 @@ func (w *Window) paneNode(id string) gunim.Node {
 }
 
 // captionOf is the line over pane p while panes show their titles:
-// where it runs, and its title.
+// where it runs, and its title. A file pane's is where it runs alone:
+// the path under it names the folder already.
 func (w *Window) captionOf(p app.Pane) string {
 	where := w.nameOf(p.Machine)
 	switch {
@@ -2128,6 +2131,9 @@ func (w *Window) captionOf(p app.Pane) string {
 		where = "This computer"
 	case p.On != "":
 		where = w.nameOf(machines.FarID(p.Machine, p.On))
+	}
+	if p.Kind == app.KindFiles {
+		return where
 	}
 	return where + ": " + p.Title
 }
@@ -2160,6 +2166,7 @@ func (w *Window) bareNode(id string) gunim.Node {
 	case app.KindJobs:
 		if w.jobs == nil {
 			w.jobs = newJobsPane()
+			w.jobs.w = w
 		}
 		return w.jobs
 	case app.KindTunnel:
@@ -2185,6 +2192,25 @@ func (w *Window) bareNode(id string) gunim.Node {
 		return c
 	}
 	return w.term(id)
+}
+
+// entered takes pane id as the one in front, as the keyboard has come
+// into it: a click in a list or on a button in a pane says so no other
+// way, and the menus grey out what can't act on the pane in front.
+func (w *Window) entered(id string, u *gunim.UI) {
+	if id != "" && id != w.focused {
+		u.Send(w, app.FocusPane{Pane: id})
+	}
+}
+
+// paneOfKind is the pane of a kind there is one of, such as Help, or "".
+func (w *Window) paneOfKind(kind string) string {
+	for _, p := range w.panes {
+		if p.Kind == kind {
+			return p.ID
+		}
+	}
+	return ""
 }
 
 // focusNode returns the node in pane id that takes the keyboard, or

@@ -120,6 +120,9 @@ func (b *browser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 // renames; F9 makes a folder.
 func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
+	case gi.FocusEntered:
+		b.w.entered(b.id, u)
+		return false
 	case gi.PointerDown:
 		// A mouse's side buttons go back and forward through the folders
 		// been through, as in a browser.

@@ -188,3 +188,15 @@ func TestASwitcherTileCarriesThePanesCaption(t *testing.T) {
 		t.Fatalf("p2's tile landed with its pane at %v (titled %v), but p2 stands at %v", got, sw.tiles[1].titled, want)
 	}
 }
+
+// A file pane's caption names where it runs alone: the path line under
+// it names the folder, and the two said the folder twice.
+func TestAFilePanesCaptionNamesOnlyItsMachine(t *testing.T) {
+	win, _, _ := windowStage(t)
+	if got := win.captionOf(app.Pane{ID: "p1", Title: "tmp", Kind: app.KindFiles}); got != "This computer" {
+		t.Fatalf("a file pane here is captioned %q", got)
+	}
+	if got := win.captionOf(app.Pane{ID: "p2", Title: "Terminal 1"}); got != "This computer: Terminal 1" {
+		t.Fatalf("a terminal here is captioned %q", got)
+	}
+}

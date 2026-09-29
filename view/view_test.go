@@ -119,7 +119,9 @@ func TestPaneTitlesComeAndGo(t *testing.T) {
 	if !ok {
 		t.Fatalf("with titles, the stage shows %T", win.stage.shown)
 	}
-	if got := c.label.Text; got != "This computer: gthome" {
+	// A file pane's caption names its machine; the path under it names
+	// the folder.
+	if got := c.label.Text; got != "This computer" {
 		t.Fatalf("the title reads %q", got)
 	}
 	st.PaneTitles = false

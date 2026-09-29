@@ -24,6 +24,7 @@ import (
 // with its progress, what it is on, and a button to cancel it. The
 // finished ones stay, saying how they ended, until they are cleared.
 type jobsPane struct {
+	w     *Window
 	head  *widget.Label
 	clear *widget.Button
 	empty *widget.Label
@@ -31,6 +32,15 @@ type jobsPane struct {
 	body  *widget.Scroll
 	// none says there are no jobs, and the empty line shows.
 	none bool
+}
+
+// Handle implements [gunim.Handler]: the keyboard coming into the pane
+// makes it the one in front.
+func (p *jobsPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.FocusEntered); ok && p.w != nil {
+		p.w.entered(p.w.paneOfKind(app.KindJobs), u)
+	}
+	return false
 }
 
 func newJobsPane() *jobsPane {
@@ -328,6 +338,10 @@ func (p *copiesPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids
 // Handle implements [gunim.Handler]: Delete forgets the copy the
 // cursor is on.
 func (p *copiesPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.FocusEntered); ok {
+		p.w.entered(p.w.paneOfKind(app.KindCopies), u)
+		return false
+	}
 	if k, ok := e.(gi.KeyPress); ok && k.Key == gi.KeyDelete && k.Mods == 0 {
 		if at, ok := p.table.Cursor(); ok {
 			u.Send(p.table, app.ForgetCopy{Saved: p.kept[at]})

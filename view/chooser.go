@@ -186,6 +186,9 @@ func (c *chooser) TabGroup() {}
 // arrows walk what is offered, and the ring follows Tab.
 func (c *chooser) Handle(e input.Event, u *gunim.UI) bool {
 	switch e := e.(type) {
+	case input.FocusEntered:
+		c.w.entered(c.id, u)
+		return false
 	case input.FocusRing:
 		to := float32(0)
 		if e.On {

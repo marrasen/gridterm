@@ -238,6 +238,10 @@ func (a *app) windowGone(name MachineID, w *remoteWin, why error) {
 		a.withdrawLost(name)
 		a.lost[name] = cancel
 		a.askThen(ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
+			if ctx.Err() != nil {
+				// Withdrawn while the answer was on its way.
+				return
+			}
 			delete(a.lost, name)
 			cancel()
 			if !ans.Yes {

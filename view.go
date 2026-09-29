@@ -1267,18 +1267,26 @@ func (w *window) removeSays(name MachineID) string {
 			said += " and everything through it: " + count(panes, "pane")
 		}
 		return said + "."
-	case slices.Contains(w.dialing, name):
-		return "Removing it cancels the connection in progress."
 	case slices.Contains(w.dropped, name):
-		ended := 0
+		left := 0
 		for _, p := range w.panes {
-			if p.Machine == name && p.Ended {
-				ended++
+			if p.Machine == name && p.Kind != kindLog {
+				left++
 			}
 		}
-		if ended > 0 {
-			return "Its connection was lost. Removing it closes its " + count(ended, "ended pane") + "."
+		said := "Its connection was lost."
+		if slices.Contains(w.dialing, name) {
+			said += " Removing it cancels the reconnect in progress"
+			if left > 0 {
+				said += " and closes its " + count(left, "ended pane")
+			}
+			return said + "."
 		}
+		if left > 0 {
+			return said + " Removing it closes its " + count(left, "ended pane") + "."
+		}
+	case slices.Contains(w.dialing, name):
+		return "Removing it cancels the connection in progress."
 	}
 	return ""
 }

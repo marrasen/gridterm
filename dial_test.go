@@ -101,6 +101,23 @@ func TestRemovingADroppedServerClearsIt(t *testing.T) {
 	}
 }
 
+// Removed while it reconnects, a dropped server takes the reconnect
+// and what it left along.
+func TestRemovingADroppedServerWhileItReconnects(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(ConnectTo{Server: "srv"})
+	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
+	_ = a.conns["srv"].Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.dropped["srv"] })
+	a.handle(ConnectTo{Server: "srv"})
+	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
+	a.handle(RemoveServer{ID: "srv"})
+	waitFor(t, a, "the reconnect to end", func() bool { return len(a.dialing) == 0 && len(a.st.Asks) == 0 })
+	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
+		t.Fatalf("removed, it keeps %v and panes %+v", a.dropped, a.st.Panes)
+	}
+}
+
 func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []MachineID{"srv"}, Dialing: []MachineID{"far"}})
@@ -113,6 +130,10 @@ func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []MachineID{"srv"}})
 	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it closes its 1 ended pane." {
 		t.Fatalf("for a dropped server it says %q", got)
+	}
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []MachineID{"srv"}, Dialing: []MachineID{"srv"}})
+	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it cancels the reconnect in progress and closes its 1 ended pane." {
+		t.Fatalf("for a dropped server reconnecting it says %q", got)
 	}
 	if got := win.removeSays("idle"); got != "" {
 		t.Fatalf("for a server holding nothing it says %q", got)

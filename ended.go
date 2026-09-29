@@ -296,11 +296,14 @@ func (a *app) giveSavedIDs() {
 type ClearMachine struct{ ID MachineID }
 
 // clearMachine takes a machine whose connection went off the sidebar.
+// Its panes go too, ended or still ending: the connection under them
+// has gone. A reconnect's log on its way stays.
 func (a *app) clearMachine(name MachineID) {
+	dropped := a.dropped[name]
 	delete(a.dropped, name)
 	a.withdrawLost(name)
 	for _, p := range slices.Clone(a.st.Panes) {
-		if p.Machine == name && p.Ended {
+		if p.Machine == name && (p.Ended || dropped && p.Kind != kindLog) {
 			a.closePane(p.ID)
 		}
 	}

@@ -6,7 +6,6 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 
@@ -250,9 +249,8 @@ func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
 	for _, c := range a.serving.clients {
 		_ = c.Close()
 	}
-	pumpBoth(t, a, b, "the question and the panes' end", func() bool {
-		return len(b.st.Asks) == 1 && !slices.ContainsFunc(b.st.Panes, func(p Pane) bool { return !p.Ended })
-	})
+	// Cleared at once: panes still ending go too.
+	pumpBoth(t, a, b, "the question", func() bool { return len(b.st.Asks) == 1 })
 	b.handle(ClearMachine{ID: name})
 	pumpBoth(t, a, b, "the question to go", func() bool { return len(b.st.Asks) == 0 })
 	if len(b.st.Panes) != 0 || b.dropped[name] || len(b.lost) != 0 {

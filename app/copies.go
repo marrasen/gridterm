@@ -163,7 +163,7 @@ func (a *app) stillSaved(m machines.ID) error {
 // none, this computer or a quick connection to name, the address it was
 // kept with. A server removed from the list is refused.
 func (a *app) machineNow(name, id string) (machines.ID, error) {
-	if window, host, far := strings.Cut(name, farSep); far {
+	if window, host, far := strings.Cut(name, KeptFarSep); far {
 		// Beyond a window, the window found as it was kept.
 		w, err := a.machineNow(window, id)
 		if err != nil {
@@ -203,7 +203,7 @@ func (a *app) keptAs(machine machines.ID) string {
 		return ""
 	}
 	if window, host, far := machine.Far(); far {
-		return a.keptAs(window) + farSep + a.machines.FarName(window, host)
+		return a.keptAs(window) + KeptFarSep + a.machines.FarName(window, host)
 	}
 	return a.machines.Name(machine)
 }
@@ -242,7 +242,7 @@ func CopiedWhat(c settings.SavedCopy) string {
 // by what named calls it now, and anything else as it was kept.
 func CopiedWhere(c settings.SavedCopy, named func(machines.ID) string) string {
 	end := func(machine, id, at string) string {
-		window, host, far := strings.Cut(machine, farSep)
+		window, host, far := strings.Cut(machine, KeptFarSep)
 		switch {
 		case far && id != "" && named != nil:
 			machine = host + " through " + named(machines.ID(id))

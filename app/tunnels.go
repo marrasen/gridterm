@@ -148,7 +148,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	var f *remote.Forwarder
 	var err error
 	if w != nil {
-		dial := func(_ context.Context, target string) (net.Conn, error) { return w.Serve.DialOn(key, target) }
+		dial := func(ctx context.Context, target string) (net.Conn, error) { return w.Serve.DialOn(ctx, key, target) }
 		f, err = remote.OpenTunnelThrough(a.machines.Name(in.Machine), dial, cfg)
 	} else {
 		f, err = conn.OpenTunnel(a.ctx, cfg)

@@ -93,8 +93,17 @@ func (w *Window) savedCommandOn(c settings.SavedCommand) string {
 // keptFor reports whether something kept for next time, on the saved
 // server hostID, or on host as it was kept with none, is for machine:
 // the saved server by its ID, this computer, or a quick connection by
-// its address.
+// its address. Beyond a window, it is that window, kept so, and the
+// window's name for the machine.
 func (w *Window) keptFor(host, hostID string, machine machines.ID) bool {
+	keptWindow, keptName, keptFar := strings.Cut(host, app.KeptFarSep)
+	window, _, far := machine.Far()
+	switch {
+	case keptFar != far:
+		return false
+	case far:
+		return w.farHostName(machine) == keptName && w.keptFor(keptWindow, hostID, window)
+	}
 	switch {
 	case hostID != "":
 		return machines.ID(hostID) == machine

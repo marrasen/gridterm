@@ -139,7 +139,7 @@ func TestWorkKeptBeyondAWindowFindsItAgain(t *testing.T) {
 		t.Fatalf("kept as %q, with a key in it", kept)
 	}
 	got, err := a.machineNow(kept, a.serverID(far))
-	if want := win + farSep + "db"; got != want || err != nil {
+	if want := win + KeptFarSep + "db"; got != want || err != nil {
 		t.Fatalf("kept as %q, it is found as %q, %v; want %q", kept, got, err, want)
 	}
 }

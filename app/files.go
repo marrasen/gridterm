@@ -258,9 +258,10 @@ func (a *app) filesOn(machine machines.ID, path string) error {
 	})
 }
 
-// farSep joins a window and a machine it reached, in the name the
-// files on that machine are kept under.
-const farSep = "\x00"
+// KeptFarSep joins, in the kept form of a machine beyond a window, the
+// window as it is kept and the window's name for the machine: how
+// saved commands, tunnels and copies name where they run.
+const KeptFarSep = "\x00"
 
 // farFiles names the files on a machine a window reached, as a
 // filesystem tells whose files it holds.

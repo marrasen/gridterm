@@ -744,12 +744,35 @@ var ErrCannotForward = errors.New("serve: that window cannot carry tunnels to th
 
 // DialOn opens a stream to addr from host, a machine the other window
 // reaches as its Open named it, "" for its own: one stream of a tunnel
-// through that window.
-func (w *Window) DialOn(host, addr string) (net.Conn, error) {
+// through that window. It gives up when ctx ends, and a stream that
+// opens after that is closed.
+func (w *Window) DialOn(ctx context.Context, host, addr string) (net.Conn, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
-	ch, reqs, err := w.client.OpenChannel(chanDial, ssh.Marshal(dialOn{Host: host, Addr: addr}))
+	type opened struct {
+		ch   ssh.Channel
+		reqs <-chan *ssh.Request
+		err  error
+	}
+	got := make(chan opened, 1)
+	go func() {
+		ch, reqs, err := w.client.OpenChannel(chanDial, ssh.Marshal(dialOn{Host: host, Addr: addr}))
+		got <- opened{ch, reqs, err}
+	}()
+	var o opened
+	select {
+	case o = <-got:
+	case <-ctx.Done():
+		go func() {
+			if late := <-got; late.err == nil {
+				go ssh.DiscardRequests(late.reqs)
+				_ = late.ch.Close()
+			}
+		}()
+		return nil, fmt.Errorf("serve: reach %s through %s: %w", addr, w.addr, ctx.Err())
+	}
+	ch, reqs, err := o.ch, o.reqs, o.err
 	var open *ssh.OpenChannelError
 	switch {
 	case errors.As(err, &open) && open.Reason == ssh.UnknownChannelType:

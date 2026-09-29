@@ -39,7 +39,7 @@ func TestAStreamGoesThroughTheOtherWindow(t *testing.T) {
 		var d net.Dialer
 		return d.DialContext(ctx, "tcp", echo)
 	}})
-	c, err := w.DialOn("srv", "db:5432")
+	c, err := w.DialOn(context.Background(), "srv", "db:5432")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,11 +62,11 @@ func TestAStreamThatCannotBeDialledSaysWhy(t *testing.T) {
 	_, w := takenOverServing(t, Config{Dial: func(context.Context, string, string) (net.Conn, error) {
 		return nil, errors.New("db:5432 is not reachable from srv")
 	}})
-	if _, err := w.DialOn("srv", "db:5432"); err == nil || !strings.Contains(err.Error(), "not reachable from srv") {
+	if _, err := w.DialOn(context.Background(), "srv", "db:5432"); err == nil || !strings.Contains(err.Error(), "not reachable from srv") {
 		t.Fatalf("refused, it said %v", err)
 	}
 	_, none := takenOverServing(t, Config{})
-	if _, err := none.DialOn("srv", "db:5432"); err == nil || !strings.Contains(err.Error(), "does not carry tunnels") {
+	if _, err := none.DialOn(context.Background(), "srv", "db:5432"); err == nil || !strings.Contains(err.Error(), "does not carry tunnels") {
 		t.Fatalf("with no way to dial, it said %v", err)
 	}
 }

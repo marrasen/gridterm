@@ -29,9 +29,9 @@ type (
 	}
 	// LockKeys forgets every key unlocked, and locks the secrets.
 	LockKeys struct{}
-	// ForgetKey takes a key file off the list of kept ones, leaving the
-	// file where it is.
-	ForgetKey struct{ Path string }
+	// RemoveSavedKey takes a key file off the list of saved ones, leaving
+	// the file where it is.
+	RemoveSavedKey struct{ Path string }
 )
 
 // mostKeptKeys is how many key files are remembered.
@@ -89,16 +89,16 @@ func (a *app) makeKey(in MakeKey) error {
 	return nil
 }
 
-// forgetKey takes a key file off the list offered for a server.
-func (a *app) forgetKey(path string) error {
+// removeSavedKey takes a key file off the list offered for a server.
+func (a *app) removeSavedKey(path string) error {
 	if a.settings == nil {
 		return errors.New("the settings could not be read, so the list can't be changed")
 	}
-	if err := a.settings.ForgetKey(path); err != nil {
+	if err := a.settings.RemoveSavedKey(path); err != nil {
 		return err
 	}
 	a.st.KeyFiles = a.settings.Keys()
-	a.worked("Forgot "+filepath.Base(path), "It is no longer offered for a server. The file is still at "+path+".", "")
+	a.worked("Removed "+filepath.Base(path)+" from saved keys", "The key file is still at "+path+".", "")
 	return nil
 }
 

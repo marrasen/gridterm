@@ -328,7 +328,7 @@ func TestForgetAKeptKeyListsThem(t *testing.T) {
 		t.Fatalf("the list is %+v", p)
 	}
 	p.Pick(1, lastUI)
-	if in, ok := nextIntent(t).(app.ForgetKey); !ok || in.Path != "/keys/two" {
+	if in, ok := nextIntent(t).(app.RemoveSavedKey); !ok || in.Path != "/keys/two" {
 		t.Fatalf("picking the second key sent %#v", in)
 	}
 }

@@ -786,9 +786,9 @@ func (s *Settings) KeepKey(path string, most int) error {
 	})
 }
 
-// ForgetKey takes a key file off the list and saves. The file itself is
+// RemoveSavedKey takes a key file off the list and saves. The file itself is
 // left where it is.
-func (s *Settings) ForgetKey(path string) error {
+func (s *Settings) RemoveSavedKey(path string) error {
 	return s.putKeys(func(have []string) []string { return dropKey(have, path) })
 }
 

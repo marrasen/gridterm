@@ -206,8 +206,8 @@ func Built() []Theme {
 		{
 			// A green phosphor screen: green on black in the IBM VGA
 			// character set, which comes with kakel, square corners,
-			// everything close together, and buttons that cast a dark
-			// green shadow, as a text screen's did.
+			// everything close together, and buttons that cast a black
+			// shadow, as a text screen's did.
 			//
 			// The colours keep their hues, only leaning green, so a
 			// failure a program writes in red still reads as one; the
@@ -218,10 +218,13 @@ func Built() []Theme {
 			Font:      "PxPlus IBM VGA8",
 			Frame: &Frame{
 				FG: "#33ff66", BG: "#081208",
-				ButtonFG: "#050a05", ButtonBG: "#33ff66",
-				ActiveFG: "#050a05", ActiveBG: "#7dffa8",
+				// Buttons written in the green, on a dark green, and the
+				// one Enter presses lit solid: the window writes a
+				// plain button in the frame's own colour.
+				ButtonFG: "#33ff66", ButtonBG: "#0c2a14",
+				ActiveFG: "#050a05", ActiveBG: "#33ff66",
 				SidebarBG: "#040804", CurrentFG: "#d6ffe0",
-				ButtonShadow: "#0f3a1a",
+				ButtonShadow: "#000000",
 			},
 			Shape: &Shape{Corners: ptr(0), Room: ptr(0.78), Text: ptr(13)},
 			ANSI: []string{

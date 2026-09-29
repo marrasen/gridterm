@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -203,5 +204,19 @@ func TestAKeptShellThatHasGoneIsSaidOnce(t *testing.T) {
 	}
 	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Shell not found" || !strings.HasPrefix(a.st.Notices[0].Body, "Gone is no longer installed.") {
 		t.Fatalf("the notices are %+v", a.st.Notices)
+	}
+}
+
+// A command asked to be saved that could not be is not run: running it
+// anyway would leave the user thinking it had been saved.
+func TestACommandThatCannotBeKeptIsNotRun(t *testing.T) {
+	a := fontApp(t)
+	a.settings = settings.Unusable(errors.New("the settings file is unreadable"))
+	err := a.runCommand(RunCommand{Line: "make deploy", Keep: true})
+	if err == nil || !strings.Contains(err.Error(), "not run") {
+		t.Fatalf("it said %v", err)
+	}
+	if len(a.st.Panes) != 0 {
+		t.Fatalf("the command ran: %+v", a.st.Panes)
 	}
 }

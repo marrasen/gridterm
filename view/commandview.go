@@ -31,18 +31,34 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 	line.Placeholder, dir.Placeholder = "such as top, or make test", "optional: where the login lands"
 	keep := widget.NewCheckbox("Save this command")
 	form := widget.NewForm().Add("Command", line).Add("Folder", dir)
+	// Every saved command, newest first: this machine's, then the rest,
+	// named with where they were saved, to run here too.
 	var kept []settings.SavedCommand
-	// picked is the saved command picked, which unticking Keep forgets.
-	picked := ""
+	here := 0
 	for _, c := range w.savedCommands {
 		if w.keptFor(c.Host, c.HostID, machine) {
+			kept = slices.Insert(kept, here, c)
+			here++
+		} else {
 			kept = append(kept, c)
 		}
 	}
+	// picked is the saved command of this machine picked, which
+	// unticking Keep forgets; filled the folder it put in the Folder
+	// field, which a pick after may replace.
+	picked, filled := "", ""
 	if len(kept) > 0 {
 		names := []string{"A new one"}
-		for _, c := range kept {
-			names = append(names, c.Line)
+		for i, c := range kept {
+			if i < here {
+				names = append(names, c.Line)
+				continue
+			}
+			on := w.savedCommandOn(c)
+			if on == "" {
+				on = "this computer"
+			}
+			names = append(names, c.Line+" (on "+on+")")
 		}
 		pick := widget.NewDropdown(names...)
 		pick.Label = "Saved"
@@ -50,10 +66,20 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 			if i == 0 || i > len(kept) {
 				return
 			}
-			picked = kept[i-1].Line
-			line.SetText(kept[i-1].Line)
-			dir.SetText(kept[i-1].Dir)
-			keep.SetOn(true, u)
+			c := kept[i-1]
+			line.SetText(c.Line)
+			// The folder only when this machine's, and only over one
+			// typed by nobody: a folder elsewhere is nothing here.
+			mine := i-1 < here
+			if mine && (dir.Text() == "" || dir.Text() == filled) {
+				dir.SetText(c.Dir)
+				filled = c.Dir
+			}
+			picked = ""
+			if mine {
+				picked = c.Line
+			}
+			keep.SetOn(mine, u)
 			u.Invalidate()
 		})
 		form.Add("Saved", pick)
@@ -70,7 +96,7 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 	}
 	d.OnAccept = func() gunim.Intent {
 		forget := ""
-		if !keep.On && picked != "" && line.Text() == picked {
+		if !keep.On && picked != "" && strings.Join(strings.Fields(line.Text()), " ") == picked {
 			forget = picked
 		}
 		return app.RunCommand{Machine: machine, Line: line.Text(), Dir: dir.Text(), Keep: keep.On, Forget: forget, Beside: at.Beside, Vertical: at.Vertical}

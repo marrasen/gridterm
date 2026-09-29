@@ -74,7 +74,8 @@ func (a *app) runCommandThen(in RunCommand, then func(id string, err error)) err
 	if in.Keep && a.settings != nil {
 		saved := settings.SavedCommand{Line: strings.Join(argv, " "), Dir: strings.TrimSpace(in.Dir), Host: a.keptAs(in.Machine), HostID: a.serverID(in.Machine)}
 		if err := a.settings.KeepCommand(saved, mostSavedCommands); err != nil {
-			a.failed("Couldn't keep the command for next time", err.Error())
+			// Not run: asked to be kept, it would be lost once it ended.
+			return fmt.Errorf("couldn't save the command, so it was not run: %w", err)
 		}
 		a.st.SavedCommands = a.settings.Commands()
 	}

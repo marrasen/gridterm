@@ -151,10 +151,10 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 func (a *app) sendingPicture(to string) func() {
 	a.sending++
 	a.sendingTo = to
-	a.showDialling()
+	a.showStatus()
 	return func() {
 		a.sending = max(0, a.sending-1)
-		a.showDialling()
+		a.showStatus()
 	}
 }
 

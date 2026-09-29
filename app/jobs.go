@@ -174,7 +174,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 		// A move happens once.
 		a.clip = nil
 	}
-	a.showDialling()
+	a.showStatus()
 	op := jobs.Op{Kind: c.kind, From: c.from, At: c.at, Names: c.names, To: f, Into: into}
 	verb := "Copying"
 	if c.kind == jobs.Move {
@@ -279,10 +279,8 @@ func (a *app) showJobs() bool {
 		a.relistOn(r.op)
 	}
 	a.st.Jobs = rows
-	a.st.Status = strings.Join(lines, "  ·  ")
-	if len(lines) == 0 {
-		a.showDialling()
-	}
+	a.jobLines = lines
+	a.showStatus()
 	if !live {
 		a.watching = false
 	}

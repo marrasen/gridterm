@@ -336,7 +336,7 @@ func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func())
 		f, err := open()
 		a.events <- func() {
 			a.starting--
-			a.showDialling()
+			a.showStatus()
 			if err != nil {
 				failed()
 				a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
@@ -439,9 +439,15 @@ func (a *app) browse(in Browse) {
 		return
 	}
 	in.Path = vfs.Spelled(f, in.Path)
+	a.listing[in.Pane]++
+	asked := a.listing[in.Pane]
 	go func() {
 		entries, err := f.ReadDir(in.Path)
 		a.events <- func() {
+			if a.listing[in.Pane] != asked {
+				// A later listing was asked for: this one is old news.
+				return
+			}
 			b := a.st.Browsers[in.Pane]
 			if err != nil {
 				b.Err = err.Error()
@@ -537,6 +543,10 @@ type readSpec struct {
 	// text reads a file named as a picture as lines, asked for once it
 	// was not one.
 	text bool
+	// reading says a read is out, and again that another was asked for
+	// meanwhile, made once it lands: reads never overlap, so an older
+	// one cannot land last and put older text back.
+	reading, again bool
 }
 
 // mostPictureSide bounds a picture read.
@@ -597,6 +607,13 @@ func (a *app) readWith(id string, f vfs.FS) {
 	if !ok {
 		return
 	}
+	if spec.reading {
+		spec.again = true
+		a.reads[id] = spec
+		return
+	}
+	spec.reading = true
+	a.reads[id] = spec
 	var last time.Time
 	watch := func(read int64) {
 		if now := time.Now(); now.Sub(last) >= 100*time.Millisecond {
@@ -628,7 +645,12 @@ func (a *app) readWith(id string, f vfs.FS) {
 			}
 			spec := a.reads[id]
 			spec.seq++
+			again := spec.again
+			spec.reading, spec.again = false, false
 			a.reads[id] = spec
+			if again {
+				defer a.readOnce(id)
+			}
 			r.Seq = spec.seq
 			// A save that finished is still counted, for the reader to
 			// hear how it went, and what was said of the file stays.
@@ -667,6 +689,9 @@ func (a *app) setReader(id string, r Reader) {
 // followEvery is how often a followed file is looked at: as often as
 // the old app looked, so a log written to shows its lines at once.
 const followEvery = 300 * time.Millisecond
+
+// scrollbackFollowEvery is how often a followed scrollback is looked at.
+const scrollbackFollowEvery = time.Second
 
 // followTitle is what a reader's title says while it follows.
 const followTitle = " (following)"
@@ -759,6 +784,7 @@ func (a *app) nextFollow(id string) followStep {
 func (a *app) followLoop(id string) {
 	var last vfs.Entry
 	failed := false
+	every := followEvery
 	for looked := false; ; looked = true {
 		// The first look at once, so a change straight after following
 		// was turned on is not taken as how the file stands.
@@ -766,7 +792,7 @@ func (a *app) followLoop(id string) {
 			select {
 			case <-a.ctx.Done():
 				return
-			case <-time.After(followEvery):
+			case <-time.After(every):
 			}
 		}
 		step := make(chan followStep, 1)
@@ -785,6 +811,9 @@ func (a *app) followLoop(id string) {
 		case s.stop:
 			return
 		case s.scroll:
+			// A scrollback is compared whole on the window's goroutine,
+			// so it is looked at less often.
+			every = scrollbackFollowEvery
 			continue
 		case s.f == nil:
 			// Not reachable now, and the pane says so already.

@@ -283,6 +283,18 @@ func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
 	if problem := win.dialog.Check(); !strings.Contains(problem, "comma") {
 		t.Fatalf("edited, the folders are refused with %q", problem)
 	}
+	// With that folder taken out, the line is read as it stands.
+	for _, f := range win.dialog.Body.(*widget.Form).Children() {
+		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
+			f.SetText("/srv, /home")
+		}
+	}
+	if problem := win.dialog.Check(); problem != "" {
+		t.Fatalf("with the comma folder taken out, the folders are refused with %q", problem)
+	}
+	if in, ok := win.dialog.OnAccept().(app.SaveServer); !ok || !slices.Equal(in.Host.Folders, []string{"/srv", "/home"}) {
+		t.Fatalf("saved, the folders are %q", in.Host.Folders)
+	}
 }
 
 // A window saved again keeps the agent tick it came with, unused, so a

@@ -328,3 +328,25 @@ func TestASavedCopyThroughAWindowIsNamed(t *testing.T) {
 		t.Fatalf("the copy reads %q", got)
 	}
 }
+
+// A listing asked for before another lands is dropped, whichever lands
+// last: a copy's listing again never sends a pane back where it was.
+func TestAnOlderListingNeverSendsAPaneBack(t *testing.T) {
+	a, _ := agentApp(t)
+	was, now := t.TempDir(), t.TempDir()
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	for range 20 {
+		a.browse(Browse{Pane: pane, Path: was})
+		a.browse(Browse{Pane: pane, Path: now})
+		asked := a.listing[pane]
+		waitFor(t, a, "the listings", func() bool { return a.st.Browsers[pane].Path == now })
+		pumpFor(a, 20*time.Millisecond)
+		if got := a.st.Browsers[pane].Path; got != now || a.listing[pane] != asked {
+			t.Fatalf("the pane went back to %q", got)
+		}
+	}
+}

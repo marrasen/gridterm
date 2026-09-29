@@ -1152,8 +1152,8 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		switch {
 		case old != nil && folders.Text() == old.FoldersJoined():
 			h.Folders = old.Folders
-		case old != nil && !remote.FoldersRoundTrip(old.Folders):
-			return h, "A saved folder has a comma in its path, which this line cannot keep apart. Leave the folders as they were."
+		case old != nil && commaFolderKept(old.Folders, folders.Text()):
+			return h, "A saved folder has a comma in its path, which this line cannot keep apart. Leave the folders as they were, or take that folder out."
 		default:
 			h.Folders = remote.FoldersFrom(folders.Text())
 		}
@@ -3018,4 +3018,16 @@ func (s *shade) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids gunim
 	}
 	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
 	kids.At(0).Paint(p)
+}
+
+// commaFolderKept reports whether the folders line still holds a saved
+// folder with a comma in its path, which reading the line back would
+// split in two. One taken out of the line is no longer in the way.
+func commaFolderKept(saved []string, line string) bool {
+	for _, f := range saved {
+		if !remote.FoldersRoundTrip([]string{f}) && strings.Contains(line, f) {
+			return true
+		}
+	}
+	return false
 }

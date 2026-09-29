@@ -456,6 +456,12 @@ type app struct {
 	// line.
 	sending   int
 	sendingTo string
+	// jobLines are what the jobs running say on the status line.
+	jobLines []string
+	// listing counts the listings asked for each file pane, so one that
+	// lands after a later one was asked for is dropped: a pane is never
+	// sent back to where it was.
+	listing map[string]int
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -618,6 +624,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		paneAt:    map[string]string{},
 		farLogs:   map[machines.ID]bool{},
 		notRun:    map[string]bool{},
+		listing:   map[string]int{},
 		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
@@ -1599,6 +1606,7 @@ func (a *app) remove(id string) {
 	a.shells.Set(id, nil)
 	delete(a.linksAt, id)
 	delete(a.notRun, id)
+	delete(a.listing, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)

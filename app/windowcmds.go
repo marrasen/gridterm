@@ -148,7 +148,7 @@ func (a *app) checkUpdates() {
 		newest, err := latestRelease(a.ctx)
 		a.events <- func() {
 			a.checking = false
-			a.showDialling()
+			a.showStatus()
 			if err != nil {
 				a.failed("Could not check for updates", err.Error())
 				return

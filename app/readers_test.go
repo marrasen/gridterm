@@ -72,7 +72,7 @@ func TestFollowingTurnsOnAndOffInAReader(t *testing.T) {
 	// Past the first look, which only notes how the file stands. The
 	// time is a second's worth, so the next write is seen as a change
 	// even by a clock that counts in seconds.
-	pumpFor(a, followEvery+200*time.Millisecond)
+	pumpFor(a, time.Second+200*time.Millisecond)
 	if err := os.WriteFile(file, []byte("one\ntwo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -245,5 +245,28 @@ func TestAReaderOnAWindowThatWentDoesNotDial(t *testing.T) {
 	}
 	if r := a.st.Readers["p1"]; !strings.Contains(r.Err, "Connect to it again") {
 		t.Fatalf("the reader says %q", r.Err)
+	}
+}
+
+// A read asked for while one is out waits for it and is made once it
+// lands, so reads never overlap and an older one cannot land last.
+func TestAReaderReadsOneAtATime(t *testing.T) {
+	a, file, id := readerApp(t, false)
+	waitFor(t, a, "the first read", func() bool { return a.st.Readers[id].Seq > 0 })
+	seq := a.st.Readers[id].Seq
+	a.readOnce(id)
+	if !a.reads[id].reading {
+		t.Fatal("a read went out, and the reader does not say it is reading")
+	}
+	if err := os.WriteFile(file, []byte("one\nnewer\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.readOnce(id)
+	if !a.reads[id].again {
+		t.Fatal("asked while reading, a second read went out at once")
+	}
+	waitFor(t, a, "both reads", func() bool { return a.st.Readers[id].Seq == seq+2 && !a.reads[id].reading })
+	if !slices.Contains(lines(a, id), "newer") {
+		t.Fatalf("the reader ends %q", lines(a, id))
 	}
 }

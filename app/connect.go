@@ -141,7 +141,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
 	}
-	a.showDialling()
+	a.showStatus()
 	// From the nearest hop already connected, so a second server behind
 	// a jump host does not sign in to the jump host again.
 	start, from := a.machines.HopConnected(names, hops)
@@ -163,7 +163,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					w(err)
 				}
 			}()
-			a.showDialling()
+			a.showStatus()
 			if err != nil {
 				// The hops reached on the way are no use to anything now.
 				for _, h := range made {
@@ -516,11 +516,11 @@ func sameHost(a, b string) bool {
 	return strings.EqualFold(a, b)
 }
 
-// showDialling says on the status line what is being connected to: the
-// connections on their way, all of them, so one that lands does not
-// clear the line while another is still being made. Pictures on their
-// way are said after.
-func (a *app) showDialling() {
+// showStatus says on the status line what is going on in the
+// background: the connections on their way, all of them, so one that
+// lands does not clear the line while another is still being made;
+// the pictures on their way; and the jobs running.
+func (a *app) showStatus() {
 	var names []string
 	for _, id := range a.machines.Dialing() {
 		names = append(names, a.machines.Name(id))
@@ -539,5 +539,5 @@ func (a *app) showDialling() {
 	case a.sending > 1:
 		said = append(said, fmt.Sprintf("Sending %d pictures…", a.sending))
 	}
-	a.st.Status = strings.Join(said, "  ·  ")
+	a.st.Status = strings.Join(append(said, a.jobLines...), "  ·  ")
 }

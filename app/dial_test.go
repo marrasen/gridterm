@@ -317,17 +317,17 @@ func TestTheStatusNamesEveryDial(t *testing.T) {
 	one, two := a.machines.NewQuick("one.example", false), a.machines.NewQuick("two.example", false)
 	a.machines.At(one).Dialing = func() {}
 	a.machines.At(two).Dialing = func() {}
-	a.showDialling()
+	a.showStatus()
 	if !strings.Contains(a.st.Status, "one.example") || !strings.Contains(a.st.Status, "two.example") {
 		t.Fatalf("dialling two, the status says %q", a.st.Status)
 	}
 	a.machines.At(one).Dialing = nil
-	a.showDialling()
+	a.showStatus()
 	if a.st.Status != "Connecting to two.example…" {
 		t.Fatalf("one landed, the status says %q", a.st.Status)
 	}
 	a.machines.At(two).Dialing = nil
-	a.showDialling()
+	a.showStatus()
 	if a.st.Status != "" {
 		t.Fatalf("both landed, the status says %q", a.st.Status)
 	}
@@ -369,4 +369,16 @@ func TestAServersShellStartedAgainIsTaughtAgain(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, a, "the setup typed again", func() bool { return taught() == 2 })
+}
+
+// A job running and a connection on its way are both said.
+func TestTheStatusSaysJobsAndDialsTogether(t *testing.T) {
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	one := a.machines.NewQuick("one.example", false)
+	a.machines.At(one).Dialing = func() {}
+	a.jobLines = []string{"Copying 3 items to x, 40%"}
+	a.showStatus()
+	if a.st.Status != "Connecting to one.example…  ·  Copying 3 items to x, 40%" {
+		t.Fatalf("the status says %q", a.st.Status)
+	}
 }

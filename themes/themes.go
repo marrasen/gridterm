@@ -41,14 +41,6 @@ type Theme struct {
 	// to the window.
 	Frame *Frame `json:"frame,omitempty"`
 
-	// Font names the typeface the window is drawn in while this theme is
-	// on, by family name. Empty leaves the font alone, which is what a
-	// theme that is only about colour does.
-	//
-	// A name this machine has no font for is not an error: the window
-	// keeps the typeface it was already drawn in.
-	Font string `json:"font,omitempty"`
-
 	// Echo is how the rings kakel sends past its window's edges look
 	// under this theme. Nil takes them from the palette.
 	Echo *Echo `json:",omitempty"`
@@ -204,8 +196,7 @@ func Built() []Theme {
 			},
 		},
 		{
-			// A green phosphor screen: green on black in the IBM VGA
-			// character set, which comes with kakel, square corners,
+			// A green phosphor screen: green on black, square corners,
 			// everything close together, and buttons that cast a black
 			// shadow, as a text screen's did.
 			//
@@ -215,7 +206,6 @@ func Built() []Theme {
 			// green of its own.
 			Name: "Phosphor", FG: "#33ff66", BG: "#050a05",
 			Selection: "#0f4a1f",
-			Font:      "PxPlus IBM VGA8",
 			Frame: &Frame{
 				FG: "#33ff66", BG: "#081208",
 				// Buttons written in the green, on a dark green, and the

@@ -164,17 +164,19 @@ func (a *app) applyOptions() error {
 			return fmt.Errorf("-font: %w", err)
 		}
 		a.st.Font = Font{Name: "-font", Faces: faces}
-		// A face named on the command line is an instruction, and a
-		// theme does not overrule it.
-		a.fontPicked, a.fontFixed = true, true
+		// A face named on the command line is for this run: the one
+		// kept from last time waits for the next.
+		a.keptFont = ""
 	case o.fontFamily != "":
-		a.fontPicked, a.fontFixed = true, true
+		a.keptFont = ""
 		a.fixedFont = o.fontFamily
 		if _, compiled := compiledIn(o.fontFamily); compiled {
 			if err := a.setFont(o.fontFamily); err != nil {
 				return fmt.Errorf("-font-family: %w", err)
 			}
 		}
+	default:
+		a.useKeptFont(false)
 	}
 	return nil
 }

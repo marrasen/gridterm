@@ -102,6 +102,9 @@ type stored struct {
 
 	// FontSize is the size the text is drawn at, in points.
 	FontSize *float64 `json:"fontSize,omitempty"`
+	// FontFamily is the typeface picked from the Font menu, empty for
+	// the one that comes with kakel.
+	FontFamily *string `json:"fontFamily,omitempty"`
 	// Window is where the window was, and how big, as it last closed.
 	Window *WindowPlace `json:"window,omitempty"`
 }
@@ -679,6 +682,33 @@ func (s *Settings) FontSize() (float64, bool) {
 		return 0, false
 	}
 	return *s.have.FontSize, true
+}
+
+// FontFamily is the typeface picked from the Font menu, and whether one
+// was ever picked.
+func (s *Settings) FontFamily() (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.have.FontFamily == nil {
+		return "", false
+	}
+	return *s.have.FontFamily, true
+}
+
+// PutFontFamily remembers the typeface picked, and saves.
+func (s *Settings) PutFontFamily(name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.FontFamily = &name
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // PutFontSize remembers the size the text is drawn at, and saves.

@@ -590,18 +590,14 @@ type app struct {
 	// sent, and lastToast when the last pop-up went up.
 	noticed   map[string]uint64
 	lastToast time.Time
-	// families are the monospaced families found here; wantFont is the
-	// one the theme names, taken unless fontPicked says the user chose
-	// from the Font menu.
-	families   []glyph.Family
-	wantFont   string
-	fontPicked bool
-	// previewing is the theme in use, and whether its font was picked by
-	// hand, while the theme picker shows another; nil when it shows none.
-	previewing *themeWas
-	// fontFixed says the command line named the face, which no theme
-	// overrules.
-	fontFixed bool
+	// families are the monospaced families found here, and keptFont
+	// the one picked from the Font menu last time, taken once they are
+	// found.
+	families []glyph.Family
+	keptFont string
+	// previewing is the theme in use while the theme picker shows
+	// another; empty when it shows none.
+	previewing string
 	// themeTrouble is what went wrong reading the themes as the window
 	// opened, said once it is up.
 	themeTrouble error
@@ -816,6 +812,7 @@ func (a *app) loadSettings() {
 			if size, ok := s.FontSize(); ok && !a.opts.sizeSet {
 				a.st.FontSize = fontSizeIn(float32(size))
 			}
+			a.keptFont, _ = s.FontFamily()
 		} else {
 			a.unreadable("the settings", path+" is repaired or removed, and kakel is started again", err)
 		}
@@ -1042,7 +1039,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.previewTheme(in.Name)
 	case PickTheme:
 		// Picked, the preview is over: what it showed is what is on.
-		a.previewing = nil
+		a.previewing = ""
 		// Written down once it is on: a theme not in the list is not
 		// one to come back to.
 		if !a.pickTheme(in.Name) {
@@ -1849,16 +1846,9 @@ func (a *app) pickTheme(name string) bool {
 		if t.Name != name {
 			continue
 		}
-		if name != a.st.Theme {
-			// Another theme: its wish for a typeface stands again, over
-			// one picked by hand for the theme before.
-			a.fontPicked = a.fontFixed
-		}
 		a.st.Theme = name
 		a.palette = t.Palette
 		a.st.Marks = look.MarksOf(t.Palette)
-		a.wantFont = t.Source.Font
-		a.useWantedFont()
 		for _, sh := range a.shells.All() {
 			sh.SetPalette(t.Palette)
 		}
@@ -1870,32 +1860,18 @@ func (a *app) pickTheme(name string) bool {
 	return false
 }
 
-// themeWas is the theme in use, and whether its font was picked by
-// hand, to come back to once a preview ends.
-type themeWas struct {
-	name       string
-	fontPicked bool
-	// font is the typeface the window was drawn in, which a theme with
-	// a font of its own changes and the one in use may not name.
-	font Font
-}
-
 // previewTheme shows theme name as picking it would, keeping nothing,
 // or with name empty, brings back the theme in use before the preview.
 func (a *app) previewTheme(name string) {
 	if name == "" {
-		if was := a.previewing; was != nil {
-			a.previewing = nil
-			a.pickTheme(was.name)
-			a.fontPicked = was.fontPicked
-			// The very typeface it was in, as it was: the theme in use
-			// may name none to go back to.
-			a.st.Font = was.font
+		if was := a.previewing; was != "" {
+			a.previewing = ""
+			a.pickTheme(was)
 		}
 		return
 	}
-	if a.previewing == nil {
-		a.previewing = &themeWas{name: a.st.Theme, fontPicked: a.fontPicked, font: a.st.Font}
+	if a.previewing == "" {
+		a.previewing = a.st.Theme
 	}
 	a.pickTheme(name)
 }

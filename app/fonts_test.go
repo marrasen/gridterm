@@ -47,25 +47,48 @@ func TestTheFontMenuPicksAFace(t *testing.T) {
 	}
 }
 
-func TestAThemeNamingAFaceDrawsInItUnlessOneWasPicked(t *testing.T) {
+// A theme leaves the face alone: the one picked stays through every
+// theme, previews included.
+func TestThemesLeaveTheFontAlone(t *testing.T) {
 	a := fontApp(t)
-	dos := ""
+	a.handle(PickFont{Name: dosFamily})
 	for _, th := range a.themes {
-		if th.Source.Font == dosFamily {
-			dos = th.Name
+		a.handle(PreviewTheme{Name: th.Name})
+		a.handle(PickTheme{Name: th.Name})
+		if a.st.Font.Name != dosFamily {
+			t.Fatalf("the theme %s moved the face to %q", th.Name, a.st.Font.Name)
 		}
 	}
-	if dos == "" {
-		t.Fatal("no theme names the DOS face")
+	a.handle(PickTheme{Name: "No Such Theme"})
+	if got, _ := a.settings.Theme(); got == "No Such Theme" {
+		t.Fatal("a theme not in the list was kept")
 	}
-	a.pickTheme(dos)
-	if a.st.Font.Name != dosFamily {
-		t.Fatalf("the theme %s names the DOS face, the font is %q", dos, a.st.Font.Name)
+}
+
+// The face picked from the Font menu is kept, and the next start draws
+// in it: a compiled-in face at once, one on disk once the fonts are
+// found, and one no longer here is let go.
+func TestTheFontPickedIsKept(t *testing.T) {
+	a := fontApp(t)
+	a.handle(PickFont{Name: dosFamily})
+	if got, ok := a.settings.FontFamily(); !ok || got != dosFamily {
+		t.Fatalf("kept %q, %v", got, ok)
 	}
-	a.handle(PickFont{Name: bundledFamily})
-	a.pickTheme(dos)
-	if a.st.Font.Name != "" {
-		t.Fatalf("with Go Mono picked, taking the theme again drew in %q", a.st.Font.Name)
+	next := fontApp(t)
+	next.keptFont, _ = a.settings.FontFamily()
+	next.useKeptFont(false)
+	if next.st.Font.Name != dosFamily || next.keptFont != "" {
+		t.Fatalf("the next start is in %q, still to take %q", next.st.Font.Name, next.keptFont)
+	}
+	gone := fontApp(t)
+	gone.keptFont = "No Such Mono"
+	gone.useKeptFont(false)
+	if gone.keptFont == "" {
+		t.Fatal("a face on disk was given up on before the fonts were found")
+	}
+	gone.useKeptFont(true)
+	if gone.st.Font.Name != "" || gone.keptFont != "" || len(gone.st.Notices) != 0 {
+		t.Fatalf("a face no longer here left the font %q, %q to take, notices %+v", gone.st.Font.Name, gone.keptFont, gone.st.Notices)
 	}
 }
 
@@ -74,34 +97,6 @@ func TestTheFontSizeIsKept(t *testing.T) {
 	a.handle(FontSize{Step: 2})
 	if size, ok := a.settings.FontSize(); !ok || float32(size) != defaultFontSize+2 {
 		t.Fatalf("kept %v, %v", size, ok)
-	}
-}
-
-// Picking another theme lets its face win again over one picked by
-// hand; taking the same theme again leaves the hand's pick.
-func TestAnotherThemesFaceWinsOverOnePickedBefore(t *testing.T) {
-	a := fontApp(t)
-	dos, plain := "", ""
-	for _, th := range a.themes {
-		if th.Source.Font == dosFamily {
-			dos = th.Name
-		} else if plain == "" {
-			plain = th.Name
-		}
-	}
-	a.pickTheme(plain)
-	a.handle(PickFont{Name: bundledFamily})
-	a.pickTheme(plain)
-	if a.st.Font.Name != "" {
-		t.Fatalf("the same theme again moved the face to %q", a.st.Font.Name)
-	}
-	a.pickTheme(dos)
-	if a.st.Font.Name != dosFamily {
-		t.Fatalf("another theme naming a face left it at %q", a.st.Font.Name)
-	}
-	a.handle(PickTheme{Name: "No Such Theme"})
-	if got, _ := a.settings.Theme(); got == "No Such Theme" {
-		t.Fatal("a theme not in the list was kept")
 	}
 }
 

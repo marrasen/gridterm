@@ -241,15 +241,14 @@ func TestTheWindowOpensWhereItWasLeft(t *testing.T) {
 func TestAThemePreviewedComesBack(t *testing.T) {
 	a := fontApp(t)
 	a.pickTheme("Dark")
-	was := a.st.Font.Name
 	a.handle(PreviewTheme{Name: "Phosphor"})
-	if a.st.Theme != "Phosphor" || a.st.Font.Name != dosFamily {
-		t.Fatalf("previewing Phosphor, the theme is %q in %q", a.st.Theme, a.st.Font.Name)
+	if a.st.Theme != "Phosphor" {
+		t.Fatalf("previewing Phosphor, the theme is %q", a.st.Theme)
 	}
 	a.handle(PreviewTheme{Name: "Marshmallow"})
 	a.handle(PreviewTheme{})
-	if a.st.Theme != "Dark" || a.st.Font.Name != was {
-		t.Fatalf("the preview over, the theme is %q in %q, want Dark in %q", a.st.Theme, a.st.Font.Name, was)
+	if a.st.Theme != "Dark" {
+		t.Fatalf("the preview over, the theme is %q, want Dark", a.st.Theme)
 	}
 	if got, _ := a.settings.Theme(); got == "Phosphor" || got == "Marshmallow" {
 		t.Fatalf("a preview was kept: %q", got)

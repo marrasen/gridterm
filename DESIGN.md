@@ -136,20 +136,19 @@ double rule round a dialog when the frame asks for one. Where a colour
 from the palette has to read on the frame, `look.Of` picks the one of
 a few that stands out most (`standout`).
 
-**A theme may name a typeface, and the name is a wish.** `Theme.Font` is
-a family name. A window takes it when it has that font, compiled in or
-installed, and keeps the one it is already drawn in when it does not.
-A window opens on its theme before the scan of the system's fonts has
-finished, so `useWantedFont` runs again when the scan lands.
+**The typeface is the user's, not the theme's.** A theme never changes
+it, so switching themes leaves the font where the user put it. The
+Font menu's pick is kept in the settings as `fontFamily` and taken at
+the next start. A compiled-in face is taken at once. One on disk waits
+for the scan of the system's fonts, since the window opens before the
+scan finishes, and a kept face no longer installed is let go with a
+line in the log. A typeface named with `-font` or `-font-family` wins
+over the kept one for that run, and does not replace it. A font that
+is there and will not read is a failure rather than a miss, so that
+error reaches the user instead of being swallowed as "not found".
 
-Two things are not wishes. A typeface named with `-font` or
-`-font-family` is an instruction, and a theme does not overrule it. And
-a font that is there and will not read is a failure rather than a miss,
-so that error reaches the user instead of being swallowed as "not
-found".
-
-Two faces are compiled in: Go Mono, and the IBM VGA set the Phosphor
-theme asks for. `fonts/README.md` says where the second came from and what its
+Two faces are compiled in: Go Mono, and the IBM VGA set that suits the
+Phosphor theme. `fonts/README.md` says where the second came from and what its
 licence asks of anyone shipping it.
 
 **Paste takes whatever is on the clipboard.** Text when there is text,

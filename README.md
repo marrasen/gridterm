@@ -53,7 +53,8 @@ its row on the sidebar offers the rest: files, a command, a tunnel and
 the account.
 
 Text is drawn in Go Mono, compiled into the binary, until you pick an
-installed family with `-font-family` or from the Font menu. `-font`
+installed family with `-font-family` or from the Font menu, which
+remembers your pick for next time. `-font`
 takes font files instead, comma separated, in the order regular, bold,
 italic, bold italic. Only the regular font is required: a style you
 leave out borrows one you gave.
@@ -88,7 +89,7 @@ leave out borrows one you gave.
   theme sets the echo's colours and strength.
 - **Themes that change more than colour.** A theme sets how round and
   how roomy the window is, and how it moves: Phosphor is a tight green
-  screen in the IBM VGA font, Marshmallow a round and bouncy pastel,
+  screen, Marshmallow a round and bouncy pastel,
   and Ink an e-paper page with next to no motion. The theme picker
   shows each one as the highlight moves onto it.
 

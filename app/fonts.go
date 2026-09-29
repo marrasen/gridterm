@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"log"
 	"math"
 	"strings"
 
@@ -13,10 +14,9 @@ import (
 )
 
 // The terminals' typeface: Go Mono, compiled in; the IBM VGA face,
-// compiled in for a theme that asks for the look of a DOS program; or a
-// monospaced family installed on this machine, found by a scan as the
-// window opens. A theme may name one, which is taken unless the user has
-// picked one from the Font menu.
+// compiled in for the look of a DOS program; or a monospaced family
+// installed on this machine, found by a scan as the window opens. The
+// one picked from the Font menu is kept for next time.
 
 // bundledFamily and dosFamily are what the Font menu calls the faces
 // compiled in.
@@ -57,35 +57,49 @@ func (a *app) scanFonts() {
 			if err != nil {
 				a.failed("Couldn't read some fonts", err.Error())
 			}
-			// A family the command line named, or a theme's face on disk,
-			// can only be had now.
+			// A family on disk, named on the command line or picked last
+			// time, can only be had now.
 			if a.fixedFont != "" {
 				if err := a.setFont(a.fixedFont); err != nil {
 					a.failed("Couldn't draw in -font-family "+a.fixedFont, err.Error())
 				}
 			}
-			a.useWantedFont()
+			a.useKeptFont(true)
 		}
 	}()
 }
 
-// pickFont is the Font menu's route to setFont. It notes that the user
-// chose, so taking a theme again does not undo their choice.
-func (a *app) pickFont(name string) error {
-	a.fontPicked = true
-	return a.setFont(name)
-}
-
-// useWantedFont takes the face the theme asked for, unless the user
-// has picked one. A theme naming a face this machine lacks is a wish,
-// and the window stays in the face it has.
-func (a *app) useWantedFont() {
-	if a.fontPicked || a.wantFont == "" || !a.haveFont(a.wantFont) {
+// useKeptFont draws in the face picked from the Font menu last time: a
+// compiled-in one at once, one on disk once the fonts are found.
+func (a *app) useKeptFont(found bool) {
+	kept := a.keptFont
+	if _, compiled := compiledIn(kept); kept == "" || !compiled && !found {
 		return
 	}
-	if err := a.setFont(a.wantFont); err != nil {
-		a.failed("Couldn't read the theme's font", err.Error())
+	a.keptFont = ""
+	if !a.haveFont(kept) {
+		log.Printf("the font %q picked last time is not here, so this window is in %s", kept, bundledFamily)
+		return
 	}
+	if err := a.setFont(kept); err != nil {
+		a.failed("Couldn't draw in the font picked last time", err.Error())
+	}
+}
+
+// pickFont is the Font menu's route to setFont, kept for next time.
+func (a *app) pickFont(name string) error {
+	// A pick made before the fonts are found is not undone by the one
+	// kept from last time.
+	a.keptFont = ""
+	if err := a.setFont(name); err != nil {
+		return err
+	}
+	if a.settings != nil {
+		if err := a.settings.PutFontFamily(name); err != nil {
+			a.failed("Couldn't keep the font for next time", err.Error())
+		}
+	}
+	return nil
 }
 
 // haveFont reports whether a family is here to draw in.

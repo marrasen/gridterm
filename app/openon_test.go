@@ -414,7 +414,20 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	if err == nil {
 		t.Fatal("restarted on a server the window has let go of")
 	}
-	if !slices.ContainsFunc(b.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "opening connections is the user's to do") }) || len(a.machines.Dialing()) != 0 {
+	if !slices.ContainsFunc(b.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "Reconnect to srv from that window first") }) || len(a.machines.Dialing()) != 0 {
 		t.Fatalf("refused, it said %v, with notices %+v, and the window dials %v", err, b.st.Notices, a.machines.Dialing())
+	}
+
+	// Nor does the user's own Reconnect dial there: it says to reconnect
+	// from that window.
+	notices := len(b.st.Notices)
+	if err := b.startAgain(onFar); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the refusal of the user's reconnect", func() bool {
+		return len(b.st.Notices) > notices && strings.Contains(b.st.Notices[len(b.st.Notices)-1].Body, "Reconnect to srv from that window first")
+	})
+	if len(a.machines.Dialing()) != 0 || !b.terminal(onFar).Exited() {
+		t.Fatalf("the window dials %v, and the pane ended %v", a.machines.Dialing(), b.terminal(onFar).Exited())
 	}
 }

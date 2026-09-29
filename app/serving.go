@@ -513,6 +513,10 @@ func (a *app) startAgainFor(want serve.Attached, dial bool) error {
 			return count{}, serve.ErrNotOpen
 		}
 		c := count{a.restarts[want.ID], a.endings[want.ID]}
+		if machine := a.machineOf(want.ID); !dial && machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
+			// Said so that it reads right in the window that asked.
+			return c, fmt.Errorf("the window it runs in is no longer connected to %s. Reconnect to %s from that window first", a.machines.Name(machine), a.machines.Name(machine))
+		}
 		return c, a.startAgainOr(want.ID, dial)
 	})
 	if err != nil {

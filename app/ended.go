@@ -146,12 +146,10 @@ func (a *app) startAgainOr(id string, dial bool) error {
 				if !ok {
 					open = serve.Open{ID: farID, Kind: "Terminal"}
 				}
-				again := serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind}
-				if dial {
-					err = w.Serve.StartAgain(again)
-				} else {
-					err = w.Serve.StartAgainConnected(again)
-				}
+				// Only over a connection that window holds: one it would
+				// have to dial is for someone at that window to make,
+				// where its questions are asked.
+				err = w.Serve.StartAgainConnected(serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind})
 				if err == nil {
 					sess, err = w.Serve.Attach(open, size.Cols, size.Rows)
 				}

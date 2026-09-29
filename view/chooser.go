@@ -25,6 +25,7 @@ import (
 
 // chooser is the node a chooser pane shows.
 type chooser struct {
+	anim.Group
 	w  *Window
 	id string
 	// buttons are the new things to open, and thumbs the panes to move
@@ -33,6 +34,8 @@ type chooser struct {
 	buttons []*widget.Button
 	thumbs  []*thumb
 	heading *widget.Label
+	// ring shows round the chooser while Tab has put the keyboard in it.
+	ring *anim.Float
 	// made keeps each button and picture by what it offers, so one that
 	// stays is the same node from one change to the next, and the
 	// keyboard stays on it.
@@ -40,7 +43,8 @@ type chooser struct {
 }
 
 func newChooser(w *Window, id string) *chooser {
-	c := &chooser{w: w, id: id, heading: widget.NewLabel("Put here"), made: map[string]gunim.Node{}}
+	c := &chooser{w: w, id: id, heading: widget.NewLabel("Put here"), made: map[string]gunim.Node{}, ring: anim.NewFloat(0)}
+	c.Add(c.ring)
 	c.heading.Color = widget.Placeholder
 	c.refresh(nil)
 	return c
@@ -173,48 +177,40 @@ func (c *chooser) Children() []gunim.Node {
 // with nothing in it focused.
 func (c *chooser) Focusable() bool { return true }
 
-// focusables are what the arrows and Tab move through, in order.
-func (c *chooser) focusables() []gunim.Node {
-	var out []gunim.Node
-	for _, b := range c.buttons {
-		out = append(out, b)
-	}
-	for _, t := range c.thumbs {
-		out = append(out, t)
-	}
-	return out
-}
+// TabGroup implements [gunim.TabGroup]: Tab stops on the chooser once,
+// and its arrow keys walk what it offers, which lights as it is reached.
+// The ring, round all of it, is for Tab.
+func (c *chooser) TabGroup() {}
 
-// Handle implements [gunim.Handler]: Escape gives the half back, and
-// Tab and the arrows move among what is offered.
+// Handle implements [gunim.Handler]: Escape gives the half back, the
+// arrows walk what is offered, and the ring follows Tab.
 func (c *chooser) Handle(e input.Event, u *gunim.UI) bool {
-	k, ok := e.(input.KeyPress)
-	if !ok {
-		return false
-	}
-	step := 0
-	switch {
-	case k.Key == input.KeyEscape:
-		u.Send(c, app.ClosePane{Pane: c.id})
+	switch e := e.(type) {
+	case input.FocusRing:
+		to := float32(0)
+		if e.On {
+			to = 1
+		}
+		c.ring.Animate(to, widget.Quick.Get(u.Theme()))
+		u.Invalidate()
 		return true
-	case k.Key == input.KeyTab && k.Mods.Has(input.ModShift), k.Key == input.KeyLeft, k.Key == input.KeyUp:
-		step = -1
-	case k.Key == input.KeyTab && k.Mods == 0, k.Key == input.KeyRight, k.Key == input.KeyDown:
-		step = 1
-	default:
-		return false
-	}
-	all := c.focusables()
-	if len(all) == 0 {
+	case input.KeyPress:
+		if e.Mods != 0 {
+			return false
+		}
+		switch e.Key {
+		case input.KeyEscape:
+			u.Send(c, app.ClosePane{Pane: c.id})
+		case input.KeyLeft, input.KeyUp:
+			u.FocusWithin(c, false)
+		case input.KeyRight, input.KeyDown:
+			u.FocusWithin(c, true)
+		default:
+			return false
+		}
 		return true
 	}
-	at := slices.Index(all, u.Focused())
-	next := 0
-	if at >= 0 {
-		next = (at + step + len(all)) % len(all)
-	}
-	u.Focus(all[next])
-	return true
+	return false
 }
 
 // Measures of the chooser.
@@ -282,6 +278,11 @@ func (c *chooser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 	for i := range kids.Len() {
 		kids.At(i).Paint(p)
 	}
+	if on := min(max(c.ring.Value(), 0), 1); on > 0.01 {
+		ring := switcherRing.Get(f.Theme)
+		ring.A = uint8(float32(ring.A) * on)
+		p.RRectStroke(geom.Rect{Max: box.Point()}.Inset(geom.Uniform(3)), 6, paint.Fill{}, paint.Stroke{Width: 2, Color: ring})
+	}
 }
 
 // thumb is a pane offered in a chooser: a small live picture of it and
@@ -293,13 +294,15 @@ type thumb struct {
 	title string
 	label text.Run
 	hover *anim.Float
-	ring  *anim.Float
+	// walked lights the picture while the chooser's arrows have the
+	// keyboard on it.
+	walked *anim.Float
 }
 
 func newThumb(c *chooser, p app.Pane) *thumb {
-	t := &thumb{c: c, id: p.ID, hover: anim.NewFloat(0), ring: anim.NewFloat(0)}
+	t := &thumb{c: c, id: p.ID, hover: anim.NewFloat(0), walked: anim.NewFloat(0)}
 	t.retitle(p.Title)
-	t.Add(t.hover, t.ring)
+	t.Add(t.hover, t.walked)
 	return t
 }
 
@@ -331,15 +334,18 @@ func (t *thumb) Handle(e input.Event, u *gunim.UI) bool {
 			t.pick(u)
 			return true
 		}
-	case input.FocusRing:
-		// Shown as gunim shows a button's: while the keyboard is in use.
-		to := float32(0)
-		if e.On {
-			to = 1
+	case input.FocusGained:
+		// Lit as gunim lights a button the arrows walk to.
+		if e.Step != 0 {
+			t.walked.Animate(1, widget.Quick.Get(u.Theme()))
 		}
-		t.ring.Animate(to, widget.Quick.Get(u.Theme()))
+		return false
+	case input.FocusRing:
+		if e.On && e.Grouped {
+			t.walked.Animate(1, widget.Quick.Get(u.Theme()))
+		}
 	case input.FocusLost:
-		t.ring.Animate(0, widget.Settle.Get(u.Theme()))
+		t.walked.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.KeyPress:
 		if e.Key == input.KeyEnter || e.Key == input.KeyKPEnter || e.Key == input.KeySpace {
 			t.pick(u)
@@ -359,16 +365,18 @@ func (t *thumb) Layout(cs gunim.Constraints, _ gunim.Frame, _ gunim.Children) ge
 func (t *thumb) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
 	th := f.Theme
 	pic := geom.Rc(0, 0, box.W, box.H-thumbCaption)
+	if on := min(max(max(t.walked.Value(), t.hover.Value()), 0), 1); on > 0.01 {
+		// Lit, as a button is: under the pointer, or reached by the
+		// arrows. No ring; that is the chooser's, for Tab.
+		hot := widget.MenuHot.Get(th)
+		hot.A = uint8(float32(hot.A) * on)
+		p.RRect(geom.Rect{Max: box.Point()}.Inset(geom.Uniform(-4)), 8, paint.Solid(hot))
+	}
 	p.ShadowRRect(pic, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 2), Blur: 10, Color: color.NRGBA{A: 0x70}})
 	if !t.c.w.paintMiniature(p, f, t.id, pic, t.c.w.size) {
 		// Nothing drawn of it yet: its name in the middle.
 		ink := widget.Placeholder.Get(th)
 		t.label.Paint(p, geom.Pt((pic.Size().W-t.label.Advance)/2, (pic.Size().H-t.label.Height())/2), ink)
-	}
-	if on := min(max(max(t.ring.Value(), t.hover.Value()), 0), 1); on > 0.01 {
-		ring := switcherRing.Get(th)
-		ring.A = uint8(float32(ring.A) * on)
-		p.RRectStroke(pic.Inset(geom.Uniform(-2)), 8, paint.Fill{}, paint.Stroke{Width: 2, Color: ring})
 	}
 	ink := widget.Ink.Get(th)
 	run := t.label

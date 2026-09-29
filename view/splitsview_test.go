@@ -101,9 +101,9 @@ func TestAChooserFollowsThePanes(t *testing.T) {
 	}
 }
 
-// A picture in the chooser shows its ring as gunim's buttons do: after
-// Tab, and not from a click.
-func TestAChoosersPictureRingsOnlyForTheKeyboard(t *testing.T) {
+// The chooser is one stop for Tab, which rings all of it; its arrows
+// walk what it offers, which lights as it is reached, with no ring.
+func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "two", Kind: app.KindFiles},
 		{ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
@@ -115,16 +115,27 @@ func TestAChoosersPictureRingsOnlyForTheKeyboard(t *testing.T) {
 		}
 	}
 	run()
-	pic := win.choosers["c1"].thumbs[0]
-	lastUI.Focus(pic)
+	c := win.choosers["c1"]
+	pic := c.thumbs[0]
+	lastUI.Focus(c.buttons[len(c.buttons)-1])
 	run()
-	if pic.ring.Value() > 0.01 {
-		t.Fatal("focused without the keyboard in use, the picture shows its ring")
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight, Time: time.Now()})
+	run()
+	if lastUI.Focused() != pic || pic.walked.Value() < 0.9 || c.ring.Value() > 0.01 {
+		t.Fatalf("Right put the keyboard on %T, lit %v, the chooser's ring at %v", lastUI.Focused(), pic.walked.Value(), c.ring.Value())
 	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModShift, Time: time.Now()})
+	// Tab out, which shows the rings, and back in by gunim's Tab order
+	// (the file pane beside takes Tab itself, to go to the next pane):
+	// the chooser rings, and the picture it left from is lit again.
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Time: time.Now()})
 	run()
-	if lastUI.Focused() != pic || pic.ring.Value() < 0.9 {
-		t.Fatalf("after Tab, the keyboard is on %T and the ring at %v", lastUI.Focused(), pic.ring.Value())
+	run()
+	if lastUI.Focused() == pic || pic.walked.Value() > 0.01 {
+		t.Fatalf("Tab left the keyboard on %T, lit %v", lastUI.Focused(), pic.walked.Value())
+	}
+	lastUI.FocusNext(false)
+	run()
+	if lastUI.Focused() != pic || c.ring.Value() < 0.9 || pic.walked.Value() < 0.9 {
+		t.Fatalf("back in: on %T, the chooser's ring at %v, the picture lit %v", lastUI.Focused(), c.ring.Value(), pic.walked.Value())
 	}
 }

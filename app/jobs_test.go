@@ -350,3 +350,25 @@ func TestAnOlderListingNeverSendsAPaneBack(t *testing.T) {
 		}
 	}
 }
+
+// A copy that ends while a pane is on its way to another folder lists
+// that folder, not the one the pane is leaving.
+func TestACopyEndingListsTheFolderAPaneIsGoingTo(t *testing.T) {
+	a, _ := agentApp(t)
+	from, was, now := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(from, "a.txt"), []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	a.browse(Browse{Pane: pane, Path: now})
+	a.relistOn(jobs.Op{Kind: jobs.Copy, From: vfs.NewLocal(), At: from, Names: []string{"a.txt"}, To: vfs.NewLocal(), Into: was})
+	waitFor(t, a, "the pane there", func() bool { return a.st.Browsers[pane].Path == now })
+	pumpFor(a, 50*time.Millisecond)
+	if got := a.st.Browsers[pane].Path; got != now {
+		t.Fatalf("the pane went back to %q", got)
+	}
+}

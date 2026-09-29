@@ -46,6 +46,13 @@ func (a *app) scanShells() {
 				a.failed("Couldn't list the shells here", err.Error())
 			}
 			a.found, a.scanned = found, err == nil
+			// A kept shell found gone is said now: the first pane may
+			// have tried it before the shells were looked for.
+			if a.scanned && a.settings != nil {
+				if id, chosen := a.settings.Shell(); chosen && a.shellCommand(id) == nil {
+					a.sayShellGone(id)
+				}
+			}
 			a.st.Shells = nil
 			for _, s := range found {
 				choice := ShellChoice{ID: s.ID, Title: s.Title}
@@ -70,12 +77,21 @@ func (a *app) localShell() []string {
 		return nil
 	}
 	argv := a.shellCommand(id)
-	if argv == nil && !a.shellGoneSaid {
-		// The default shell opens instead, and the user is told once.
-		a.shellGoneSaid = true
-		a.failed("Shell not found", strings.TrimPrefix(id, "wsl:")+" is no longer installed. The default shell was opened. Choose another in the palette, under Start … in New Terminals.")
+	if argv == nil {
+		// The default shell opens instead.
+		a.sayShellGone(id)
 	}
 	return argv
+}
+
+// sayShellGone says, once for each shell kept, that it is no longer on
+// this machine, and that new terminals start the default shell.
+func (a *app) sayShellGone(id string) {
+	if a.shellGoneSaid {
+		return
+	}
+	a.shellGoneSaid = true
+	a.failed("Shell not found", strings.TrimPrefix(id, "wsl:")+" is no longer installed. New terminals start the default shell. Choose another in the palette, under Start … in New Terminals.")
 }
 
 // shellCommand is the command that starts shell id, or nil when this
@@ -98,6 +114,8 @@ func (a *app) pickShell(id string) error {
 		return nil
 	}
 	a.st.ChosenShell = id
+	// A new pick that goes too is said again.
+	a.shellGoneSaid = false
 	if id == "" {
 		return a.settings.ForgetShell()
 	}

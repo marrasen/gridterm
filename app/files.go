@@ -330,13 +330,14 @@ func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func())
 		}
 		return fmt.Errorf("this window is not connected to %s", a.machines.Name(machine))
 	}
-	a.st.Status = "Opening the files on " + a.machines.Name(machine) + "…"
+	opening := "files " + string(machine)
+	a.say(opening, "Opening the files on "+a.machines.Name(machine)+"…")
 	a.starting++
 	go func() {
 		f, err := open()
 		a.events <- func() {
 			a.starting--
-			a.showStatus()
+			a.say(opening, "")
 			if err != nil {
 				failed()
 				a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
@@ -440,6 +441,7 @@ func (a *app) browse(in Browse) {
 	}
 	in.Path = vfs.Spelled(f, in.Path)
 	a.listing[in.Pane]++
+	a.listingAt[in.Pane] = in.Path
 	asked := a.listing[in.Pane]
 	go func() {
 		entries, err := f.ReadDir(in.Path)

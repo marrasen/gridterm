@@ -52,7 +52,9 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 		}
 	}
 	if typed := shellsetup.Typed(shellsetup.RouteFor(route)); len(typed) > 0 {
-		_, _ = sess.Write(typed)
+		if _, err := sess.Write(typed); err != nil {
+			a.failed("Couldn't set up the shell", err.Error())
+		}
 	}
 	return sess, nil
 }

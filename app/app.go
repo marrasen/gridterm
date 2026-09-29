@@ -456,12 +456,18 @@ type app struct {
 	// line.
 	sending   int
 	sendingTo string
-	// jobLines are what the jobs running say on the status line.
+	// jobLines are what the jobs running say on the status line, and
+	// saying what else is said there, by what says it.
 	jobLines []string
+	saying   map[string]string
 	// listing counts the listings asked for each file pane, so one that
 	// lands after a later one was asked for is dropped: a pane is never
 	// sent back to where it was.
 	listing map[string]int
+	// listingAt is the folder each file pane last asked for, which a
+	// listing again asks for: not the folder it shows, which the user
+	// may be leaving.
+	listingAt map[string]string
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -625,6 +631,8 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		farLogs:   map[machines.ID]bool{},
 		notRun:    map[string]bool{},
 		listing:   map[string]int{},
+		listingAt: map[string]string{},
+		saying:    map[string]string{},
 		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
@@ -1213,6 +1221,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.saveLines(in)
 	case DropFileClip:
 		a.clip = nil
+		a.say("clip", "")
 	case ListFolders:
 		a.listFolders(in)
 	case AskAction:
@@ -1386,9 +1395,11 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	id := "p" + strconv.Itoa(a.next)
 	title := fmt.Sprintf("Terminal %d", a.next)
 	if machine == "" {
-		argv := a.localShell()
-		if a.nextShell != nil {
-			argv, a.nextShell = a.nextShell, nil
+		// The shell picked for this one, or else the one kept.
+		argv := a.nextShell
+		a.nextShell = nil
+		if argv == nil {
+			argv = a.localShell()
 		}
 		sess, err := a.startLocalSession(argv, a.dirHere(), screen.Cols, screen.Rows, true)
 		if err != nil {
@@ -1607,6 +1618,7 @@ func (a *app) remove(id string) {
 	delete(a.linksAt, id)
 	delete(a.notRun, id)
 	delete(a.listing, id)
+	delete(a.listingAt, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)

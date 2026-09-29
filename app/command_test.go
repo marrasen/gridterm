@@ -202,7 +202,7 @@ func TestAKeptShellThatHasGoneIsSaidOnce(t *testing.T) {
 			t.Fatalf("with the kept shell gone, a terminal starts %q", argv)
 		}
 	}
-	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Shell not found" || !strings.HasPrefix(a.st.Notices[0].Body, "Gone is no longer installed.") {
+	if len(a.st.Notices) != 1 || a.st.Notices[0].Title != "Shell not found" || !strings.HasPrefix(a.st.Notices[0].Body, "Gone is no longer installed. New terminals") {
 		t.Fatalf("the notices are %+v", a.st.Notices)
 	}
 }
@@ -218,5 +218,29 @@ func TestACommandThatCannotBeKeptIsNotRun(t *testing.T) {
 	}
 	if len(a.st.Panes) != 0 {
 		t.Fatalf("the command ran: %+v", a.st.Panes)
+	}
+}
+
+// A kept shell found gone when the shells have been looked for is said
+// then, as the first pane may have tried it before.
+func TestAKeptShellFoundGoneByTheScanIsSaid(t *testing.T) {
+	was := findShells
+	findShells = func() ([]shellfind.Shell, error) { return nil, nil }
+	t.Cleanup(func() { findShells = was })
+	a := fontApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := set.PutShell("wsl:Gone"); err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	a.scanShells()
+	waitFor(t, a, "the notice", func() bool { return len(a.st.Notices) == 1 })
+	// Picked anew, and gone as well, it is said again.
+	a.handle(PickShell{ID: "wsl:Other"})
+	if a.localShell() != nil || len(a.st.Notices) != 2 {
+		t.Fatalf("the notices are %+v", a.st.Notices)
 	}
 }

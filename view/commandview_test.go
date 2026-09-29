@@ -67,7 +67,7 @@ func TestTheCommandDialogOffersEverySavedCommand(t *testing.T) {
 		t.Fatalf("picked top, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.On)
 	}
 	choose(2)
-	if line.Text() != "make deploy" || dir.Text() != "/home/me" || keep.On {
+	if line.Text() != "make deploy" || dir.Text() != "" || keep.On {
 		t.Fatalf("picked one from srv, the dialog holds %q in %q, kept %v", line.Text(), dir.Text(), keep.On)
 	}
 	// Unticked with the spacing changed, the pick is still forgotten.

@@ -382,3 +382,19 @@ func TestTheStatusSaysJobsAndDialsTogether(t *testing.T) {
 		t.Fatalf("the status says %q", a.st.Status)
 	}
 }
+
+// What else the status line says stays while a job runs, and goes when
+// what said it takes it away.
+func TestTheStatusKeepsWhatElseItSaysWhileAJobRuns(t *testing.T) {
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	a.say("clip", "Ready to copy 2 items; paste in a folder with F7 or Ctrl+V.")
+	a.jobLines = []string{"Copying 1 item to x, 10%"}
+	a.showStatus()
+	if a.st.Status != "Ready to copy 2 items; paste in a folder with F7 or Ctrl+V.  ·  Copying 1 item to x, 10%" {
+		t.Fatalf("the status says %q", a.st.Status)
+	}
+	a.say("clip", "")
+	if a.st.Status != "Copying 1 item to x, 10%" {
+		t.Fatalf("taken away, the status says %q", a.st.Status)
+	}
+}

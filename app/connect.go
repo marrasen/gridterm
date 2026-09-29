@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -506,6 +508,17 @@ func (a *app) savedWindowAt(cfg remote.Config) (remote.Host, bool) {
 	return remote.Host{}, false
 }
 
+// say puts text on the status line for what, beside the rest said
+// there, or takes what it said away with text empty.
+func (a *app) say(what, text string) {
+	if text == "" {
+		delete(a.saying, what)
+	} else {
+		a.saying[what] = text
+	}
+	a.showStatus()
+}
+
 // sameHost is whether two addresses name the same host: names in any
 // case, and IP addresses however they are spelled, in brackets or not.
 func sameHost(a, b string) bool {
@@ -538,6 +551,9 @@ func (a *app) showStatus() {
 		said = append(said, "Sending a picture to "+a.sendingTo+"…")
 	case a.sending > 1:
 		said = append(said, fmt.Sprintf("Sending %d pictures…", a.sending))
+	}
+	for _, key := range slices.Sorted(maps.Keys(a.saying)) {
+		said = append(said, a.saying[key])
 	}
 	a.st.Status = strings.Join(append(said, a.jobLines...), "  ·  ")
 }

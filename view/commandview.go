@@ -71,9 +71,15 @@ func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim
 			// The folder only when this machine's, and only over one
 			// typed by nobody: a folder elsewhere is nothing here.
 			mine := i-1 < here
-			if mine && (dir.Text() == "" || dir.Text() == filled) {
+			switch {
+			case mine && (dir.Text() == "" || dir.Text() == filled):
 				dir.SetText(c.Dir)
 				filled = c.Dir
+			case !mine && dir.Text() == filled:
+				// A folder a pick here put in is nothing to a command
+				// saved elsewhere.
+				dir.SetText("")
+				filled = ""
 			}
 			picked = ""
 			if mine {

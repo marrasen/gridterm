@@ -143,12 +143,12 @@ func (a *app) checkUpdates() {
 		return
 	}
 	a.checking = true
-	a.st.Status = "Checking for updates…"
+	a.say("update", "Checking for updates…")
 	go func() {
 		newest, err := latestRelease(a.ctx)
 		a.events <- func() {
 			a.checking = false
-			a.showStatus()
+			a.say("update", "")
 			if err != nil {
 				a.failed("Could not check for updates", err.Error())
 				return

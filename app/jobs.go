@@ -158,7 +158,7 @@ func (a *app) clipFiles(in ClipFiles) {
 		kind, verb = jobs.Move, "move"
 	}
 	a.clip = &fileClip{kind: kind, from: f, machine: a.filesKey(in.Pane), at: at, names: in.Names}
-	a.st.Status = fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, words.Count(len(in.Names), "item"))
+	a.say("clip", fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, words.Count(len(in.Names), "item")))
 }
 
 func (a *app) pasteFiles(in PasteFiles) error {
@@ -174,7 +174,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 		// A move happens once.
 		a.clip = nil
 	}
-	a.showStatus()
+	a.say("clip", "")
 	op := jobs.Op{Kind: c.kind, From: c.from, At: c.at, Names: c.names, To: f, Into: into}
 	verb := "Copying"
 	if c.kind == jobs.Move {
@@ -221,7 +221,11 @@ func (a *app) relistOn(op jobs.Op) {
 	for id, b := range a.st.Browsers {
 		f := a.filesOf(id)
 		if f != nil && (vfs.Same(f, op.From) || (op.To != nil && vfs.Same(f, op.To))) {
-			a.browse(Browse{Pane: id, Path: b.Path})
+			at := b.Path
+			if asked, ok := a.listingAt[id]; ok {
+				at = asked
+			}
+			a.browse(Browse{Pane: id, Path: at})
 		}
 	}
 }

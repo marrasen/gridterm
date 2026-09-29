@@ -172,6 +172,42 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	}
 }
 
+// A finished copy is done again on the machines it ran between, unless
+// a saved server at either end, or the saved window it went through,
+// was removed from the list since.
+func TestRepeatRefusesAServerRemovedSince(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []remote.Host{{Name: "desk", Address: "desk.example"}, {Name: "box", Address: "box.example", Window: true}} {
+		if err := book.Put(h, ""); err != nil {
+			t.Fatal(err)
+		}
+	}
+	a.book = book
+	desk, _ := book.Lookup("desk")
+	box, _ := book.Lookup("box")
+	quick := a.newQuick("me@typed.example", false)
+	for _, m := range []MachineID{Local, quick, MachineID(desk.ID), farID(MachineID(box.ID), "k")} {
+		if err := a.stillSaved(m); err != nil {
+			t.Fatalf("%q is there, and it said %v", m, err)
+		}
+	}
+	for _, h := range []remote.Host{desk, box} {
+		if err := book.RemoveID(h.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, m := range []MachineID{MachineID(desk.ID), farID(MachineID(box.ID), "k")} {
+		if err := a.stillSaved(m); err == nil || !strings.Contains(err.Error(), "removed") {
+			t.Fatalf("%q was removed, and it said %v", m, err)
+		}
+	}
+}
+
 func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
@@ -183,8 +219,7 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	if err := a.repeatJob("j1"); err != nil {
 		t.Fatal(err)
 	}
-	// The same quick connection, dialled at its address: not one made
-	// for its ID as if that were an address.
+	// The same quick connection, dialled at its address.
 	if !a.running[0].repeating || !a.dialing[quick] || len(a.quick) != 1 {
 		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.dialing)
 	}

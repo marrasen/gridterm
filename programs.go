@@ -47,7 +47,11 @@ func (a *app) notePanes() {
 			a.noticed[p.ID] = num
 			if text != "" {
 				from := "This computer"
-				if p.Machine != Local {
+				switch {
+				case p.On != "":
+					// Beyond a window: the machine it runs on there.
+					from = a.nameOf(farID(p.Machine, p.On))
+				case p.Machine != Local:
 					from = a.nameOf(p.Machine)
 				}
 				from += ": " + p.Title

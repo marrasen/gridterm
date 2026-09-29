@@ -67,18 +67,13 @@ func (a *app) repeatJob(id string) error {
 	if r.repeating {
 		return nil
 	}
-	// Found again as a saved copy is: the machines may have gone and
-	// come back under other IDs meanwhile.
-	from, err := a.machineNow(a.keptAs(r.from), r.fromID)
-	if err != nil {
-		return err
-	}
-	to, err := a.machineNow(a.keptAs(r.to), r.toID)
-	if err != nil {
-		return err
+	for _, m := range []MachineID{r.from, r.to} {
+		if err := a.stillSaved(m); err != nil {
+			return err
+		}
 	}
 	r.repeating = true
-	return a.copyBetween(from, to, r.op.At, r.op.Into, r.op.Names, func() { r.repeating = false })
+	return a.copyBetween(r.from, r.to, r.op.At, r.op.Into, r.op.Names, func() { r.repeating = false })
 }
 
 // copyBetween copies names from a folder on one machine into a folder
@@ -144,6 +139,20 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 		return err
 	}
 	return a.copyBetween(from, to, c.At, c.Into, c.Names, func() {})
+}
+
+// stillSaved refuses a machine whose saved server, or saved window it
+// is reached through, was removed from the list since. A listed piece
+// of work keeps its quick connections, so they are there still.
+func (a *app) stillSaved(m MachineID) error {
+	window, _, _ := m.Far()
+	if window == Local || a.isQuick(window) {
+		return nil
+	}
+	if _, ok := a.savedHost(window); !ok {
+		return fmt.Errorf("%s was removed from the server list", a.nameOf(window))
+	}
+	return nil
 }
 
 // machineNow is the machine a piece of work kept from before runs on:

@@ -126,9 +126,6 @@ type running struct {
 	// from lastBytes at lastAt.
 	op       jobs.Op
 	from, to MachineID
-	// fromID and toID are the saved servers at either end, which a
-	// repeat finds by id, whatever they are called by then.
-	fromID, toID string
 	// repeating says a repeat has been asked for and has not started
 	// yet: a machine opened again takes as long as a connection does,
 	// and a second press in that time would copy the same thing twice.
@@ -217,8 +214,7 @@ func (a *app) followOn(op jobs.Op, title string, from, to MachineID) *jobs.Job {
 	}
 	a.clearJobs(false)
 	a.jobSeq++
-	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to,
-		fromID: a.serverID(from), toID: a.serverID(to)})
+	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to})
 	if !a.watching {
 		a.watching = true
 		go a.watchJobs()

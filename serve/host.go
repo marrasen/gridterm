@@ -439,12 +439,16 @@ func (s *Server) refuseSession(ch ssh.Channel, reqs <-chan *ssh.Request, why err
 // The status is sent before the channel goes. A client that only saw
 // the channel close could not tell a program that finished from a
 // connection that dropped, and those are different things to show
-// somebody. Whether it ended well is all that crosses: why it did not
-// stays on the machine it happened on.
+// somebody. The program's exit status is all that crosses, 1 for a
+// failure that has none: why it failed stays on the machine it happened
+// on.
 func (s *Server) endSession(ch ssh.Channel, why error) {
 	status := uint32(0)
 	if why != nil {
 		status = 1
+		if code, ok := exitCode(why); ok && code > 0 {
+			status = uint32(code)
+		}
 	}
 	_, err := ch.SendRequest(reqExitStatus, false, ssh.Marshal(exitStatus{Status: status}))
 	if err != nil && !errors.Is(err, io.EOF) {
@@ -465,6 +469,24 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 	if err := ch.Close(); err != nil && !Ended(err) {
 		s.onError(fmt.Errorf("serve: close a session: %w", err))
 	}
+}
+
+// exitCode is the exit status an error carries, as a program that ended
+// here, on a server, or in another window says one.
+func exitCode(err error) (int, bool) {
+	if e, ok := errors.AsType[interface {
+		error
+		ExitStatus() int
+	}](err); ok {
+		return e.ExitStatus(), true
+	}
+	if e, ok := errors.AsType[interface {
+		error
+		ExitCode() int
+	}](err); ok {
+		return e.ExitCode(), true
+	}
+	return 0, false
 }
 
 // Attached names something a client asked to work in, as the client was

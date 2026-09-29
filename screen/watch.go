@@ -5,6 +5,7 @@ import (
 	"io"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/marrasen/kakel/session"
 	uiterm "github.com/marrasen/kakel/ui/term"
@@ -142,13 +143,33 @@ func (w *watched) Resize(cols, rows int) error {
 	return nil
 }
 
+// Wait waits for the watcher to go or the program to end, and gives
+// how the program ended, which it learns a moment after it has gone:
+// the watcher says it, as a program of its own would. A watcher that
+// went first has no ending to give.
 func (w *watched) Wait() error {
 	select {
-	case <-w.done:
 	case <-w.over:
+	default:
+		select {
+		case <-w.done:
+			return nil
+		case <-w.over:
+		}
 	}
-	return nil
+	for deadline := time.Now().Add(statusWait); ; {
+		if why, over := w.pane.Ending(); over {
+			return why
+		}
+		if time.Now().After(deadline) {
+			return nil
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 }
+
+// statusWait is how long an ended program's status has to arrive.
+const statusWait = 2 * time.Second
 
 func (w *watched) Close() error {
 	w.closeOnce.Do(func() {

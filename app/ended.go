@@ -11,8 +11,6 @@ import (
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/words"
 
-	"golang.org/x/crypto/ssh"
-
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/session"
@@ -264,7 +262,11 @@ func exitStatus(why error, over bool) (int, bool) {
 	case why == nil:
 		return 0, true
 	}
-	if far, ok := errors.AsType[*ssh.ExitError](why); ok {
+	// On a server, or in another window, as each says it.
+	if far, ok := errors.AsType[interface {
+		error
+		ExitStatus() int
+	}](why); ok {
 		return far.ExitStatus(), true
 	}
 	if here, ok := errors.AsType[*exec.ExitError](why); ok && here.ExitCode() >= 0 {

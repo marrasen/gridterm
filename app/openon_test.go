@@ -34,7 +34,10 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 	// Split beside it, a terminal opens where it runs.
 	b.st.Focus = b.st.Panes[1].ID
 	b.handle(SplitPane{})
-	pumpBoth(t, a, b, "the split on the server", func() bool { return len(b.st.Panes) == 3 && len(a.st.Panes) == 4 })
+	pumpBoth(t, a, b, "the split on the server", func() bool {
+		return len(b.st.Panes) == 3 && len(a.st.Panes) == 4 && b.terminal(b.st.Panes[2].ID) != nil &&
+			strings.Contains(b.terminal(b.st.Panes[2].ID).AllText(), "READY")
+	})
 	if p := b.st.Panes[2]; p.On != "srv" || a.st.Panes[3].Machine != "srv" {
 		t.Fatalf("split, the pane is %+v here and %+v there", p, a.st.Panes[3])
 	}
@@ -58,6 +61,18 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 		t.Fatalf("the command's pane is %+v", p)
 	}
 
+	// A command that fails there says so here, with its status.
+	b.handle(RunCommand{Machine: win, Line: "false"})
+	pumpBoth(t, a, b, "the failed command", func() bool {
+		if len(b.st.Panes) != 5 {
+			return false
+		}
+		tm := b.terminal(b.st.Panes[4].ID)
+		return tm != nil && tm.Asking() == "false finished. Exit 1. Run it again?"
+	})
+	b.handle(ClosePane{Pane: b.st.Panes[4].ID})
+	pumpBoth(t, a, b, "the failed command closed", func() bool { return len(b.st.Panes) == 4 })
+
 	// A machine the other window has no connection to is refused there,
 	// saying why in the pane here.
 	b.handle(OpenOn{Machine: machines.FarID(win, "nowhere")})
@@ -65,8 +80,23 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 		return len(b.st.Panes) == 5 && b.terminal(b.st.Panes[4].ID) != nil &&
 			strings.Contains(b.terminal(b.st.Panes[4].ID).AllText(), "knows no machine called nowhere")
 	})
-	if len(a.st.Panes) != 5 {
-		t.Fatalf("refused, the other window opened %+v", a.st.Panes)
+	panes := len(a.st.Panes)
+
+	// One it knows but is not connected to is refused as well, rather
+	// than connected to, which would ask its questions over there; and
+	// a kakel window beyond it is its own to open on.
+	idle := a.machines.NewQuick("idle.example", false)
+	beyond := a.machines.NewQuick("beyond.example:7777", true)
+	for i, key := range []machines.ID{idle, beyond} {
+		b.handle(OpenOn{Machine: machines.FarID(win, string(key))})
+		pumpBoth(t, a, b, "the refusal of "+string(key), func() bool {
+			n := len(b.st.Panes)
+			return n == 5+i+1 && b.terminal(b.st.Panes[n-1].ID) != nil &&
+				strings.Contains(b.terminal(b.st.Panes[n-1].ID).AllText(), "kakel:")
+		})
+	}
+	if len(a.st.Panes) != panes || len(a.machines.Dialing()) != 0 {
+		t.Fatalf("refused, the other window opened %+v and dials %v", a.st.Panes, a.machines.Dialing())
 	}
 }
 

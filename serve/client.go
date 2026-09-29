@@ -635,10 +635,19 @@ func (s *remoteSession) Wait() error {
 	case !s.gotOne:
 		return errors.New("serve: the connection went before it said how that ended")
 	case s.status != 0:
-		return fmt.Errorf("serve: it ended with status %d", s.status)
+		return &ExitError{Status: int(s.status)}
 	}
 	return nil
 }
+
+// ExitError is how a program another window ran ended, when it failed:
+// its exit status, or 1 for a failure that had none.
+type ExitError struct{ Status int }
+
+func (e *ExitError) Error() string { return fmt.Sprintf("serve: it ended with status %d", e.Status) }
+
+// ExitStatus is the program's exit status.
+func (e *ExitError) ExitStatus() int { return e.Status }
 
 // Close hangs the program up.
 func (s *remoteSession) Close() error {

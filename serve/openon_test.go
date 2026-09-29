@@ -2,6 +2,7 @@ package serve
 
 import (
 	"errors"
+	"strconv"
 	"testing"
 	"time"
 
@@ -62,4 +63,32 @@ func TestAWindowThatOpensNothingElsewhereSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	read(t, sess, "cannot open anything on the machines it reaches")
+}
+
+// statusError is a program's failure that says its exit status.
+type statusError int
+
+func (e statusError) Error() string   { return "exit status " + strconv.Itoa(int(e)) }
+func (e statusError) ExitStatus() int { return int(e) }
+
+// How a program ended crosses as its exit status, for the other window
+// to say it as it would its own.
+func TestAProgramsExitStatusCrosses(t *testing.T) {
+	_, w := takenOverServing(t, Config{OpenOn: func(_, _, _ string, cols, rows int) (session.Session, Attached, error) {
+		s := newEchoSession(cols, rows)
+		s.endWith = statusError(3)
+		return s, Attached{}, nil
+	}})
+	sess, err := w.OpenOn("", "false", "", 80, 24, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read(t, sess, "started at")
+	if _, err := sess.Write([]byte("bye")); err != nil {
+		t.Fatal(err)
+	}
+	var ended *ExitError
+	if err := waited(t, sess); !errors.As(err, &ended) || ended.ExitStatus() != 3 {
+		t.Fatalf("it ended with %v", err)
+	}
 }

@@ -1145,7 +1145,13 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		}
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
 		h.Window = kind.Selected == 1
-		h.Folders = remote.FoldersFrom(folders.Text())
+		// Left as they were, they stay as saved: a folder with a comma in
+		// its path would be split in two by reading the line back.
+		if old != nil && folders.Text() == old.FoldersJoined() {
+			h.Folders = old.Folders
+		} else {
+			h.Folders = remote.FoldersFrom(folders.Text())
+		}
 		// A window keeps the agent tick it had, unused, so switching it
 		// back to a server brings it back. Not its route: a window
 		// naming a jump host would keep that host from being removed,

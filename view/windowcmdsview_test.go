@@ -262,3 +262,28 @@ func TestTheWindowTakesTheShortcutsFile(t *testing.T) {
 	}
 	_ = gi.KeyA
 }
+
+// A server saved again with its folders untouched keeps them as they
+// were, one with a comma in its path included.
+func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
+	win, _, publish := windowStage(t)
+	srv := remote.Host{ID: "s1", Name: "srv", Address: "srv.example", Folders: []string{"/data/a,b", "/srv"}}
+	publish(app.State{Saved: []remote.Host{srv}})
+	win.serverForm(&srv, lastUI)
+	in, ok := win.dialog.OnAccept().(app.SaveServer)
+	if !ok || !slices.Equal(in.Host.Folders, srv.Folders) {
+		t.Fatalf("saved untouched, the folders are %q", in.Host.Folders)
+	}
+}
+
+// A window saved again keeps the agent tick it came with, unused, so a
+// switch back to a server finds it.
+func TestAWindowKeepsTheAgentTickItCameWith(t *testing.T) {
+	win, _, publish := windowStage(t)
+	far := remote.Host{ID: "f1", Name: "far", Address: "far.example", Window: true, ForwardAgent: true}
+	publish(app.State{Saved: []remote.Host{far}})
+	win.serverForm(&far, lastUI)
+	if in, ok := win.dialog.OnAccept().(app.SaveServer); !ok || !in.Host.ForwardAgent {
+		t.Fatalf("saved untouched, the window is %+v", in.Host)
+	}
+}

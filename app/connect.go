@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 	"time"
 
@@ -96,6 +98,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		cfg, err := remote.ParseTarget(strings.TrimSpace(in.Target))
 		if err != nil {
 			return err
+		}
+		// Typed at a saved window's address: that window, as a window,
+		// not SSH to the port it serves on.
+		if h, ok := a.savedWindowAt(cfg); ok {
+			return a.connectWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID)})
 		}
 		hops = []remote.Config{cfg}
 		names, shown = []machines.ID{machines.Local}, []string{cfg.Target()}
@@ -477,4 +484,22 @@ func (a *app) connOf(machine machines.ID) (*remote.Conn, bool, error) {
 		return nil, true, err
 	}
 	return c, true, nil
+}
+
+// savedWindowAt is the saved window a typed target names by its address:
+// with the port it serves on, when one is typed, or by the address
+// alone when none is.
+func (a *app) savedWindowAt(cfg remote.Config) (remote.Host, bool) {
+	if a.book == nil || cfg.Host == "" {
+		return remote.Host{}, false
+	}
+	for _, h := range a.book.Hosts() {
+		if !h.Window || !strings.EqualFold(h.Address, cfg.Host) {
+			continue
+		}
+		if cfg.Port == 0 || h.ServeAddr() == net.JoinHostPort(h.Address, strconv.Itoa(cfg.Port)) {
+			return h, true
+		}
+	}
+	return remote.Host{}, false
 }

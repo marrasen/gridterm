@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -24,7 +26,7 @@ func jumpApp(t *testing.T) (a *app, s *sshtest.Server, answering func()) {
 	s = sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
 	if err != nil {

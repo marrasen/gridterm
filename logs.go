@@ -1,9 +1,12 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"os"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/logs"
 )
@@ -72,7 +75,7 @@ func (a *app) showLog(machine machines.ID) {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindLog}, openShell(l.Open(), a.palette, a.hooks(id)), placement{})
+	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: kindLog}, screen.Open(l.Open(), a.palette, a.hooks(id)), placement{})
 }
 
 // watchDial shows a machine's connection log as the connection is made:
@@ -89,7 +92,7 @@ func (a *app) watchDial(machine machines.ID) string {
 	a.next++
 	id := "p" + itoa(a.next)
 	a.addPane(Pane{ID: id, Title: "Connecting to " + a.machines.Name(machine), Machine: machine, Kind: kindLog},
-		openShell(a.machines.Get(machine).Log.Open(), a.palette, a.hooks(id)), placement{})
+		screen.Open(a.machines.Get(machine).Log.Open(), a.palette, a.hooks(id)), placement{})
 	return id
 }
 

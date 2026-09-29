@@ -2,12 +2,17 @@ package main
 
 import (
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"image/color"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/winkeys"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -49,7 +54,7 @@ type window struct {
 	list   *widget.List
 	stage  *stage
 	status *statusLine
-	shells *shells
+	shells *screen.Shells
 	keys   *ui.Keymap
 	terms  map[string]*term
 	// browsers and readers are the file panes and readers, by pane.
@@ -207,7 +212,7 @@ type window struct {
 	paletteIDs []string
 }
 
-func newWindow(sh *shells, keys *ui.Keymap, all []themed) *window {
+func newWindow(sh *screen.Shells, keys *ui.Keymap, all []themed) *window {
 	w := &window{
 		contents:    map[string]theme.Theme{},
 		list:        widget.NewList(),
@@ -600,10 +605,6 @@ func (w *window) showFonts(st State) {
 	}
 }
 
-// programName is what the window is called, before the focused
-// terminal's title.
-const programName = "kakel"
-
 // showTitle names the window after the pane in front: "kakel" and the
 // pane's title on the window's own title bar, and the two together for
 // the taskbar. A terminal the user has not named goes by what its
@@ -614,7 +615,7 @@ func (w *window) showTitle(st State, u *gunim.UI) {
 		if p.ID == st.Focus {
 			pane = p.Title
 			if t, ok := w.terms[p.ID]; ok && !p.Named {
-				if program := t.sh.t.Title(); program != "" {
+				if program := t.sh.T.Title(); program != "" {
 					pane = program
 				}
 			}
@@ -1139,7 +1140,7 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 			h.Via = ""
 		}
 		if err := h.Validate(); err != nil {
-			return h, upperFirst(err.Error()) + "."
+			return h, words.UpperFirst(err.Error()) + "."
 		}
 		if why := w.savingClashes(h, old); why != "" {
 			return h, why
@@ -1265,7 +1266,7 @@ func (w *window) removeSays(name machines.ID) string {
 			}
 		}
 		if panes > 0 {
-			said += " and everything through it: " + count(panes, "pane")
+			said += " and everything through it: " + words.Count(panes, "pane")
 		}
 		return said + "."
 	case slices.Contains(w.dropped, name):
@@ -1279,25 +1280,17 @@ func (w *window) removeSays(name machines.ID) string {
 		if slices.Contains(w.dialing, name) {
 			said += " Removing it cancels the reconnect in progress"
 			if left > 0 {
-				said += " and closes its " + count(left, "ended pane")
+				said += " and closes its " + words.Count(left, "ended pane")
 			}
 			return said + "."
 		}
 		if left > 0 {
-			return said + " Removing it closes its " + count(left, "ended pane") + "."
+			return said + " Removing it closes its " + words.Count(left, "ended pane") + "."
 		}
 	case slices.Contains(w.dialing, name):
 		return "Removing it cancels the connection in progress."
 	}
 	return ""
-}
-
-// upperFirst capitalises the first letter of s.
-func upperFirst(s string) string {
-	if s == "" {
-		return s
-	}
-	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 // rename asks for a new name for the pane with the keyboard.
@@ -1487,7 +1480,7 @@ func (w *window) Handle(e input.Event, u *gunim.UI) bool {
 	if !ok {
 		return false
 	}
-	ev, ok := keyEvent(k)
+	ev, ok := winkeys.Event(k)
 	if !ok {
 		return false
 	}
@@ -1716,7 +1709,7 @@ func (w *window) update(st State, u *gunim.UI) {
 		p.bar.show(t, ok, u)
 	}
 	for id, t := range w.terms {
-		if w.shells.get(id) == nil || !open[id] {
+		if w.shells.Get(id) == nil || !open[id] {
 			// Ended, or moved to another window, which draws it from
 			// now on.
 			delete(w.terms, id)
@@ -1938,7 +1931,7 @@ func (w *window) term(id string) *term {
 	if t, ok := w.terms[id]; ok {
 		return t
 	}
-	t := newTerm(id, w.shells.get(id), w.keys)
+	t := newTerm(id, w.shells.Get(id), w.keys)
 	t.ctrl = w.ctrlHeld
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize

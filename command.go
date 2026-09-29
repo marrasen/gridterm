@@ -3,9 +3,12 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"strconv"
 	"strings"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/session"
@@ -78,7 +81,7 @@ func (a *app) runCommand(in RunCommand) error {
 	}
 	title := strings.Join(argv, " ")
 	return a.startCommand(in.Machine, cmd, commandStart{then: func(sess session.Session) {
-		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), placement{beside: in.Beside, vertical: in.Vertical})
+		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), placement{beside: in.Beside, vertical: in.Vertical})
 	}})
 }
 
@@ -106,7 +109,7 @@ func (s commandStart) fail() {
 func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) error {
 	line := strings.Join(cmd.argv, " ")
 	if machine == "" {
-		sess, err := a.startLocalSession(cmd.argv, cmd.dir, shellCols, shellRows, false)
+		sess, err := a.startLocalSession(cmd.argv, cmd.dir, screen.Cols, screen.Rows, false)
 		if err != nil {
 			return err
 		}
@@ -146,7 +149,7 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 	}
 	a.starting++
 	go func() {
-		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Command: cmd.argv, Dir: cmd.dir, Cols: shellCols, Rows: shellRows})
+		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Command: cmd.argv, Dir: cmd.dir, Cols: screen.Cols, Rows: screen.Rows})
 		a.events <- func() {
 			a.starting--
 			if err != nil {

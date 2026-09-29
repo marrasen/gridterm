@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"

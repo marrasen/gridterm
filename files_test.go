@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -21,7 +23,7 @@ import (
 func TestAReaderIsToldHowItsSaveWent(t *testing.T) {
 	home := testhome.New(t)
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.setReader("p1", Reader{Path: "/x/notes.txt", Seq: 1})
 
 	a.handle(SaveLines{Pane: "p1", Path: "~/kept.txt", Lines: []string{"one", "two"}})
@@ -63,7 +65,7 @@ func TestAFilePaneReconnectsOnItsNextAction(t *testing.T) {
 	s := sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	t.Cleanup(func() {
 		for len(a.st.Panes) > 0 {
@@ -133,7 +135,7 @@ func TestAnArchiveOpensAsAFolder(t *testing.T) {
 // counts can: that one is not written over.
 func TestARenameOfCaseAloneWritesOverNothing(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	dir := t.TempDir()
 	write := func(name, text string) {

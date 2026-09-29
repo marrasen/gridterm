@@ -2,7 +2,6 @@ package main
 
 import (
 	"cmp"
-	"fmt"
 	"slices"
 	"strings"
 
@@ -14,6 +13,8 @@ import (
 
 	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vfs"
+	"github.com/marrasen/kakel/winkeys"
+	"github.com/marrasen/kakel/words"
 )
 
 // The window's side of file panes and readers.
@@ -203,7 +204,7 @@ func (b *browser) newKeys() *keyBar {
 	var keys []barKey
 	// kakel's own list, so the two bars say the same.
 	for _, k := range files.BrowserKeys() {
-		if press, ok := pressOf(k.Chord); ok {
+		if press, ok := winkeys.Press(k.Chord); ok {
 			keys = append(keys, barKey{k.Shown + " " + k.Title, press, on[k.Title]})
 		}
 	}
@@ -235,7 +236,7 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 	}
 	what := names[0]
 	if len(names) > 1 {
-		what = count(len(names), "item")
+		what = words.Count(len(names), "item")
 	}
 	d := widget.NewDialog("Delete " + what + "?")
 	d.Body = widget.NewLabel("From " + b.st.Path + ". This can't be undone.")
@@ -470,7 +471,7 @@ func (b *browser) row(k widget.Key) widget.TableRow {
 	case e.IsLink():
 		size = "link"
 	case !e.IsDir():
-		size = humanSize(e.Size)
+		size = words.Size(e.Size)
 	}
 	name := e.Name
 	if b.clipped(e.Name) {
@@ -487,20 +488,6 @@ func (b *browser) row(k widget.Key) widget.TableRow {
 func (b *browser) clipped(name string) bool {
 	c := b.w.fileClip
 	return c.At == b.st.Path && c.Key == b.w.filesKeyOf(b.id) && slices.Contains(c.Names, name)
-}
-
-// humanSize writes a size the way a person reads it.
-func humanSize(n int64) string {
-	const unit = 1024
-	if n < unit {
-		return fmt.Sprintf("%d B", n)
-	}
-	v, i := float64(n), 0
-	for v >= unit && i < 4 {
-		v /= unit
-		i++
-	}
-	return fmt.Sprintf("%.1f %cB", v, "KMGT"[i-1])
 }
 
 // leftAs is how a folder was left: how far it was scrolled, and the row

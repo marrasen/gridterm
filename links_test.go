@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/input"
 )
 
@@ -28,7 +29,7 @@ func ctrlClick(t *testing.T, a *app, id, text string) {
 		return false
 	})
 	// The window draws the screen, which is where links are found.
-	a.shells.get(id).draw()
+	a.shells.Get(id).Drawn(func(*grid.Grid) {})
 	_, _ = term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: col, Row: row, Mods: input.ModCtrl})
 	_, _ = term.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: col, Row: row, Mods: input.ModCtrl})
 }

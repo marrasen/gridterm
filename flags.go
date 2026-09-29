@@ -3,11 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/remote"
 	"io"
 	"os"
 	"strings"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/kakel/glyph"
 	"github.com/marrasen/kakel/vt"
@@ -138,7 +141,7 @@ func (a *app) applyOptions() error {
 	if o.sizeSet {
 		a.st.FontSize = float32(o.fontSize)
 	}
-	scrollbackLines = o.scrollback
+	screen.ScrollbackLines = o.scrollback
 	switch {
 	case o.fontFiles != "":
 		files, err := loadFontFiles(o.fontFiles)
@@ -208,3 +211,7 @@ func (a *app) openFirst() error {
 	}
 	return a.open("", placement{})
 }
+
+// programName is what the window is called, before the focused
+// terminal's title.
+const programName = "kakel"

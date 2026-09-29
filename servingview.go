@@ -8,6 +8,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/words"
 )
 
 // servingDialog serves the window, or, while it is served, says where
@@ -20,7 +21,7 @@ func (w *window) servingDialog(s Serving, u *gunim.UI) {
 	form := widget.NewForm().Add("", widget.NewLabel("A connected window can open shells here, use the ones running, and read and write files as you."))
 	switch {
 	case s.Problem != "":
-		form.Add("", widget.NewLabel(upperFirst(s.Problem)+"."))
+		form.Add("", widget.NewLabel(words.UpperFirst(s.Problem)+"."))
 	case len(s.Allowed) == 0:
 		form.Add("", widget.NewLabel("No key may connect yet. Put the public key of the machine you will connect from in "+s.AllowedAt+"."))
 	default:

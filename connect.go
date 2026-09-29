@@ -4,9 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/remote"
 )

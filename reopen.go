@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+
 	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/pkg/sftp"
 
 	"github.com/marrasen/gunim/geom"
@@ -243,7 +245,7 @@ func clientOf(t *testing.T, a *app) (b *app, keyFile string) {
 	}
 	a.handle(StartServing{Port: "0"})
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	b = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	b = newApp(w.Client(), screen.NewShells())
 	b.ctx = t.Context()
 	t.Cleanup(func() {
 		for _, name := range b.machines.Windows() {

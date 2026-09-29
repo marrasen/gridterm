@@ -5,6 +5,8 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -19,7 +21,7 @@ func TestANewTerminalRunsTheShellOfThePaneInFront(t *testing.T) {
 		t.Skip("no sh here")
 	}
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	t.Cleanup(func() {
 		for len(a.st.Panes) > 0 {
@@ -51,7 +53,7 @@ func TestANewTerminalRunsTheShellOfThePaneInFront(t *testing.T) {
 // Prompt does, shows the shell's name instead.
 func TestAShellNamingItselfByItsPathShowsItsName(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	cmd := `C:\Windows\System32\cmd.exe`
 	a.found = []shellfind.Shell{{ID: "cmd", Title: "Command Prompt", Path: cmd}}
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, nil, placement{})
@@ -73,7 +75,7 @@ func TestAShellNamingItselfByItsPathShowsItsName(t *testing.T) {
 // here is nothing to it.
 func TestAServersPaneKeepsTheTitleItsProgramGives(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	cmd := `C:\Windows\System32\cmd.exe`
 	a.found = []shellfind.Shell{{ID: "cmd", Title: "Command Prompt", Path: cmd}}
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1", Machine: "srv"}, nil, placement{})

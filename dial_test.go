@@ -2,16 +2,16 @@ package main
 
 import (
 	"context"
-	"github.com/marrasen/kakel/machines"
 	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
-	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
@@ -27,7 +27,7 @@ func dialApp(t *testing.T) (a *app, answering func()) {
 	s := sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
 	if err != nil {
@@ -120,28 +120,6 @@ func TestRemovingADroppedServerWhileItReconnects(t *testing.T) {
 	}
 }
 
-func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []machines.ID{"srv"}, Dialing: []machines.ID{"far"}})
-	if got := win.removeSays("srv"); got != "srv is connected. Removing it closes the connection and everything through it: 1 pane." {
-		t.Fatalf("for a connected server it says %q", got)
-	}
-	if got := win.removeSays("far"); got != "Removing it cancels the connection in progress." {
-		t.Fatalf("for a server being connected to it says %q", got)
-	}
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []machines.ID{"srv"}})
-	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it closes its 1 ended pane." {
-		t.Fatalf("for a dropped server it says %q", got)
-	}
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv", Ended: true}}, Dropped: []machines.ID{"srv"}, Dialing: []machines.ID{"srv"}})
-	if got := win.removeSays("srv"); got != "Its connection was lost. Removing it cancels the reconnect in progress and closes its 1 ended pane." {
-		t.Fatalf("for a dropped server reconnecting it says %q", got)
-	}
-	if got := win.removeSays("idle"); got != "" {
-		t.Fatalf("for a server holding nothing it says %q", got)
-	}
-}
-
 func TestConnectingAgainWhileConnectingAsks(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(ConnectTo{Server: "srv"})
@@ -166,20 +144,6 @@ func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	if a.st.Panes[0].Machine != "srv" || a.machines.Get("srv").Conn == nil {
 		t.Fatalf("opened %+v", a.st.Panes)
-	}
-}
-
-func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
-	rows := sidebarRows(nil, nil, Share{}, nil, []machines.ID{"desk"}, nil)
-	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
-		t.Fatalf("a saved server has no heading: %+v", rows)
-	}
-	// One not saved is connected to from the Servers menu.
-	win, _, publish := windowStage(t)
-	publish(State{Sidebar: true, SidebarWidth: 220})
-	i := slices.IndexFunc(win.bar.Menus, func(m widget.BarMenu) bool { return m.Title == "Servers" })
-	if i < 0 || !slices.Contains(win.bar.Menus[i].Items, "Quick Connect…") {
-		t.Fatal("the Servers menu has no Quick Connect")
 	}
 }
 
@@ -283,7 +247,7 @@ func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
 	}
 	log := a.st.Panes[0].ID
 	waitFor(t, a, "the log's first line", func() bool {
-		return strings.Contains(a.shells.get(log).t.AllText(), "connecting to srv")
+		return strings.Contains(a.shells.Get(log).T.AllText(), "connecting to srv")
 	})
 	waitFor(t, a, "the shell in its place", func() bool { answering(); return oneShell(a) })
 
@@ -299,6 +263,6 @@ func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
 		t.Fatalf("failed, the panes are %+v", a.st.Panes)
 	}
 	waitFor(t, a, "why it failed", func() bool {
-		return strings.Contains(a.shells.get(failed).t.AllText(), "could not connect")
+		return strings.Contains(a.shells.Get(failed).T.AllText(), "could not connect")
 	})
 }

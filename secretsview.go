@@ -12,6 +12,7 @@ import (
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/words"
 )
 
 // secretsPane lists what is in the vault, by name, over a bar of what
@@ -138,7 +139,7 @@ func (p *secretsPane) show(st Secrets, u *gunim.UI) {
 		p.act.set("No secrets yet. Add one to keep it here, locked by your key.", u)
 	default:
 		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
-		p.act.set(count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
+		p.act.set(words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
 	}
 }
 
@@ -230,7 +231,7 @@ func (w *window) confirmRemoveSecrets(items []SecretItem, u *gunim.UI) {
 	for i, it := range items {
 		names[i], ids[i] = it.Name, it.ID
 	}
-	d := widget.NewDialog("Remove " + count(len(items), "secret") + "?")
+	d := widget.NewDialog("Remove " + words.Count(len(items), "secret") + "?")
 	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". They go from the secrets for good.")
 	d.SetButtons("Remove "+strconv.Itoa(len(items)), "Cancel")
 	d.Danger = true

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/kakel/winkeys"
 )
 
 func TestTheCommandLineIsReadAsGridtermReadsIt(t *testing.T) {
@@ -28,7 +29,7 @@ func TestTheCommandLineIsReadAsGridtermReadsIt(t *testing.T) {
 }
 
 func TestAChordIsPressedAsTheWindowHearsIt(t *testing.T) {
-	press, err := chordPress("ctrl+shift+k")
+	press, err := winkeys.Parse("ctrl+shift+k")
 	if err != nil {
 		t.Fatal(err)
 	}

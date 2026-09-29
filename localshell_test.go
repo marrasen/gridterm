@@ -4,6 +4,8 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+
+	"github.com/marrasen/kakel/screen"
 )
 
 // The tests' terminals run this machine's own shell: sh on Unix, and
@@ -116,4 +118,4 @@ func saysFolder(dir string) string {
 // widen gives pane id a screen wide enough for a long path on one row.
 // A Windows temporary folder is long enough to wrap at 80 columns, and
 // each row of the screen reads as a line of its own.
-func widen(a *app, id string) { a.shells.get(id).resize(240, shellRows) }
+func widen(a *app, id string) { a.shells.Get(id).Resize(240, screen.Rows) }

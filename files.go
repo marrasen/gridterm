@@ -4,7 +4,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"io"
 	"io/fs"
 	"maps"
@@ -13,6 +12,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/pkg/sftp"
 

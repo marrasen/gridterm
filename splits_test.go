@@ -2,11 +2,11 @@ package main
 
 import (
 	"testing"
-	"time"
+
+	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
-	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/vfs"
 )
@@ -14,7 +14,7 @@ import (
 // A pane open on a stage of its own moves into a split beside another.
 func TestAPaneMovesIntoASplit(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.addPane(Pane{ID: "p1", Title: "one", Kind: kindFiles}, nil, placement{})
 	a.addPane(Pane{ID: "p2", Title: "two", Kind: kindFiles}, nil, placement{})
 	if a.groupOf["p1"] == a.groupOf["p2"] {
@@ -37,7 +37,7 @@ func TestAPaneMovesIntoASplit(t *testing.T) {
 // side a copy goes between.
 func TestFilesFromAFilePaneOpenBesideIt(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
 	dir := t.TempDir()
@@ -50,30 +50,5 @@ func TestFilesFromAFilePaneOpenBesideIt(t *testing.T) {
 	}
 	if second := a.st.Focus; second == first || a.groupOf[second] != a.groupOf[first] {
 		t.Fatalf("the second file pane, %s, is in group %d, and the first, %s, in %d", second, a.groupOf[second], first, a.groupOf[first])
-	}
-}
-
-// Split Right asks what goes in the new half, and a pane already open
-// can be moved in.
-func TestSplitAsksWhatGoesBeside(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "left", Kind: kindFiles}, {ID: "p2", Title: "right", Kind: kindFiles}},
-		Stage: &Box{Pane: "p1"}, Focus: "p1", Browsers: map[string]Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	win.run("pane.splitRight", lastUI)
-	for range 20 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	if win.splitter == nil || !win.splitter.IsOpen() {
-		t.Fatal("Split Right asked nothing")
-	}
-	lastWindow.Input(gi.TextInput{Text: "move right"})
-	lastWindow.Frame(time.Second / 60)
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(MovePane); !ok || in != (MovePane{Pane: "p2", Beside: "p1"}) {
-		t.Fatalf("picking Move right sent %#v", in)
 	}
 }

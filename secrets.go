@@ -556,17 +556,17 @@ var (
 // typeSecret types a secret into the terminal used last, as if pasted.
 func (a *app) typeSecret(id string) {
 	a.onSecret(id, "Couldn't type the secret", func(it secrets.Item, value string) {
-		sh := a.shells.get(a.lastTerminal)
+		sh := a.shells.Get(a.lastTerminal)
 		if sh == nil || a.kindOfPane(a.lastTerminal) != kindTerminal {
 			a.notify("No terminal to type into", "Click into a terminal first, then type the secret from here.", "")
 			return
 		}
 		// A pane an agent asked for a secret on is waiting for the
 		// whole answer, return and all.
-		if sh.t.AskedForASecret() {
+		if sh.T.AskedForASecret() {
 			value += "\r"
 		}
-		sh.t.Paste(value)
+		sh.T.Paste(value)
 		a.focus(a.lastTerminal)
 	})
 }

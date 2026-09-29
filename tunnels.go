@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"io"
 	"net"
 	"slices"
@@ -11,6 +10,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/meter"
@@ -113,7 +117,7 @@ func (t *tunnel) note() string {
 		s = "idle"
 	}
 	if in, out := t.count.Totals(); in+out > 0 {
-		s += " · " + humanSize(int64(in+out))
+		s += " · " + words.Size(int64(in+out))
 	}
 	return s
 }
@@ -353,7 +357,7 @@ func (a *app) showTunnel(id string) {
 	}
 	a.next++
 	pane := "p" + strconv.Itoa(a.next)
-	sh := openShell(open.seen.Open(), a.palette, a.hooks(pane))
+	sh := screen.Open(open.seen.Open(), a.palette, a.hooks(pane))
 	a.addPane(Pane{ID: pane, Title: "Tunnel " + t.Label, Machine: t.Machine, Kind: kindTunnel, Tunnel: id}, sh, placement{})
 	a.setTunnel(id, func(t *Tunnel) { t.Pane = pane })
 }

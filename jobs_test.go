@@ -3,12 +3,15 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/marrasen/kakel/machines"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -25,7 +28,7 @@ func TestACopyShowsOnTheJobsPaneUntilCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
 	a.follow(jobs.Op{Kind: jobs.Copy, From: local, At: from, Names: []string{"a.txt"}, To: local, Into: into}, "Copying 1 item to x")
@@ -77,7 +80,7 @@ func TestAFinishedCopyIsRepeatedAndSaved(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
 	if err != nil {
@@ -126,7 +129,7 @@ func TestStopOnAReplaceQuestionStopsTheCopy(t *testing.T) {
 		}
 	}
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
 	a.follow(jobs.Op{Kind: jobs.Copy, From: local, At: from, Names: []string{"a.txt"}, To: local, Into: into}, "Copying 1 item to x")
@@ -143,7 +146,7 @@ func TestStopOnAReplaceQuestionStopsTheCopy(t *testing.T) {
 
 func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -178,7 +181,7 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 // was removed from the list since.
 func TestRepeatRefusesAServerRemovedSince(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -211,7 +214,7 @@ func TestRepeatRefusesAServerRemovedSince(t *testing.T) {
 
 func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	// A quick connection to a machine that never answers, so the
 	// repeat stays on its way.
@@ -236,7 +239,7 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 // first choice, which the dialog's Enter gives.
 func TestEnterOnTheOverwriteQuestionLeavesTheFile(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	local := vfs.NewLocal()
 	for _, tc := range []struct {

@@ -1,10 +1,12 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -101,7 +103,7 @@ func (w *window) tunnelDialogOn(machine machines.ID, socks bool, u *gunim.UI) {
 	d.SetButtons("Open", "Cancel")
 	d.Check = func() string {
 		if err := tunnel().Validate(); err != nil {
-			return upperFirst(err.Error()) + "."
+			return words.UpperFirst(err.Error()) + "."
 		}
 		return ""
 	}

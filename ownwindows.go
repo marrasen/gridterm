@@ -5,6 +5,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/kakel/words"
 )
 
 // kakel's own windows on this screen, as against the windows of other
@@ -260,7 +261,7 @@ func (a *app) closeWindow(w *ownWin) {
 	}
 	w.asking = true
 	a.askThen(a.ctx, Ask{
-		Title: "Close this window?", Text: "Still open here: " + manyOf(len(panes), "pane", "panes") + ".",
+		Title: "Close this window?", Text: "Still open here: " + words.ManyOf(len(panes), "pane", "panes") + ".",
 		Yes: "Close", Danger: true,
 	}, func(ans AskAnswered) {
 		w.asking = false

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -31,12 +33,12 @@ func localPane(t *testing.T, out string, argv ...string) (*app, *printed) {
 	t.Helper()
 	t.Setenv("TMPDIR", t.TempDir())
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	sess := &printed{typed: typed{done: make(chan struct{})}, out: []byte(out)}
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	a.next++ // the pane takes a number, as the program's own do
-	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, openShell(sess, a.palette, quiet), placement{})
+	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, screen.Open(sess, a.palette, quiet), placement{})
 	a.argvs["p1"] = argv
 	t.Cleanup(func() { a.remove("p1") })
 	return a, sess

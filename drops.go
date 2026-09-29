@@ -3,10 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/pasted"

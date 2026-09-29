@@ -8,9 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
-	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/vfs"
 )
@@ -20,7 +21,7 @@ import (
 func readerApp(t *testing.T, follow bool) (a *app, file, id string) {
 	t.Helper()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	file = filepath.Join(t.TempDir(), "log.txt")
 	if err := os.WriteFile(file, []byte("one\n"), 0o600); err != nil {
@@ -48,7 +49,7 @@ func paneTitle(a *app, id string) string {
 // read has got to show.
 func TestAReaderIsThereBeforeItsFirstRead(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	file := filepath.Join(t.TempDir(), "big.txt")
 	if err := os.WriteFile(file, []byte("x\n"), 0o600); err != nil {
@@ -114,7 +115,7 @@ func TestAFollowedFileThatGoesSaysSo(t *testing.T) {
 // reader asks for them.
 func TestAPictureThatIsNotOneIsReadAsLines(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	file := filepath.Join(t.TempDir(), "not.png")
 	if err := os.WriteFile(file, []byte("plain text\n"), 0o600); err != nil {
@@ -132,81 +133,13 @@ func TestAPictureThatIsNotOneIsReadAsLines(t *testing.T) {
 // A scrollback's reader says so once its pane has closed.
 func TestAScrollbackSaysWhenItsPaneHasClosed(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, nil, placement{})
 	a.addPane(Pane{ID: "p2", Title: "Scrollback of Terminal 1", Kind: kindReader}, nil, placement{})
 	a.setReader("p2", Reader{Path: "Scrollback of Terminal 1", Lines: []string{"x"}, Seq: 1, Of: "p1"})
 	a.remove("p1")
 	if r := a.st.Readers["p2"]; r.Gone == "" {
 		t.Fatalf("its pane closed, the scrollback reads %+v", r)
-	}
-}
-
-// The reader is made before the first read arrives, says how far it
-// has got of the size listed, and asks for nothing more meanwhile.
-func TestTheReaderShowsHowFarItsFirstReadHasGot(t *testing.T) {
-	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "big.log", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20}}
-	publish(st)
-	st.Readers = map[string]Reader{"p1": {Path: "/x/big.log", Name: "big.log", Expect: 4 << 20, SoFar: 1 << 20}}
-	publish(st)
-	rd := win.readers["p1"]
-	if rd == nil || rd.r == nil || !rd.r.Busy() || rd.r.SoFar() != 1<<20 {
-		t.Fatal("before its first read arrived, the reader says nothing of it")
-	}
-	_, rows := rd.g.Size()
-	found := false
-	for y := range rows {
-		if row := gridRow(rd, y); strings.Contains(row, "4") && strings.Contains(row, "MB") {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatal("the reader does not say the size it was listed as")
-	}
-	for len(lastWindow.Client().Intents()) > 0 {
-		if in, ok := (<-lastWindow.Client().Intents()).Intent.(ReadAgain); ok {
-			t.Fatalf("the reader asked for a read with one on its way: %#v", in)
-		}
-	}
-}
-
-// Ctrl+F in the reader tells the program to follow, and again to stop.
-func TestCtrlFInTheReaderTellsTheProgram(t *testing.T) {
-	_, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "log.txt", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1}}
-	publish(st)
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	for _, want := range []bool{true, false} {
-		lastWindow.Input(gi.KeyPress{Key: gi.KeyF, Mods: gi.ModControl})
-		lastWindow.Frame(time.Second / 60)
-		var got *FollowFile
-		for got == nil {
-			if in, ok := nextIntent(t).(FollowFile); ok {
-				got = &in
-			}
-		}
-		if got.Pane != "p1" || got.On != want {
-			t.Fatalf("Ctrl+F sent %#v, want following %v", *got, want)
-		}
-	}
-}
-
-// A name the program offers to save under, after one was refused,
-// reaches the reader.
-func TestTheReaderTakesTheNameOfferedToSaveUnder(t *testing.T) {
-	win, _, publish := windowStage(t)
-	st := State{Panes: []Pane{{ID: "p1", Title: "log.txt", Kind: kindReader}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log.txt"}}
-	publish(st)
-	st.Readers = map[string]Reader{"p1": {Path: "/x/log.txt", Name: "log.txt", Lines: []string{"a"}, Seq: 1, SaveAs: "~/log 2.txt"}}
-	publish(st)
-	if got := win.readers["p1"].r.SaveAs; got != "~/log 2.txt" {
-		t.Fatalf("the reader offers to save as %q", got)
 	}
 }
 
@@ -277,7 +210,7 @@ func TestAFileThatCannotBeLookedAtIsSaidOnce(t *testing.T) {
 // A reader with nothing to read again does not follow.
 func TestAReaderWithNothingToFollowDoesNot(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	a.addPane(Pane{ID: "p1", Title: "Typing History", Kind: kindReader}, nil, placement{})
 	a.setReader("p1", Reader{Path: "Typing History", Lines: []string{"x"}, Seq: 1})
@@ -301,7 +234,7 @@ func TestFollowingBackOnReadsAgain(t *testing.T) {
 // sidebar.
 func TestAReaderOnAWindowThatWentDoesNotDial(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	a.addPane(Pane{ID: "p1", Title: "notes.txt", Kind: kindReader, Machine: "box:7777"}, nil, placement{})
 	a.reads["p1"] = readSpec{machine: "box:7777", window: true, path: "/notes.txt", name: "notes.txt"}

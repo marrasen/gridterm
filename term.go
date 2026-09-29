@@ -6,6 +6,8 @@ import (
 	"math"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
@@ -17,6 +19,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/ui"
 	uiterm "github.com/marrasen/kakel/ui/term"
+	"github.com/marrasen/kakel/winkeys"
 )
 
 // term is the terminal on screen: a CellGrid showing the shell's
@@ -25,7 +28,7 @@ type term struct {
 	anim.Group
 	id      string
 	keys    *ui.Keymap
-	sh      *shell
+	sh      *screen.Shell
 	cells   *widget.CellGrid
 	row     []widget.Cell
 	focused bool
@@ -132,7 +135,7 @@ func (t *term) lookAgain(u *gunim.UI) {
 	})
 }
 
-func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
+func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
 	g.Size = 15
 	g.Background = termBackground
@@ -140,10 +143,7 @@ func newTerm(id string, sh *shell, keys *ui.Keymap) *term {
 	t.Add(t.settle)
 	// The whole screen, not just the rows changed since the last pane
 	// drew it: this one may be in a window the pane has just moved to.
-	sh.draw()
-	sh.mu.Lock()
-	sh.view.MarkAllDirty()
-	sh.mu.Unlock()
+	sh.Drawn(func(g *grid.Grid) { g.MarkAllDirty() })
 	t.sync()
 	return t
 }
@@ -173,7 +173,7 @@ func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) g
 	default:
 		give = f.Now.Sub(t.smallSince) >= smallSettle
 	}
-	if give && t.sh.resize(cols, rows) {
+	if give && t.sh.Resize(cols, rows) {
 		t.sync()
 	}
 	// A screen somebody watching has sized bigger than this pane is laid
@@ -183,7 +183,7 @@ func (t *term) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) g
 	cell := t.cells.CellSize()
 	cols, rows = t.cells.GridSize()
 	need := geom.Sz(float32(cols)*cell.W, float32(rows)*cell.H)
-	if t.sh.t.Held() && (need.W > size.W || need.H > size.H) && need.W > 0 && need.H > 0 {
+	if t.sh.T.Held() && (need.W > size.W || need.H > size.H) && need.W > 0 && need.H > 0 {
 		t.scale = min(size.W/need.W, size.H/need.H)
 		k.Layout(gunim.Tight(need))
 		t.offset = geom.Pt((size.W-need.W*t.scale)/2, (size.H-need.H*t.scale)/2)
@@ -208,7 +208,7 @@ func (t *term) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.
 // paintPictures draws the inline pictures on screen, each over the
 // cells it was given. A picture half scrolled off is drawn in part.
 func (t *term) paintPictures(p *paint.Painter) {
-	placed := t.sh.t.Pictures()
+	placed := t.sh.T.Pictures()
 	if len(placed) == 0 && len(t.pics) == 0 {
 		return
 	}
@@ -243,43 +243,41 @@ func (t *term) paintPictures(p *paint.Painter) {
 // the grid, with the cursor.
 func (t *term) sync() {
 	sh := t.sh
-	sh.draw()
-	sh.mu.Lock()
-	defer sh.mu.Unlock()
-	g := sh.view
-	cols, rows := g.Size()
-	t.cells.Resize(cols, rows)
-	for y := range rows {
-		if !g.RowDirty(y) {
-			continue
+	sh.Drawn(func(g *grid.Grid) {
+		cols, rows := g.Size()
+		t.cells.Resize(cols, rows)
+		for y := range rows {
+			if !g.RowDirty(y) {
+				continue
+			}
+			t.row = t.row[:0]
+			for x := range cols {
+				t.row = append(t.row, cellOf(g, x, y))
+			}
+			t.cells.SetRow(y, t.row)
 		}
-		t.row = t.row[:0]
-		for x := range cols {
-			t.row = append(t.row, cellOf(g, x, y))
+		g.ClearDirty()
+		cur := g.Cursor()
+		shape := widget.CursorBlock
+		switch cur.Style {
+		case grid.CursorBar:
+			shape = widget.CursorBar
+		case grid.CursorUnderline:
+			shape = widget.CursorUnderline
+		case grid.CursorBlock:
 		}
-		t.cells.SetRow(y, t.row)
-	}
-	g.ClearDirty()
-	cur := g.Cursor()
-	shape := widget.CursorBlock
-	switch cur.Style {
-	case grid.CursorBar:
-		shape = widget.CursorBar
-	case grid.CursorUnderline:
-		shape = widget.CursorUnderline
-	case grid.CursorBlock:
-	}
-	t.wantBlink = cur.Blink
-	// A pane whose program has ended takes no typing, and one without
-	// the keyboard takes none now, so neither shows a cursor.
-	visible := cur.Visible && !sh.t.Exited() && t.focused
-	if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
-		t.cursorAt = at
-		t.blinkAgain()
-	}
-	t.cursorShown = visible
-	t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: visible,
-		Blinked: t.blinkOff && t.wantBlink && t.focused})
+		t.wantBlink = cur.Blink
+		// A pane whose program has ended takes no typing, and one without
+		// the keyboard takes none now, so neither shows a cursor.
+		visible := cur.Visible && !sh.T.Exited() && t.focused
+		if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
+			t.cursorAt = at
+			t.blinkAgain()
+		}
+		t.cursorShown = visible
+		t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: visible,
+			Blinked: t.blinkOff && t.wantBlink && t.focused})
+	})
 }
 
 // cellOf turns one of kakel's cells into gunim's, with its colours
@@ -343,7 +341,7 @@ func (t *term) Handle(e gi.Event, u *gunim.UI) bool {
 		if e.Typed {
 			return true
 		}
-		ev, ok := keyEvent(e)
+		ev, ok := winkeys.Event(e)
 		if !ok {
 			return true
 		}
@@ -415,7 +413,7 @@ func (t *term) ctrlHeld(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
 		return
 	}
 	t.hoverMods = m
-	t.sh.t.SetHover(t.at.X, t.at.Y, m)
+	t.sh.T.SetHover(t.at.X, t.at.Y, m)
 	t.sync()
 	u.Invalidate()
 }
@@ -423,7 +421,7 @@ func (t *term) ctrlHeld(k gi.Key, mods gi.Mods, down bool, u *gunim.UI) {
 // mouse hands a pointer event to the terminal, which reports it to a
 // program that asked for the mouse, and otherwise selects.
 func (t *term) mouse(e input.MouseEvent, u *gunim.UI) bool {
-	took, _ := t.sh.t.HandleMouse(e)
+	took, _ := t.sh.T.HandleMouse(e)
 	t.sync()
 	u.Invalidate()
 	return took
@@ -478,7 +476,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 		// starts no selection, and a program with the mouse is not
 		// clicked at a place nobody aimed for.
 		return true
-	case e.Button == gi.ButtonMiddle && !t.sh.t.MouseTaken(mods):
+	case e.Button == gi.ButtonMiddle && !t.sh.T.MouseTaken(mods):
 		// Text alone, the X11 way: a picture is pasted with the key.
 		if s := u.Clipboard(); s != "" {
 			t.paste(s)
@@ -486,7 +484,7 @@ func (t *term) press(e gi.PointerDown, u *gunim.UI) bool {
 			u.Send(t, NoTextToPaste{})
 		}
 		return true
-	case e.Button == gi.ButtonSecondary && !t.sh.t.MouseTaken(mods):
+	case e.Button == gi.ButtonSecondary && !t.sh.T.MouseTaken(mods):
 		return false
 	}
 	t.held, t.at = mouseButton(e.Button), at
@@ -503,7 +501,7 @@ func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 		mods := mouseMods(e.Mods)
 		if mods != t.hoverMods || at != t.at {
 			t.hoverMods = mods
-			t.sh.t.SetHover(at.X, at.Y, mods)
+			t.sh.T.SetHover(at.X, at.Y, mods)
 			t.sync()
 			u.Invalidate()
 		}
@@ -527,7 +525,7 @@ func (t *term) release(e gi.PointerUp, u *gunim.UI) bool {
 
 // copySelection puts the selected text on the clipboard.
 func (t *term) copySelection(u *gunim.UI) {
-	if text := t.sh.t.SelectionText(); text != "" {
+	if text := t.sh.T.SelectionText(); text != "" {
 		u.SetClipboard(text)
 	}
 }
@@ -546,7 +544,7 @@ func (t *term) command(id string, u *gunim.UI) bool {
 		if id == "view.scrollDown" {
 			page = -1
 		}
-		t.sh.t.ScrollPages(page)
+		t.sh.T.ScrollPages(page)
 		t.sync()
 		u.Invalidate()
 	default:
@@ -560,10 +558,10 @@ func (t *term) command(id string, u *gunim.UI) bool {
 // selection.
 func (t *term) key(ev input.Event) {
 	t.blinkAgain()
-	_, _ = t.sh.t.HandleKey(ev)
+	_, _ = t.sh.T.HandleKey(ev)
 }
 
-func (t *term) paste(s string) { t.sh.t.Paste(s) }
+func (t *term) paste(s string) { t.sh.T.Paste(s) }
 
 // pasteClipboard pastes the text on the clipboard, and with no text
 // there, asks the program to hand over the picture that may be there
@@ -599,82 +597,17 @@ func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 	}
 	at := t.cellAt(e.Pos)
 	for range n {
-		_, _ = t.sh.t.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
+		_, _ = t.sh.T.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: b, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)})
 	}
 	t.sync()
 	u.Invalidate()
 }
 
-// keyEvent turns a gunim key press into kakel's, for a key kakel
-// encodes.
-func keyEvent(e gi.KeyPress) (input.Event, bool) {
-	k, ok := keyMap[e.Key]
-	// Punctuation is the key it types: a Swedish keyboard puts + where a
-	// US one has -, and Ctrl and the key marked plus should make the
-	// font bigger.
-	if p, typed := punctuation[e.Char]; typed {
-		k, ok = p, true
-	}
-	if !ok {
-		return input.Event{}, false
-	}
-	ev := input.Event{Kind: input.KeyPress, Key: k}
-	if e.Repeat {
-		ev.Kind = input.KeyRepeat
-	}
-	for _, m := range [...]struct {
-		from gi.Mods
-		to   input.Mods
-	}{{gi.ModShift, input.ModShift}, {gi.ModControl, input.ModCtrl}, {gi.ModAlt, input.ModAlt}, {gi.ModSuper, input.ModSuper}} {
-		if e.Mods.Has(m.from) {
-			ev.Mods |= m.to
-		}
-	}
-	return ev, true
-}
-
-// punctuation is the punctuation kakel binds, by the character the
-// key types rather than where it sits.
-var punctuation = map[rune]input.Key{
-	'=': input.KeyEquals, '+': input.KeyPlus, '-': input.KeyMinus,
-	'[': input.KeyBracketLeft, ']': input.KeyBracketRight, '\\': input.KeyBackslash,
-}
-
-// keyMap holds the keys kakel encodes. The keypad's keys, pressed
-// without Num Lock, are the keys printed on them.
-var keyMap = func() map[gi.Key]input.Key {
-	m := map[gi.Key]input.Key{
-		gi.KeyEnter: input.KeyEnter, gi.KeyKPEnter: input.KeyEnter,
-		gi.KeyTab: input.KeyTab, gi.KeyBackspace: input.KeyBackspace,
-		gi.KeyEscape: input.KeyEscape, gi.KeySpace: input.KeySpace,
-		gi.KeyLeftBracket: input.KeyBracketLeft, gi.KeyRightBracket: input.KeyBracketRight,
-		gi.KeyBackslash: input.KeyBackslash, gi.KeyEqual: input.KeyEquals,
-		gi.KeyMinus: input.KeyMinus, gi.Key0: input.Key0,
-		gi.KeyUp: input.KeyUp, gi.KeyDown: input.KeyDown,
-		gi.KeyLeft: input.KeyLeft, gi.KeyRight: input.KeyRight,
-		gi.KeyHome: input.KeyHome, gi.KeyEnd: input.KeyEnd,
-		gi.KeyInsert: input.KeyInsert, gi.KeyDelete: input.KeyDelete,
-		gi.KeyPageUp: input.KeyPageUp, gi.KeyPageDown: input.KeyPageDown,
-		gi.KeyKP8: input.KeyUp, gi.KeyKP2: input.KeyDown,
-		gi.KeyKP4: input.KeyLeft, gi.KeyKP6: input.KeyRight,
-		gi.KeyKP7: input.KeyHome, gi.KeyKP1: input.KeyEnd,
-		gi.KeyKP0: input.KeyInsert, gi.KeyKPDecimal: input.KeyDelete,
-		gi.KeyKP9: input.KeyPageUp, gi.KeyKP3: input.KeyPageDown,
-	}
-	for i := range 26 {
-		m[gi.KeyA+gi.Key(i)] = input.KeyA + input.Key(i)
-	}
-	for i := range 12 {
-		m[gi.KeyF1+gi.Key(i)] = input.KeyF1 + input.Key(i)
-	}
-	return m
-}()
-
 // Cursor implements [gunim.CursorShaper]: a hand over a link that a
 // click would follow, and otherwise the arrow.
 func (t *term) Cursor(p geom.Point) gi.Cursor {
 	at := t.cellAt(p)
-	if _, on := t.sh.t.CursorAt(at.X, at.Y, t.hoverMods); on {
+	if _, on := t.sh.T.CursorAt(at.X, at.Y, t.hoverMods); on {
 		return gi.CursorHand
 	}
 	return gi.CursorArrow

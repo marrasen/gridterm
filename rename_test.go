@@ -2,10 +2,11 @@ package main
 
 import (
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/vfs"
 )

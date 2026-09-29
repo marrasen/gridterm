@@ -1,9 +1,10 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"os"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/internal/build"
 	"github.com/marrasen/kakel/session"

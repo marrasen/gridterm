@@ -1,11 +1,14 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -24,7 +27,7 @@ func realIDApp(t *testing.T) (a *app, srv machines.ID, answering func()) {
 	t.Setenv("SSH_AUTH_SOCK", "")
 	s := sshtest.New(t)
 	host, port := s.Host()
-	a = newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), &shells{m: map[string]*shell{}})
+	a = newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
 	a.ctx = t.Context()
 	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
 	if err != nil {
@@ -138,29 +141,6 @@ func TestWorkKeptBeyondAWindowFindsItAgain(t *testing.T) {
 	got, err := a.machineNow(kept, a.serverID(far))
 	if want := win + farSep + "db"; got != want || err != nil {
 		t.Fatalf("kept as %q, it is found as %q, %v; want %q", kept, got, err, want)
-	}
-}
-
-// Something kept on a saved server is found in a dialog for it by its
-// ID, and something kept on a quick connection by its address.
-func TestKeptWorkIsFoundForItsMachine(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(State{Machines: []machines.Info{{ID: "a1", Name: "srv"}, {ID: "quick-1", Name: "me@typed", Quick: true}}})
-	for _, c := range []struct {
-		host, id string
-		machine  machines.ID
-		want     bool
-	}{
-		{"old name", "a1", "a1", true},
-		// Kept before servers had IDs, by its name.
-		{"srv", "", "a1", true},
-		{"me@typed", "", "quick-1", true},
-		{"", "", "", true},
-		{"", "", "a1", false},
-	} {
-		if got := win.keptFor(c.host, c.id, c.machine); got != c.want {
-			t.Errorf("kept on %q (%q), for %q: %v, want %v", c.host, c.id, c.machine, got, c.want)
-		}
 	}
 }
 

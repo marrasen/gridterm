@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -102,7 +104,7 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	s := sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a := newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	t.Cleanup(func() {
 		for len(a.st.Panes) > 0 {

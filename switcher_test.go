@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
@@ -17,11 +19,11 @@ import (
 func switcherStage(t *testing.T) *window {
 	t.Helper()
 	win, sh, publish := windowStage(t)
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	var panes []Pane
 	for _, id := range []string{"p1", "p2", "p3"} {
-		sh.set(id, openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
-		t.Cleanup(func() { _ = sh.get(id).t.Close() })
+		sh.Set(id, screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
 		panes = append(panes, Pane{ID: id, Title: "Terminal " + id})
 	}
 	publish(State{Panes: panes, Stage: &Box{Pane: "p1"}, Focus: "p1"})
@@ -59,9 +61,9 @@ func TestThePanesNotPickedFadeAsThePickGrows(t *testing.T) {
 // it was last drawn.
 func TestTheSwitcherShowsAFilePane(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p2", openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p2").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p2", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p2").T.Close() })
 	publish(State{Panes: []Pane{{ID: "p1", Title: "srv", Kind: kindFiles}, {ID: "p2", Title: "Terminal 2"}},
 		Stage: &Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]Browser{"p1": {Path: "/srv", Entries: []vfs.Entry{{Name: "a.txt"}, {Name: "b.txt"}}, Seq: 1}}})

@@ -3,13 +3,22 @@ package main
 import (
 	"context"
 	"errors"
-	"github.com/marrasen/kakel/machines"
 	"log"
 	"maps"
 	"sync/atomic"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
+
 	"fmt"
+	"slices"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+
 	"github.com/marrasen/kakel/glyph"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/keys"
@@ -19,11 +28,6 @@ import (
 	shellfind "github.com/marrasen/kakel/shells"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
-	"slices"
-	"strconv"
-	"strings"
-	"sync"
-	"unicode/utf8"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/theme"
@@ -440,7 +444,7 @@ type app struct {
 	// until one is.
 	starting  int
 	stayEmpty bool
-	shells    *shells
+	shells    *screen.Shells
 	st        State
 	// groups holds each group's arrangement, and groupOf each pane's
 	// group.
@@ -571,40 +575,7 @@ type app struct {
 	events chan func()
 }
 
-// shells holds the running shells by pane, for the window to draw.
-type shells struct {
-	mu sync.Mutex
-	m  map[string]*shell
-}
-
-func (s *shells) get(id string) *shell {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.m[id]
-}
-
-// all returns the running shells.
-func (s *shells) all() []*shell {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	out := make([]*shell, 0, len(s.m))
-	for _, sh := range s.m {
-		out = append(out, sh)
-	}
-	return out
-}
-
-func (s *shells) set(id string, sh *shell) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if sh == nil {
-		delete(s.m, id)
-		return
-	}
-	s.m[id] = sh
-}
-
-func newApp(c gunim.Client, sh *shells) *app {
+func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
 		c:         c,
 		shells:    sh,
@@ -1302,17 +1273,17 @@ type placement struct {
 }
 
 // hooks are what a pane's shell tells the program.
-func (a *app) hooks(id string) shellHooks {
-	return shellHooks{
-		output: func() {
+func (a *app) hooks(id string) screen.Hooks {
+	return screen.Hooks{
+		Output: func() {
 			select {
 			case a.wake <- struct{}{}:
 			default:
 			}
 		},
-		title: func(t string) { a.events <- func() { a.retitle(id, t) } },
-		exit:  func() { a.events <- func() { a.paneEnded(id) } },
-		bell: func() {
+		Title: func(t string) { a.events <- func() { a.retitle(id, t) } },
+		Exit:  func() { a.events <- func() { a.paneEnded(id) } },
+		Bell: func() {
 			a.events <- func() {
 				a.st.Bells++
 				if w := a.ownerOf(id); w == nil || a.focusIn(w) != id {
@@ -1321,13 +1292,13 @@ func (a *app) hooks(id string) shellHooks {
 				}
 			}
 		},
-		commandDone: func(status int, ok bool, took time.Duration) {
+		CommandDone: func(status int, ok bool, took time.Duration) {
 			if !ok || took < commandLong {
 				return
 			}
 			a.events <- func() { a.commandDone(id, status) }
 		},
-		clipboard: func(s string) {
+		Clipboard: func(s string) {
 			a.events <- func() {
 				a.worked("Copied to the clipboard", fmt.Sprintf("%d characters, from %s", utf8.RuneCountInString(s), a.titleOf(id)), s)
 			}
@@ -1359,7 +1330,7 @@ func (a *app) openThen(machine machines.ID, at placement, then func(id string, e
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
 				err := errors.New("the connection was made under another name. Open a terminal on it from the sidebar")
-				a.failed("Couldn't open a shell on "+a.machines.Name(machine), upperFirst(err.Error())+".")
+				a.failed("Couldn't open a shell on "+a.machines.Name(machine), words.UpperFirst(err.Error())+".")
 				then("", err)
 				return
 			}
@@ -1377,11 +1348,11 @@ func (a *app) openThen(machine machines.ID, at placement, then func(id string, e
 		if a.nextShell != nil {
 			argv, a.nextShell = a.nextShell, nil
 		}
-		sess, err := a.startLocalSession(argv, a.dirHere(), shellCols, shellRows, true)
+		sess, err := a.startLocalSession(argv, a.dirHere(), screen.Cols, screen.Rows, true)
 		if err != nil {
 			return fmt.Errorf("kakel: start the shell: %w", err)
 		}
-		sh := openShell(sess, a.palette, a.withLinks(a.hooks(id), id, ""))
+		sh := screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, ""))
 		a.argvs[id] = withoutFolder(argv)
 		a.addPane(Pane{ID: id, Title: title}, sh, at)
 		then(id, nil)
@@ -1399,7 +1370,7 @@ func (a *app) openThen(machine machines.ID, at placement, then func(id string, e
 	}
 	a.starting++
 	go func() {
-		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: shellCols, Rows: shellRows})
+		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: screen.Cols, Rows: screen.Rows})
 		a.events <- func() {
 			a.starting--
 			if err != nil {
@@ -1411,7 +1382,7 @@ func (a *app) openThen(machine machines.ID, at placement, then func(id string, e
 			}
 			a.teachFar(machine, sess)
 			a.paneAt[id] = a.machines.Get(machine).Reached
-			a.addPane(Pane{ID: id, Title: title, Machine: machine}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: machine}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, machine)), at)
 			then(id, nil)
 		}
 	}()
@@ -1420,9 +1391,9 @@ func (a *app) openThen(machine machines.ID, at placement, then func(id string, e
 
 // addPane shows a new pane, with the keyboard: beside at.beside while
 // that pane is still open, and otherwise on a stage of its own.
-func (a *app) addPane(p Pane, sh *shell, at placement) {
+func (a *app) addPane(p Pane, sh *screen.Shell, at placement) {
 	if sh != nil {
-		a.shells.set(p.ID, sh)
+		a.shells.Set(p.ID, sh)
 	}
 	// Into the window of the pane it goes beside, or the one in front.
 	if w := a.ownerOf(at.beside); w != nil && !w.gone {
@@ -1548,8 +1519,8 @@ func (a *app) closePane(id string) {
 			a.setFocusIn(w, next)
 		}
 	}
-	if sh := a.shells.get(id); sh != nil {
-		sh.close()
+	if sh := a.shells.Get(id); sh != nil {
+		sh.Close()
 	}
 	time.AfterFunc(foldTime, func() {
 		a.events <- func() {
@@ -1586,10 +1557,10 @@ func (a *app) remove(id string) {
 		// where the dial is watched from.
 		a.giveUp(p.Machine)
 	}
-	if sh := a.shells.get(id); sh != nil {
-		sh.close()
+	if sh := a.shells.Get(id); sh != nil {
+		sh.Close()
 	}
-	a.shells.set(id, nil)
+	a.shells.Set(id, nil)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)
@@ -1691,8 +1662,8 @@ func (a *app) pickTheme(name string) bool {
 		a.st.Marks = marksOf(t.palette)
 		a.wantFont = t.source.Font
 		a.useWantedFont()
-		for _, sh := range a.shells.all() {
-			sh.setPalette(t.palette)
+		for _, sh := range a.shells.All() {
+			sh.SetPalette(t.palette)
 		}
 		for _, w := range a.wins {
 			_ = w.c.SetTheme(name)

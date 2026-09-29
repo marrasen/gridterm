@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	gi "github.com/marrasen/gunim/input"
-
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/vfs"
 )
@@ -49,31 +47,6 @@ func TestStartAgainForAnotherWindowAnswersOnceItRan(t *testing.T) {
 	}
 }
 
-// A Go To in a file pane made again, as moved to another window, is
-// numbered past the ones the program has answered.
-func TestGoToIsNumberedPastTheOnesAnswered(t *testing.T) {
-	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "one", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/", Seq: 1, WentTo: 3}}})
-	win.browsers["p1"].askGoToWith("/x", "", lastUI)
-	for range 20 {
-		lastWindow.Frame(time.Second / 60)
-	}
-	for len(lastWindow.Client().Intents()) > 0 {
-		<-lastWindow.Client().Intents()
-	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	lastWindow.Frame(time.Second / 60)
-	for {
-		if in, ok := nextIntent(t).(GoTo); ok {
-			if in.Ask <= 3 {
-				t.Fatalf("Go To is numbered %d, past none of the 3 answered", in.Ask)
-			}
-			return
-		}
-	}
-}
-
 // Files opened on a server before it was saved otherwise are not used
 // after, and a shell there that ended asks again when starting it again
 // is refused.
@@ -87,7 +60,7 @@ func TestAServerSavedOtherwiseRefusesItsFilesAndAsksAgain(t *testing.T) {
 	}
 	waitFor(t, a, "the files", func() bool { return opened })
 	id := a.st.Panes[0].ID
-	a.shells.get(id).close() // its shell ends; the connection stays
+	a.shells.Get(id).Close() // its shell ends; the connection stays
 	waitFor(t, a, "the shell to end", func() bool { return a.terminal(id).Exited() })
 	h, _ := a.book.Lookup("srv")
 	h.Address, h.Port = "127.0.0.1", 1

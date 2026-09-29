@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"image/color"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/anim"
@@ -288,13 +289,13 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 				continue
 			}
 			r.kind = paneKindIcon(p)
-			sh := w.shells.get(p.ID)
+			sh := w.shells.Get(p.ID)
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {
 				switch {
 				case ended:
 					return meter.Closed
-				case sh != nil && sh.wrote != nil && now.Sub(time.Unix(0, sh.wrote.Load())) < meter.Settle:
+				case sh != nil && now.Sub(sh.Wrote()) < meter.Settle:
 					return meter.Active
 				}
 				return meter.Settled

@@ -1,13 +1,14 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/notify"
 	"github.com/marrasen/kakel/vt"

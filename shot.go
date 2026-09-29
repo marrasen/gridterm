@@ -1,22 +1,19 @@
 package main
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"image/png"
 	"os"
-	"slices"
 	"strings"
 	"time"
 
 	gi "github.com/marrasen/gunim/input"
 
 	"github.com/marrasen/kakel/agent"
-	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/steps"
-	"github.com/marrasen/kakel/ui"
+	"github.com/marrasen/kakel/winkeys"
 )
 
 // -shot drives the window through a short script and writes what is on
@@ -50,7 +47,7 @@ func parseShot(script string) ([]steps.Step, error) {
 	for i, step := range list {
 		switch step.Kind {
 		case steps.Key:
-			if _, err := chordPress(step.Chord); err != nil {
+			if _, err := winkeys.Parse(step.Chord); err != nil {
 				return nil, fmt.Errorf("step %d, %q: %w", i+1, step, err)
 			}
 		case steps.Until:
@@ -67,47 +64,6 @@ func parseShot(script string) ([]steps.Step, error) {
 		}
 	}
 	return list, nil
-}
-
-// chordPress is the key press a chord is, as the window hears it.
-func chordPress(written string) (gi.KeyPress, error) {
-	chord, err := ui.ParseChord(written)
-	if err != nil {
-		return gi.KeyPress{}, err
-	}
-	press, ok := pressOf(chord)
-	if !ok {
-		return gi.KeyPress{}, fmt.Errorf("%s is no key this window takes", written)
-	}
-	return press, nil
-}
-
-// pressOf is the key press a chord is, as the window hears it, and
-// whether the window has the key at all.
-func pressOf(chord ui.Chord) (gi.KeyPress, bool) {
-	// The main keyboard's key before the keypad's that also means it,
-	// and the same one each time: keyMap is a map, visited in no fixed
-	// order.
-	var keys []gi.Key
-	for gk, k := range keyMap {
-		if k == chord.Key {
-			keys = append(keys, gk)
-		}
-	}
-	if len(keys) == 0 {
-		return gi.KeyPress{}, false
-	}
-	slices.SortFunc(keys, func(a, b gi.Key) int { return cmp.Compare(keypad(a), keypad(b)) })
-	press := gi.KeyPress{Key: keys[0]}
-	for _, m := range [...]struct {
-		from input.Mods
-		to   gi.Mods
-	}{{input.ModShift, gi.ModShift}, {input.ModCtrl, gi.ModControl}, {input.ModAlt, gi.ModAlt}, {input.ModSuper, gi.ModSuper}} {
-		if chord.Mods.Has(m.from) {
-			press.Mods |= m.to
-		}
-	}
-	return press, true
 }
 
 // runShot drives the window through the script, on a goroutine of its
@@ -171,7 +127,7 @@ func (a *app) shoot(ctx context.Context, list []steps.Step) error {
 				}
 			}
 		case steps.Key:
-			press, err := chordPress(step.Chord)
+			press, err := winkeys.Parse(step.Chord)
 			if err != nil {
 				return err
 			}
@@ -229,14 +185,4 @@ func (a *app) paneNow() string {
 		return ""
 	}
 	return t.ReadLines(t.Size().Rows).Text
-}
-
-// keypad is 1 for a key on the keypad and 0 for the rest.
-func keypad(k gi.Key) int {
-	switch k {
-	case gi.KeyKPEnter, gi.KeyKP0, gi.KeyKP1, gi.KeyKP2, gi.KeyKP3, gi.KeyKP4,
-		gi.KeyKP5, gi.KeyKP6, gi.KeyKP7, gi.KeyKP8, gi.KeyKP9, gi.KeyKPDecimal:
-		return 1
-	}
-	return 0
 }

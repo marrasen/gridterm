@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/words"
 )
 
 // Taking the secrets to another manager and bringing them in from one,
@@ -64,7 +65,7 @@ func (a *app) exportSecrets(in ExportSecrets) {
 		if err != nil {
 			return err
 		}
-		a.worked("Secrets exported", fmt.Sprintf("%s in plain text, to %s. Import it as Chrome or Other CSV, then remove the file.", count(len(out), "secret"), at), "")
+		a.worked("Secrets exported", fmt.Sprintf("%s in plain text, to %s. Import it as Chrome or Other CSV, then remove the file.", words.Count(len(out), "secret"), at), "")
 		return nil
 	})
 }
@@ -98,7 +99,7 @@ func (a *app) importSecrets(in ImportSecrets) {
 		if err != nil {
 			return err
 		}
-		said := count(added, "secret") + " read in"
+		said := words.Count(added, "secret") + " read in"
 		if skipped > 0 {
 			said += fmt.Sprintf(", %d left as they were", skipped)
 		}

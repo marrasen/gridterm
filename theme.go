@@ -11,6 +11,7 @@ import (
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
+	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/themes"
 	"github.com/marrasen/kakel/vt"
@@ -263,4 +264,20 @@ func registerThemes(w *gunim.Window, all []themed) {
 	for _, t := range all {
 		w.RegisterTheme(t.theme)
 	}
+}
+
+// Marks are the colours of the rings, from the theme's terminal
+// colours: an agent's, and another window's.
+type Marks struct{ Agent, Watched color.NRGBA }
+
+// marksOf are the rings' colours in a palette.
+func marksOf(p vt.Palette) Marks {
+	// Lifted towards whichever of black and white the ground is not.
+	black, white := color.RGBA{A: 0xff}, color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
+	far := black
+	if grid.Contrast(white, p.BG) >= grid.Contrast(black, p.BG) {
+		far = white
+	}
+	nrgba := func(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
+	return Marks{Agent: nrgba(p.ANSI[6]), Watched: nrgba(grid.Blend(p.ANSI[9], far, 2, 5))}
 }

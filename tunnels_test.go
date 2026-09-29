@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gunim/geom"
@@ -50,7 +52,7 @@ func tunnelApp(t *testing.T) (a *app, conn *remote.Conn, echo string) {
 	}
 	t.Cleanup(func() { _ = conn.Close() })
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	a.machines.At("srv").Conn = conn
 	t.Cleanup(func() {

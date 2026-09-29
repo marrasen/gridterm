@@ -1,11 +1,12 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 )
 
 // Closing the window, however it is asked for: the menu, the key, or
@@ -119,16 +120,16 @@ func (a *app) whatIsOpen() []string {
 		}
 	}
 	if jobs > 0 {
-		out = append(out, manyOf(jobs, "piece of file work", "pieces of file work"))
+		out = append(out, words.ManyOf(jobs, "piece of file work", "pieces of file work"))
 	}
 	if n := len(a.st.Panes); n > 0 {
-		out = append(out, manyOf(n, "pane", "panes"))
+		out = append(out, words.ManyOf(n, "pane", "panes"))
 	}
 	if n := len(a.tunnels); n > 0 {
-		out = append(out, manyOf(n, "tunnel", "tunnels"))
+		out = append(out, words.ManyOf(n, "tunnel", "tunnels"))
 	}
 	if n := len(a.machines.Connected()) + len(a.machines.Windows()); n > 0 {
-		out = append(out, manyOf(n, "connection", "connections"))
+		out = append(out, words.ManyOf(n, "connection", "connections"))
 	}
 	if len(a.agents.by) > 0 {
 		out = append(out, "an agent share")
@@ -137,14 +138,6 @@ func (a *app) whatIsOpen() []string {
 		out = append(out, "this window, served")
 	}
 	return out
-}
-
-// manyOf writes a number and the word for it.
-func manyOf(n int, one, many string) string {
-	if n == 1 {
-		return "1 " + one
-	}
-	return strconv.Itoa(n) + " " + many
 }
 
 // listOf writes a few things as a person would say them.

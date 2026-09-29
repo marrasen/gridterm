@@ -19,6 +19,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/ui/files"
+	"github.com/marrasen/kakel/winkeys"
 )
 
 // reader shows a file on kakel's own reader: its lines, coloured by
@@ -367,7 +368,7 @@ func (rd *reader) Handle(e gi.Event, u *gunim.UI) bool {
 		if e.Typed {
 			return true
 		}
-		ev, ok := keyEvent(e)
+		ev, ok := winkeys.Event(e)
 		if !ok {
 			return false
 		}

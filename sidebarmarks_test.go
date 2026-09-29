@@ -1,9 +1,12 @@
 package main
 
 import (
-	"github.com/marrasen/kakel/machines"
 	"testing"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
@@ -78,9 +81,9 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 
 func TestSharingShowsChipsAndOpensThePermissions(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p1", openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {

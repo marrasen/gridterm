@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"io/fs"
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/vfs"
@@ -158,7 +160,7 @@ func (a *app) clipFiles(in ClipFiles) {
 		kind, verb = jobs.Move, "move"
 	}
 	a.clip = &fileClip{kind: kind, from: f, machine: a.filesKey(in.Pane), at: at, names: in.Names}
-	a.st.Status = fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, count(len(in.Names), "item"))
+	a.st.Status = fmt.Sprintf("Ready to %s %s; paste in a folder with F7 or Ctrl+V.", verb, words.Count(len(in.Names), "item"))
 }
 
 func (a *app) pasteFiles(in PasteFiles) error {
@@ -180,7 +182,7 @@ func (a *app) pasteFiles(in PasteFiles) error {
 	if c.kind == jobs.Move {
 		verb = "Moving"
 	}
-	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.filesKey(in.Pane))
+	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, words.Count(len(c.names), "item"), vfs.Base(f, into)), c.machine, a.filesKey(in.Pane))
 	return nil
 }
 
@@ -189,7 +191,7 @@ func (a *app) deleteFiles(in DeleteFiles) {
 	if !ok || len(in.Names) == 0 {
 		return
 	}
-	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+count(len(in.Names), "item"), a.filesKey(in.Pane), "")
+	a.followOn(jobs.Op{Kind: jobs.Delete, From: f, At: at, Names: in.Names}, "Deleting "+words.Count(len(in.Names), "item"), a.filesKey(in.Pane), "")
 }
 
 // follow starts a job and follows it, listing again the file panes
@@ -312,11 +314,11 @@ func jobRow(r *running, p jobs.Progress) Job {
 		row.Failed = jobs.Trouble(p.Err) != nil
 		said = append(said, jobs.Outcome(p))
 		if p.FilesDone > 0 {
-			said = append(said, count(p.FilesDone, "file")+" done")
+			said = append(said, words.Count(p.FilesDone, "file")+" done")
 		}
 	case p.Done:
 		row.Share = 1
-		done := count(p.FilesDone, "file") + " done"
+		done := words.Count(p.FilesDone, "file") + " done"
 		if p.Skipped > 0 {
 			done += fmt.Sprintf(", %d left as they were", p.Skipped)
 		}
@@ -326,20 +328,20 @@ func jobRow(r *running, p jobs.Progress) Job {
 			said = append(said, "in "+took.Round(time.Second).String())
 		}
 		if took > 0 && p.BytesDone > 0 {
-			said = append(said, humanSize(int64(float64(p.BytesDone)/took.Seconds()))+"/s on average")
+			said = append(said, words.Size(int64(float64(p.BytesDone)/took.Seconds()))+"/s on average")
 		}
 	case p.Files == 0:
 		said = append(said, "Counting…")
 	default:
-		said = append(said, fmt.Sprintf("%d of %s", p.FilesDone, count(p.Files, "file")))
+		said = append(said, fmt.Sprintf("%d of %s", p.FilesDone, words.Count(p.Files, "file")))
 		if !p.Started.IsZero() {
 			said = append(said, jobs.Going(time.Since(p.Started)))
 		}
 		if p.Bytes > 0 {
-			said = append(said, humanSize(p.BytesDone)+" of "+humanSize(p.Bytes))
+			said = append(said, words.Size(p.BytesDone)+" of "+words.Size(p.Bytes))
 		}
 		if speed := r.speedNow(); speed > 0 {
-			said = append(said, humanSize(int64(speed))+"/s")
+			said = append(said, words.Size(int64(speed))+"/s")
 			if p.Bytes > p.BytesDone {
 				left := time.Duration(float64(p.Bytes-p.BytesDone) / float64(speed) * float64(time.Second))
 				if left < time.Second {
@@ -412,7 +414,7 @@ func (a *app) renameFile(in RenameFile) {
 		return
 	}
 	if err := plainName(f, in.To); err != nil {
-		a.failed("Couldn't rename "+in.From, upperFirst(err.Error())+".")
+		a.failed("Couldn't rename "+in.From, words.UpperFirst(err.Error())+".")
 		return
 	}
 	from, to := vfs.Join(f, at, in.From), vfs.Join(f, at, in.To)
@@ -465,7 +467,7 @@ func (a *app) makeFolder(in MakeFolder) {
 		return
 	}
 	if err := plainName(f, in.Name); err != nil {
-		a.failed("Couldn't make the folder", upperFirst(err.Error())+".")
+		a.failed("Couldn't make the folder", words.UpperFirst(err.Error())+".")
 		return
 	}
 	go func() {
@@ -492,14 +494,6 @@ func plainName(f vfs.FS, name string) error {
 		return fmt.Errorf("%q is a path, and a name is wanted", name)
 	}
 	return nil
-}
-
-// count writes n things, with the plural where it takes one.
-func count(n int, thing string) string {
-	if n == 1 {
-		return "1 " + thing
-	}
-	return fmt.Sprintf("%d %ss", n, thing)
 }
 
 // overwriteAsker asks the user about a name that is already there.
@@ -532,7 +526,7 @@ func describe(e vfs.Entry) string {
 	if e.IsDir() {
 		return "a folder"
 	}
-	return humanSize(e.Size)
+	return words.Size(e.Size)
 }
 
 // mostSpeeds is how many speed samples a job keeps for its graph, and

@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
 
@@ -12,9 +14,9 @@ import (
 
 func TestASharedPaneGlows(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p1", openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	marks := marksOf(vt.DefaultPalette())
 	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1", Marks: marks}
 	ring := func() bool {
@@ -52,13 +54,13 @@ func TestASharedPaneGlows(t *testing.T) {
 // under it.
 func TestAHeldScreenBiggerThanThePaneIsDrawnToFit(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p1", openShell(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(&typed{done: make(chan struct{})}, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	st := State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"}
 	publish(st)
 	tm := win.terms["p1"]
-	sh.get("p1").t.Hold(200, 60)
+	sh.Get("p1").T.Hold(200, 60)
 	tm.sync()
 	publish(st)
 	if tm.scale >= 1 || tm.scale <= 0 {
@@ -75,7 +77,7 @@ func TestAHeldScreenBiggerThanThePaneIsDrawnToFit(t *testing.T) {
 	if got := tm.cellAt(at); got.X != 199 || got.Y != 59 {
 		t.Fatalf("a click on the last cell, at %v in %v, lands on %v", at, box, got)
 	}
-	sh.get("p1").t.Release()
+	sh.Get("p1").T.Release()
 	tm.sync()
 	publish(st)
 	if tm.scale != 1 {

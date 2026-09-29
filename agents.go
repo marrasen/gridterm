@@ -131,8 +131,8 @@ const mostOpened = 4
 
 // terminal returns the terminal in pane id, or nil.
 func (a *app) terminal(id string) *uiterm.Terminal {
-	if sh := a.shells.get(id); sh != nil && a.kindOfPane(id) == kindTerminal {
-		return sh.t
+	if sh := a.shells.Get(id); sh != nil && a.kindOfPane(id) == kindTerminal {
+		return sh.T
 	}
 	return nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/words"
 )
 
 // jobsPane shows the file jobs as cards, newest at the bottom: each
@@ -109,7 +110,7 @@ func newJobCard(j Job) *jobCard {
 		bar: widget.NewProgressBar(), graph: widget.NewLiveGraph(sampleEvery, mostSpeeds),
 		cancel: iconButton(icon.CircleStop, "Cancel"), repeat: iconButton(icon.Repeat, "Repeat"), save: widget.NewCheckbox("Save this copy"),
 	}
-	c.graph.Label = func(v float64) string { return humanSize(int64(v)) + "/s" }
+	c.graph.Label = func(v float64) string { return words.Size(int64(v)) + "/s" }
 	c.title.MaxLines, c.detail.MaxLines = 1, 1
 	c.detail.Size, c.detail.Color = smallText, faint
 	c.names.Size = smallText
@@ -300,7 +301,7 @@ func (p *copiesPane) show(saved []settings.SavedCopy, u *gunim.UI) {
 		p.bar.set("None saved. A finished copy has a Save this copy box.", u)
 		return
 	}
-	p.bar.set(count(len(saved), "copy")+" saved · Enter does the one selected again, Delete forgets it", u)
+	p.bar.set(words.Count(len(saved), "copy")+" saved · Enter does the one selected again, Delete forgets it", u)
 }
 
 // Children implements [gunim.Composite].

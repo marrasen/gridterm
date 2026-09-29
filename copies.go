@@ -3,9 +3,11 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"slices"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/settings"
@@ -85,7 +87,7 @@ func (a *app) copyBetween(from, to machines.ID, at, into string, names []string,
 		if err := a.withFilesOr(to, func(tf vfs.FS) {
 			over()
 			op := jobs.Op{Kind: jobs.Copy, From: ff, At: at, Names: names, To: tf, Into: into}
-			a.followOn(op, "Copying "+count(len(names), "item")+" to "+vfs.Base(tf, into), from, to)
+			a.followOn(op, "Copying "+words.Count(len(names), "item")+" to "+vfs.Base(tf, into), from, to)
 		}, over); err != nil {
 			over()
 			a.failed("Couldn't copy", err.Error())
@@ -233,7 +235,7 @@ func copiedWhat(c settings.SavedCopy) string {
 	if len(c.Names) == 1 {
 		return c.Names[0]
 	}
-	return count(len(c.Names), "item") + ": " + strings.Join(c.Names, ", ")
+	return words.Count(len(c.Names), "item") + ": " + strings.Join(c.Names, ", ")
 }
 
 // copiedWhere says where a saved copy goes from and to: a saved server

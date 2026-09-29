@@ -2,12 +2,14 @@ package main
 
 import (
 	"errors"
-	"github.com/marrasen/kakel/machines"
 	"log"
 	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/marrasen/kakel/machines"
+	"github.com/marrasen/kakel/words"
 
 	"golang.org/x/crypto/ssh"
 
@@ -325,7 +327,7 @@ func (a *app) reloadServers() error {
 	a.book = b
 	a.st.Saved = b.Hosts()
 	a.giveSavedIDs()
-	a.worked("Server list read again", count(len(a.st.Saved), "saved server")+".", "")
+	a.worked("Server list read again", words.Count(len(a.st.Saved), "saved server")+".", "")
 	return nil
 }
 

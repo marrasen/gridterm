@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"io/fs"
 	"net"
 	"net/url"
@@ -13,6 +12,10 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/vfs"
@@ -26,7 +29,7 @@ import (
 
 // withLinks gives pane id's hooks what follows its links, for a pane
 // on machine.
-func (a *app) withLinks(h shellHooks, id string, machine machines.ID) shellHooks {
+func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.Hooks {
 	post := func(f func()) {
 		go func() {
 			select {
@@ -35,20 +38,20 @@ func (a *app) withLinks(h shellHooks, id string, machine machines.ID) shellHooks
 			}
 		}()
 	}
-	h.link = func(at string) {
+	h.Link = func(at string) {
 		post(func() {
 			if err := a.openLink(machine, at); err != nil {
 				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
 	}
-	h.findPath = func(text, dir string) (string, bool, bool) {
+	h.FindPath = func(text, dir string) (string, bool, bool) {
 		if machine == "" {
 			return findOnDisk(text, dir)
 		}
 		return a.findFar(machine, text, dir)
 	}
-	h.openPath = func(at string, isDir bool, line int) {
+	h.OpenPath = func(at string, isDir bool, line int) {
 		post(func() {
 			if err := a.openPath(machine, at, isDir, line); err != nil {
 				a.failed("Couldn't open "+at, err.Error())

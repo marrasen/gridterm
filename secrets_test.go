@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/gunim/geom"
@@ -32,7 +34,7 @@ func secretsApp(t *testing.T) (a *app, keyFile string) {
 	keyFile = filepath.Join(home, ".ssh", "id_ed25519")
 	writeKey(t, keyFile)
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	a.secretsAt = filepath.Join(home, "secrets.json")
 	return a, keyFile
@@ -124,9 +126,9 @@ func (s *typed) sent() string          { s.mu.Lock(); defer s.mu.Unlock(); retur
 func TestASecretIsTypedIntoTheTerminalUsedLast(t *testing.T) {
 	a, _ := secretsApp(t)
 	sess := &typed{done: make(chan struct{})}
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	a.next++ // the pane takes a number, as the program's own do
-	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, openShell(sess, a.palette, quiet), placement{})
+	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, screen.Open(sess, a.palette, quiet), placement{})
 	t.Cleanup(func() { a.remove("p1") })
 	a.lastTerminal = "p1"
 	startVault(t, a)

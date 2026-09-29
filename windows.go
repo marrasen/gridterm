@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/marrasen/kakel/machines"
 	"net"
 	"os"
 	"path/filepath"
@@ -12,6 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/marrasen/kakel/screen"
+
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
@@ -304,7 +307,7 @@ func (a *app) openOnWindow(name machines.ID, id, title string, at placement, the
 	go func() {
 		// What the window calls the shell arrives on a goroutine of the
 		// connection's, and is written down on the program's.
-		sess, err := w.Serve.Open(shellCols, shellRows, func(n serve.Attached) {
+		sess, err := w.Serve.Open(screen.Cols, screen.Rows, func(n serve.Attached) {
 			go func() {
 				a.events <- func() {
 					if n.ID != "" && a.has(id) {
@@ -322,7 +325,7 @@ func (a *app) openOnWindow(name machines.ID, id, title string, at placement, the
 				then("", err)
 				return
 			}
-			a.addPane(Pane{ID: id, Title: title, Machine: name}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, name)), at)
+			a.addPane(Pane{ID: id, Title: title, Machine: name}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, name)), at)
 			a.showWindows()
 			then(id, nil)
 		}
@@ -352,13 +355,13 @@ func (a *app) attachWindow(in AttachWindow) error {
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	go func() {
-		sess, err := w.Serve.Attach(open, shellCols, shellRows)
+		sess, err := w.Serve.Attach(open, screen.Cols, screen.Rows)
 		a.events <- func() {
 			if err != nil {
 				a.failed("Couldn't work in "+open.Label, err.Error())
 				return
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
 				a.machines.NameFar(in.Window, open.Key(), open.Host)

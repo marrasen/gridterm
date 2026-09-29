@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -25,7 +27,7 @@ func agentApp(t *testing.T) (a *app, code string) {
 	t.Setenv("SHELL", "/bin/sh")
 	testhome.New(t)
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a = newApp(w.Client(), &shells{m: map[string]*shell{}})
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	if err := a.open("", placement{}); err != nil {
 		t.Fatal(err)

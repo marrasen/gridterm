@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -38,7 +40,7 @@ func TestFilesThatCannotBeReadSaySo(t *testing.T) {
 			t.Fatal(err)
 		}
 		w := gunimtest.New(t, geom.Sz(400, 300), nil)
-		a := newApp(w.Client(), &shells{m: map[string]*shell{}})
+		a := newApp(w.Client(), screen.NewShells())
 		tc.load(a)
 		i := slices.IndexFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't read "+tc.what })
 		if i < 0 {

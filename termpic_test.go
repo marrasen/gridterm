@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
 
@@ -40,20 +42,20 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 	}
 	out := "before\r\n\x1b]1337;File=inline=1;width=4;height=2:" + base64.StdEncoding.EncodeToString(file.Bytes()) + "\x07after\r\n"
 	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte(out)}
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p1", openShell(s, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &Box{Pane: "p1"}, Focus: "p1"})
 
 	deadline := time.Now().Add(5 * time.Second)
-	for len(sh.get("p1").t.Pictures()) == 0 {
+	for len(sh.Get("p1").T.Pictures()) == 0 {
 		if time.Now().After(deadline) {
 			t.Fatal("the terminal never took the picture")
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	lastWindow.Frame(time.Second / 60)
-	at := sh.get("p1").t.Pictures()[0]
+	at := sh.Get("p1").T.Pictures()[0]
 	var drawn *paint.ImageOp
 	for _, op := range lastWindow.Offscreen().Ops() {
 		if im, ok := op.(*paint.ImageOp); ok {
@@ -76,11 +78,11 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 	win, sh, publish := windowStage(t)
 	s := &printed{typed: typed{done: make(chan struct{})}, out: []byte("\x1b]2;vim notes.txt\x07")}
-	quiet := shellHooks{output: func() {}, title: func(string) {}, exit: func() {}, clipboard: func(string) {}}
-	sh.set("p1", openShell(s, vt.DefaultPalette(), quiet))
-	t.Cleanup(func() { _ = sh.get("p1").t.Close() })
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	deadline := time.Now().Add(5 * time.Second)
-	for sh.get("p1").t.Title() == "" {
+	for sh.Get("p1").T.Title() == "" {
 		if time.Now().After(deadline) {
 			t.Fatal("the program's title never arrived")
 		}

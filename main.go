@@ -19,6 +19,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/kakel/screen"
+
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/geom"
@@ -84,7 +86,7 @@ func run() error {
 		return defaultFontSize
 	}
 	err = gunim.Main(ctx, func(a *gunim.App) error {
-		sh := &shells{m: map[string]*shell{}}
+		sh := screen.NewShells()
 		all, trouble := loadThemesSaying()
 		ws := &ownWindows{app: a, sh: sh, all: all}
 		w, c, err := ws.open(gunim.WindowOptions{Size: firstSize(keptFontSize(), 220)})
@@ -115,7 +117,7 @@ func run() error {
 // mounted, and names the themes to every one of them.
 type ownWindows struct {
 	app *gunim.App
-	sh  *shells
+	sh  *screen.Shells
 	mu  sync.Mutex
 	all []themed
 	win []*gunim.Window

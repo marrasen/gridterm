@@ -8,9 +8,6 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/paint"
-
-	"github.com/marrasen/kakel/grid"
-	"github.com/marrasen/kakel/vt"
 )
 
 // A pane shared with an agent, or watched from another window, has a
@@ -20,22 +17,6 @@ import (
 
 // glowEvery is how long one glow takes, bright and back.
 const glowEvery = 3 * time.Second
-
-// Marks are the colours of the rings, from the theme's terminal
-// colours: an agent's, and another window's.
-type Marks struct{ Agent, Watched color.NRGBA }
-
-// marksOf are the rings' colours in a palette.
-func marksOf(p vt.Palette) Marks {
-	// Lifted towards whichever of black and white the ground is not.
-	black, white := color.RGBA{A: 0xff}, color.RGBA{R: 0xff, G: 0xff, B: 0xff, A: 0xff}
-	far := black
-	if grid.Contrast(white, p.BG) >= grid.Contrast(black, p.BG) {
-		far = white
-	}
-	nrgba := func(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
-	return Marks{Agent: nrgba(p.ANSI[6]), Watched: nrgba(grid.Blend(p.ANSI[9], far, 2, 5))}
-}
 
 // glowAt is how bright the glow is at now, from 0 to 1 and back once
 // every glowEvery.
@@ -50,7 +31,7 @@ const markWidth, markGap = 2, 3
 
 // shared reports whether the terminal is shared, and how.
 func (t *term) shared() (agent, watched bool) {
-	return t.agent, t.sh.t.Watched() > 0
+	return t.agent, t.sh.T.Watched() > 0
 }
 
 // paintRings draws the rings round a shared terminal.

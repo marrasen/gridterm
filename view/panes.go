@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/kakel/look"
 
@@ -243,7 +244,13 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 		what = words.Count(len(names), "item")
 	}
 	d := widget.NewDialog("Delete " + what + "?")
-	d.Body = widget.NewLabel("From " + b.st.Path + ". This can't be undone.")
+	// Named with its machine when that is not this one: the same path
+	// is on every machine, and which one's goes is the question.
+	from := b.st.Path
+	if m := b.w.filesKeyOf(b.id); m != machines.Local {
+		from = b.w.nameOf(m) + ": " + from
+	}
+	d.Body = widget.NewLabel("From " + from + ". This can't be undone.")
 	d.SetButtons("Delete", "Cancel")
 	d.Danger = true
 	d.Accept = app.DeleteFiles{Pane: b.id, Names: names}
@@ -261,12 +268,7 @@ func (b *browser) askRename(u *gunim.UI) {
 	d := widget.NewDialog("Rename " + string(k))
 	d.Body = widget.NewForm().Add("New name", name)
 	d.SetButtons("Rename", "Cancel")
-	d.Check = func() string {
-		if strings.TrimSpace(name.Text()) == "" {
-			return "It needs a name."
-		}
-		return ""
-	}
+	d.Check = func() string { return b.nameProblem(name.Text()) }
 	d.OnAccept = func() gunim.Intent {
 		return app.RenameFile{Pane: b.id, From: string(k), To: strings.TrimSpace(name.Text())}
 	}
@@ -345,12 +347,7 @@ func (b *browser) askFolder(u *gunim.UI) {
 	d := widget.NewDialog("New folder in " + b.st.Path)
 	d.Body = widget.NewForm().Add("Name", name)
 	d.SetButtons("Make", "Cancel")
-	d.Check = func() string {
-		if strings.TrimSpace(name.Text()) == "" {
-			return "It needs a name."
-		}
-		return ""
-	}
+	d.Check = func() string { return b.nameProblem(name.Text()) }
 	d.OnAccept = func() gunim.Intent { return app.MakeFolder{Pane: b.id, Name: strings.TrimSpace(name.Text())} }
 	d.Dismiss = app.DialogClosed{}
 	b.w.openDialog(d, u)
@@ -524,4 +521,14 @@ func (b *browser) goForward(u *gunim.UI) {
 	b.back = append(b.back, b.at)
 	b.travel = true
 	u.Send(b, app.Browse{Pane: b.id, Path: to})
+}
+
+// nameProblem is why a name typed for a file or folder here will not do,
+// said while the dialog is open, or "": none, a path, or one of the two
+// that name folders themselves.
+func (b *browser) nameProblem(typed string) string {
+	if err := vfs.NameProblem(b.st.Sep, strings.TrimSpace(typed)); err != nil {
+		return words.UpperFirst(err.Error()) + "."
+	}
+	return ""
 }

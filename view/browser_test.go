@@ -10,6 +10,9 @@ import (
 
 	gi "github.com/marrasen/gunim/input"
 
+	"github.com/marrasen/gunim/widget"
+
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/vfs"
 )
 
@@ -267,5 +270,37 @@ func TestTheSideButtonsGoBackAndForward(t *testing.T) {
 	lastWindow.Frame(time.Second / 60)
 	if in, ok := nextIntent(t).(app.Browse); !ok || in.Path != "/a" {
 		t.Fatalf("Alt+Left sent %#v", in)
+	}
+}
+
+// A name for a new folder or a rename is refused while the dialog is
+// open when it is a path, and the Delete question names the machine
+// whose files go when that is not this one.
+func TestFileDialogsRefuseAPathAndNameTheMachine(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "srv", Kind: app.KindFiles, Machine: "m1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Machines: []machines.Info{{ID: "m1", Name: "margit"}},
+		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Sep: "/", Entries: []vfs.Entry{{Name: "notes.txt"}}, Seq: 1}}}
+	publish(st)
+	b := win.browsers["p1"]
+	for _, c := range []struct{ typed, problem string }{
+		{"", "It needs a name."},
+		{"..", `".." is not a name to use.`},
+		{"a/b", `"a/b" is a path, and a name is wanted.`},
+		{" logs ", ""},
+	} {
+		if got := b.nameProblem(c.typed); got != c.problem {
+			t.Errorf("%q is refused with %q, want %q", c.typed, got, c.problem)
+		}
+	}
+	b.askFolder(lastUI)
+	if win.dialog == nil || win.dialog.Check == nil {
+		t.Fatal("the new folder dialog checks nothing")
+	}
+	win.dialog.Close(lastUI)
+	b.table.SetCursor("notes.txt", lastUI)
+	b.confirmDelete(lastUI)
+	if l, ok := win.dialog.Body.(*widget.Label); !ok || l.Text != "From margit: /srv. This can't be undone." {
+		t.Fatalf("the Delete question says %+v", win.dialog.Body)
 	}
 }

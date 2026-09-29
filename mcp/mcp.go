@@ -175,9 +175,9 @@ type Screen struct {
 	// it were left out of the answer.
 	Trimmed bool `json:"blank_rows_left_out,omitempty"`
 
-	// Pictures are the pictures on the screen, which read back as
+	// Images are the images on the screen, which read back as
 	// blank cells and would otherwise be invisible here.
-	Pictures []Picture `json:"pictures,omitempty"`
+	Images []Image `json:"images,omitempty"`
 
 	// Note is what the window had to say about this answer beyond the
 	// screen itself, and is empty when it had nothing.
@@ -213,8 +213,8 @@ type Screen struct {
 	Yours bool `json:"the_last_finish_is_yours,omitempty"`
 }
 
-// Picture is one picture on a pane's screen.
-type Picture struct {
+// Image is one picture on a pane's screen.
+type Image struct {
 	Top, Rows, Cols int
 	Width, Height   int
 	Wire            bool

@@ -190,9 +190,9 @@ type Pane struct {
 // one keeps the window from drawing; this is what one read may cost.
 const MostLines = 500
 
-// Picture is one picture on a pane's screen, for a reader that sees
+// Image is one picture on a pane's screen, for a reader that sees
 // text and would otherwise see blank cells where the pixels are.
-type Picture struct {
+type Image struct {
 	// Top is the screen row its first row is on, counted from zero,
 	// and Rows and Cols how many cells it covers.
 	Top  int `json:"top"`
@@ -250,10 +250,10 @@ type Look struct {
 	// nothing much comes back shorter than fifteen.
 	Trimmed bool `json:"trimmed,omitempty"`
 
-	// Pictures are the pictures on the screen. The cells under one
+	// Images are the images on the screen. The cells under one
 	// read back as blank, so without this a reader cannot tell a
 	// picture that arrived from one that never did.
-	Pictures []Picture `json:"pictures,omitempty"`
+	Images []Image `json:"images,omitempty"`
 
 	// Note is what the window has to say about this answer beyond the
 	// screen itself, and is empty when it has nothing.

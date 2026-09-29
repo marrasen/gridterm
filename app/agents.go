@@ -461,7 +461,7 @@ func (w agentWindow) Look(id string, lines int) (agent.Look, error) {
 		return agent.Look{
 			Screen: agentterm.LastLines(cut, want), Note: note, Gone: t.Exited(), Changed: h.read.Said,
 			Row: h.read.Row, Col: h.read.Col, Alt: h.read.Alt, All: atFloor || enough, Trimmed: trimmed,
-			Pictures: agentterm.PicturesSeen(h.read.Pictures), Cols: size.Cols, Rows: size.Rows,
+			Images: agentterm.ImagesSeen(h.read.Pictures), Cols: size.Cols, Rows: size.Rows,
 			Marks: h.read.Cmd.Integrated, Running: h.read.Cmd.Running, Done: h.read.Cmd.Done,
 			Status: status, HasStatus: hasStatus, Back: h.typing.Back(*h.read),
 			Watching: h.typing.Watching(), Yours: h.typing.Yours(h.read.Cmd.Done),
@@ -511,7 +511,7 @@ func (w agentWindow) Output(id string, most int) (agent.Look, error) {
 		}
 		return agent.Look{
 			Screen: text, Gone: t.Exited(), Changed: read.Said, Row: read.Row, Col: read.Col, Alt: read.Alt,
-			Pictures: agentterm.PicturesIn(read.Pictures, read.Row, agentterm.CountLines(text)), Cols: size.Cols, Rows: size.Rows,
+			Images: agentterm.ImagesIn(read.Pictures, read.Row, agentterm.CountLines(text)), Cols: size.Cols, Rows: size.Rows,
 			Note: note, Marks: read.Cmd.Integrated, Running: read.Cmd.Running, Done: read.Cmd.Done,
 			Status: status, HasStatus: hasStatus, Back: h.typing.Back(read),
 			Watching: h.typing.Watching(), Yours: h.typing.Yours(read.Cmd.Done),

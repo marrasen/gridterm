@@ -81,8 +81,8 @@ func TestNothingTellsTheCallerToPutAReturnInTheText(t *testing.T) {
 // one that never did look the same.
 func TestAPictureIsNamedInTheTrailer(t *testing.T) {
 	got := showScreen(Screen{
-		Screen:   "some text",
-		Pictures: []Picture{{Top: 2, Rows: 13, Cols: 40, Width: 400, Height: 200}},
+		Screen: "some text",
+		Images: []Image{{Top: 2, Rows: 13, Cols: 40, Width: 400, Height: 200}},
 	}, Ending{}, false)
 
 	if !strings.Contains(got, "Rows 2 to 14 of the screen hold an image, 400 by 200, sent as OSC 1337") {
@@ -97,7 +97,7 @@ func TestAPictureIsNamedInTheTrailer(t *testing.T) {
 // really came by.
 func TestAPictureFromAnotherWindowSaysSo(t *testing.T) {
 	got := showScreen(Screen{
-		Pictures: []Picture{{Top: 0, Rows: 4, Width: 10, Height: 10, Wire: true}},
+		Images: []Image{{Top: 0, Rows: 4, Width: 10, Height: 10, Wire: true}},
 	}, Ending{}, false)
 
 	if !strings.Contains(got, "OSC 1338") {

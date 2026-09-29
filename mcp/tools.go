@@ -696,7 +696,7 @@ func showScreen(s Screen, ended Ending, clamped bool) string {
 		notes = append(notes, "The blank rows under the last line with anything on"+
 			" them are left out, so this is shorter than the lines you asked for.")
 	}
-	notes = append(notes, pictureNotes(s.Pictures)...)
+	notes = append(notes, imageNotes(s.Images)...)
 	if s.Note != "" {
 		notes = append(notes, s.Note)
 	}
@@ -847,13 +847,13 @@ func escapedEnding(text string) string {
 	return ""
 }
 
-// pictureNotes say what is on the screen in pixels.
+// imageNotes say what is on the screen in pixels.
 //
 // The cells a picture covers read back as spaces, so without this a
 // picture that arrived and one that never did look the same. A
 // program that meant to draw one is usually being debugged by whoever
 // is reading, and the size is what says whether the right one came.
-func pictureNotes(on []Picture) []string {
+func imageNotes(on []Image) []string {
 	out := make([]string, 0, len(on))
 	for _, p := range on {
 		which := "OSC 1337"

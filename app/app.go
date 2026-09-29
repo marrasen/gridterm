@@ -57,7 +57,11 @@ type State struct {
 	// Stage is the arrangement on screen: the group of panes the
 	// focused pane belongs to. Nil when no pane is open.
 	Stage *Box
-	Focus string
+	// Groups are how each of the window's panes is arranged, by pane:
+	// the split it sits in, or itself alone, for the switcher to grow a
+	// pane into its place and its neighbours into theirs.
+	Groups map[string]*Box
+	Focus  string
 	// Sidebar is whether the sidebar shows, and SidebarWidth how wide.
 	Sidebar      bool
 	SidebarWidth float32

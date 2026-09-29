@@ -114,3 +114,20 @@ func TestASecondPickInAChooserLandsBesideItsPane(t *testing.T) {
 		t.Fatalf("the second pick went to group %d, the split is %d", a.groupOf["f4"], a.groupOf["f1"])
 	}
 }
+
+// Each pane's arrangement is told to the window, the ones off stage
+// too, so the switcher can grow a pane into its place.
+func TestEveryPanesGroupIsPublished(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{Beside: "f1"})
+	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFiles}, nil, Placement{})
+	st := a.stateFor(a.cur, a.st)
+	if g := st.Groups["f1"]; g == nil || g != st.Groups["f2"] || g.A == nil || g.B == nil {
+		t.Fatalf("f1 and f2 are in %+v and %+v", st.Groups["f1"], st.Groups["f2"])
+	}
+	if g := st.Groups["f3"]; g == nil || g.Pane != "f3" {
+		t.Fatalf("f3 is in %+v", g)
+	}
+}

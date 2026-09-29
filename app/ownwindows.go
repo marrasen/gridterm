@@ -345,6 +345,18 @@ func (a *app) stateFor(w *ownWin, st State) State {
 	if st.Focus != "" {
 		st.Stage = a.groups[a.groupOf[st.Focus]].clone()
 	}
+	st.Groups = map[string]*Box{}
+	byGroup := map[int]*Box{}
+	for _, p := range st.Panes {
+		g, ok := a.groupOf[p.ID]
+		if !ok {
+			continue
+		}
+		if byGroup[g] == nil {
+			byGroup[g] = a.groups[g].clone()
+		}
+		st.Groups[p.ID] = byGroup[g]
+	}
 	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id })
 	st.Notices = slices.DeleteFunc(slices.Clone(st.Notices), func(n Notice) bool { return n.win != w.id })
 	return st

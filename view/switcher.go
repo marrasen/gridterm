@@ -51,6 +51,10 @@ type switcher struct {
 	// stageAt is where the stage stood then.
 	stageDrawn *gunim.Drawing
 	stageAt    geom.Rect
+	// mates are the panes that share the picked pane's split, which grow
+	// into their places beside it, so the split comes together as it
+	// lands rather than appearing once it has.
+	mates map[*tile]bool
 	// pressed is the tile the pointer went down on, at pressAt, which
 	// is picked when the pointer comes up there, and carried is the
 	// tile dragged out of it, held grab from its top left corner.
@@ -247,7 +251,7 @@ func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	scrim.A = uint8(float32(scrim.A) * t)
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(scrim))
 	for i, tl := range s.tiles {
-		if i == s.picked {
+		if i == s.picked || s.mates[tl] {
 			continue
 		}
 		s.paintTile(p, f, tl, t)
@@ -261,6 +265,11 @@ func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 				defer p.Push(paint.Translate(s.stageAt.Min))()
 				p.Replay(d.Recording())
 			}()
+		}
+		for _, tl := range s.tiles {
+			if s.mates[tl] {
+				s.paintTile(p, f, tl, 1)
+			}
 		}
 		s.paintTile(p, f, s.tiles[s.picked], 1)
 	}
@@ -299,6 +308,37 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	}
 }
 
+// placeIn is where pane id stands when group, the arrangement it is in,
+// fills r: split as gunim's Split splits, the first half its share of
+// the room less the gap between them. ok is false when id is not in it.
+func placeIn(group *app.Box, id string, r geom.Rect, u *gunim.UI) (geom.Rect, bool) {
+	switch {
+	case group == nil:
+		return geom.Rect{}, false
+	case group.Pane != "":
+		return r, group.Pane == id
+	}
+	length := r.Size().W
+	if group.Vertical {
+		length = r.Size().H
+	}
+	v := min(max(group.Share, 0), 1)
+	gap := widget.SplitGap.Get(u.Theme()) * min(max(min(v, 1-v)*20, 0), 1)
+	first := float32(int((length-gap)*v + 0.5))
+	a, b := r, r
+	if group.Vertical {
+		a.Max.Y = r.Min.Y + first
+		b.Min.Y = a.Max.Y + gap
+	} else {
+		a.Max.X = r.Min.X + first
+		b.Min.X = a.Max.X + gap
+	}
+	if at, ok := placeIn(group.A, id, a, u); ok {
+		return at, true
+	}
+	return placeIn(group.B, id, b, u)
+}
+
 // light puts the ring on tile i.
 func (s *switcher) light(i int, u *gunim.UI) {
 	s.hot = i
@@ -325,11 +365,29 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 		stage = r
 	}
 	t.ring.Animate(0, widget.Quick.Get(u.Theme()))
-	t.box.Animate(stage, widget.Settle.Get(u.Theme()))
+	// Into its place in its split, and the panes beside it into theirs;
+	// alone, it fills the stage.
+	group := s.w.groups[t.id]
+	s.mates = map[*tile]bool{}
+	into := stage
+	if r, ok := placeIn(group, t.id, stage, u); ok {
+		into = r
+	}
+	t.box.Animate(into, widget.Settle.Get(u.Theme()))
+	for k, o := range s.tiles {
+		if k == i {
+			continue
+		}
+		if r, ok := placeIn(group, o.id, stage, u); ok {
+			s.mates[o] = true
+			o.ring.Animate(0, widget.Quick.Get(u.Theme()))
+			o.box.Animate(r, widget.Settle.Get(u.Theme()))
+		}
+	}
 	// The rest fade as it grows, shrinking a little where they sit, so
 	// none is left standing over the sidebar as the overview goes.
 	for k, o := range s.tiles {
-		if k == i {
+		if k == i || s.mates[o] {
 			continue
 		}
 		r := o.box.Target()

@@ -62,6 +62,8 @@ type Window struct {
 	browsers map[string]*browser
 	readers  map[string]*reader
 	choosers map[string]*chooser
+	// groups are how each pane is arranged, by pane, for the switcher.
+	groups map[string]*app.Box
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
 	tunnelPanes map[string]*tunnelPane
@@ -1577,6 +1579,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 // Update shows st.
 func (w *Window) Update(st app.State, u *gunim.UI) {
 	w.panes = st.Panes
+	w.groups = st.Groups
 	w.machineList = st.Machines
 	w.winID, w.behind = st.Window, st.Behind
 	if st.Theme != w.themeNow {

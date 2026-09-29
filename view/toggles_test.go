@@ -252,3 +252,38 @@ func TestTheSwitcherHidesThePanesBehindIt(t *testing.T) {
 		t.Fatalf("the ground under the switcher's tiles is %+v", ground)
 	}
 }
+
+// A pane picked in the switcher that sits in a split grows into its
+// place in that split, and the pane beside it into its own, rather than
+// filling the stage and then giving way to the split.
+func TestAPanePickedInASplitGrowsIntoItsPlace(t *testing.T) {
+	win, _, publish := windowStage(t)
+	split := &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}
+	alone := &app.Box{Pane: "p3"}
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}, {ID: "p3", Title: "c", Kind: app.KindFiles}},
+		Stage: alone, Focus: "p3", Groups: map[string]*app.Box{"p1": split, "p2": split, "p3": alone},
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}, "p2": {Path: "/", Seq: 1}, "p3": {Path: "/", Seq: 1}}})
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	win.openSwitcher(lastUI)
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	s := win.sw
+	stage, _ := lastUI.Bounds(win.stage)
+	s.pick(1, lastUI)
+	half := func(id string) geom.Rect {
+		r, _ := placeIn(split, id, stage, lastUI)
+		return r
+	}
+	if got := s.tiles[1].box.Target(); got != half("p2") || got.Size().W >= stage.Size().W {
+		t.Fatalf("picked, p2 grows to %v, want its half %v of the stage %v", got, half("p2"), stage)
+	}
+	if !s.mates[s.tiles[0]] || s.tiles[0].box.Target() != half("p1") {
+		t.Fatalf("p1, beside it, goes to %v, want %v", s.tiles[0].box.Target(), half("p1"))
+	}
+	if s.mates[s.tiles[2]] {
+		t.Fatal("p3, in no split with p2, grows with it")
+	}
+}

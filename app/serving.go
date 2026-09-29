@@ -154,6 +154,7 @@ func (a *app) startServing(in StartServing) error {
 		OpenOn:     a.openOnFor,
 		Dial:       a.dialFor,
 		Log:        a.logFor,
+		Disconnect: a.disconnectFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
 		Picture:    func(png []byte) error { return takePicture(png) },
@@ -459,6 +460,27 @@ func (a *app) logFor(host string) (session.Session, error) {
 		}
 		return l.Open(), nil
 	})
+}
+
+// disconnectFor closes this window's connection to host, as the
+// connected window c asked, and says who asked. This machine is not
+// one to disconnect.
+func (a *app) disconnectFor(c *serve.Client, host string) error {
+	_, err := onApp(a, func() (struct{}, error) {
+		if host == "" {
+			return struct{}{}, errors.New("a window cannot disconnect from its own machine")
+		}
+		machine, err := a.servedMachine(host)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if err := a.disconnect(machine); err != nil {
+			return struct{}{}, err
+		}
+		a.notify(c.Name+" disconnected "+a.machines.Name(machine), "Asked from the window connected from "+c.Addr+".", "")
+		return struct{}{}, nil
+	})
+	return err
 }
 
 // servedMachine is the machine a connected window asks for something

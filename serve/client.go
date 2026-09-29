@@ -820,3 +820,26 @@ func (w *Window) OpenLog(host string) (session.Session, error) {
 	}
 	return sess, err
 }
+
+// ErrCannotDisconnect is what DisconnectOn says when the window over
+// there does not know how: a build from before it could, or one that
+// lets nobody else close its connections.
+var ErrCannotDisconnect = errors.New("serve: that window cannot be asked to close its connections")
+
+// DisconnectOn asks the other window to close its connection to host, a
+// machine it reaches as its Open named it, and what it has open there.
+func (w *Window) DisconnectOn(host string) error {
+	if w.isClosed() {
+		return errors.New("serve: that window has been let go of")
+	}
+	ok, reply, err := w.client.SendRequest(reqDisconnect, true, ssh.Marshal(logOf{Host: host}))
+	switch {
+	case err != nil:
+		return fmt.Errorf("serve: ask %s to disconnect %s: %w", w.addr, host, err)
+	case ok:
+		return nil
+	case len(reply) == 0:
+		return ErrCannotDisconnect
+	}
+	return errors.New(Plain(string(reply)))
+}

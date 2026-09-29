@@ -1182,6 +1182,21 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	w.openDialog(d, u)
 }
 
+// confirmFarDisconnect asks before closing another window's connection
+// to the machine m it reaches: whoever uses that window loses what is
+// open there too.
+func (w *Window) confirmFarDisconnect(m machines.ID, u *gunim.UI) {
+	window, _, _ := m.Far()
+	d := widget.NewDialog("Disconnect " + w.farHostName(m) + " on " + w.nameOf(window) + "?")
+	d.Body = widget.NewLabel("This closes " + w.nameOf(window) + "'s own connection to " + w.farHostName(m) +
+		", and everything open on it there, for anyone working in that window too.")
+	d.SetButtons("Disconnect", "Cancel")
+	d.Danger = true
+	d.Accept = app.Disconnect{Machine: m}
+	d.Dismiss = app.DialogClosed{}
+	w.openDialog(d, u)
+}
+
 // confirmRemove asks before forgetting the saved server with ID id.
 func (w *Window) confirmRemove(id machines.ID, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + w.nameOf(id) + "?")
@@ -2703,7 +2718,12 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 			// Its connection went: the row stays until this clears it.
 			add(icon.X, "Clear", send(app.ClearMachine{ID: m}))
 		} else {
-			add(icon.Unplug, "Disconnect", send(app.Disconnect{Machine: m}))
+			if _, _, far := m.Far(); far {
+				// Another window's connection: asked about first.
+				add(icon.Unplug, "Disconnect…", func(u *gunim.UI) { w.confirmFarDisconnect(m, u) })
+			} else {
+				add(icon.Unplug, "Disconnect", send(app.Disconnect{Machine: m}))
+			}
 		}
 		for _, h := range w.saved {
 			if machines.ID(h.ID) == m {

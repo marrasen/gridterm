@@ -198,3 +198,38 @@ func TestAFarMachinesLogShowsThroughItsWindow(t *testing.T) {
 		t.Fatalf("refused, the panes are %+v", b.st.Panes)
 	}
 }
+
+// A window asks another to close its connection to a server beyond it:
+// that window says who asked, and what was open on the server ends
+// here too. One it is not connected to is refused, saying why.
+func TestAWindowDisconnectsAServerBeyondAnother(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	win := b.st.Windows[0].Name
+	far := machines.FarID(win, "srv")
+	b.handle(OpenOn{Machine: far})
+	pumpBoth(t, a, b, "the terminal on the server", func() bool { return len(b.st.Panes) == 2 && len(a.st.Panes) == 3 })
+
+	b.handle(Disconnect{Machine: far})
+	pumpBoth(t, a, b, "the server let go of", func() bool {
+		// Closed: the connection was made by another app here, which
+		// hears it close; this one only holds it.
+		return conn.Closed() && b.st.Panes[1].Ended &&
+			slices.ContainsFunc(b.st.Notices, func(n Notice) bool { return n.Title == "Disconnected srv through "+b.machines.Name(win) })
+	})
+	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return strings.HasSuffix(n.Title, " disconnected srv") }) {
+		t.Fatalf("the other window said %+v", a.st.Notices)
+	}
+	if a.machines.Get("srv").Dropped {
+		t.Fatal("let go of on purpose, the server is kept as dropped")
+	}
+
+	a.machines.At("srv").Conn = nil
+	b.handle(Disconnect{Machine: far})
+	pumpBoth(t, a, b, "the refusal", func() bool {
+		return slices.ContainsFunc(b.st.Notices, func(n Notice) bool {
+			return n.Title == "Couldn't disconnect srv through "+b.machines.Name(win) && strings.Contains(n.Body, "srv")
+		})
+	})
+}

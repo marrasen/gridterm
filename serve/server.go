@@ -118,6 +118,11 @@ type Config struct {
 	// refuses, and the client is told so.
 	Log func(host string) (session.Session, error)
 
+	// Disconnect closes this window's connection to host, a machine it
+	// reaches as its Open named it, as client c asked. A nil one
+	// refuses, and the client is told so.
+	Disconnect func(c *Client, host string) error
+
 	// StartAgain starts again the program of something this window has
 	// open whose program has ended, in the pane it ended in, for a
 	// client that was working in it. A nil one refuses. It is called
@@ -404,7 +409,7 @@ func (s *Server) handshake(nc net.Conn) {
 		s.cfg.OnJoin(c)
 	}
 
-	go s.answerRequests(reqs)
+	go s.answerRequests(c, reqs)
 	// live ends when the connection has finished, and served closes once
 	// every session on it has been hung up on.
 	live, finished := context.WithCancel(context.Background())
@@ -527,10 +532,24 @@ func (s *Server) onError(err error) {
 	}
 }
 
-// answerRequests answers what a client asks of the connection as a
-// whole, which is starting something again. Anything else is refused.
-func (s *Server) answerRequests(reqs <-chan *ssh.Request) {
+// answerRequests answers what client c asks of the connection as a
+// whole: starting something again, or letting go of a machine this
+// window reaches. Anything else is refused.
+func (s *Server) answerRequests(c *Client, reqs <-chan *ssh.Request) {
 	for req := range reqs {
+		if req.Type == reqDisconnect && s.cfg.Disconnect != nil {
+			var want logOf
+			if err := ssh.Unmarshal(req.Payload, &want); err != nil {
+				_ = req.Reply(false, []byte("that request could not be read"))
+				continue
+			}
+			if err := s.cfg.Disconnect(c, want.Host); err != nil {
+				_ = req.Reply(false, []byte(err.Error()))
+				continue
+			}
+			_ = req.Reply(true, nil)
+			continue
+		}
 		if req.Type != reqStartAgain || s.cfg.StartAgain == nil {
 			if req.WantReply {
 				_ = req.Reply(false, nil)

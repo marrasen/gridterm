@@ -42,3 +42,18 @@ func TestATunnelThroughAWindowListensHere(t *testing.T) {
 		}
 	}
 }
+
+// Disconnecting a machine beyond another window asks first, saying
+// whose connection it closes.
+func TestDisconnectingAFarMachineAsksFirst(t *testing.T) {
+	win, _, publish := windowStage(t)
+	far := machines.FarID("desk", "k1")
+	publish(app.State{Windows: []app.RemoteWindow{{Name: "desk"}}, Machines: []machines.Info{{ID: "desk", Name: "laptop"}, {ID: far, Name: "db"}}})
+	win.confirmFarDisconnect(far, lastUI)
+	if win.dialog == nil || win.dialog.Title != "Disconnect db on laptop?" || !win.dialog.Danger {
+		t.Fatalf("the question is %+v", win.dialog)
+	}
+	if in, ok := win.dialog.Accept.(app.Disconnect); !ok || in.Machine != far {
+		t.Fatalf("yes sends %#v", win.dialog.Accept)
+	}
+}

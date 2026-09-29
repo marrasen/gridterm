@@ -253,6 +253,28 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 	a.showWindows()
 }
 
+// disconnectFar asks window to close its connection to the machine it
+// reaches by key. What is open on it, there and here, ends with it.
+func (a *app) disconnectFar(window machines.ID, key string) error {
+	w := a.machines.Get(window).Window
+	if w == nil {
+		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(window))
+	}
+	far := machines.FarID(window, key)
+	called := a.machines.Name(far)
+	go func() {
+		err := w.Serve.DisconnectOn(key)
+		a.events <- func() {
+			if err != nil {
+				a.failed("Couldn't disconnect "+called, err.Error())
+				return
+			}
+			a.worked("Disconnected "+called, "", "")
+		}
+	}()
+	return nil
+}
+
 // withdrawLost takes back the question offering to reconnect to
 // machine, if there is one.
 func (a *app) withdrawLost(machine machines.ID) {
@@ -412,6 +434,9 @@ type Disconnect struct{ Machine machines.ID }
 
 // disconnect closes the connection to machine.
 func (a *app) disconnect(machine machines.ID) error {
+	if window, key, far := machine.Far(); far {
+		return a.disconnectFar(window, key)
+	}
 	if a.giveUp(machine) {
 		return nil
 	}

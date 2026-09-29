@@ -119,3 +119,30 @@ func TestAWindowReadsTheOthersLog(t *testing.T) {
 		t.Fatalf("with no logs to show, it said %v", err)
 	}
 }
+
+// A window asks the other to close its connection to a machine: the
+// other hears which, and from whom; a refusal comes back with its
+// reason, and a window that allows none says it cannot.
+func TestAWindowAsksTheOtherToDisconnect(t *testing.T) {
+	asked := make(chan string, 1)
+	_, w := takenOverServing(t, Config{Disconnect: func(c *Client, host string) error {
+		if host != "srv" {
+			return errors.New(host + " is not connected here")
+		}
+		asked <- c.Name + " asked for " + host
+		return nil
+	}})
+	if err := w.DisconnectOn("srv"); err != nil {
+		t.Fatal(err)
+	}
+	if got := <-asked; got != "marcus@laptop asked for srv" {
+		t.Fatalf("the other window heard %q", got)
+	}
+	if err := w.DisconnectOn("db"); err == nil || !strings.Contains(err.Error(), "db is not connected here") {
+		t.Fatalf("refused, it said %v", err)
+	}
+	_, none := takenOverServing(t, Config{})
+	if err := none.DisconnectOn("srv"); !errors.Is(err, ErrCannotDisconnect) {
+		t.Fatalf("with no way to disconnect, it said %v", err)
+	}
+}

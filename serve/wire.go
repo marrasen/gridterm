@@ -47,6 +47,12 @@ const (
 	// "cannot" and does something else.
 	reqStartAgain = "start-again@gridterm"
 
+	// reqDisconnect asks the served window to close its connection to a
+	// machine it reaches. Its payload is logOf, which names the machine.
+	// The no carries the reason; a window of an older build says a bare
+	// no, which a client takes as "cannot".
+	reqDisconnect = "disconnect@gridterm"
+
 	// SessionOnChannel opens something new on a machine the served
 	// window reaches, or a command on its own: a terminal, or a command
 	// when one is given. Its payload is openOn.

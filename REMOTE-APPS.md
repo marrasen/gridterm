@@ -47,7 +47,7 @@ single program in a pane.
 
 ## What is already here
 
-- `paintPictures` in `term.go` draws the pictures a program puts in a
+- `paintPictures` in `view/term.go` draws the pictures a program puts in a
   pane, each over the cells it was given, through gunim's painter. The
   drawing half exists.
 - OSC 1337 and OSC 1338 mean pictures inside panes are already plumbed,
@@ -86,7 +86,7 @@ Where it would hurt:
 
 ## If this is ever picked up
 
-1. Read `paintPictures` in `term.go`, and `vt/wirepic.go`. A remote
+1. Read `paintPictures` in `view/term.go`, and `vt/wirepic.go`. A remote
    window is that shape with input attached.
 2. Stand up `go-xpra` against a machine running `xpra start`, outside
    kakel, and see what the frames and the window events look like.

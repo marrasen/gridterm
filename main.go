@@ -18,6 +18,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/kakel/view"
+
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/kakel/look"
@@ -113,9 +115,9 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 	ws.mu.Unlock()
 	look.Register(w, all)
 	// Each window its own keys, which the shortcuts file changes there.
-	keys := shortcuts()
-	gunim.RegisterView(w, "window", func(app.State) *window { return newWindow(ws.sh, keys, all) },
-		func(win *window, st app.State, u *gunim.UI) { win.update(st, u) })
+	keys := view.Shortcuts()
+	gunim.RegisterView(w, "window", func(app.State) *view.Window { return view.NewWindow(ws.sh, keys, all) },
+		func(win *view.Window, st app.State, u *gunim.UI) { win.Update(st, u) })
 	if err := c.Mount(gunim.Root, "window", "window", app.State{}, app.WindowTopic); err != nil {
 		return nil, gunim.Client{}, err
 	}

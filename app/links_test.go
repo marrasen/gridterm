@@ -215,3 +215,49 @@ func TestAPathOnAServerNotConnectedIsNotLookedFor(t *testing.T) {
 		t.Fatalf("not knowing was remembered: %v", a.far.known)
 	}
 }
+
+// A path in a server's pane is joined to its folder as the folder is
+// written, and a whole one is left as it is.
+func TestAPathOnAServerIsJoinedAsItsFolderIsWritten(t *testing.T) {
+	for _, c := range []struct{ dir, text, want string }{
+		{"/home/me", "notes.txt", "/home/me/notes.txt"},
+		{`C:\Users\me`, "notes.txt", `C:\Users\me\notes.txt`},
+		{`C:\Users\me\`, `src\main.go`, `C:\Users\me\src\main.go`},
+		{"/home/me", `\\nas\share\x`, `\\nas\share\x`},
+		{"/home/me", `D:\x`, `D:\x`},
+		{"", "notes.txt", ""},
+	} {
+		if got, _ := farJoin(c.dir, c.text); got != c.want {
+			t.Errorf("%q in %q is %q, want %q", c.text, c.dir, got, c.want)
+		}
+	}
+}
+
+// A path not there on a server is looked for again a while later: a
+// file may be made there since.
+func TestAPathNotThereOnAServerIsLookedForAgain(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	file := filepath.Join(t.TempDir(), "later.txt")
+	waitFor(t, a, "the path found missing", func() bool {
+		a.findFar("srv", file, "")
+		a.far.mu.Lock()
+		defer a.far.mu.Unlock()
+		_, known := a.far.known["srv\x00"+file]
+		return known
+	})
+	if err := os.WriteFile(file, []byte("made"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, found := a.findFar("srv", file, ""); found {
+		t.Fatal("found at once, it was not remembered as missing")
+	}
+	// As though the time had passed.
+	a.far.mu.Lock()
+	miss := a.far.known["srv\x00"+file]
+	miss.asked = miss.asked.Add(-farMissKept)
+	a.far.known["srv\x00"+file] = miss
+	a.far.mu.Unlock()
+	waitFor(t, a, "the path found", func() bool { _, _, found := a.findFar("srv", file, ""); return found })
+}

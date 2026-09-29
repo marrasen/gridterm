@@ -1296,7 +1296,14 @@ type Placement struct {
 
 // hooks are what a pane's shell tells the program.
 func (a *app) hooks(id string) screen.Hooks {
+	called := ""
+	if a.settings != nil {
+		called = a.settings.TermProgram()
+	}
 	return screen.Hooks{
+		// The name a shell here is told, so the two ways of asking
+		// never disagree.
+		Program: called,
 		Output: func() {
 			select {
 			case a.wake <- struct{}{}:

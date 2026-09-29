@@ -11,6 +11,11 @@ func TestOnlyWebAndMailLinksOpen(t *testing.T) {
 			t.Errorf("%q: %v", at, err)
 		}
 	}
+	for at, why := range map[string]string{"": "there is no address to open", "https://a\nrm -rf": "that address has a line break in it, so it is not one"} {
+		if err := Openable(at); err == nil || err.Error() != why {
+			t.Errorf("%q is refused with %v, want %q", at, err, why)
+		}
+	}
 	if target, ok := LocalService("http://localhost:3000/app"); !ok || target != "127.0.0.1:3000" {
 		t.Errorf("localhost:3000 goes to %q, %v", target, ok)
 	}

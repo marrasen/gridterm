@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/settings"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -113,5 +114,25 @@ func TestThisMachineIsKnownWithOrWithoutItsDomain(t *testing.T) {
 		if got := isThisMachine(host); got != want {
 			t.Errorf("%q is this machine: %v, want %v", host, got, want)
 		}
+	}
+}
+
+// A pane answers XTVERSION with the name a shell here is told, so the
+// two ways of asking never disagree.
+func TestTheVersionAnswerMatchesTheName(t *testing.T) {
+	a := fontApp(t)
+	set, err := settings.Load(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
+	if got := a.hooks("p1").Program; got != "" {
+		t.Fatalf("with no name set, the answer names %q", got)
+	}
+	if err := set.PutTermProgram("iTerm.app"); err != nil {
+		t.Fatal(err)
+	}
+	if got := a.hooks("p1").Program; got != "iTerm.app" {
+		t.Fatalf("called iTerm.app, the answer names %q", got)
 	}
 }

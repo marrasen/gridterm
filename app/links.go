@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/screen"
@@ -163,6 +164,31 @@ type pathsFar struct {
 type farPath struct {
 	at           string
 	isDir, found bool
+	// asked is when a path not there was looked for, to look again
+	// after farMissKept: a file may be made there since.
+	asked time.Time
+}
+
+// farMissKept is how long a path not there on a server is taken as
+// not there before it is looked for again.
+const farMissKept = 5 * time.Second
+
+// farJoin is where a path a server's pane shows is, in the folder dir
+// the pane is in: itself when it is whole, from the root, a drive or a
+// share, and joined as dir is written otherwise, with a backslash on a
+// drive. With no dir, a path that is not whole is nowhere.
+func farJoin(dir, text string) (string, bool) {
+	if strings.HasPrefix(text, "/") || links.WindowsAbs(text) || strings.HasPrefix(text, `\\`) {
+		return text, true
+	}
+	if dir == "" {
+		return "", false
+	}
+	sep := "/"
+	if links.WindowsAbs(dir) {
+		sep = `\`
+	}
+	return strings.TrimRight(dir, `/\`) + sep + text, true
 }
 
 // findFar is the file or folder a path in a pane on machine names, as
@@ -172,18 +198,18 @@ func (a *app) findFar(machine machines.ID, text, dir string) (string, bool, bool
 	if text == "" || strings.ContainsAny(text, "\r\n\x00") {
 		return "", false, false
 	}
-	at := text
-	if !strings.HasPrefix(text, "/") && !links.WindowsAbs(text) {
-		if dir == "" {
-			return "", false, false
-		}
-		at = strings.TrimRight(dir, `/\`) + "/" + text
+	at, ok := farJoin(dir, text)
+	if !ok {
+		return "", false, false
 	}
 	key := string(machine) + "\x00" + at
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()
 	if known, ok := a.far.known[key]; ok {
-		return known.at, known.isDir, known.found
+		if known.found || time.Since(known.asked) < farMissKept {
+			return known.at, known.isDir, known.found
+		}
+		delete(a.far.known, key)
 	}
 	if a.far.asking[key] || len(a.far.known) >= mostFarPaths {
 		return "", false, false
@@ -207,7 +233,7 @@ func (a *app) findFar(machine machines.ID, text, dir string) (string, bool, bool
 				go func() {
 					e, err := f.Stat(vfs.Spelled(f, at))
 					if err != nil {
-						answer(farPath{})
+						answer(farPath{asked: time.Now()})
 						return
 					}
 					answer(farPath{at: at, isDir: e.IsDir(), found: true})

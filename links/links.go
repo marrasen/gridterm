@@ -51,8 +51,12 @@ func SameTarget(a, b string) bool {
 // Openable refuses what is no web or mail address.
 func Openable(at string) error {
 	at = strings.TrimSpace(at)
-	if at == "" || strings.ContainsAny(at, "\r\n\x00") {
-		return errors.New("that is no address")
+	switch {
+	case at == "":
+		return errors.New("there is no address to open")
+	case strings.ContainsAny(at, "\r\n\x00"):
+		// A line break would end the command line and start another.
+		return errors.New("that address has a line break in it, so it is not one")
 	}
 	u, err := url.Parse(at)
 	if err != nil {

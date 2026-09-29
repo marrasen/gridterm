@@ -35,6 +35,9 @@ type Shell struct {
 // it named itself, that it exited, and what it put on the clipboard.
 // They run on the shell's reader goroutine.
 type Hooks struct {
+	// Program is the name the terminal answers XTVERSION with, before
+	// kakel's version: "" for kakel's own name.
+	Program   string
 	Output    func()
 	Title     func(string)
 	Exit      func()
@@ -63,11 +66,15 @@ var ScrollbackLines = vt.DefaultScrollback
 // drawing with pal.
 func Open(sess session.Session, pal vt.Palette, hooks Hooks) *Shell {
 	wrote := new(atomic.Int64)
+	program := hooks.Program
+	if program == "" {
+		program = build.Name
+	}
 	t, err := uiterm.New(uiterm.Config{
 		Session:       sess,
 		Size:          ui.Size{Cols: Cols, Rows: Rows},
 		Scrollback:    ScrollbackLines,
-		Program:       build.Name + " " + build.Version(),
+		Program:       program + " " + build.Version(),
 		Palette:       &pal,
 		OnTitle:       hooks.Title,
 		OnExit:        hooks.Exit,

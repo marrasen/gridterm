@@ -16,6 +16,7 @@ import (
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/vaultkeys"
+	"github.com/marrasen/kakel/words"
 )
 
 // The secrets, on the program's side: kakel's vault, in the same
@@ -146,13 +147,13 @@ func (a *app) offerAVault(then func()) {
 	keys := a.knownKeys()
 	if len(keys) == 0 {
 		a.events <- func() {
-			a.notify("No key to lock the secrets with", "An ed25519 key is needed. Choose New SSH Key… to make one.", "")
+			a.notify("No key to lock the secrets with", "Secrets need an ed25519 key. Create one with New SSH Key….", "")
 		}
 		return
 	}
 	q := Ask{Title: "No secrets yet", Text: keys[0] + " will open them.", Yes: "Create"}
 	if len(keys) > 1 {
-		q = Ask{Title: "No secrets yet", Text: "Choose the key that opens them. It is the only one until you add another."}
+		q = Ask{Title: "No secrets yet", Text: "Choose the key that unlocks them. It is the only one until you add another."}
 		q.Choose = keyChoices(nil, keys)
 	}
 	ans, err := a.ask(a.ctx, q)
@@ -169,7 +170,7 @@ func (a *app) offerAVault(then func()) {
 		keyFile = keys[i]
 	}
 	if warn := vaultkeys.Warnings(a.ring, nil, keyFile); warn != "" {
-		ans, err := a.ask(a.ctx, Ask{Title: "Keep the secrets on " + keyFile + "?", Text: warn, Yes: "Create", Danger: true})
+		ans, err := a.ask(a.ctx, Ask{Title: "Create the secrets on " + keyFile + "?", Text: warn, Yes: "Create", Danger: true})
 		if err != nil || !ans.Yes {
 			return
 		}
@@ -185,7 +186,7 @@ func (a *app) offerAVault(then func()) {
 			}
 			return
 		}
-		a.worked("Secrets created", keyFile+" opens them.", "")
+		a.worked("Secrets created", keyFile+" unlocks them.", "")
 		then()
 	}
 }
@@ -566,9 +567,9 @@ func (a *app) addSecretsKey() {
 		}
 		if len(spare) == 0 {
 			if opening == 0 {
-				a.notify("No key to add", "No other ed25519 key is on this machine. Choose New SSH Key… to make one.", "")
+				a.notify("No key to add", "There is no other ed25519 key on this computer. Create one with New SSH Key….", "")
 			} else {
-				a.notify("No key to add", "Every ed25519 key this window knows of opens the secrets already. A key from another machine has to be copied here first.", "")
+				a.notify("No key to add", "Every ed25519 key on this computer already unlocks the secrets. Copy a key from another computer here first.", "")
 			}
 			return nil
 		}
@@ -606,7 +607,7 @@ func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
 		case err != nil:
 			a.failed("Couldn't add the key", err.Error())
 		default:
-			a.worked("Key added", fmt.Sprintf("%s opens the secrets. %d ways in now.", keyFile, len(v.Keys())), "")
+			a.worked("Key added", fmt.Sprintf("%s unlocks the secrets. %s unlock them now.", keyFile, words.Count(len(v.Keys()), "key")), "")
 		}
 		a.showVault()
 	}
@@ -641,7 +642,7 @@ func keyChoices(v *secrets.Vault, keys []string) []string {
 func (a *app) removeSecretsKey(fingerprint string) {
 	a.withSecrets("Couldn't remove the key", func(v *secrets.Vault) error {
 		if len(v.Keys()) < 2 {
-			a.notify("Only one key opens the secrets", "Add another first, so something still opens them.", "")
+			a.notify(OnlyOneKey[0], OnlyOneKey[1], "")
 			return nil
 		}
 		return v.RemoveKey(fingerprint)
@@ -654,7 +655,7 @@ func (a *app) removeSecretsKey(fingerprint string) {
 func (a *app) addSecretsPassphrase(pass string) {
 	a.withSecrets("Couldn't add the passphrase", func(v *secrets.Vault) error {
 		if v.TakesAPassphrase() {
-			a.notify("A passphrase opens the secrets already", "Remove it first to set another.", "")
+			a.notify(HasPassphrase[0], HasPassphrase[1], "")
 			return nil
 		}
 		go func() {
@@ -663,7 +664,7 @@ func (a *app) addSecretsPassphrase(pass string) {
 				if err != nil {
 					a.failed("Couldn't add the passphrase", err.Error())
 				} else {
-					a.worked("Passphrase added", "It opens the secrets where none of their keys is.", "")
+					a.worked("Passphrase added", "It unlocks your secrets on a computer without your SSH keys.", "")
 				}
 				a.showVault()
 			}
@@ -698,3 +699,11 @@ func (a *app) waitingForSecret() string {
 	}
 	return ""
 }
+
+// What is said when a key or a passphrase can't be removed or added,
+// as a title and a body: here, and in the window, which says it before
+// opening a dialog that could only fail.
+var (
+	OnlyOneKey    = [2]string{"Only one key unlocks the secrets", "Add another key before removing this one."}
+	HasPassphrase = [2]string{"The secrets already have a passphrase", "Remove it to add another."}
+)

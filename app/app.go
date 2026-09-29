@@ -896,7 +896,7 @@ func failedTitle(in gunim.Intent) string {
 	case ShowScrollback:
 		return "Couldn't show the scrollback"
 	case MakeKey:
-		return "Couldn't make the key"
+		return "Couldn't create the key"
 	case RemoveSavedKey:
 		return "Couldn't remove the saved key"
 	case RunSavedCopy, RepeatJob:

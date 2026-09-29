@@ -132,11 +132,11 @@ func joinLines(lines []string) string {
 func RemovingCosts(v *secrets.Vault, s secrets.KeySlot) string {
 	for _, other := range v.Keys() {
 		if other.Fingerprint != s.Fingerprint && Here(other) {
-			return "Another key on this machine still opens the secrets."
+			return "Another key on this computer still unlocks the secrets."
 		}
 	}
 	if v.TakesAPassphrase() && !s.ByPassphrase() {
-		return "The passphrase still opens them here."
+		return "The passphrase still unlocks them here."
 	}
-	return "Opening them here again needs a key from another machine."
+	return "Unlocking them here again needs a key from another computer."
 }

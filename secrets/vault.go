@@ -697,7 +697,7 @@ func (v *Vault) AddKey(signer ssh.Signer, keyFile string) error {
 	}
 	want := Fingerprint(signer.PublicKey())
 	if slices.ContainsFunc(v.file.Slots, func(s slot) bool { return s.Fingerprint == want }) {
-		return fmt.Errorf("secrets: %s already opens the secrets", want)
+		return fmt.Errorf("secrets: %s already unlocks the secrets", want)
 	}
 	s, err := wrapFor(signer, v.data, keyFile)
 	if err != nil {
@@ -727,7 +727,7 @@ func (v *Vault) RemoveKey(fingerprint string) error {
 		return fmt.Errorf("secrets: %s does not open the secrets", fingerprint)
 	}
 	if len(v.file.Slots) == 1 {
-		return errors.New("secrets: that is the only key that opens the secrets")
+		return errors.New("secrets: that is the only key that unlocks the secrets")
 	}
 	was := slices.Clone(v.file.Slots)
 	v.file.Slots = slices.Delete(v.file.Slots, at, at+1)

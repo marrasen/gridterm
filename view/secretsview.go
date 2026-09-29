@@ -64,7 +64,7 @@ func newSecretsPane(w *Window) *secretsPane {
 		return widget.TableRow{Cells: []string{it.Name, secretFor(it), kind}}
 	}
 	p.find = widget.NewTextField()
-	p.find.Placeholder, p.find.Icon, p.find.Clearable = "Find a secret", icon.Search, true
+	p.find.Placeholder, p.find.Icon, p.find.Clearable = "Search", icon.Search, true
 	p.find.OnEdit = func(_ string, u *gunim.UI) { p.show(p.st, u) }
 	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, app.CopySecret{ID: string(k)}) }
 	// The fingerprint in a column of its own, wide enough for all of
@@ -283,7 +283,7 @@ func (w *Window) confirmRemoveSecrets(items []app.SecretItem, u *gunim.UI) {
 // none of their keys is.
 func (w *Window) passphraseForm(st app.Secrets, u *gunim.UI) {
 	if st.Passphrase {
-		w.toasts.Show(widget.Toast{Title: "The secrets already have a passphrase", Body: "Remove it to add another."}, u)
+		w.toasts.Show(widget.Toast{Title: app.HasPassphrase[0], Body: app.HasPassphrase[1]}, u)
 		return
 	}
 	pass, again := widget.NewTextField(), widget.NewTextField()
@@ -311,7 +311,7 @@ func (w *Window) passphraseForm(st app.Secrets, u *gunim.UI) {
 // the secrets, saying what still opens them after.
 func (w *Window) confirmRemoveKey(st app.Secrets, k app.SecretKey, u *gunim.UI) {
 	if len(st.Keys) < 2 {
-		w.toasts.Show(widget.Toast{Title: "Only one key unlocks the secrets", Body: "Add another key before removing this one."}, u)
+		w.toasts.Show(widget.Toast{Title: app.OnlyOneKey[0], Body: app.OnlyOneKey[1]}, u)
 		return
 	}
 	d := widget.NewDialog("Remove " + k.Name + "?")

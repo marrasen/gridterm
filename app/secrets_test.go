@@ -205,7 +205,7 @@ func TestASecondKeyOpensTheSecretsAndTheLastStays(t *testing.T) {
 	answer(t, a, "Add Secrets Key", true, "work_ed25519")
 	waitFor(t, a, "a second key", func() bool { return len(a.st.Secrets.Keys) == 2 })
 	first := a.st.Secrets.Keys[0]
-	if first.Removing != "Another key on this machine still opens the secrets." {
+	if first.Removing != "Another key on this computer still unlocks the secrets." {
 		t.Fatalf("with two keys here, removing one says %q", first.Removing)
 	}
 	a.handle(RemoveSecretsKey{Fingerprint: first.Fingerprint})

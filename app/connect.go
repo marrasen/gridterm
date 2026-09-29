@@ -438,7 +438,7 @@ func (a *app) saveServer(in SaveServer) error {
 	// would move to the front of the list for nothing.
 	if len(in.Host.Identities) > 0 && in.Host.Identities[0] != hadKey && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
-			a.failed("Server saved, but its key was not kept", err.Error())
+			a.failed("Server saved, but its key wasn't added to saved keys", err.Error())
 		}
 		a.st.KeyFiles = a.settings.Keys()
 	}

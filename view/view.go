@@ -739,7 +739,7 @@ func (w *Window) secretsCommand(id string, u *gunim.UI) {
 	switch id {
 	case "secrets.change", "secrets.forget":
 		if len(st.Items) == 0 {
-			w.toasts.Show(widget.Toast{Title: "There are no secrets yet", Body: "Add Secret keeps the first one."}, u)
+			w.toasts.Show(widget.Toast{Title: "No secrets yet", Body: "Add one with Add Secret."}, u)
 			return
 		}
 		choices := make([]widget.PaletteItem, len(st.Items))
@@ -822,7 +822,7 @@ func (w *Window) removeSavedKey(u *gunim.UI) {
 		w.toasts.Show(widget.Toast{Title: "No saved keys", Body: "A key is saved when it is created here or chosen for a server."}, u)
 		return
 	}
-	p := &widget.Palette{Placeholder: "Choose a key to remove from the list"}
+	p := &widget.Palette{Placeholder: "Saved keys"}
 	files := slices.Clone(w.keyFiles)
 	for _, f := range files {
 		p.Items = append(p.Items, widget.PaletteItem{Title: f, Icon: icon.KeyRound})
@@ -1204,8 +1204,8 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	// remember.
 	var kept *widget.Dropdown
 	if len(w.keyFiles) > 0 {
-		kept = widget.NewDropdown(append([]string{"Pick a kept key"}, w.keyFiles...)...)
-		kept.Label = "Kept keys"
+		kept = widget.NewDropdown(append([]string{"Choose a saved key"}, w.keyFiles...)...)
+		kept.Label = "Saved keys"
 		files := w.keyFiles
 		kept.OnPick(func(i int, u *gunim.UI) {
 			if i > 0 {
@@ -1309,7 +1309,7 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	form := widget.NewForm().Add("Name", name).Add("Type", kind).Add("Address", addr).Add("Port", port).Add("User", user).
 		Add("Through", via).Add("Key file", key)
 	if kept != nil {
-		form.Add("Kept keys", kept)
+		form.Add("Saved keys", kept)
 	}
 	d := widget.NewDialog(title)
 	d.Body = form.Add("Folders", folders).Add("", setup).Add("", forward)

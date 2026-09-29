@@ -58,7 +58,7 @@ const (
 var ErrWrongPassphrase = errors.New("secrets: that passphrase does not open the secrets")
 
 // ErrNoPassphrase says nothing in this vault is opened by one.
-var ErrNoPassphrase = errors.New("secrets: no passphrase opens the secrets")
+var ErrNoPassphrase = errors.New("secrets: no passphrase unlocks the secrets")
 
 // passKeyFrom derives a slot key from a passphrase.
 //
@@ -93,7 +93,7 @@ func (v *Vault) AddPassphrase(pass string) error {
 	}) {
 		// One is a way back in; two are two rows saying "Passphrase"
 		// with nothing to tell them apart when one is removed.
-		return errors.New("secrets: a passphrase already opens the secrets")
+		return errors.New("secrets: a passphrase already unlocks the secrets")
 	}
 	s, err := wrapForPassphrase(pass, v.data)
 	if err != nil {

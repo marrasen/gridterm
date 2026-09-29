@@ -116,7 +116,7 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 	b.WriteString("Private key: " + key.Path + "\nPublic key: " + key.Pub + "\n\n")
 	b.WriteString("Its public key line:\n" + key.Line + "\n\n")
 	if savedPassphrase {
-		b.WriteString("The passphrase is kept in the secrets.\n\n")
+		b.WriteString("The passphrase is saved in your secrets.\n\n")
 	}
 	b.WriteString("To install it on a server, run ssh-copy-id -i " + key.Pub + " user@host, or add its public key line to ~/.ssh/authorized_keys there.\n\n")
 	b.WriteString(`For OpenSSH on Windows, add it to %USERPROFILE%\.ssh\authorized_keys, unless that account is an administrator, and then only to %ProgramData%\ssh\administrators_authorized_keys. Either file has to be readable by its owner alone, or sshd ignores it and says nothing about why.`)

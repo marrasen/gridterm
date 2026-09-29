@@ -518,18 +518,26 @@ func sameHost(a, b string) bool {
 
 // showDialling says on the status line what is being connected to: the
 // connections on their way, all of them, so one that lands does not
-// clear the line while another is still being made.
+// clear the line while another is still being made. Pictures on their
+// way are said after.
 func (a *app) showDialling() {
 	var names []string
 	for _, id := range a.machines.Dialing() {
 		names = append(names, a.machines.Name(id))
 	}
+	var said []string
 	switch len(names) {
 	case 0:
-		a.st.Status = ""
 	case 1:
-		a.st.Status = "Connecting to " + names[0] + "…"
+		said = append(said, "Connecting to "+names[0]+"…")
 	default:
-		a.st.Status = "Connecting to " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1] + "…"
+		said = append(said, "Connecting to "+strings.Join(names[:len(names)-1], ", ")+" and "+names[len(names)-1]+"…")
 	}
+	switch {
+	case a.sending == 1:
+		said = append(said, "Sending a picture to "+a.sendingTo+"…")
+	case a.sending > 1:
+		said = append(said, fmt.Sprintf("Sending %d pictures…", a.sending))
+	}
+	a.st.Status = strings.Join(said, "  ·  ")
 }

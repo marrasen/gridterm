@@ -451,6 +451,11 @@ type app struct {
 	// notRun are the command panes whose connection was not made when
 	// they were asked to run again, for their question to say so.
 	notRun map[string]bool
+	// sending counts the pasted pictures on their way to another
+	// machine, and sendingTo names where the last went, for the status
+	// line.
+	sending   int
+	sendingTo string
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool

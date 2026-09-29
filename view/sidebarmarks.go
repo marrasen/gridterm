@@ -1,12 +1,14 @@
 package view
 
 import (
+	"fmt"
 	"image/color"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/look"
 
@@ -293,6 +295,9 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 				continue
 			}
 			r.kind = paneKindIcon(p)
+			if rd, ok := st.Readers[p.ID]; ok && r.note == "" {
+				r.note = readerNote(rd)
+			}
 			sh := w.shells.Get(p.ID)
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {
@@ -365,4 +370,23 @@ func (w *Window) anyBreathing(now time.Time) bool {
 		}
 	}
 	return false
+}
+
+// readerNote is what a reader's row says beside its name: why the file
+// would not read, that it is reading, how big a picture is, or how many
+// lines the file has, with a plus when there is more than was read.
+func readerNote(rd app.Reader) string {
+	switch {
+	case rd.Err != "":
+		return rd.Err
+	case rd.Seq == 0:
+		return "reading"
+	case rd.Pic != nil:
+		return strings.TrimSpace(fmt.Sprintf("%d×%d %s", rd.Pic.Was.X, rd.Pic.Was.Y, rd.Pic.Kind))
+	case len(rd.Lines) > 0 && rd.Cut:
+		return words.Count(len(rd.Lines), "line") + "+"
+	case len(rd.Lines) > 0:
+		return words.Count(len(rd.Lines), "line")
+	}
+	return ""
 }

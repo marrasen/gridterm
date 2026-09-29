@@ -261,3 +261,28 @@ func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
 		t.Fatalf("cleared, there are panes %+v, and it is %+v", b.st.Panes, b.machines.Get(name))
 	}
 }
+
+// While a pasted picture is on its way to another window, the status
+// line says so, and stops saying so once it has landed.
+func TestAPictureOnItsWayIsSaid(t *testing.T) {
+	took, landed := make(chan struct{}, 1), make(chan struct{})
+	was := takePicture
+	takePicture = func([]byte) error { took <- struct{}{}; <-landed; return nil }
+	t.Cleanup(func() { takePicture = was })
+	a, b := connectedWindows(t)
+	onClipboard(t, image.NewRGBA(image.Rect(0, 0, 5, 4)))
+	b.handle(PastePicture{Pane: b.st.Panes[0].ID})
+	pumpBoth(t, a, b, "the picture on its way", func() bool {
+		select {
+		case <-took:
+			return true
+		default:
+			return false
+		}
+	})
+	if !strings.HasPrefix(b.st.Status, "Sending a picture to ") {
+		t.Fatalf("on its way, the status says %q", b.st.Status)
+	}
+	close(landed)
+	pumpBoth(t, a, b, "the status to clear", func() bool { return b.st.Status == "" })
+}

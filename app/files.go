@@ -664,8 +664,9 @@ func (a *app) setReader(id string, r Reader) {
 	a.st.Readers = m
 }
 
-// followEvery is how often a followed file is looked at.
-const followEvery = time.Second
+// followEvery is how often a followed file is looked at: as often as
+// the old app looked, so a log written to shows its lines at once.
+const followEvery = 300 * time.Millisecond
 
 // followTitle is what a reader's title says while it follows.
 const followTitle = " (following)"

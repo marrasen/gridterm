@@ -104,9 +104,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	if w := a.machines.Get(machine).Window; w != nil && !asFile && a.farHost[id] == "" {
 		// Onto that window's clipboard, then paste pressed, once it has
 		// landed: pressing first would paste what was there before.
+		sent := a.sendingPicture(a.machines.Name(machine))
 		go func() {
 			err := w.Serve.SendPicture(raw)
 			a.events <- func() {
+				sent()
 				switch {
 				case err != nil:
 					a.failed("Couldn't paste the picture into "+a.machines.Name(machine), err.Error())
@@ -123,9 +125,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 	key := a.filesKey(id)
 	return a.withFiles(key, func(f vfs.FS) {
 		at := time.Now()
+		sent := a.sendingPicture(a.machines.Name(key))
 		go func() {
 			path, err := pasted.WriteOn(f, raw, at)
 			a.events <- func() {
+				sent()
 				switch {
 				case err != nil:
 					a.failed("Couldn't paste the picture to "+a.machines.Name(key), err.Error())
@@ -137,6 +141,21 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			}
 		}()
 	})
+}
+
+// sendingPicture says on the status line that a picture is on its way
+// to the machine named to, and counts it, as a picture is megabytes and
+// the machine may be far: there is a moment with nothing else to show
+// for the paste. It gives back what to call once it has landed or
+// failed.
+func (a *app) sendingPicture(to string) func() {
+	a.sending++
+	a.sendingTo = to
+	a.showDialling()
+	return func() {
+		a.sending = max(0, a.sending-1)
+		a.showDialling()
+	}
 }
 
 // shellWouldQuoteIt reports whether pressing paste, Ctrl+V, in a pane

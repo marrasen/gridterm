@@ -1,11 +1,13 @@
 package view
 
 import (
+	"image"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/ui/files"
 
 	"github.com/marrasen/kakel/internal/sessiontest"
 	"github.com/marrasen/kakel/screen"
@@ -167,5 +169,24 @@ func TestATunnelThroughThisWindowHasARow(t *testing.T) {
 	}
 	if said := connectedSays(st.Serving); !strings.Contains(said, "a tunnel, :8080 → db:5432, on db") {
 		t.Fatalf("who is connected reads %q", said)
+	}
+}
+
+// A reader's row says how its file stands.
+func TestAReadersRowSaysHowItsFileStands(t *testing.T) {
+	for _, c := range []struct {
+		rd   app.Reader
+		want string
+	}{
+		{app.Reader{}, "reading"},
+		{app.Reader{Seq: 1, Err: "permission denied"}, "permission denied"},
+		{app.Reader{Seq: 1, Lines: []string{"a", "b"}}, "2 lines"},
+		{app.Reader{Seq: 1, Lines: []string{"a"}, Cut: true}, "1 line+"},
+		{app.Reader{Seq: 1, Pic: &files.Pic{Was: image.Pt(640, 480), Kind: "PNG"}}, "640×480 PNG"},
+		{app.Reader{Seq: 1}, ""},
+	} {
+		if got := readerNote(c.rd); got != c.want {
+			t.Errorf("%+v says %q, want %q", c.rd, got, c.want)
+		}
 	}
 }

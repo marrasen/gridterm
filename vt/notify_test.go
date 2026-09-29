@@ -144,6 +144,8 @@ func TestAProgramAsksWhatColourTheThemeIs(t *testing.T) {
 	for _, tc := range []struct{ sent, want string }{
 		{"\x1b]11;?\x07", "\x1b]11;rgb:1414/1717/1c1c\x07"},
 		{"\x1b]10;?\x07", "\x1b]10;rgb:c8c8/d0d0/dada\x07"},
+		// The cursor, drawn in the text's colour.
+		{"\x1b]12;?\x07", "\x1b]12;rgb:c8c8/d0d0/dada\x07"},
 		// The answer ends the way the question did.
 		{"\x1b]11;?\x1b\\", "\x1b]11;rgb:1414/1717/1c1c\x1b\\"},
 	} {

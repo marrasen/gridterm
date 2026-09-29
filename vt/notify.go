@@ -129,8 +129,10 @@ func (t *Terminal) setProgress(params [][]byte) {
 	}
 }
 
-// answerColour takes OSC 10 and OSC 11, which ask what the text and the
-// background are drawn in.
+// answerColour takes OSC 10, OSC 11 and OSC 12, which ask what the
+// text, the background and the cursor are drawn in. The cursor is drawn
+// in the colour of the text under it, which is the text colour unless a
+// program coloured that cell.
 //
 // Only the question is answered. A program may also use these to set
 // the colours, and this pane's colours are the window's theme: a

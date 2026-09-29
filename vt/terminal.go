@@ -622,7 +622,7 @@ func (t *Terminal) OscDispatch(params [][]byte, bell bool) {
 		t.setNotify(params)
 	case "4":
 		t.answerPalette(params, bell)
-	case "10", "11":
+	case "10", "11", "12":
 		t.answerColour(params, string(params[0]), bell)
 	case "8":
 		t.setLink(params)

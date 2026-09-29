@@ -315,7 +315,8 @@ toast and a line in the action centre. The icon appears the first time
 a program asks for one and goes when the window closes.
 
 A program may also ask what colour something is drawn in: the text
-(OSC 10), the background (OSC 11) or one of the 256 palette entries
+(OSC 10), the background (OSC 11), the cursor (OSC 12, the text's
+colour, which it is drawn in) or one of the 256 palette entries
 (OSC 4). All are answered, which is how a program works out whether it
 is on a dark theme and picks a colour that will show against it.
 Setting a colour is not: the colours are the window's theme, and a

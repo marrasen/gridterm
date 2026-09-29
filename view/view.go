@@ -1250,6 +1250,15 @@ func (w *Window) nextFilePane(id string, back bool) string {
 // it, and on this computer each WSL distribution's, which Windows serves
 // on a share of its own.
 func (w *Window) foldersOn(m machines.ID) []string {
+	if window, key, far := m.Far(); far {
+		// Beyond a window: the ones it saved for the machine.
+		for _, rw := range w.remoteWindows {
+			if rw.Name == window {
+				return rw.Folders[key]
+			}
+		}
+		return nil
+	}
 	var out []string
 	for _, h := range w.saved {
 		if machines.ID(h.ID) == m {

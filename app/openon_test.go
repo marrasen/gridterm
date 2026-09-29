@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -443,4 +444,25 @@ func TestAnEndingFromAnotherWindowReadsAsItsOwn(t *testing.T) {
 	if status, known := exitStatus(&serve.ExitError{Status: 3}, true); !known || status != 3 {
 		t.Fatalf("with status 3, it reads as %d, %v", status, known)
 	}
+}
+
+// The folders a window saved for a server it is connected to reach the
+// window connected to it, to offer under that server's heading.
+func TestAWindowsSavedFoldersReachTheOther(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Put(remote.Host{Name: "srv", Address: "srv.example", Folders: []string{"/var/log", "/srv/app"}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	idsAsNames(t, book)
+	a.book = book
+	a.machines.At("srv").Conn = conn
+	a.publish()
+	pumpBoth(t, a, b, "the folders", func() bool {
+		return len(b.st.Windows) == 1 && slices.Equal(b.st.Windows[0].Folders["srv"], []string{"/var/log", "/srv/app"})
+	})
 }

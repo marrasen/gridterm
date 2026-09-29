@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"strings"
 	"sync"
@@ -53,6 +54,8 @@ type Window struct {
 	// drawing, so the lock is what keeps a half-written list off the
 	// screen.
 	open []Open
+	// folders are the folders it last said were saved, by machine.
+	folders map[string][]string
 
 	// going is why the other window closed the connection, when it said
 	// so before closing it.
@@ -231,6 +234,14 @@ func (w *Window) Opens() []Open {
 	return append([]Open(nil), w.open...)
 }
 
+// Folders are the folders the other window last said were saved for
+// the machines it is connected to, by the key its Opens name each by.
+func (w *Window) Folders() map[string][]string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return maps.Clone(w.folders)
+}
+
 // OpenNamed is what this window says about one thing it has open, and
 // whether it still has it.
 //
@@ -284,7 +295,7 @@ func (w *Window) watch() {
 				// so what is open is left as it was.
 				w.going = snap.Going
 			} else {
-				w.open = snap.Open
+				w.open, w.folders = snap.Open, snap.Folders
 			}
 			w.mu.Unlock()
 		}

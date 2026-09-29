@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -34,6 +35,9 @@ type RemoteWindow struct {
 	// Open is what it has open, with a screen to work in, less what
 	// this window already shows.
 	Open []serve.Open
+	// Folders are the folders it has saved for the machines it reaches,
+	// by its key for each, to offer under their headings.
+	Folders map[string][]string
 }
 
 // Intents for other windows.
@@ -179,7 +183,8 @@ func (a *app) holdWindow(name machines.ID, addr, keyFile string, win *serve.Wind
 			case <-t.C:
 			}
 			a.events <- func() {
-				if a.machines.Get(name).Window == w && !slices.Equal(w.Seen, win.Opens()) {
+				if a.machines.Get(name).Window == w && (!slices.Equal(w.Seen, win.Opens()) ||
+					!maps.EqualFunc(w.Folders, win.Folders(), slices.Equal)) {
 					a.showWindows()
 				} else {
 					a.quiet = true
@@ -305,13 +310,13 @@ func (a *app) showWindows() {
 	var out []RemoteWindow
 	for _, name := range a.machines.Windows() {
 		w := a.machines.Get(name).Window
-		w.Seen = w.Serve.Opens()
+		w.Seen, w.Folders = w.Serve.Opens(), w.Serve.Folders()
 		for _, o := range w.Seen {
 			if o.Key() != "" {
 				a.machines.NameFar(name, o.Key(), o.Host)
 			}
 		}
-		rw := RemoteWindow{Name: name, Addr: w.Addr}
+		rw := RemoteWindow{Name: name, Addr: w.Addr, Folders: w.Folders}
 		for _, o := range w.Seen {
 			if !o.HasScreen() {
 				continue

@@ -65,6 +65,9 @@ type Window struct {
 	// Leaving says the user let go of it.
 	Seen    []serve.Open
 	Leaving bool
+	// Folders are the folders it last said were saved for the machines
+	// it reaches, by its key for each.
+	Folders map[string][]string
 }
 
 // quick is a connection made without a saved server: the address typed,

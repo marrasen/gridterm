@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"maps"
 	"net"
 	"os"
 	"slices"
@@ -307,8 +308,19 @@ func (a *app) tellServed() {
 		}
 		snap.Open = append(snap.Open, o)
 	}
+	// The folders saved for each server connected to, which a client
+	// offers under its heading, by the ID the Opens name it by.
+	for _, id := range a.machines.Connected() {
+		if h, ok := a.machines.Saved(id); ok && len(h.Folders) > 0 {
+			if snap.Folders == nil {
+				snap.Folders = map[string][]string{}
+			}
+			snap.Folders[h.ID] = h.Folders
+		}
+	}
 	a.serving.mu.Lock()
-	same := slices.Equal(a.serving.snap.Open, snap.Open)
+	same := slices.Equal(a.serving.snap.Open, snap.Open) &&
+		maps.EqualFunc(a.serving.snap.Folders, snap.Folders, slices.Equal)
 	a.serving.snap = snap
 	a.serving.mu.Unlock()
 	if !same {

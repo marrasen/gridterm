@@ -297,6 +297,10 @@ type Snapshot struct {
 	// Open is what it has open, in the order it opened them.
 	Open []Open `json:"open"`
 
+	// Folders are the folders saved for the machines it is connected
+	// to, by the key its Opens name each by, for a client to offer.
+	Folders map[string][]string `json:"folders,omitempty"`
+
 	// Going says the window is about to close the connection on
 	// purpose, and why. Empty in an ordinary snapshot, and the only
 	// field set when it is not: a client that reads one of these leaves

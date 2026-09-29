@@ -324,16 +324,25 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	pumpBoth(t, a, b, "the server's shell to end", func() bool { return b.terminal(onFar).Exited() })
+	// The pane there that this one shows.
+	thereID := ""
+	for fid, pane := range b.machines.Get(win).Window.Bound {
+		if pane == onFar {
+			thereID = fid
+		}
+	}
+	restarts := a.restarts[thereID]
 	var again agent.Pane
 	asAgentBoth(t, a, b, func() { again, err = c.Restart(far.ID) })
 	if err != nil || again.Ended {
 		t.Fatalf("restarted, it is %+v, %v", again, err)
 	}
+	// Started again in the same pane there, on the server.
 	pumpBoth(t, a, b, "the server's shell again", func() bool {
-		return !b.terminal(onFar).Exited() && strings.Count(b.terminal(onFar).AllText(), "READY") > 0
+		return !b.terminal(onFar).Exited() && a.restarts[thereID] > restarts
 	})
-	if b.farHost[onFar] != "srv" {
-		t.Fatalf("restarted, it runs on %q", b.farHost[onFar])
+	if thereID == "" || a.machineOf(thereID) != "srv" {
+		t.Fatalf("this pane shows %q there, on %q", thereID, a.machineOf(thereID))
 	}
 
 	// It asks the user to type something there, and hears that they did.
@@ -382,8 +391,28 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	if err != nil || !strings.Contains(look.Screen, "out-42") {
 		t.Fatalf("its output read %q, %v", look.Screen, err)
 	}
+	there := len(a.st.Panes)
 	asAgentBoth(t, a, b, func() { opened, err = c.Open(own.ID) })
 	if err != nil || opened.Label != "Terminal 5 on "+name {
 		t.Fatalf("opened on the window %+v, %v", opened, err)
+	}
+	if p := b.st.Panes[len(b.st.Panes)-1]; p.Machine != win || p.On != "" || len(a.st.Panes) != there+1 || a.st.Panes[there].Machine != machines.Local {
+		t.Fatalf("the new pane is %+v here, and there %+v", p, a.st.Panes)
+	}
+
+	// The window let go of the server: an agent's restart is refused
+	// there, as it would be here, rather than dialled.
+	asAgentBoth(t, a, b, func() { err = c.Send(far.ID, "bye\n", nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the server's shell to end again", func() bool { return b.terminal(onFar).Exited() })
+	a.machines.At("srv").Conn = nil
+	asAgentBoth(t, a, b, func() { _, err = c.Restart(far.ID) })
+	if err == nil {
+		t.Fatal("restarted on a server the window has let go of")
+	}
+	if !slices.ContainsFunc(b.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "opening connections is the user's to do") }) || len(a.machines.Dialing()) != 0 {
+		t.Fatalf("refused, it said %v, with notices %+v, and the window dials %v", err, b.st.Notices, a.machines.Dialing())
 	}
 }

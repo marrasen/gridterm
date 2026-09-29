@@ -567,7 +567,9 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		// otherwise read as one that failed, which asks it again.
 		h0 = h.pane
 		t.Ask("")
-		if err := w.a.startAgain(h.pane); err != nil {
+		// Never dialled for an agent, here or by the window the pane is
+		// through.
+		if err := w.a.startAgainOr(h.pane, false); err != nil {
 			// Not started: the question goes back up for the user.
 			w.a.paneEnded(h.pane)
 			return struct{}{}, err

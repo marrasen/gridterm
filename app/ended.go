@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"fmt"
 	"log"
 	"os/exec"
 	"slices"
@@ -89,7 +90,13 @@ func (a *app) paneEnded(id string) {
 // startAgain starts a new program in a pane whose program has ended:
 // the user's shell here, or a shell over the connection to its server,
 // which has to still be open.
-func (a *app) startAgain(id string) error {
+func (a *app) startAgain(id string) error { return a.startAgainOr(id, true) }
+
+// startAgainOr is startAgain, dialling a connection that has gone only
+// with dial: without it, as for an agent, which may not open
+// connections, it refuses one this window, or the window the pane is
+// through, would have to dial.
+func (a *app) startAgainOr(id string, dial bool) error {
 	t := a.terminal(id)
 	if t == nil {
 		return errors.New("that pane is no longer open")
@@ -98,6 +105,9 @@ func (a *app) startAgain(id string) error {
 		return nil
 	}
 	machine := a.machineOf(id)
+	if !dial && machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
+		return fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", a.machines.Name(machine))
+	}
 	if cmd, ok := a.commands[id]; ok && a.machines.Get(machine).Window == nil {
 		return a.runAgain(id, cmd)
 	}
@@ -136,7 +146,12 @@ func (a *app) startAgain(id string) error {
 				if !ok {
 					open = serve.Open{ID: farID, Kind: "Terminal"}
 				}
-				err = w.Serve.StartAgain(serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind})
+				again := serve.Attached{ID: open.ID, Host: open.Key(), Kind: open.Kind}
+				if dial {
+					err = w.Serve.StartAgain(again)
+				} else {
+					err = w.Serve.StartAgainConnected(again)
+				}
 				if err == nil {
 					sess, err = w.Serve.Attach(open, size.Cols, size.Rows)
 				}

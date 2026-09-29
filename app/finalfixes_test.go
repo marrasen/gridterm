@@ -30,7 +30,7 @@ func TestStartAgainForAnotherWindowAnswersOnceItRan(t *testing.T) {
 	id := a.st.Focus
 	waitFor(t, a, "the command to end", func() bool { return a.terminal(id).Exited() && a.endings[id] > 0 })
 	done := make(chan error, 1)
-	go func() { done <- a.startAgainFor(remoteAttached(id)) }()
+	go func() { done <- a.startAgainFor(remoteAttached(id), true) }()
 	deadline := time.After(10 * time.Second)
 	for {
 		select {

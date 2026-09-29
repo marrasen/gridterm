@@ -127,7 +127,11 @@ type Config struct {
 	// open whose program has ended, in the pane it ended in, for a
 	// client that was working in it. A nil one refuses. It is called
 	// from a goroutine of the server's.
-	StartAgain func(Attached) error
+	//
+	// dial says the window may connect again to the machine the program
+	// ran on, as it would for its own user; without it, one it is not
+	// connected to is refused.
+	StartAgain func(want Attached, dial bool) error
 
 	// Files gives a client the files of the machine this window is on.
 	// A nil one refuses the channel by name.
@@ -550,7 +554,7 @@ func (s *Server) answerRequests(c *Client, reqs <-chan *ssh.Request) {
 			_ = req.Reply(true, nil)
 			continue
 		}
-		if req.Type != reqStartAgain || s.cfg.StartAgain == nil {
+		if req.Type != reqStartAgain && req.Type != reqStartAgainConnected || s.cfg.StartAgain == nil {
 			if req.WantReply {
 				_ = req.Reply(false, nil)
 			}
@@ -561,7 +565,7 @@ func (s *Server) answerRequests(c *Client, reqs <-chan *ssh.Request) {
 			_ = req.Reply(false, []byte("that request could not be read"))
 			continue
 		}
-		if err := s.cfg.StartAgain(Attached(want)); err != nil {
+		if err := s.cfg.StartAgain(Attached(want), req.Type == reqStartAgain); err != nil {
 			// The reason goes back with the no, so the client can tell
 			// a refusal from a window that does not know how.
 			_ = req.Reply(false, []byte(err.Error()))

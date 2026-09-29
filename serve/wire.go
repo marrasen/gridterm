@@ -47,6 +47,12 @@ const (
 	// "cannot" and does something else.
 	reqStartAgain = "start-again@gridterm"
 
+	// reqStartAgainConnected is reqStartAgain for a program started
+	// again only over a connection the served window already holds: it
+	// is refused rather than dialled, for an agent, which may not open
+	// connections. Its payload is opened.
+	reqStartAgainConnected = "start-again-connected@gridterm"
+
 	// reqDisconnect asks the served window to close its connection to a
 	// machine it reaches. Its payload is logOf, which names the machine.
 	// The no carries the reason; a window of an older build says a bare

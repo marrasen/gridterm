@@ -504,8 +504,8 @@ func (a *app) servedMachine(host string) (machines.ID, error) {
 }
 
 // startAgainFor starts again a pane's program, for a connected window
-// working in it.
-func (a *app) startAgainFor(want serve.Attached) error {
+// working in it, connecting again to its server first only with dial.
+func (a *app) startAgainFor(want serve.Attached, dial bool) error {
 	type count struct{ restarts, endings int }
 	was, err := onApp(a, func() (count, error) {
 		if a.terminal(want.ID) == nil {
@@ -513,7 +513,7 @@ func (a *app) startAgainFor(want serve.Attached) error {
 			return count{}, serve.ErrNotOpen
 		}
 		c := count{a.restarts[want.ID], a.endings[want.ID]}
-		return c, a.startAgain(want.ID)
+		return c, a.startAgainOr(want.ID, dial)
 	})
 	if err != nil {
 		return err

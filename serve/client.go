@@ -422,11 +422,21 @@ var ErrNotOpen = errors.New("serve: that is not open in that window any more")
 // StartAgain asks the other window to start again, in the same pane, the
 // program of something it has open whose program has ended. Attach to it
 // afterwards to watch what it starts.
-func (w *Window) StartAgain(what Attached) error {
+func (w *Window) StartAgain(what Attached) error { return w.startAgain(reqStartAgain, what) }
+
+// StartAgainConnected is StartAgain for a program the other window starts
+// again only over a connection it already holds: one it would have to
+// dial is refused, saying so. A window from before it could says
+// ErrCannotStartAgain.
+func (w *Window) StartAgainConnected(what Attached) error {
+	return w.startAgain(reqStartAgainConnected, what)
+}
+
+func (w *Window) startAgain(kind string, what Attached) error {
 	if w.isClosed() {
 		return errors.New("serve: that window has been let go of")
 	}
-	ok, reply, err := w.client.SendRequest(reqStartAgain, true, ssh.Marshal(opened(what)))
+	ok, reply, err := w.client.SendRequest(kind, true, ssh.Marshal(opened(what)))
 	switch {
 	case err != nil:
 		return fmt.Errorf("serve: ask %s to start it again: %w", w.addr, err)

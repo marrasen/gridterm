@@ -1724,7 +1724,7 @@ func TestAFileSessionRequestOfAnotherBuildIsRefused(t *testing.T) {
 
 // takenOverStarting is takenOver for a window that starts things again
 // the way start does, or cannot when start is nil.
-func takenOverStarting(t *testing.T, start func(Attached) error) *Window {
+func takenOverStarting(t *testing.T, start func(Attached, bool) error) *Window {
 	t.Helper()
 	mine, line := aKey(t, "marcus@laptop")
 	host, err := HostKey(t.TempDir() + "/host_key")
@@ -1762,18 +1762,26 @@ func TestAClientAsksForSomethingToBeStartedAgain(t *testing.T) {
 	want := Attached{ID: "3", Host: "", Kind: "Terminal"}
 
 	var asked Attached
-	w := takenOverStarting(t, func(a Attached) error {
-		asked = a
+	var dial bool
+	w := takenOverStarting(t, func(a Attached, d bool) error {
+		asked, dial = a, d
 		return nil
 	})
 	if err := w.StartAgain(want); err != nil {
 		t.Fatalf("start it again: %v", err)
 	}
-	if asked != want {
-		t.Errorf("the served window was asked about %+v, want %+v", asked, want)
+	if asked != want || !dial {
+		t.Errorf("the served window was asked about %+v, dialling %v, want %+v, dialling", asked, dial, want)
+	}
+	// Asked for an agent, it may only start it over a connection it has.
+	if err := w.StartAgainConnected(want); err != nil {
+		t.Fatalf("start it again connected: %v", err)
+	}
+	if asked != want || dial {
+		t.Errorf("asked connected only, the served window was allowed to dial")
 	}
 
-	w = takenOverStarting(t, func(Attached) error { return errors.New("it is still running") })
+	w = takenOverStarting(t, func(Attached, bool) error { return errors.New("it is still running") })
 	err := w.StartAgain(want)
 	if err == nil || errors.Is(err, ErrCannotStartAgain) || !strings.Contains(err.Error(), "it is still running") {
 		t.Errorf("a refusal came back as %v, want its reason", err)

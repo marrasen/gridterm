@@ -2033,8 +2033,10 @@ type sideRow struct {
 	click   gunim.Intent
 	closes  gunim.Intent
 	local   func(*gunim.UI)
-	// ring grows while the row has the keyboard.
+	// ring grows while the row shows it has the keyboard: from Tab, or from a key that moved the keyboard here, which
+	// keyed says.
 	ring   *anim.Float
+	keyed  bool
 	title  *widget.Label
 	note   *widget.Label
 	active *anim.Float
@@ -2176,8 +2178,17 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 			return true
 		}
 		return false
+	case input.FocusGained:
+		// A key that moved the keyboard here shows where it is
+		r.keyed = e.Keyed
+		if e.Keyed {
+			r.ring.Animate(1, widget.Quick.Get(u.Theme()))
+		}
+	case input.FocusLost:
+		r.keyed = false
+		r.ring.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.FocusRing:
-		if e.On {
+		if e.On || r.keyed {
 			r.ring.Animate(1, widget.Quick.Get(u.Theme()))
 		} else {
 			r.ring.Animate(0, widget.Settle.Get(u.Theme()))

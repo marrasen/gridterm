@@ -6,7 +6,7 @@ require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/danielgatis/go-vte v1.0.11
-	github.com/marrasen/gunim v0.0.0-20260929082717-574ef24619a5
+	github.com/marrasen/gunim v0.0.0-20260929083005-d810a0069ae2
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0

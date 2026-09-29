@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -81,5 +82,38 @@ func TestALogLineIsCleanAndAskingForTheLogSaysNothing(t *testing.T) {
 	want := []string{"\x1b[" + badly + "mdisconnected: ]0;ownedbye\x1b[0m", "\x1b[" + badly + "msee you\x1b[0m", "connecting again", "connecting to srv"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the log reads %q, want %q", got, want)
+	}
+}
+
+// A log's pane is searched as a terminal's is: Find in Scrollback opens
+// what it holds in a reader.
+func TestALogIsSearchedLikeATerminal(t *testing.T) {
+	a, _ := agentApp(t)
+	logLine(a.account("srv"), badly, "no route to srv")
+	a.handle(ShowLog{Machine: "srv"})
+	id := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the log line", func() bool { return strings.Contains(a.shells.Get(id).T.AllText(), "no route to srv") })
+	a.handle(ShowScrollback{Pane: id})
+	p := a.st.Panes[len(a.st.Panes)-1]
+	if p.Kind != KindReader || !slices.ContainsFunc(a.st.Readers[p.ID].Lines, func(l string) bool { return strings.Contains(l, "no route to srv") }) {
+		t.Fatalf("Find in Scrollback on the log opened %+v, holding %q", p, a.st.Readers[p.ID].Lines)
+	}
+}
+
+// The Window Log tells what happened on a good day too: panes opened
+// and closed, and how a shell ended.
+func TestTheWindowLogTellsOfPanes(t *testing.T) {
+	var got strings.Builder
+	log.SetOutput(&got)
+	t.Cleanup(func() { log.SetOutput(os.Stderr) })
+	a, _ := agentApp(t)
+	id := a.st.Panes[0].ID
+	title := a.st.Panes[0].Title
+	a.closePane(id)
+	waitFor(t, a, "the pane to close", func() bool { return !a.has(id) })
+	for _, want := range []string{"opened " + strconv.Quote(title), "closed " + strconv.Quote(title)} {
+		if !strings.Contains(got.String(), want) {
+			t.Fatalf("the log says %q, with no %q", got.String(), want)
+		}
 	}
 }

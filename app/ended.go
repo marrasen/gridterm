@@ -59,6 +59,7 @@ func (a *app) paneEnded(id string) {
 	if t.Asking() == question {
 		return
 	}
+	log.Printf("%s ended: %s", a.titleOf(id), question)
 	// Ended out of sight, with its status in: an echo says how it went.
 	if known && a.st.Focus != id {
 		if status == 0 {

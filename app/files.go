@@ -968,9 +968,14 @@ func (a *app) retitleAs(id, title string) {
 // showScrollback opens what a terminal pane has kept in a reader
 // beside it, at the end, with the find bar open.
 func (a *app) showScrollback(pane string) error {
+	// A log's pane reads the log as a terminal does, and is searched
+	// the same way.
 	t := a.terminal(pane)
+	if sh := a.shells.Get(pane); t == nil && sh != nil && a.kindOfPane(pane) == KindLog {
+		t = sh.T
+	}
 	if t == nil {
-		return errors.New("the pane in front is not a terminal, so it has no scrollback")
+		return errors.New("the pane in front is not a terminal or a log, so it has no scrollback")
 	}
 	// One viewer per pane: a second would show the same
 	// text, and the first is where the user left it. Its find opens

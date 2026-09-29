@@ -235,6 +235,12 @@ The whole list. The [README](README.md) has the short version.
 - **Mouse, selection and clipboard.** Programs that ask for the mouse
   get it; hold Shift to select text anyway. Drag to select, Alt+drag for
   a rectangle.
+- **A window log.** Help → Window Log shows what the window did: when
+  it started, each pane opened and closed, how a shell ended,
+  connections made and lost, serving turned on and off, and every
+  failure a pop-up told of. It keeps the last 2,000 lines, until the
+  window closes. Find in Scrollback searches it, and a connection log,
+  as it does a terminal.
 
 ![selecting text with the mouse](docs/selection.png)
 

@@ -192,6 +192,7 @@ func (a *app) startServing(in StartServing) error {
 		return err
 	}
 	a.serving.server = srv
+	log.Printf("serving this window on %s", srv.Addr())
 	if a.settings != nil {
 		reach := settings.ReachHere
 		if in.Anywhere {
@@ -212,6 +213,7 @@ func (a *app) stopServing() error {
 		return nil
 	}
 	a.serving.server, a.serving.clients, a.serving.carried = nil, nil, nil
+	log.Print("stopped serving this window")
 	if a.settings != nil {
 		a.keep("that this window is not served", a.settings.PutServeOn(false))
 	}
@@ -305,6 +307,7 @@ func oneLine(s string) string {
 func (a *app) clientWent(c *serve.Client, why error) {
 	a.serving.clients = slices.DeleteFunc(a.serving.clients, func(have *serve.Client) bool { return have == c })
 	delete(a.serving.carried, c)
+	log.Printf("%s disconnected", c.Name)
 	if why != nil && !serve.Ended(why) {
 		a.failed("Connection to "+c.Name+" lost", why.Error())
 		a.problem()

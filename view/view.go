@@ -423,8 +423,8 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		u.Send(w, app.ShowTyped{Pane: w.focused})
 		return true
 	case "pane.scrollback":
-		if w.kindOf(w.focused) != app.KindTerminal {
-			w.toasts.Show(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal has kept."}, u)
+		if k := w.kindOf(w.focused); k != app.KindTerminal && k != app.KindLog {
+			w.toasts.Show(widget.Toast{Title: "The pane in front is not a terminal", Body: "Find in Scrollback searches what a terminal or a log has kept."}, u)
 			return true
 		}
 		u.Send(w, app.ShowScrollback{Pane: w.focused})

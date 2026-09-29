@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net"
 	"os"
@@ -179,6 +180,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 				return
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
+			log.Printf("connected to the window at %s", addr)
 			a.done()
 			a.holdWindow(name, addr, in.KeyFile, win)
 			a.dialed(logPane, name, terminal)

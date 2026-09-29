@@ -9,6 +9,7 @@ import (
 	"errors"
 	"log"
 	"maps"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -694,6 +695,7 @@ func (a *app) run(ctx context.Context) error {
 	for _, t := range a.themes {
 		a.st.Themes = append(a.st.Themes, t.Name)
 	}
+	log.Printf("kakel %s started on %s/%s", thisVersion(), runtime.GOOS, runtime.GOARCH)
 	a.loadSettings()
 	// The theme picked last time, or the first.
 	if len(a.themes) > 0 {
@@ -1328,6 +1330,19 @@ func (a *app) notice(kind NoticeKind, title, body, clip string) {
 	}
 }
 
+// describePane says what a pane opened is, for the window log: its
+// title, its kind when it is no terminal, and where it runs.
+func describePane(p Pane, where string) string {
+	s := fmt.Sprintf("%q", p.Title)
+	if p.Kind != KindTerminal {
+		s += " (" + p.Kind + ")"
+	}
+	if p.Machine != "" {
+		s += " on " + where
+	}
+	return s
+}
+
 // titleOf returns a pane's title, or empty.
 func (a *app) titleOf(id string) string {
 	for _, p := range a.st.Panes {
@@ -1509,6 +1524,9 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 		a.front(w)
 	}
 	a.st.Panes = append(a.st.Panes, p)
+	if p.Kind != KindChooser {
+		log.Printf("opened %s", describePane(p, a.machines.Name(paneMachine(p))))
+	}
 	a.stayEmpty = false
 	a.winOf[p.ID] = a.frontID()
 	a.place(p.ID, at)
@@ -1720,6 +1738,9 @@ func (a *app) remove(id string) {
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 	if i < 0 {
 		return
+	}
+	if p := a.st.Panes[i]; p.Kind != KindChooser {
+		log.Printf("closed %q", p.Title)
 	}
 	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" && p.On == "" {
 		// Closing the log of a connection being made gives it up: it is

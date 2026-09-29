@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"maps"
 	"net"
 	"slices"
@@ -196,6 +197,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			m.Dropped = false
 			m.Reached = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
+			log.Printf("connected to %s", called)
 			a.done()
 			go func() {
 				err := conn.Wait()
@@ -204,8 +206,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.machines.Closed(conn)
 					if err != nil {
 						logLine(acct, badly, "disconnected: "+err.Error())
+						log.Printf("disconnected from %s: %v", a.machines.Name(name), err)
 					} else {
 						logLine(acct, "", "disconnected")
+						log.Printf("disconnected from %s", a.machines.Name(name))
 					}
 					a.machines.At(name).Conn = nil
 					a.machines.At(name).SavedID = ""

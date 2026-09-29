@@ -280,9 +280,9 @@ Fallback for a tunnel that will not parse:
   shorter title had to drop, because what they do is not guessable from
   three words.
 - The buttons along the bottom of the `Show Secrets` list, `Type`
-  `Copy` `Show` `Cancel`, are constants in `wording.go` like every
-  other button. `Type` and `Show` are new verbs there, and they are
-  single verbs as rule 5 asks.
+  `Copy` `Show` `Cancel`, are written in `view/secretsview.go`, where
+  the list's buttons are made. `Type` and `Show` are new verbs, and
+  they are single verbs as rule 5 asks.
 - **`secrets.pane` has no `…`** under rule 3: it opens a pane and asks
   nothing. It is the only one of these that does not.
 - **`Manage Secrets` beside `Show Secrets…`** is two ways in doing two

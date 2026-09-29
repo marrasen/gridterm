@@ -68,7 +68,7 @@ like.
 So a theme may write its frame down instead. `themes.Frame` names the
 two colours the furniture is drawn in, a single or double rule, and the
 buttons. `themes.Look` is that block with its colours read, and the
-helpers in `look.go` are the one place each furniture colour is decided:
+helpers in `look/theme.go` are the one place each furniture colour is decided:
 each reads the look when the theme set one and derives exactly what it
 derived before when the theme did not.
 

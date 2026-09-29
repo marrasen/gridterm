@@ -210,7 +210,7 @@ With none or several, the button is absent and `Copy` does the job.
 - **On failure:** a D57 notice titled `Could not open the link`.
 
 The same address written twice counts as one: the button still means one
-thing. `onlyLink` in `ask.go` is where this lives.
+thing. `links.Only` in `links/links.go` is where this lives.
 
 ## D10 — gone
 
@@ -922,8 +922,8 @@ back.
 `Copy` puts it on the clipboard and says so on the bottom row without
 showing it. `Show` is D64. No secret is ever drawn on a row.
 
-The four are `Type` `Copy` `Show` `Cancel`, and all four are constants
-in `wording.go` like every other button this window draws.
+The four are `Type` `Copy` `Show` `Cancel`, written in
+`view/secretsview.go`, where the list's buttons are made.
 
 ## D64
 - **Title:** `<name>`

@@ -153,11 +153,12 @@ through `wrapLines(…, errorLineWidth)`.
 
 ## Every word is a constant, said once
 
-**No display string is written twice, and none is written as a literal
-where it is used.** Button titles, field labels and dialog titles live in
-`wording.go`; the tick boxes an agent is told to look for live in
-`agent`, because the MCP server quotes them back; a command's title and
-the menu rows that offer it are one constant.
+**A display string more than one place shows is written once.** The
+tick boxes an agent is told to look for live in `agent`, because the
+MCP server quotes them back. Button titles, field labels
+and dialog titles are written where the view makes them: the constants
+file the old window kept them in, `wording.go`, did not come across to
+the gunim window.
 
 A menu row that says exactly its command's title carries no `Title` at
 all — `ui.MenuItem` falls back to the registered one. The row cannot
@@ -200,9 +201,9 @@ button that has gone, and neither the compiler nor `go vet` says a word
 about an unused package-level constant — it is the linter's `unused`
 check and nothing else.
 
-It is also why `wording.go` keeps its constants unexported. The four in
-`agent` have to be exported, because the MCP server quotes them back to
-an agent, and they give up that second layer for it.
+It is also why kakel keeps its word constants unexported where it can.
+The four in `agent` have to be exported, because the MCP server quotes
+them back to an agent, and they give up that second layer for it.
 
 None of these three layers is a test asserting that a button says a
 particular word. That layer was catching nothing the others missed.

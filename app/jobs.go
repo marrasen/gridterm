@@ -413,7 +413,7 @@ func (a *app) renameFile(in RenameFile) {
 	if !ok || in.To == in.From {
 		return
 	}
-	if err := plainName(f, in.To); err != nil {
+	if err := vfs.PlainName(f, in.To); err != nil {
 		a.failed("Couldn't rename "+in.From, words.UpperFirst(err.Error())+".")
 		return
 	}
@@ -427,7 +427,7 @@ func (a *app) renameFile(in RenameFile) {
 			// Only the letter case changes. Where case counts, the folder
 			// may hold another file with that very name, which the rename
 			// would write over.
-			err = sameFolderHas(f, at, in.To)
+			err = vfs.NameFree(f, at, in.To)
 			if err == nil {
 				err = f.Rename(from, to)
 			}
@@ -445,28 +445,13 @@ func (a *app) renameFile(in RenameFile) {
 	}()
 }
 
-// sameFolderHas refuses, saying so, when folder at holds an entry
-// named exactly name.
-func sameFolderHas(f vfs.FS, at, name string) error {
-	entries, err := f.ReadDir(at)
-	if err != nil {
-		return err
-	}
-	for _, e := range entries {
-		if e.Name == name {
-			return fmt.Errorf("%s is already there", name)
-		}
-	}
-	return nil
-}
-
 // makeFolder makes a folder, and puts the cursor on it.
 func (a *app) makeFolder(in MakeFolder) {
 	f, at, ok := a.folderOf(in.Pane)
 	if !ok {
 		return
 	}
-	if err := plainName(f, in.Name); err != nil {
+	if err := vfs.PlainName(f, in.Name); err != nil {
 		a.failed("Couldn't make the folder", words.UpperFirst(err.Error())+".")
 		return
 	}
@@ -480,20 +465,6 @@ func (a *app) makeFolder(in MakeFolder) {
 			a.browse(Browse{Pane: in.Pane, Path: at, Land: in.Name})
 		}
 	}()
-}
-
-// plainName reports whether name is a name in a folder rather than a
-// path.
-func plainName(f vfs.FS, name string) error {
-	switch {
-	case name == "":
-		return errors.New("it needs a name")
-	case name == "." || name == "..":
-		return fmt.Errorf("%q is not a name to use", name)
-	case strings.ContainsRune(name, rune(f.Sep())), strings.ContainsRune(name, '/'):
-		return fmt.Errorf("%q is a path, and a name is wanted", name)
-	}
-	return nil
 }
 
 // overwriteAsker asks the user about a name that is already there.

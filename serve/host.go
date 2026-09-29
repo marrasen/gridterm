@@ -495,7 +495,7 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 	status := uint32(0)
 	if why != nil {
 		status = 1
-		if code, ok := exitCode(why); ok && code > 0 {
+		if code, ok := session.Status(why); ok && code > 0 {
 			status = uint32(code)
 		} else {
 			// No status to give: said so, for the client to say what
@@ -533,24 +533,6 @@ func (s *Server) endSession(ch ssh.Channel, why error) {
 type refused struct{ error }
 
 func (refused) ExitStatus() int { return 1 }
-
-// exitCode is the exit status an error carries, as a program that ended
-// here, on a server, or in another window says one.
-func exitCode(err error) (int, bool) {
-	if e, ok := errors.AsType[interface {
-		error
-		ExitStatus() int
-	}](err); ok {
-		return e.ExitStatus(), true
-	}
-	if e, ok := errors.AsType[interface {
-		error
-		ExitCode() int
-	}](err); ok {
-		return e.ExitCode(), true
-	}
-	return 0, false
-}
 
 // signalOf is the signal that ended a program, as SSH names one, "" for
 // one that gives none.

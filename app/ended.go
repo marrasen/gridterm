@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/words"
+	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
@@ -51,10 +52,7 @@ func (a *app) paneEnded(id string) {
 		question += " Exit " + strconv.Itoa(status) + "."
 	}
 	if cmd, ok := a.commands[id]; ok {
-		start, question = "Run Again", strings.Join(cmd.argv, " ")+" has stopped. Run it again?"
-		if known {
-			question = strings.Join(cmd.argv, " ") + " finished. Exit " + strconv.Itoa(status) + ". Run it again?"
-		}
+		start, question = "Run Again", commandQuestion(cmd.argv, status, known, a.notRun[id], a.cutOff(id, t))
 	}
 	// Told twice: as the output ends, and again once the program's
 	// status is in. The second asks again only when it knows more.
@@ -254,6 +252,7 @@ func (a *app) restarted(id string, t *uiterm.Terminal, sess session.Session) err
 	}
 	a.setPane(id, func(p *Pane) { p.Ended = false })
 	a.restarts[id]++
+	delete(a.notRun, id)
 	return nil
 }
 
@@ -272,20 +271,8 @@ func exitStatus(why error, over bool) (int, bool) {
 	switch {
 	case !over:
 		return 0, false
-	case why == nil:
-		return 0, true
 	}
-	// On a server, or in another window, as each says it.
-	if far, ok := errors.AsType[interface {
-		error
-		ExitStatus() int
-	}](why); ok {
-		return far.ExitStatus(), true
-	}
-	if here, ok := errors.AsType[*exec.ExitError](why); ok && here.ExitCode() >= 0 {
-		return here.ExitCode(), true
-	}
-	return 0, false
+	return session.Status(why)
 }
 
 // clearFinished closes the panes whose programs have ended and clears
@@ -395,4 +382,44 @@ func (a *app) onWindowsOwn(id string) {
 	if t := a.terminal(id); t != nil && was != "" {
 		t.Say("It ran on " + a.machines.Name(machines.FarID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
 	}
+}
+
+// commandRoom is how much of a command its pane's question names: a
+// long one is cut short, the way the old window cut it.
+const commandRoom = 40
+
+// commandQuestion words the question on a pane that ran one command,
+// naming it: how it ended is said rather than assumed. A command cut
+// off did not finish, and saying it had is as wrong as an exit of 0.
+func commandQuestion(argv []string, status int, known, notRun, cutOff bool) string {
+	what := grid.TrimTail(strings.Join(argv, " "), commandRoom)
+	if what == "" {
+		what = "The command"
+	}
+	switch {
+	case notRun:
+		return "The connection was not made, so " + what + " did not run. Run it again?"
+	case known:
+		return what + " finished. Exit " + strconv.Itoa(status) + ". Run it again?"
+	case cutOff:
+		return "The connection went while " + what + " was running. Run it again?"
+	}
+	return what + " has stopped. Run it again?"
+}
+
+// cutOff reports whether the connection pane id's program ran over went
+// while it ran: the session says it ended with no word of how, or the
+// connection itself has gone.
+func (a *app) cutOff(id string, t *uiterm.Terminal) bool {
+	why, over := t.Ending()
+	var missing *ssh.ExitMissingError
+	if over && (errors.As(why, &missing) || errors.Is(why, serve.ErrNoEnding)) {
+		return true
+	}
+	machine := a.machineOf(id)
+	if machine == machines.Local {
+		return false
+	}
+	m := a.machines.Get(machine)
+	return m.Conn == nil && m.Window == nil
 }

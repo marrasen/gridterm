@@ -181,3 +181,28 @@ func TestClearFinishedClosesEndedPanes(t *testing.T) {
 		t.Fatalf("cleared, the panes are %+v", a.st.Panes)
 	}
 }
+
+// A command's question names it, cut short when long, and says how it
+// ended: finished with a status, cut off, never run, or just stopped.
+func TestACommandsQuestionSaysHowItEnded(t *testing.T) {
+	short := []string{"make", "test"}
+	for _, c := range []struct {
+		status        int
+		known, notRun bool
+		cutOff        bool
+		want          string
+	}{
+		{0, true, false, false, "make test finished. Exit 0. Run it again?"},
+		{0, false, false, true, "The connection went while make test was running. Run it again?"},
+		{0, false, true, false, "The connection was not made, so make test did not run. Run it again?"},
+		{0, false, false, false, "make test has stopped. Run it again?"},
+	} {
+		if got := commandQuestion(short, c.status, c.known, c.notRun, c.cutOff); got != c.want {
+			t.Errorf("%+v: %q", c, got)
+		}
+	}
+	long := strings.Fields("rsync -avz --delete /home/me/projects/kakel/ backup.example:/srv/backups/kakel/")
+	if got := commandQuestion(long, 0, true, false, false); !strings.HasPrefix(got, "rsync -avz --delete /home/me/projects/k") || !strings.Contains(got, "…") {
+		t.Errorf("a long command reads %q", got)
+	}
+}

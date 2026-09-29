@@ -448,6 +448,9 @@ type app struct {
 	// linksAt is where each pane with links runs, for its paths, which
 	// its terminal looks up on a goroutine of its own.
 	linksAt map[string]*atomic.Pointer[machines.ID]
+	// notRun are the command panes whose connection was not made when
+	// they were asked to run again, for their question to say so.
+	notRun map[string]bool
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -605,6 +608,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		paneFiles: map[string]wrappedFiles{},
 		paneAt:    map[string]string{},
 		farLogs:   map[machines.ID]bool{},
+		notRun:    map[string]bool{},
 		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
@@ -1578,6 +1582,7 @@ func (a *app) remove(id string) {
 	}
 	a.shells.Set(id, nil)
 	delete(a.linksAt, id)
+	delete(a.notRun, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)

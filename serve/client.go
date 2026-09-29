@@ -659,12 +659,16 @@ func (s *remoteSession) Wait() error {
 	case s.ended:
 		return &SignalError{Signal: s.signal}
 	case !s.gotOne:
-		return errors.New("serve: the connection went before it said how that ended")
+		return ErrNoEnding
 	case s.status != 0:
 		return &ExitError{Status: int(s.status)}
 	}
 	return nil
 }
+
+// ErrNoEnding is how a program another window ran ended when the
+// connection went before that window said how: cut off, not finished.
+var ErrNoEnding = errors.New("serve: the connection went before it said how that ended")
 
 // SignalError is how a program another window ran ended when it gave no
 // exit status: stopped by Signal, or some way that says none.

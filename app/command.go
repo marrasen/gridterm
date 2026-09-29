@@ -209,6 +209,15 @@ func (a *app) runAgain(id string, cmd command) error {
 	// The pane may close while a connection is made for it: then the
 	// command is not run. One that cannot be run asks again.
 	still := func() bool { return a.terminal(id) == t }
+	// On a server, not started is the connection not made, and its
+	// question says so.
+	remote := a.machineOf(id) != machines.Local
+	notRun := func() {
+		if remote {
+			a.notRun[id] = true
+		}
+		a.paneEnded(id)
+	}
 	err := a.startCommand(a.machineOf(id), cmd, commandStart{
 		then: func(sess session.Session) {
 			if err := a.restarted(id, t, sess); err != nil {
@@ -218,13 +227,13 @@ func (a *app) runAgain(id string, cmd command) error {
 		still: still,
 		failed: func() {
 			if still() {
-				a.paneEnded(id)
+				notRun()
 			}
 		},
 	})
 	if err != nil && still() {
 		// It asks again, having said why.
-		a.paneEnded(id)
+		notRun()
 	}
 	return err
 }

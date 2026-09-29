@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
@@ -312,5 +313,47 @@ func TestTheCursorHidesWhileTheWindowIsInactive(t *testing.T) {
 	lastWindow.Frame(time.Second / 60)
 	if !term.cursorShown {
 		t.Fatal("with the keyboard back, the pane shows no cursor")
+	}
+}
+
+// Always on Top keeps the window above the others, ticked in the View
+// menu while it does, and the title bar has the pin for it.
+func TestAlwaysOnTopPinsTheWindow(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Sidebar: true, SidebarWidth: 220})
+	win.run("view.pin", lastUI)
+	if !lastUI.Pinned() || !lastWindow.Offscreen().Pinned() {
+		t.Fatal("Always on Top left the window among the others")
+	}
+	ticked := false
+	for m := range menus {
+		for i, it := range menus[m].items {
+			if it.id == "view.pin" {
+				ticked = win.bar.Menus[m].Checked[i]
+			}
+		}
+	}
+	if !ticked {
+		t.Fatal("pinned, the View menu does not tick Always on Top")
+	}
+	win.run("view.pin", lastUI)
+	if lastUI.Pinned() {
+		t.Fatal("Always on Top again left the window pinned")
+	}
+	pin := false
+	var walk func(n gunim.Node)
+	walk = func(n gunim.Node) {
+		if c, ok := n.(*widget.WindowControls); ok && c.Pin {
+			pin = true
+		}
+		if c, ok := n.(gunim.Composite); ok {
+			for _, k := range c.Children() {
+				walk(k)
+			}
+		}
+	}
+	walk(win.top)
+	if !pin {
+		t.Fatal("the title bar has no pin")
 	}
 }

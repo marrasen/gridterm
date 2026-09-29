@@ -32,6 +32,11 @@ type ownWin struct {
 	// asking says the window asks whether to close, and gone that it is
 	// on its way out.
 	asking, gone bool
+	// noSidebar says the sidebar is hidden in this window, and
+	// sidebarWidth how wide it is here, 0 for the usual width: each
+	// window has its own.
+	noSidebar    bool
+	sidebarWidth float32
 }
 
 // windowIn is an intent from one of the windows, or word that it
@@ -341,6 +346,10 @@ func (a *app) stateFor(w *ownWin, st State) State {
 	st.Window, st.Behind = w.id, w != a.cur
 	st.Panes = a.panesIn(w)
 	st.Focus = a.focusIn(w)
+	st.Sidebar = !w.noSidebar
+	if w.sidebarWidth > 0 {
+		st.SidebarWidth = w.sidebarWidth
+	}
 	st.Stage = nil
 	if st.Focus != "" {
 		st.Stage = a.groups[a.groupOf[st.Focus]].clone()

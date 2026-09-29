@@ -376,7 +376,8 @@ type (
 	// PopOut takes the focused pane out of its split, onto a stage of
 	// its own.
 	PopOut struct{}
-	// ToggleSidebar shows or hides the sidebar.
+	// ToggleSidebar shows or hides the sidebar of the window it is sent
+	// from.
 	ToggleSidebar struct{}
 	// SplitMoved says where the pointer left a split's divider.
 	SplitMoved struct {
@@ -1012,11 +1013,12 @@ func (a *app) handle(in gunim.Intent) {
 	case PopOut:
 		a.popOut()
 	case ToggleSidebar:
-		a.st.Sidebar = !a.st.Sidebar
+		// In the window it was asked in, which is the one in front.
+		a.cur.noSidebar = !a.cur.noSidebar
 	case SplitMoved:
 		setShare(a.groups[a.groupOf[a.st.Focus]], in.Split, in.Share)
 	case SidebarMoved:
-		a.st.SidebarWidth = in.Width
+		a.cur.sidebarWidth = in.Width
 	case Exit:
 		a.askToQuit()
 	case RenamePane:

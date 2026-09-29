@@ -303,7 +303,10 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	}
 	w.toasts = &widget.Toasts{}
 	w.chips = newChipBar()
-	bar := widget.Row(newAppMark(), w.bar, w.chips, widget.NewWindowControls()).Grow(w.bar, 1)
+	// The pin before minimize keeps the window above the others.
+	controls := widget.NewWindowControls()
+	controls.Pin = true
+	bar := widget.Row(newAppMark(), w.bar, w.chips, controls).Grow(w.bar, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
 	w.barShade = newShade(bar)
 	w.top = widget.Column(w.barShade, w.outer).Grow(w.outer, 1)
@@ -467,6 +470,12 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.fullScreen":
 		w.present(!w.presenting, u)
+		return true
+	case "view.pin":
+		if err := u.SetPinned(!u.Pinned()); err != nil {
+			w.toasts.Show(widget.Toast{Title: "Couldn't keep the window on top", Body: err.Error()}, u)
+		}
+		w.tickSwitch(id, u.Pinned())
 		return true
 	case "shell.termProgram":
 		w.termProgramDialog(u)
@@ -1894,6 +1903,24 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	u.Invalidate()
 }
 
+// tickSwitch ticks the menus' and the palette's rows for the switch id
+// at once, for a switch the window turns itself, which no new state
+// follows.
+func (w *Window) tickSwitch(id string, on bool) {
+	for m := range menus {
+		for i, it := range menus[m].items {
+			if it.id == id {
+				w.bar.Menus[m].Checked[i] = on
+			}
+		}
+	}
+	for i, pid := range w.paletteIDs {
+		if pid == id && i < len(w.palette.Items) {
+			w.palette.Items[i].Checked = on
+		}
+	}
+}
+
 // switchOn reports whether the command id switches something, and
 // whether that is on now.
 func switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bool) {
@@ -1904,6 +1931,8 @@ func switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bool) {
 		return st.PaneTitles, true
 	case "view.fullScreen":
 		return u.FullScreen(), true
+	case "view.pin":
+		return u.Pinned(), true
 	case "shell.setup":
 		return st.ShellSetup, true
 	}

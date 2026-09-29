@@ -703,8 +703,11 @@ func (s *Settings) PutFontSize(pt float64) error {
 // screen's own coordinates, as gunim reads them. A maximized window's
 // are where it goes back to when it is no longer maximized.
 type WindowPlace struct {
-	X, Y, W, H float32
-	Maximized  bool `json:",omitempty"`
+	X         float32 `json:"x"`
+	Y         float32 `json:"y"`
+	W         float32 `json:"width"`
+	H         float32 `json:"height"`
+	Maximized bool    `json:"maximized,omitempty"`
 }
 
 // Window is where the window was as it last closed, and whether that

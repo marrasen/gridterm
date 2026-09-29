@@ -35,9 +35,13 @@ type Ask struct {
 	// after that by "yes" when ticked. No names the button that says
 	// no, Cancel when empty.
 	Choose []string
-	Also   string
-	Yes    string
-	No     string
+	// FirstIsSafe says the first of Choose is the safe answer, such as
+	// Leave It beside Replace: Tab reaches it before the others, so Tab
+	// then Enter does what Enter alone does.
+	FirstIsSafe bool
+	Also        string
+	Yes         string
+	No          string
 	// Actions are buttons that do something and leave the question
 	// open, answered by AskAction; Copy is what a Copy button copies,
 	// and Link what Open Link opens.
@@ -239,7 +243,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name machines.ID, then func(error)) {
 	called := a.machines.Name(name)
 	go func() {
-		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + called, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
+		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + called, Choose: []string{"Wait", "Retry"}, FirstIsSafe: true, No: "Cancel"})
 		if err != nil {
 			// Whoever asked for it hears it was not.
 			if then != nil {

@@ -847,9 +847,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	}
 	if len(q.Choose) > 0 {
 		d.SetButtons(q.Choose[0], no)
-		// The first choice is the safe one, such as Leave It beside
-		// Replace: Tab from the fields reaches it before the others.
-		d.DefaultFirst = true
+		// Where the first choice is the safe one, such as Leave It
+		// beside Replace, Tab from the fields reaches it first.
+		d.DefaultFirst = q.FirstIsSafe
 		d.OnAccept = func() gunim.Intent { return answer(q.Choose[0]) }
 		for _, c := range q.Choose[1:] {
 			d.AddButton(c, func() gunim.Intent { return answer(c) })

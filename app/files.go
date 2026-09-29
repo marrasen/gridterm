@@ -249,8 +249,8 @@ type wrappedFiles struct{ under, over vfs.FS }
 // openFiles opens a file pane at home on the focused pane's machine.
 func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 
-// filesOn opens a file pane on machine, at path, or at home when path
-// is empty.
+// filesOn opens a file pane on machine, at path, or when path is empty
+// at the one folder saved for the machine, or else at home.
 func (a *app) filesOn(machine machines.ID, path string) error {
 	return a.withFiles(machine, func(f vfs.FS) {
 		if err := a.openFilesOn(machine, f, path); err != nil {
@@ -410,7 +410,8 @@ func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 }
 
 // openFilesOn opens a file pane on a machine whose files are open, at
-// path, or at home when path is empty.
+// path, or when path is empty at the one folder saved for the machine,
+// or else at home.
 func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
 	if saved := a.savedFolders(machine); path == "" && len(saved) == 1 {
 		// One folder saved for the machine is where its files open,

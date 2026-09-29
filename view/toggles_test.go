@@ -98,7 +98,7 @@ func TestCloseSelectedRowSaysWhyItDidNothing(t *testing.T) {
 // alone does: Tab reaches Leave It before Replace.
 func TestTabThenEnterLeavesTheFile(t *testing.T) {
 	_, _, publish := windowStage(t)
-	publish(app.State{Asks: []app.Ask{{ID: 1, Title: "Replace notes.txt?", Text: "x", Choose: []string{"Leave It", "Replace"}, Also: "Do the same for the rest", No: "Stop"}}})
+	publish(app.State{Asks: []app.Ask{{ID: 1, Title: "Replace notes.txt?", Text: "x", Choose: []string{"Leave It", "Replace"}, FirstIsSafe: true, Also: "Do the same for the rest", No: "Stop"}}})
 	for range 5 {
 		lastWindow.Frame(time.Second / 60)
 	}
@@ -171,7 +171,7 @@ func TestAnUnreadableClipboardIsSaid(t *testing.T) {
 		<-lastWindow.Client().Intents()
 	}
 	win.terms["p1"].pasteClipboard(lastUI)
-	if in, ok := nextIntent(t).(app.ClipboardUnreadable); !ok || in.Why != "no display" {
+	if in, ok := nextIntent(t).(app.ClipboardUnreadable); !ok || in.Why != "No display." {
 		t.Fatalf("the paste sent %#v", in)
 	}
 }

@@ -720,6 +720,11 @@ func (a *app) run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
+			// Stopped from outside, as by Ctrl+C where it was started:
+			// where the window is is kept as on any other way out.
+			if !a.gone {
+				a.keepWindowPlace()
+			}
 			a.takeSecretBack()
 			a.hangUp()
 			return nil

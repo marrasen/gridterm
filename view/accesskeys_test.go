@@ -140,3 +140,32 @@ func TestTheKeyboardComingIntoAFilePaneFrontsIt(t *testing.T) {
 		t.Fatalf("the keyboard coming into p2 sent %#v", in)
 	}
 }
+
+// The keyboard coming back to a pane as a dialog closes does not put it
+// in front again, when the program put another pane there meanwhile.
+func TestADialogClosingLeavesThePaneInFront(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}, {ID: "p2", Title: "b", Kind: app.KindFiles}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "p2"}, Share: 0.5}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}}
+	publish(st)
+	lastUI.Focus(win.browsers["p1"].table)
+	win.browsers["p1"].askGoTo(lastUI)
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	st.Focus = "p2"
+	publish(st)
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEscape, Time: time.Now()})
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	for len(lastWindow.Client().Intents()) > 0 {
+		if in, ok := (<-lastWindow.Client().Intents()).Intent.(app.FocusPane); ok && in.Pane == "p1" {
+			t.Fatal("closing the dialog put p1 in front again")
+		}
+	}
+}

@@ -28,15 +28,6 @@ import (
 // secretsPane lists what is in the vault, by name, over a bar of what
 // can be done with the one the cursor is on. Enter copies it. Under
 // the list are the keys that open the vault.
-// Handle implements [gunim.Handler]: the keyboard coming into the pane
-// makes it the one in front.
-func (p *secretsPane) Handle(e gi.Event, u *gunim.UI) bool {
-	if _, ok := e.(gi.FocusEntered); ok {
-		p.w.entered(p.w.paneOfKind(app.KindSecrets), u)
-	}
-	return false
-}
-
 type secretsPane struct {
 	w     *Window
 	head  *buttonBar
@@ -55,6 +46,15 @@ type secretsPane struct {
 	typ, cp, reveal, change, remove *widget.Button
 	addKey, addPass, removeKey      *widget.Button
 	keyNames                        map[widget.Key]app.SecretKey
+}
+
+// Handle implements [gunim.Handler]: the keyboard coming into the pane
+// makes it the one in front.
+func (p *secretsPane) Handle(e gi.Event, u *gunim.UI) bool {
+	if _, ok := e.(gi.FocusEntered); ok {
+		p.w.entered(p.w.paneOfKind(app.KindSecrets), u)
+	}
+	return false
 }
 
 func newSecretsPane(w *Window) *secretsPane {

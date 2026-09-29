@@ -2197,8 +2197,12 @@ func (w *Window) bareNode(id string) gunim.Node {
 // entered takes pane id as the one in front, as the keyboard has come
 // into it: a click in a list or on a button in a pane says so no other
 // way, and the menus grey out what can't act on the pane in front.
+//
+// Not while no pane is in front, as while a dialog is open: the
+// keyboard coming back to a pane as the dialog closes is gunim's, and
+// the program may have put another pane in front meanwhile.
 func (w *Window) entered(id string, u *gunim.UI) {
-	if id != "" && id != w.focused {
+	if id != "" && w.focused != "" && id != w.focused {
 		u.Send(w, app.FocusPane{Pane: id})
 	}
 }

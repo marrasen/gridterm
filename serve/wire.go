@@ -62,6 +62,11 @@ const (
 	// both ways. Its payload is dialOn. It is refused, saying why, when
 	// the dial fails.
 	chanDial = "tcp@gridterm"
+
+	// chanLog carries the connection log the served window keeps for a
+	// machine it reaches, as a session that only reads: what it has so
+	// far, and each line as it is written. Its payload is logOf.
+	chanLog = "log@gridterm"
 )
 
 // opened names what the served window opened, in the same three parts a
@@ -133,6 +138,12 @@ type openOn struct {
 type dialOn struct {
 	Host string
 	Addr string
+}
+
+// logOf is the machine whose connection log a client asks for, as the
+// served window's Open named it.
+type logOf struct {
+	Host string
 }
 
 // windowChange is the size of the pane a session is drawn in.

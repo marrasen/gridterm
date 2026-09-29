@@ -1561,9 +1561,10 @@ func (a *app) remove(id string) {
 	if i < 0 {
 		return
 	}
-	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" {
+	if p := a.st.Panes[i]; p.Kind == KindLog && p.Machine != "" && p.On == "" {
 		// Closing the log of a connection being made gives it up: it is
-		// where the dial is watched from.
+		// where the dial is watched from. One beyond a window is only
+		// read.
 		a.giveUp(p.Machine)
 	}
 	if sh := a.shells.Get(id); sh != nil {

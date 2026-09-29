@@ -3,6 +3,7 @@ package serve
 import (
 	"errors"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,5 +91,31 @@ func TestAProgramsExitStatusCrosses(t *testing.T) {
 	var ended *ExitError
 	if err := waited(t, sess); !errors.As(err, &ended) || ended.ExitStatus() != 3 {
 		t.Fatalf("it ended with %v", err)
+	}
+}
+
+// A window reads the log the other keeps for a machine it reaches; one
+// it keeps none of is refused with its reason, before any pane opens.
+func TestAWindowReadsTheOthersLog(t *testing.T) {
+	_, w := takenOverServing(t, Config{Log: func(host string) (session.Session, error) {
+		if host != "srv" {
+			return nil, errors.New("this window keeps no connection log for " + strconv.Quote(host))
+		}
+		s := newEchoSession(80, 24)
+		go func() { _, _ = s.outW.Write([]byte("connected in 20ms\r\n")) }()
+		return s, nil
+	}})
+	sess, err := w.OpenLog("srv")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sess.Close()
+	read(t, sess, "connected in 20ms")
+	if _, err := w.OpenLog("db"); err == nil || !strings.Contains(err.Error(), "keeps no connection log") {
+		t.Fatalf("a log it keeps none of said %v", err)
+	}
+	_, none := takenOverServing(t, Config{})
+	if _, err := none.OpenLog("srv"); err == nil || !strings.Contains(err.Error(), "does not show the logs") {
+		t.Fatalf("with no logs to show, it said %v", err)
 	}
 }

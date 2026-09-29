@@ -60,10 +60,14 @@ const (
 // showLog opens a log's pane, or goes to the one open.
 func (a *app) showLog(machine machines.ID) {
 	for _, p := range a.st.Panes {
-		if p.Kind == KindLog && p.Machine == machine {
+		if p.Kind == KindLog && paneMachine(p) == machine {
 			a.bringHere(p.ID)
 			return
 		}
+	}
+	if window, key, far := machine.Far(); far {
+		a.showFarLog(window, key)
+		return
 	}
 	l, title := windowLog, "Window Log"
 	if machine != "" {
@@ -76,6 +80,41 @@ func (a *app) showLog(machine machines.ID) {
 	a.next++
 	id := "p" + itoa(a.next)
 	a.addPane(Pane{ID: id, Title: title, Machine: machine, Kind: KindLog}, screen.Open(l.Open(), a.palette, a.hooks(id)), Placement{})
+}
+
+// showFarLog shows the connection log window keeps for the machine it
+// reaches by key, in a pane here that follows it.
+func (a *app) showFarLog(window machines.ID, key string) {
+	w := a.machines.Get(window).Window
+	far := machines.FarID(window, key)
+	if w == nil {
+		a.notify("Its log is kept through "+a.machines.Name(window), "Connect to "+a.machines.Name(window)+" first.", "")
+		return
+	}
+	a.next++
+	id := "p" + itoa(a.next)
+	a.starting++
+	go func() {
+		sess, err := w.Serve.OpenLog(key)
+		a.events <- func() {
+			a.starting--
+			if err != nil {
+				a.failed("Couldn't show the log of "+a.machines.Name(far), err.Error())
+				a.stayIfEmpty()
+				return
+			}
+			a.addPane(a.paneOn(far, Pane{ID: id, Title: "Connection Log", Kind: KindLog}), screen.Open(sess, a.palette, a.hooks(id)), Placement{})
+		}
+	}()
+}
+
+// paneMachine is the machine a pane runs on: beyond its window, for one
+// on a machine a window reaches.
+func paneMachine(p Pane) machines.ID {
+	if p.On != "" {
+		return machines.FarID(p.Machine, p.On)
+	}
+	return p.Machine
 }
 
 // watchDial shows a machine's connection log as the connection is made:

@@ -153,6 +153,7 @@ func (a *app) startServing(in StartServing) error {
 		Open:       a.openFor,
 		OpenOn:     a.openOnFor,
 		Dial:       a.dialFor,
+		Log:        a.logFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
 		Picture:    func(png []byte) error { return takePicture(png) },
@@ -438,6 +439,26 @@ func (a *app) dialFor(ctx context.Context, host, addr string) (net.Conn, error) 
 		return d.DialContext(ctx, "tcp", addr)
 	}
 	return conn.Dial(ctx, addr)
+}
+
+// logFor gives a connected window the connection log this window keeps
+// for host, a machine it has connected to, to read. Its own window log
+// is its own, and a kakel window beyond this one keeps its own logs.
+func (a *app) logFor(host string) (session.Session, error) {
+	return onApp(a, func() (session.Session, error) {
+		id, ok := a.machines.Find(host)
+		switch {
+		case host == "" || !ok || id == machines.Local:
+			return nil, fmt.Errorf("this window keeps no connection log for %q", host)
+		case a.machines.IsWindow(id):
+			return nil, fmt.Errorf("%s is another kakel window, which keeps its own logs", a.machines.Name(id))
+		}
+		l := a.machines.Get(id).Log
+		if l == nil {
+			return nil, fmt.Errorf("%s has not been connected to here, so there is no log of it", a.machines.Name(id))
+		}
+		return l.Open(), nil
+	})
 }
 
 // servedMachine is the machine a connected window asks for something

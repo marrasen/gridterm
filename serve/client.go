@@ -778,3 +778,22 @@ func (c channelConn) RemoteAddr() net.Addr { return c.to }
 func (channelConn) SetDeadline(time.Time) error      { return nil }
 func (channelConn) SetReadDeadline(time.Time) error  { return nil }
 func (channelConn) SetWriteDeadline(time.Time) error { return nil }
+
+// ErrCannotShowLog is what OpenLog says when the window over there does
+// not know how: a build from before it could.
+var ErrCannotShowLog = errors.New("serve: that window cannot show the logs of the machines it reaches: it is a kakel from before that")
+
+// OpenLog reads the connection log the other window keeps for host, a
+// machine it reaches as its Open named it: what it has so far, and each
+// line as it is written, until either end closes it.
+func (w *Window) OpenLog(host string) (session.Session, error) {
+	sess, err := w.session(chanLog, ssh.Marshal(logOf{Host: host}), nil)
+	var open *ssh.OpenChannelError
+	switch {
+	case errors.As(err, &open) && open.Reason == ssh.UnknownChannelType:
+		return nil, ErrCannotShowLog
+	case errors.As(err, &open):
+		return nil, errors.New(Plain(open.Message))
+	}
+	return sess, err
+}

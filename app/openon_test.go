@@ -157,3 +157,44 @@ func TestATunnelGoesThroughAWindow(t *testing.T) {
 		t.Fatalf("let go of, the window leaves tunnels %+v", b.st.Tunnels)
 	}
 }
+
+// The connection log a window keeps for a server beyond it shows here,
+// and follows what is written to it; one it keeps none of is refused.
+func TestAFarMachinesLogShowsThroughItsWindow(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	logLine(a.account("srv"), "", "first line of srv")
+	win := b.st.Windows[0].Name
+	far := machines.FarID(win, "srv")
+	b.handle(ShowLog{Machine: far})
+	// A log's pane is read as its shell, which terminal leaves out.
+	shows := func(pane, text string) func() bool {
+		return func() bool {
+			sh := b.shells.Get(pane)
+			return sh != nil && strings.Contains(sh.T.AllText(), text)
+		}
+	}
+	pumpBoth(t, a, b, "the log's pane", func() bool { return len(b.st.Panes) == 2 })
+	log := b.st.Panes[1]
+	if log.Kind != KindLog || log.Machine != win || log.On != "srv" {
+		t.Fatalf("the log's pane is %+v", log)
+	}
+	pumpBoth(t, a, b, "the line so far", shows(log.ID, "first line of srv"))
+	logLine(a.machines.Get("srv").Log, "", "a line written since")
+	pumpBoth(t, a, b, "the line since", shows(log.ID, "a line written since"))
+	// Asked again, it goes to the pane it has.
+	b.handle(ShowLog{Machine: far})
+	if len(b.st.Panes) != 2 || b.st.Focus != log.ID {
+		t.Fatalf("asked again, the panes are %+v", b.st.Panes)
+	}
+
+	// One it keeps no log of is refused, saying why.
+	b.handle(ShowLog{Machine: machines.FarID(win, "nowhere")})
+	pumpBoth(t, a, b, "the refusal", func() bool {
+		return slices.ContainsFunc(b.st.Notices, func(n Notice) bool { return strings.Contains(n.Body, "keeps no connection log") })
+	})
+	if len(b.st.Panes) != 2 {
+		t.Fatalf("refused, the panes are %+v", b.st.Panes)
+	}
+}

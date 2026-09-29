@@ -113,6 +113,11 @@ type Config struct {
 	// client holds. A nil one refuses, and the client is told so.
 	Dial func(ctx context.Context, host, addr string) (net.Conn, error)
 
+	// Log gives the connection log of host, a machine this window
+	// reaches as its Open named it, as a session to read. A nil one
+	// refuses, and the client is told so.
+	Log func(host string) (session.Session, error)
+
 	// StartAgain starts again the program of something this window has
 	// open whose program has ended, in the pane it ended in, for a
 	// client that was working in it. A nil one refuses. It is called

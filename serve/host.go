@@ -119,6 +119,21 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			})
 			continue
 		}
+		if nch.ChannelType() == chanLog {
+			var want logOf
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not a log request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			if s.cfg.Log == nil {
+				_ = nch.Reject(ssh.Prohibited, "this kakel does not show the logs of the machines it reaches")
+				continue
+			}
+			running.Go(func() { s.runLog(ctx, nch, want) })
+			continue
+		}
 		if nch.ChannelType() == SessionOnChannel {
 			var want openOn
 			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
@@ -172,6 +187,26 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 	// from saying the client has gone while a shell it started is still
 	// being hung up on.
 	running.Wait()
+}
+
+// runLog gives a client a machine's log to read, or refuses the channel
+// saying why: a log that ended at once would leave the client a pane
+// that closed before anybody read it.
+func (s *Server) runLog(ctx context.Context, nch ssh.NewChannel, want logOf) {
+	sess, err := s.cfg.Log(want.Host)
+	if err != nil {
+		_ = nch.Reject(ssh.ConnectionFailed, err.Error())
+		return
+	}
+	ch, reqs, err := nch.Accept()
+	if err != nil {
+		_ = sess.Close()
+		s.onError(fmt.Errorf("serve: take a log: %w", err))
+		return
+	}
+	s.runSession(ctx, ch, reqs, 80, 24, func(int, int) (session.Session, Attached, error) {
+		return sess, Attached{}, nil
+	})
 }
 
 // runDial dials what a client asked for and carries the stream until

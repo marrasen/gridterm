@@ -335,8 +335,9 @@ func (t *thumb) Handle(e input.Event, u *gunim.UI) bool {
 			return true
 		}
 	case input.FocusGained:
-		// Lit as gunim lights a button the arrows walk to.
-		if e.Step != 0 {
+		// Lit as gunim lights a button in a group: the one selected,
+		// however the keyboard came.
+		if e.Step != 0 || e.Grouped {
 			t.walked.Animate(1, widget.Quick.Get(u.Theme()))
 		}
 		return false

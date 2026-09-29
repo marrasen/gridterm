@@ -7,7 +7,10 @@ import (
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/kakel/app"
 
+	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/widget"
 )
 
 // Split Right splits at once, and the new half is a chooser: a new
@@ -138,4 +141,30 @@ func TestAChoosersArrowsLightWhatTheyReach(t *testing.T) {
 	if lastUI.Focused() != pic || c.ring.Value() < 0.9 || pic.walked.Value() < 0.9 {
 		t.Fatalf("back in: on %T, the chooser's ring at %v, the image lit %v", lastUI.Focused(), c.ring.Value(), pic.walked.Value())
 	}
+}
+
+// As a chooser opens with the keyboard on "+ Terminal", that button is
+// lit, so what Enter presses shows before any arrow key is pressed.
+func TestAChooserShowsWhereTheKeyboardIsAsItOpens(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}}})
+	for range 30 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	first := win.choosers["c1"].buttons[0]
+	if lastUI.Focused() != first {
+		t.Fatalf("the keyboard is on %T", lastUI.Focused())
+	}
+	// Lit: its fill is the one under the pointer, with nothing over it.
+	var p paint.Painter
+	hover := widget.ButtonHover.Get(lastUI.Theme())
+	first.Paint(&p, gunim.Frame{Scale: 1, Theme: lastUI.Theme()}, geom.Sz(120, 36), gunim.Children{})
+	for _, op := range p.Ops() {
+		if r, ok := op.(*paint.RRectOp); ok && r.Fill.Solid == hover {
+			return
+		}
+	}
+	t.Fatal("the button with the keyboard is not lit")
 }

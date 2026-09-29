@@ -180,3 +180,27 @@ func TestAProgramStoppedByASignalCrosses(t *testing.T) {
 		t.Fatal("an ending with no status says one")
 	}
 }
+
+// A window tells the other the tunnels it holds through it, and the
+// other hears them, and from whom.
+func TestAWindowTellsTheOtherItsTunnels(t *testing.T) {
+	heard := make(chan string, 1)
+	_, w := takenOverServing(t, Config{Tunnels: func(c *Client, notes []TunnelNote) {
+		var said []string
+		for _, n := range notes {
+			said = append(said, n.Label+" on "+n.Host)
+		}
+		heard <- c.Name + ": " + strings.Join(said, ", ")
+	}})
+	if err := w.TellTunnels([]TunnelNote{{Host: "srv", Label: ":8080 → db:5432"}, {Host: "", Label: "SOCKS proxy :1080"}}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-heard:
+		if got != "marcus@laptop: :8080 → db:5432 on srv, SOCKS proxy :1080 on " {
+			t.Fatalf("the other window heard %q", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the other window heard nothing")
+	}
+}

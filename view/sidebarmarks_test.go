@@ -148,3 +148,20 @@ func TestTheSecretsHeadingNamesTheTerminalWaiting(t *testing.T) {
 		t.Fatalf("the heading reads %q", got)
 	}
 }
+
+// A window connected to this one shows each tunnel it holds through it,
+// under its own row, and in who is connected.
+func TestATunnelThroughThisWindowHasARow(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := app.State{Sidebar: true, SidebarWidth: 220, Serving: app.Serving{On: true,
+		Clients: []app.ServedClient{{Name: "laptop", From: "10.0.0.2"}},
+		Tunnels: []app.ServedTunnel{{Client: "laptop", From: "10.0.0.2", Label: ":8080 → db:5432", On: "db"}}}}
+	publish(st)
+	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("client:laptop:0:tunnel:0"))
+	if !ok || row.title.Text != ":8080 → db:5432" || row.note.Text != "for laptop, on db" {
+		t.Fatalf("the tunnel's row is %v", ok)
+	}
+	if said := connectedSays(st.Serving); !strings.Contains(said, "a tunnel, :8080 → db:5432, on db") {
+		t.Fatalf("who is connected reads %q", said)
+	}
+}

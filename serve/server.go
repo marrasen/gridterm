@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -122,6 +123,11 @@ type Config struct {
 	// reaches as its Open named it, as client c asked. A nil one
 	// refuses, and the client is told so.
 	Disconnect func(c *Client, host string) error
+
+	// Tunnels hears the tunnels client c holds through this window, all of
+	// them, each time they change. It is called from a goroutine of the
+	// server's. A nil one drops what it is told.
+	Tunnels func(c *Client, notes []TunnelNote)
 
 	// StartAgain starts again the program of something this window has
 	// open whose program has ended, in the pane it ended in, for a
@@ -541,6 +547,17 @@ func (s *Server) onError(err error) {
 // window reaches. Anything else is refused.
 func (s *Server) answerRequests(c *Client, reqs <-chan *ssh.Request) {
 	for req := range reqs {
+		if req.Type == reqTunnels {
+			var said tunnelsSaid
+			var notes []TunnelNote
+			if ssh.Unmarshal(req.Payload, &said) == nil && json.Unmarshal([]byte(said.JSON), &notes) == nil && s.cfg.Tunnels != nil {
+				s.cfg.Tunnels(c, notes)
+			}
+			if req.WantReply {
+				_ = req.Reply(true, nil)
+			}
+			continue
+		}
 		if req.Type == reqDisconnect && s.cfg.Disconnect != nil {
 			var want logOf
 			if err := ssh.Unmarshal(req.Payload, &want); err != nil {

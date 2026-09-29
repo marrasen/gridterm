@@ -40,8 +40,10 @@ type Serving struct {
 	Addr        string
 	Fingerprint string
 	// Clients are the windows connected, by the name their key has in
-	// the authorized keys, and where they came from.
+	// the authorized keys, and where they came from, and Tunnels the
+	// tunnels they hold through this window.
 	Clients []ServedClient
+	Tunnels []ServedTunnel
 	// Port and Anywhere are what serving starts with: the port asked
 	// for last, and whether it listened on every network.
 	Port     int
@@ -58,6 +60,11 @@ type Serving struct {
 
 // ServedClient is a window connected to this one.
 type ServedClient struct{ Name, From string }
+
+// ServedTunnel is a tunnel a window connected to this one holds through
+// it: whose, Client from From, what it forwards, and the machine here
+// its streams go out from, by name.
+type ServedTunnel struct{ Client, From, Label, On string }
 
 // DisconnectClient hangs up on one window this one is served to, by
 // its name and where it came from.
@@ -81,6 +88,9 @@ type (
 type serving struct {
 	server  *serve.Server
 	clients []*serve.Client
+	// carried are the tunnels each client holds through this window, as
+	// it last said.
+	carried map[*serve.Client][]serve.TunnelNote
 	// snap is what this window has open, read by the server's
 	// goroutines.
 	mu   sync.Mutex
@@ -160,12 +170,15 @@ func (a *app) startServing(in StartServing) error {
 		Files:      a.serveFiles,
 		Picture:    func(png []byte) error { return takePicture(png) },
 		OnJoin:     func(c *serve.Client) { post(func() { a.clientCame(c) }) },
+		Tunnels: func(c *serve.Client, notes []serve.TunnelNote) {
+			post(func() { a.clientsTunnels(c, notes) })
+		},
 		OnGone: func(c *serve.Client, why error) {
 			post(func() { a.clientWent(c, why) })
 		},
 		OnStopped: func(err error) {
 			post(func() {
-				a.serving.server, a.serving.clients = nil, nil
+				a.serving.server, a.serving.clients, a.serving.carried = nil, nil, nil
 				a.failed("This window is no longer served", err.Error())
 				a.problem()
 				a.showServing()
@@ -198,7 +211,7 @@ func (a *app) stopServing() error {
 	if srv == nil {
 		return nil
 	}
-	a.serving.server, a.serving.clients = nil, nil
+	a.serving.server, a.serving.clients, a.serving.carried = nil, nil, nil
 	if a.settings != nil {
 		a.keep("that this window is not served", a.settings.PutServeOn(false))
 	}
@@ -242,8 +255,22 @@ func (a *app) clientCame(c *serve.Client) {
 	a.showServing()
 }
 
+// clientsTunnels notes the tunnels client c holds through this window,
+// to show whose streams it carries.
+func (a *app) clientsTunnels(c *serve.Client, notes []serve.TunnelNote) {
+	if !slices.Contains(a.serving.clients, c) {
+		return
+	}
+	if a.serving.carried == nil {
+		a.serving.carried = map[*serve.Client][]serve.TunnelNote{}
+	}
+	a.serving.carried[c] = notes
+	a.showServing()
+}
+
 func (a *app) clientWent(c *serve.Client, why error) {
 	a.serving.clients = slices.DeleteFunc(a.serving.clients, func(have *serve.Client) bool { return have == c })
+	delete(a.serving.carried, c)
 	if why != nil && !serve.Ended(why) {
 		a.failed("Connection to "+c.Name+" lost", why.Error())
 		a.problem()
@@ -272,6 +299,16 @@ func (a *app) showServing() {
 		s.On, s.Addr, s.Fingerprint = true, srv.Addr(), serve.Fingerprint(srv.HostKey())
 		for _, c := range a.serving.clients {
 			s.Clients = append(s.Clients, ServedClient{Name: c.Name, From: c.Addr})
+			for _, n := range a.serving.carried[c] {
+				on := "this machine"
+				if n.Host != "" {
+					on = n.Host
+					if id, ok := a.machines.Find(n.Host); ok {
+						on = a.machines.Name(id)
+					}
+				}
+				s.Tunnels = append(s.Tunnels, ServedTunnel{Client: c.Name, From: c.Addr, Label: n.Label, On: on})
+			}
 		}
 	}
 	a.st.Serving = s

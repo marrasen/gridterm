@@ -883,6 +883,7 @@ func (a *app) publish() {
 	st.Dialing = a.machines.Dialing()
 	st.Dropped = a.machines.Dropped()
 	a.tellServed()
+	a.tellWindowsTunnels()
 	st.SavedTunnels = slices.Clone(a.st.SavedTunnels)
 	st.Stage = a.groups[a.groupOf[a.st.Focus]].clone()
 	st.Secrets.Waiting = a.waitingForSecret()

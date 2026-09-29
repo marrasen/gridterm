@@ -886,3 +886,18 @@ func (w *Window) DisconnectOn(host string) error {
 	}
 	return errors.New(Plain(string(reply)))
 }
+
+// TellTunnels tells the other window the tunnels this one holds through
+// it, all of them, to show whose streams it carries. A window of an
+// older build drops it.
+func (w *Window) TellTunnels(notes []TunnelNote) error {
+	if w.isClosed() {
+		return errors.New("serve: that window has been let go of")
+	}
+	raw, err := json.Marshal(notes)
+	if err != nil {
+		return err
+	}
+	_, _, err = w.client.SendRequest(reqTunnels, false, ssh.Marshal(tunnelsSaid{JSON: string(raw)}))
+	return err
+}

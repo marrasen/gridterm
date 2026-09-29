@@ -156,6 +156,14 @@ func TestATunnelGoesThroughAWindow(t *testing.T) {
 	if err := b.openTunnel(OpenTunnel{Machine: win, Tunnel: remote.Tunnel{Kind: remote.RemoteForward, Listen: "127.0.0.1:0", Target: echo}, Sure: true}); err == nil {
 		t.Fatal("a window listened for a tunnel from here")
 	}
+	// The window they go through shows them, whose, and from where.
+	pumpBoth(t, a, b, "the tunnels shown there", func() bool {
+		b.publish()
+		a.publish()
+		carried := a.st.Serving.Tunnels
+		return len(carried) == 2 && carried[0].On == "srv" && carried[1].On == "this machine" &&
+			carried[0].Label == b.st.Tunnels[0].Label && carried[0].Client != ""
+	})
 	if err := b.disconnectWindow(win); err != nil {
 		t.Fatal(err)
 	}
@@ -163,6 +171,7 @@ func TestATunnelGoesThroughAWindow(t *testing.T) {
 	if len(b.st.Tunnels) != 0 || len(b.tunnels) != 0 {
 		t.Fatalf("let go of, the window leaves tunnels %+v", b.st.Tunnels)
 	}
+	pumpBoth(t, a, b, "the tunnels gone there", func() bool { return len(a.st.Serving.Tunnels) == 0 })
 }
 
 // The connection log a window keeps for a server beyond it shows here,

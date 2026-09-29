@@ -1552,9 +1552,19 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		for at < len(rows) && !rows[at].heading {
 			at++
 		}
-		item := sideItem{key: "client:" + c.Name + ":" + strconv.Itoa(i), text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
+		key := "client:" + c.Name + ":" + strconv.Itoa(i)
+		item := sideItem{key: key, text: "serving " + c.Name, note: "from " + c.From, local: func(u *gunim.UI) { w.servingDialog(w.serving, u) },
 			closes: app.DisconnectClient(c)}
 		rows = slices.Insert(rows, at, item)
+		// Under it, a row for each tunnel it holds through this window.
+		for j, t := range st.Serving.Tunnels {
+			if t.Client != c.Name || t.From != c.From {
+				continue
+			}
+			at++
+			rows = slices.Insert(rows, at, sideItem{key: key + ":tunnel:" + strconv.Itoa(j), text: t.Label, note: "for " + c.Name + ", on " + t.On,
+				local: func(u *gunim.UI) { w.servingDialog(w.serving, u) }})
+		}
 	}
 	rows = w.markRows(rows, st)
 	w.sideOrder = w.sideOrder[:0]

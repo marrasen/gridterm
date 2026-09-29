@@ -66,8 +66,10 @@ type Window struct {
 	Seen    []serve.Open
 	Leaving bool
 	// Folders are the folders it last said were saved for the machines
-	// it reaches, by its key for each.
+	// it reaches, by its key for each. Told are the tunnels through it
+	// this window last told it of.
 	Folders map[string][]string
+	Told    []serve.TunnelNote
 }
 
 // quick is a connection made without a saved server: the address typed,

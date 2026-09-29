@@ -4,12 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net"
 	"slices"
 	"strconv"
 	"time"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/tunnel"
 
 	"github.com/marrasen/kakel/machines"
@@ -239,6 +241,33 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 		a.problem()
 	}
 	return closeErr
+}
+
+// tellWindowsTunnels tells each kakel window connected to the tunnels
+// this one holds through it, when they have changed since it was last
+// told, for it to show whose streams it carries.
+func (a *app) tellWindowsTunnels() {
+	for _, name := range a.machines.Windows() {
+		w := a.machines.Get(name).Window
+		var notes []serve.TunnelNote
+		for _, t := range a.st.Tunnels {
+			window, key, far := t.Machine.Far()
+			if !far {
+				window = t.Machine
+			}
+			if window == name && t.Live {
+				notes = append(notes, serve.TunnelNote{Host: key, Label: t.Label})
+			}
+		}
+		if slices.Equal(notes, w.Told) {
+			continue
+		}
+		w.Told = notes
+		// Asking for no answer, it waits for nothing from the other end.
+		if err := w.Serve.TellTunnels(notes); err != nil {
+			log.Printf("telling %s of the tunnels through it: %v", a.machines.Name(name), err)
+		}
+	}
 }
 
 // tunnelsDiedOn stops the tunnels over a connection that has gone, a

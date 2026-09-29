@@ -86,6 +86,11 @@ func connectedSays(s app.Serving) string {
 	var lines []string
 	for _, c := range s.Clients {
 		lines = append(lines, c.Name+", from "+c.From)
+		for _, t := range s.Tunnels {
+			if t.Client == c.Name && t.From == c.From {
+				lines = append(lines, "    a tunnel, "+t.Label+", on "+t.On)
+			}
+		}
 	}
 	return strings.Join(lines, "\n")
 }

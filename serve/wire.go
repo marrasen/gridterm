@@ -66,6 +66,13 @@ const (
 	// no, which a client takes as "cannot".
 	reqDisconnect = "disconnect@gridterm"
 
+	// reqTunnels tells the served window the tunnels a client holds
+	// through it, all of them each time they change, for it to show whose
+	// streams it carries. Its payload is a JSON list of TunnelNote, as a
+	// string. No answer is asked for; a window of an older build drops
+	// it.
+	reqTunnels = "tunnels@gridterm"
+
 	// SessionOnChannel opens something new on a machine the served
 	// window reaches, or a command on its own: a terminal, or a command
 	// when one is given. Its payload is openOn.
@@ -163,6 +170,19 @@ type dialOn struct {
 // served window's Open named it.
 type logOf struct {
 	Host string
+}
+
+// TunnelNote is one tunnel a client holds through the served window: the
+// machine its streams are dialled from, as the served window's Open
+// named it, "" for its own, and what the tunnel says it forwards.
+type TunnelNote struct {
+	Host  string `json:"host"`
+	Label string `json:"label"`
+}
+
+// tunnelsSaid is reqTunnels' payload: the notes, as JSON.
+type tunnelsSaid struct {
+	JSON string
 }
 
 // windowChange is the size of the pane a session is drawn in.

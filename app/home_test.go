@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/remote"
@@ -28,7 +29,7 @@ func TestTheTestsKeepTheirFilesInAHomeOfTheirOwn(t *testing.T) {
 		"settings file":   settings.Path,
 		"saved servers":   remote.BookPath,
 		"host key":        serve.HostKeyPath,
-		"Claude's skills": func() (string, error) { return skillPathFor(HostNamed(hostClaudeCode)) },
+		"Claude's skills": func() (string, error) { return agenthost.Named(agenthost.ClaudeCode).SkillPath() },
 	}
 	for what, where := range places {
 		got, err := where()

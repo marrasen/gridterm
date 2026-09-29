@@ -6,15 +6,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/input"
-	"github.com/marrasen/kakel/mcp"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/ui"
 	uiterm "github.com/marrasen/kakel/ui/term"
@@ -263,10 +262,10 @@ func (a *app) setAgentMay(in SetAgentMay) {
 // showShare publishes the share.
 func (a *app) showShare() {
 	sh := a.agents.open
-	host := hostClaudeCode
+	host := agenthost.ClaudeCode
 	if a.settings != nil {
 		if name, ok := a.settings.AgentHost(); ok {
-			host = HostNamed(name).Name
+			host = agenthost.Named(name).Name
 		}
 	}
 	if sh == nil {
@@ -298,11 +297,11 @@ func (a *app) copyAgentPrompt(name string) {
 	if sh == nil {
 		return
 	}
-	host := HostNamed(name)
+	host := agenthost.Named(name)
 	if a.settings != nil {
 		a.keep("the agent picked", a.settings.PutAgentHost(host.Name))
 	}
-	a.worked("Prompt copied", "Paste it into "+host.Called+". It carries the share's code.", handoverPrompt(host, sh.code, ExePath()))
+	a.worked("Prompt copied", "Paste it into "+host.Called+". It carries the share's code.", host.Prompt(sh.code, exePath()))
 	if _, ok := exeKnown(); !ok {
 		// Said: the user may never read the prompt.
 		a.notify("kakel path not found", `The prompt uses "kakel" as the command. It works when kakel is on the PATH.`, "")
@@ -313,7 +312,7 @@ func (a *app) copyAgentPrompt(name string) {
 // copyAgentSetup puts on the clipboard what adds the MCP server to an
 // agent program.
 func (a *app) copyAgentSetup(name string) {
-	host := HostNamed(name)
+	host := agenthost.Named(name)
 	if a.settings != nil {
 		a.keep("the agent picked", a.settings.PutAgentHost(host.Name))
 	}
@@ -321,7 +320,7 @@ func (a *app) copyAgentSetup(name string) {
 	if host.Cmd == "" {
 		what = "the config"
 	}
-	a.worked("Setup copied", "Add "+what+" to "+host.Called+", then start it again.", host.SetupToCopy(ExePath()))
+	a.worked("Setup copied", "Add "+what+" to "+host.Called+", then start it again.", host.SetupToCopy(exePath()))
 	a.showShare()
 }
 
@@ -860,125 +859,6 @@ func trimBlankTail(text string) string {
 
 func countLines(text string) int { return strings.Count(text, "\n") + 1 }
 
-// The agent programs the prompt and setup are written for.
-const (
-	hostClaudeCode = "Claude Code"
-	hostCodex      = "Codex"
-	hostCursor     = "Cursor"
-	hostOther      = "Another host"
-)
-
-// AgentHost is an agent program: cmd adds an MCP server from the
-// command line, and configAt is where one without a command keeps its
-// servers.
-type AgentHost struct {
-	Name, Called, Cmd, ConfigAt string
-	// skillIn is where under home it reads skills from, and skillEnv
-	// the setting that moves that.
-	skillIn  []string
-	skillEnv string
-}
-
-var AgentHosts = []AgentHost{
-	{Name: hostClaudeCode, Called: hostClaudeCode, Cmd: "claude", skillIn: []string{".claude", "skills", "kakel"}, skillEnv: "CLAUDE_CONFIG_DIR"},
-	{Name: hostCodex, Called: hostCodex, Cmd: "codex"},
-	{Name: hostCursor, Called: hostCursor, ConfigAt: "~/.cursor/mcp.json"},
-	{Name: hostOther, Called: "the host"},
-}
-
-func HostNamed(name string) AgentHost {
-	for _, h := range AgentHosts {
-		if h.Name == name {
-			return h
-		}
-	}
-	return AgentHosts[0]
-}
-
-func AgentHostNames() []string {
-	var out []string
-	for _, h := range AgentHosts {
-		out = append(out, h.Name)
-	}
-	return out
-}
-
-// ExePath is this program's path, for the MCP server's command line.
-func ExePath() string {
-	if exe, ok := exeKnown(); ok {
-		return exe
-	}
-	return "kakel"
-}
-
-// exeKnown is where this program is, and false when the system will not
-// say: then only a bare name is left, which works only on the PATH.
-var exeKnown = func() (string, bool) {
-	exe, err := os.Executable()
-	return exe, err == nil && exe != ""
-}
-
-func quotedPath(path string) string {
-	if runtime.GOOS == "windows" {
-		return `"` + strings.ReplaceAll(path, `"`, `\"`) + `"`
-	}
-	return `'` + strings.ReplaceAll(path, `'`, `'\''`) + `'`
-}
-
-func mcpConfig(exe string) string {
-	inJSON := strings.ReplaceAll(strings.ReplaceAll(exe, `\`, `\\`), `"`, `\"`)
-	return `{"mcpServers": {"kakel": {` + "\n" + `  "command": "` + inJSON + `",` + "\n" + `  "args": ["-mcp"]}}}`
-}
-
-// SetupToCopy is what adds the MCP server to h.
-func (h AgentHost) SetupToCopy(exe string) string {
-	if h.Cmd != "" {
-		return h.Cmd + " mcp add kakel -- " + quotedPath(exe) + " -mcp"
-	}
-	return mcpConfig(exe)
-}
-
-// setupForAgent is the part of the prompt that says how to add the
-// server, for an agent that does not have its tools.
-func (h AgentHost) setupForAgent(exe string) string {
-	if h.Cmd != "" {
-		return "Ask the user to run this line and then start you again:\n\n  " + h.SetupToCopy(exe)
-	}
-	where := h.ConfigAt
-	if where == "" {
-		where = "its MCP config"
-	}
-	lines := strings.Split(mcpConfig(exe), "\n")
-	for i := range lines {
-		lines[i] = "  " + lines[i]
-	}
-	return "Ask the user to put this in " + where + " and then start " + h.Called + " again:\n\n" + strings.Join(lines, "\n")
-}
-
-// handoverPrompt is what the user pastes into the agent program.
-func handoverPrompt(host AgentHost, code, exe string) string {
-	return fmt.Sprintf(`The user has shared terminal panes with you in kakel, a terminal
-running on this machine. You work in those panes through kakel's MCP
-server, and the user watches everything you do.
-
-That server runs on this machine, on standard input and output (stdio), because
-the port inside the code is on the loopback address. If you do not have
-kakel's tools, it has not been added here yet.
-
-%s
-
-This code is the only credential and it came from the user. Call
-use_session_code with it before anything else. The answer lists the panes, and
-every other tool takes a pane's name.
-
-  %s
-
-%s
-
-The server's own instructions say how the tools work, and say this again.
-`, host.setupForAgent(exe), code, mcp.Short)
-}
-
 // WriteSkill writes the skill for an agent program, which tells it how
 // to work in the panes; Over writes over one edited since.
 type WriteSkill struct {
@@ -986,58 +866,11 @@ type WriteSkill struct {
 	Over bool
 }
 
-// skillFile is what a skill's file is called.
-const skillFile = "SKILL.md"
-
-// skillFor is the skill for an agent program.
-func skillFor(host AgentHost, exe string) string { return mcp.Skill(host.setupForAgent(exe)) }
-
-// skillPathFor is where an agent program's skill goes: where it reads
-// skills from, or beside the settings for one that has no such place.
-func skillPathFor(host AgentHost) (string, error) {
-	if len(host.skillIn) > 0 {
-		if dir := os.Getenv(host.skillEnv); host.skillEnv != "" && dir != "" {
-			dir, err := fromHome(dir)
-			if err != nil {
-				return "", err
-			}
-			return filepath.Join(append(append([]string{dir}, host.skillIn[1:]...), skillFile)...), nil
-		}
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "", err
-		}
-		return filepath.Join(append(append([]string{home}, host.skillIn...), skillFile)...), nil
-	}
-	dir, err := settings.Dir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(dir, "skills", "kakel", skillFile), nil
-}
-
-// fromHome is a directory an agent program's own setting named, as an
-// absolute path: a leading ~, and a relative path, are read from home,
-// as the program reads its setting from its own home and not from
-// wherever this window was started.
-func fromHome(dir string) (string, error) {
-	if filepath.IsAbs(dir) {
-		return dir, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	rest := strings.TrimPrefix(strings.TrimPrefix(dir, "~"), string(filepath.Separator))
-	rest = strings.TrimPrefix(rest, "/")
-	return filepath.Join(home, rest), nil
-}
-
 // writeSkill writes an agent program's skill, and asks before writing
 // over one edited since.
 func (a *app) writeSkill(in WriteSkill) error {
-	host := HostNamed(in.Host)
-	path, err := skillPathFor(host)
+	host := agenthost.Named(in.Host)
+	path, err := host.SkillPath()
 	if err != nil {
 		return err
 	}
@@ -1046,7 +879,7 @@ func (a *app) writeSkill(in WriteSkill) error {
 	if _, ok := exeKnown(); !ok {
 		return errors.New("the path to kakel could not be found, so the skill would name no program to start")
 	}
-	body := skillFor(host, ExePath())
+	body := host.Skill(exePath())
 	if was, err := os.ReadFile(path); err == nil && string(was) == body {
 		// Already there as it would be written.
 		a.worked("Skill written", path+" is up to date.", "")
@@ -1080,9 +913,22 @@ func (a *app) writeSkill(in WriteSkill) error {
 		return err
 	}
 	how := "Restart " + host.Name + " to load it."
-	if len(host.skillIn) == 0 {
+	if !host.ReadsSkills() {
 		how = "Copy it to where " + host.Called + " reads skills from."
 	}
 	a.worked("Skill written", path+". "+how, "")
 	return nil
+}
+
+// exeKnown is where this program is, and false when the system will not
+// say. A test puts another in its place.
+var exeKnown = agenthost.Exe
+
+// exePath is this program's path, for the MCP server's command line,
+// or its bare name when exeKnown does not know it.
+func exePath() string {
+	if exe, ok := exeKnown(); ok {
+		return exe
+	}
+	return "kakel"
 }

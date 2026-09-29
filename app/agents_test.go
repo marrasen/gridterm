@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/screen"
 
 	"github.com/marrasen/gunim/geom"
@@ -213,7 +214,7 @@ func TestAnAgentOpensAPaneBesideOneItWasGiven(t *testing.T) {
 func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
 	a, _ := agentApp(t)
 	t.Setenv("CLAUDE_CONFIG_DIR", "")
-	a.handle(WriteSkill{Host: hostClaudeCode})
+	a.handle(WriteSkill{Host: agenthost.ClaudeCode})
 	path := filepath.Join(os.Getenv("HOME"), ".claude", "skills", "kakel", "SKILL.md")
 	body, err := os.ReadFile(path)
 	if err != nil || !strings.Contains(string(body), "use_session_code") {
@@ -222,7 +223,7 @@ func TestTheSkillIsWrittenAndAnEditedOneAskedAbout(t *testing.T) {
 	if err := os.WriteFile(path, []byte("mine"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a.handle(WriteSkill{Host: hostClaudeCode})
+	a.handle(WriteSkill{Host: agenthost.ClaudeCode})
 	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
 	if q := a.st.Asks[0]; q.Title != "Replace the skill?" || !q.Danger {
 		t.Fatalf("the question is %+v", q)
@@ -275,20 +276,11 @@ func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
 	was := exeKnown
 	exeKnown = func() (string, bool) { return "", false }
 	t.Cleanup(func() { exeKnown = was })
-	if err := a.writeSkill(WriteSkill{Host: hostClaudeCode}); err == nil {
+	if err := a.writeSkill(WriteSkill{Host: agenthost.ClaudeCode}); err == nil {
 		t.Fatal("with no path, the skill was written")
 	}
-	a.copyAgentPrompt(hostClaudeCode)
+	a.copyAgentPrompt(agenthost.ClaudeCode)
 	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "kakel path not found" }) {
 		t.Fatalf("with no path, the prompt said %+v", a.st.Notices)
-	}
-}
-
-// A relative directory in an agent program's setting is read from home.
-func TestASkillDirectoryIsReadFromHome(t *testing.T) {
-	home := testhome.New(t)
-	got, err := fromHome("conf/claude")
-	if err != nil || got != filepath.Join(home, "conf", "claude") {
-		t.Fatalf("read %q, %v", got, err)
 	}
 }

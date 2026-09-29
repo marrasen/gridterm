@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
@@ -35,10 +36,10 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 		shared[p.Pane] = true
 		mays[p.Pane] = settings.AgentMay(p.May)
 	}
-	host := widget.NewDropdown(app.AgentHostNames()...)
+	host := widget.NewDropdown(agenthost.Names()...)
 	host.Label = "Agent"
-	host.Selected = max(0, slices.Index(app.AgentHostNames(), st.Host))
-	hostName := func() string { return app.AgentHostNames()[max(0, min(host.Selected, len(app.AgentHosts)-1))] }
+	host.Selected = max(0, slices.Index(agenthost.Names(), st.Host))
+	hostName := func() string { return agenthost.Names()[max(0, min(host.Selected, len(agenthost.All)-1))] }
 	code := widget.NewLabel(st.Code)
 	// Picked out and copied as it is, for an agent set up by hand.
 	code.Selectable = true
@@ -77,7 +78,7 @@ func (w *Window) shareDialog(st app.Share, u *gunim.UI) {
 		u.SetClipboard(st.Code)
 		w.toasts.Show(widget.Toast{Title: "Code copied", Kind: widget.ToastSuccess}, u)
 	})
-	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(app.HostNamed(hostName()), u) })
+	d.AddAction("Setup…", func(u *gunim.UI) { w.setupDialog(agenthost.Named(hostName()), u) })
 	d.AddAction("Write Skill", func(u *gunim.UI) { u.Send(w, app.WriteSkill{Host: hostName()}) })
 	d.AddButton("Stop Sharing", func() gunim.Intent { return app.StopSharing{} })
 	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
@@ -123,7 +124,7 @@ func (w *Window) permissionsDialog(st app.Share, u *gunim.UI) {
 
 // setupDialog shows how to add kakel's MCP server to an agent
 // program, and copies it.
-func (w *Window) setupDialog(host app.AgentHost, u *gunim.UI) {
+func (w *Window) setupDialog(host agenthost.Host, u *gunim.UI) {
 	what := "Run this, as one command line, then start " + host.Called + " again. It only writes the config."
 	copyTitle := "Copy Command"
 	if host.Cmd == "" {
@@ -134,7 +135,7 @@ func (w *Window) setupDialog(host app.AgentHost, u *gunim.UI) {
 		what = "Put this in " + where + ", beside any servers already there. Then start " + host.Called + " again."
 		copyTitle = "Copy Config"
 	}
-	line := host.SetupToCopy(app.ExePath())
+	line := host.SetupToCopy(agenthost.ExePath())
 	d := widget.NewDialog("Set Up " + host.Called)
 	d.Body = widget.NewForm().Add("", widget.NewLabel(what)).Add("", widget.NewLabel(line))
 	d.SetButtons("Close", "")

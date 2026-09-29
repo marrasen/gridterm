@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/kakel/agenthost"
 	"github.com/marrasen/kakel/mcp"
 	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/settings"
@@ -231,7 +232,7 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		// nothing and reaches nothing until the agent gives it a code.
 		return true, mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
 	case opts.mcpSkill:
-		_, err := io.WriteString(os.Stdout, skillFor(HostNamed(hostClaudeCode), ExePath()))
+		_, err := io.WriteString(os.Stdout, agenthost.Named(agenthost.ClaudeCode).Skill(exePath()))
 		return true, err
 	case opts.listFonts:
 		return true, printFonts(os.Stdout)

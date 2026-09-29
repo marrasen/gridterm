@@ -1504,6 +1504,13 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 // place puts a pane in no group yet where at says: in a split beside
 // another, or in a group of its own.
 func (a *app) place(id string, at Placement) {
+	if at.Instead != "" {
+		if _, ok := a.groupOf[at.Instead]; !ok {
+			// The chooser has gone already, to an earlier pick: beside
+			// the pane it was split from, then, in the same split.
+			at = Placement{Beside: a.choosers[at.Instead]}
+		}
+	}
 	if g, ok := a.groupOf[at.Instead]; ok && at.Instead != "" {
 		// In the chooser's place, which goes, as picked in it.
 		a.groups[g] = a.groups[g].replace(at.Instead, &Box{Pane: id})
@@ -1549,13 +1556,15 @@ func (a *app) openTerminal() error {
 func (a *app) split(in SplitPane) error {
 	from := a.st.Focus
 	at := Placement{Beside: from, Vertical: in.Vertical}
+	machine := a.filesKey(from)
 	if in.Instead != "" {
-		// From the chooser: the pane it was split from is the one the
-		// new shell is like, and the chooser's place is where it goes.
+		// From the chooser: on its machine, which is the one of the pane
+		// it was split from even once that has closed; like that pane's
+		// shell; and in the chooser's place.
 		from = a.choosers[in.Instead]
+		machine = a.filesKey(in.Instead)
 		at = Placement{Instead: in.Instead}
 	}
-	machine := a.filesKey(from)
 	if in.Elsewhere {
 		machine = in.Machine
 	}
@@ -1565,7 +1574,7 @@ func (a *app) split(in SplitPane) error {
 			return fmt.Errorf("this machine has no shell called %q", in.Shell)
 		}
 		a.nextShell, machine = argv, ""
-	} else if machine == a.filesKey(from) {
+	} else if machine == a.filesKey(from) || in.Instead != "" && machine == a.filesKey(in.Instead) {
 		a.likeHere()
 	}
 	return a.open(machine, at)
@@ -1578,20 +1587,24 @@ const KindChooser = "chooser"
 // chooseSplit splits the focused pane at once and puts a chooser in the
 // new half.
 func (a *app) chooseSplit(in ChooseSplit) {
-	from := a.st.Focus
-	if from == "" || !a.has(from) {
+	// Split from a chooser, the new one is like the pane that one was
+	// split from.
+	from := a.here()
+	if a.st.Focus == "" || !a.has(a.st.Focus) {
 		return
 	}
 	a.next++
 	id := "p" + strconv.Itoa(a.next)
 	a.choosers[id] = from
-	a.addPane(a.paneOn(a.filesKey(from), Pane{ID: id, Title: "Split", Kind: KindChooser, SplitFrom: from}), nil, Placement{Beside: from, Vertical: in.Vertical})
+	a.addPane(a.paneOn(a.filesKey(from), Pane{ID: id, Title: "Split", Kind: KindChooser, SplitFrom: from}), nil, Placement{Beside: a.st.Focus, Vertical: in.Vertical})
 }
 
 // dropChooser takes away a chooser that has given its place to what was
 // picked in it.
+// It keeps what it was split from, for a second pick that finds it
+// gone; a few strings, kept for the run.
 func (a *app) dropChooser(id string) {
-	delete(a.choosers, id)
+	delete(a.farHost, id)
 	if i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id }); i >= 0 {
 		a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
 		delete(a.winOf, id)

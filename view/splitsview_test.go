@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/kakel/app"
 
 	gi "github.com/marrasen/gunim/input"
@@ -60,5 +61,42 @@ func TestSplitPutsAChooserInTheNewHalf(t *testing.T) {
 	press(gi.KeyEscape)
 	if in, ok := nextIntent(t).(app.ClosePane); !ok || in.Pane != "c1" {
 		t.Fatalf("Escape sent %#v", in)
+	}
+}
+
+// A chooser on stage follows the panes: a pane opened while it shows
+// arrives as a picture, one retitled is renamed, one closed leaves.
+func TestAChooserFollowsThePanes(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}}}
+	publish(st)
+	frames := func() {
+		for range 5 {
+			lastWindow.Frame(time.Second / 60)
+		}
+	}
+	frames()
+	c := win.choosers["c1"]
+	if len(c.thumbs) != 0 {
+		t.Fatalf("with no other pane, the chooser offers %d", len(c.thumbs))
+	}
+	st.Panes = append(st.Panes, app.Pane{ID: "p2", Title: "two", Kind: app.KindFiles}, app.Pane{ID: "p3", Title: "three", Kind: app.KindFiles})
+	st.Browsers = map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}, "p3": {Path: "/"}}
+	publish(st)
+	frames()
+	if len(c.thumbs) != 2 {
+		t.Fatalf("with two more panes, the chooser offers %d", len(c.thumbs))
+	}
+	st.Panes[2].Title = "renamed"
+	st.Panes = st.Panes[:3]
+	publish(st)
+	frames()
+	if len(c.thumbs) != 1 || c.thumbs[0].title != "renamed" {
+		t.Fatalf("with p3 closed and p2 renamed, the chooser offers %+v", c.thumbs)
+	}
+	if lastUI.Presence(c.thumbs[0]) == gunim.Exiting {
+		t.Fatal("the picture offered is not in the tree")
 	}
 }

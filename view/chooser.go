@@ -32,20 +32,25 @@ type chooser struct {
 	// when that changes.
 	buttons []*widget.Button
 	thumbs  []*thumb
-	keys    []string
 	heading *widget.Label
+	// made keeps each button and picture by what it offers, so one that
+	// stays is the same node from one change to the next, and the
+	// keyboard stays on it.
+	made map[string]gunim.Node
 }
 
 func newChooser(w *Window, id string) *chooser {
-	c := &chooser{w: w, id: id, heading: widget.NewLabel("Put here")}
+	c := &chooser{w: w, id: id, heading: widget.NewLabel("Put here"), made: map[string]gunim.Node{}}
 	c.heading.Color = widget.Placeholder
-	c.refresh()
+	c.refresh(nil)
 	return c
 }
 
-// refresh makes the buttons and the pictures again when what they offer
-// has changed: the shells here, the machines reached, the panes open.
-func (c *chooser) refresh() {
+// refresh brings the buttons and the pictures up to date with what
+// there is to offer: the shells here, the machines reached, the panes
+// open. Those new arrive and those gone leave, through u once the
+// chooser is in the tree; before, u is nil.
+func (c *chooser) refresh(u *gunim.UI) {
 	type offer struct {
 		key, label string
 		in         gunim.Intent
@@ -89,21 +94,15 @@ func (c *chooser) refresh() {
 			panes = append(panes, p)
 		}
 	}
-	keys := make([]string, 0, len(offers)+len(panes))
-	for _, o := range offers {
-		keys = append(keys, o.key)
-	}
-	for _, p := range panes {
-		keys = append(keys, "pane:"+p.ID+":"+p.Title)
-	}
-	if slices.Equal(keys, c.keys) {
-		return
-	}
-	c.keys = keys
+	was := c.Children()[1:]
 	c.buttons = c.buttons[:0]
 	for _, o := range offers {
-		b := widget.NewButton(o.label)
-		b.Icon = icon.Plus
+		b, ok := c.made[o.key].(*widget.Button)
+		if !ok {
+			b = widget.NewButton(o.label)
+			b.Icon = icon.Plus
+			c.made[o.key] = b
+		}
 		if o.local != nil {
 			b.OnActivate(o.local)
 		} else {
@@ -114,7 +113,39 @@ func (c *chooser) refresh() {
 	}
 	c.thumbs = c.thumbs[:0]
 	for _, p := range panes {
-		c.thumbs = append(c.thumbs, newThumb(c, p))
+		key := "pane:" + p.ID
+		t, ok := c.made[key].(*thumb)
+		if !ok {
+			t = newThumb(c, p)
+			c.made[key] = t
+		}
+		t.retitle(p.Title)
+		c.thumbs = append(c.thumbs, t)
+	}
+	now := c.Children()[1:]
+	for key, n := range c.made {
+		if !slices.Contains(now, n) {
+			delete(c.made, key)
+		}
+	}
+	// Off stage, or not yet on it, the chooser is out of the tree, and
+	// its children are read afresh when it goes back in.
+	if u == nil || u.Presence(c) == gunim.Exiting {
+		return
+	}
+	focused := u.Focused()
+	for _, n := range was {
+		if !slices.Contains(now, n) {
+			if n == focused {
+				u.Focus(c.first())
+			}
+			u.Remove(n)
+		}
+	}
+	for _, n := range now {
+		if !slices.Contains(was, n) {
+			u.Insert(c, n)
+		}
 	}
 }
 
@@ -200,19 +231,30 @@ const (
 func (c *chooser) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	box := cs.Max
 	width := max(box.W-2*chooserPad, 0)
+	// The children come in the order they arrived, with those on their
+	// way out among them: each is placed by what it is.
+	byNode := map[gunim.Node]gunim.Child{}
+	for i := range kids.Len() {
+		byNode[kids.At(i).Node()] = kids.At(i)
+	}
 	y := float32(chooserPad)
-	h := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(width, box.H)})
-	kids.At(0).Place(geom.Pt(chooserPad, y))
-	y += h.H + chooserGap
+	if k, ok := byNode[c.heading]; ok {
+		h := k.Layout(gunim.Constraints{Max: geom.Sz(width, box.H)})
+		k.Place(geom.Pt(chooserPad, y))
+		y += h.H + chooserGap
+	}
 	x, row := float32(chooserPad), float32(0)
-	for i := range c.buttons {
-		kid := kids.At(1 + i)
-		s := kid.Layout(gunim.Constraints{Max: geom.Sz(width, box.H)})
+	for _, b := range c.buttons {
+		k, ok := byNode[b]
+		if !ok {
+			continue
+		}
+		s := k.Layout(gunim.Constraints{Max: geom.Sz(width, box.H)})
 		if x > chooserPad && x+s.W > chooserPad+width {
 			x, y = chooserPad, y+row+chooserGap
 			row = 0
 		}
-		kid.Place(geom.Pt(x, y))
+		k.Place(geom.Pt(x, y))
 		x += s.W + chooserGap
 		row = max(row, s.H)
 	}
@@ -222,10 +264,13 @@ func (c *chooser) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 		cols = min(cols, n)
 		tw := min(thumbMost, (width-float32(cols-1)*chooserGap)/float32(cols))
 		th := tw*0.62 + thumbCaption
-		for i := range c.thumbs {
-			kid := kids.At(1 + len(c.buttons) + i)
-			kid.Layout(gunim.Tight(geom.Sz(tw, th)))
-			kid.Place(geom.Pt(chooserPad+float32(i%cols)*(tw+chooserGap), y+float32(i/cols)*(th+chooserGap)))
+		for i, t := range c.thumbs {
+			k, ok := byNode[t]
+			if !ok {
+				continue
+			}
+			k.Layout(gunim.Tight(geom.Sz(tw, th)))
+			k.Place(geom.Pt(chooserPad+float32(i%cols)*(tw+chooserGap), y+float32(i/cols)*(th+chooserGap)))
 		}
 	}
 	return box
@@ -252,10 +297,18 @@ type thumb struct {
 }
 
 func newThumb(c *chooser, p app.Pane) *thumb {
-	t := &thumb{c: c, id: p.ID, title: p.Title, hover: anim.NewFloat(0), ring: anim.NewFloat(0)}
-	t.label = text.Default().Shape(p.Title, 12)
+	t := &thumb{c: c, id: p.ID, hover: anim.NewFloat(0), ring: anim.NewFloat(0)}
+	t.retitle(p.Title)
 	t.Add(t.hover, t.ring)
 	return t
+}
+
+// retitle names the picture after its pane, as the pane is called now.
+func (t *thumb) retitle(title string) {
+	if title != t.title || t.label.Advance == 0 {
+		t.title = title
+		t.label = text.Default().Shape(title, 12)
+	}
 }
 
 // Focusable implements [gunim.Focusable].

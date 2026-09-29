@@ -1751,7 +1751,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			continue
 		}
 		// What it offers follows the panes, the shells and the machines.
-		c.refresh()
+		c.refresh(u)
 	}
 	// Panes off stage are out of the tree, where nothing can be added
 	// to them; each catches up as it comes back.

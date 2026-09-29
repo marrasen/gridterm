@@ -92,7 +92,25 @@ func TestANewShellPickedInASplitsChooserTakesItsPlace(t *testing.T) {
 	a.handle(ChooseSplit{})
 	chooser = a.st.Focus
 	a.remove(chooser)
-	if a.has(chooser) || len(a.choosers) != 0 {
+	if _, kept := a.choosers[chooser]; a.has(chooser) || kept {
 		t.Fatalf("closed, the chooser stays: %v", a.choosers)
+	}
+}
+
+// A second pick in a chooser already gone to the first lands beside the
+// pane it was split from, in the same split, not on a stage of its own.
+func TestASecondPickInAChooserLandsBesideItsPane(t *testing.T) {
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.addPane(Pane{ID: "f1", Title: "one", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f2", Title: "two", Kind: KindFiles}, nil, Placement{})
+	a.addPane(Pane{ID: "f3", Title: "three", Kind: KindFiles}, nil, Placement{})
+	a.focus("f1")
+	a.handle(ChooseSplit{})
+	chooser := a.st.Focus
+	a.handle(MovePane{Pane: "f2", Instead: chooser})
+	a.addPane(Pane{ID: "f4", Title: "four", Kind: KindFiles}, nil, Placement{Instead: chooser})
+	if a.groupOf["f4"] != a.groupOf["f1"] {
+		t.Fatalf("the second pick went to group %d, the split is %d", a.groupOf["f4"], a.groupOf["f1"])
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/pasted"
 )
 
@@ -253,7 +254,7 @@ func TestClearingADroppedWindowWithdrawsTheOffer(t *testing.T) {
 	pumpBoth(t, a, b, "the question", func() bool { return len(b.st.Asks) == 1 })
 	b.handle(ClearMachine{ID: name})
 	pumpBoth(t, a, b, "the question to go", func() bool { return len(b.st.Asks) == 0 })
-	if len(b.st.Panes) != 0 || b.machines.Get(name).Dropped || b.machines.Get(name).Lost != nil {
+	if len(b.st.Panes) != 0 || b.machines.Get(name).Dropped || len(b.machines.IDs(func(m machines.Machine) bool { return m.Lost != nil })) != 0 {
 		t.Fatalf("cleared, there are panes %+v, and it is %+v", b.st.Panes, b.machines.Get(name))
 	}
 }

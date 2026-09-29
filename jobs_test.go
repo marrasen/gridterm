@@ -224,6 +224,8 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	if !a.running[0].repeating || a.machines.Get(quick).Dialing == nil || quickCount(a) != 1 {
 		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.machines.Dialing())
 	}
+	// As if it had come back: its dial given up, and not dialling.
+	t.Cleanup(a.machines.Get(quick).Dialing)
 	a.machines.At(quick).Dialing = nil
 	if err := a.repeatJob("j1"); err != nil || a.machines.Get(quick).Dialing != nil {
 		t.Fatalf("pressed again, %v, and it dialled again", err)

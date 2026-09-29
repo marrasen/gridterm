@@ -88,3 +88,21 @@ func TestAFarNameLastsWhileItsWindowIsConnected(t *testing.T) {
 		t.Fatalf("with its window connected, it is called %q", got)
 	}
 }
+
+// Holding a connection counts its uses, and letting go counts them off
+// until none are kept. One the user connected to stays open.
+func TestHopUsesAreCountedAndLetGo(t *testing.T) {
+	r, desk := withDesk(t)
+	c := &remote.Conn{}
+	r.At(desk).Conn = c
+	r.Hold(c)
+	r.Hold(c)
+	if r.users[c] != 2 {
+		t.Fatalf("held twice, it counts %d", r.users[c])
+	}
+	r.Release(c)
+	r.Release(c)
+	if len(r.users) != 0 || len(r.routes) != 0 || len(r.hops) != 0 {
+		t.Fatalf("let go, it keeps users %v, routes %v, hops %v", r.users, r.routes, r.hops)
+	}
+}

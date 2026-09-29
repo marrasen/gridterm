@@ -143,3 +143,44 @@ func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
 	}
 	t.Fatalf("on its first frame, the switcher leaves the stage at %v showing", sw.stageAt)
 }
+
+// While panes show their titles, a tile is the pane with its caption
+// line: it starts where both stand, and lands where both will stand, so
+// nothing jumps as the switcher hands the stage back.
+func TestASwitcherTileCarriesThePanesCaption(t *testing.T) {
+	win, sh, publish := windowStage(t)
+	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
+	var panes []app.Pane
+	for _, id := range []string{"p1", "p2"} {
+		sh.Set(id, screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
+		t.Cleanup(func() { _ = sh.Get(id).T.Close() })
+		panes = append(panes, app.Pane{ID: id, Title: "Terminal " + id})
+	}
+	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", PaneTitles: true}
+	publish(st)
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	slot, ok := lastUI.Bounds(win.captions["p1"])
+	if !ok {
+		t.Fatal("p1 has no caption line")
+	}
+	win.openSwitcher(lastUI)
+	sw := win.sw
+	if got := sw.tiles[0].box.Value(); got != slot || !sw.tiles[0].titled {
+		t.Fatalf("p1's tile starts at %v, want its pane and caption at %v", got, slot)
+	}
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	sw.pick(1, lastUI)
+	st.Stage, st.Focus = &app.Box{Pane: "p2"}, "p2"
+	publish(st)
+	for range 60 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	want, _ := lastUI.Bounds(win.captions["p2"])
+	if got := sw.tiles[1].box.Value(); got != want {
+		t.Fatalf("p2's tile landed at %v, but p2 and its caption stand at %v", got, want)
+	}
+}

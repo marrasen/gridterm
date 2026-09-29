@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/look"
 	"github.com/marrasen/kakel/ui"
 	"github.com/marrasen/kakel/winkeys"
 
@@ -69,6 +70,11 @@ type tile struct {
 	fade  *anim.Float
 	ring  *anim.Float
 	label text.Run
+	// caption is the line over the pane while panes show their titles,
+	// drawn shrunk with it, so the tile lands as the pane stands; empty
+	// while they do not.
+	caption text.Run
+	titled  bool
 }
 
 func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switcher {
@@ -80,14 +86,18 @@ func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switch
 	for i, p := range panes {
 		t := &tile{id: p.ID, title: p.Title, box: anim.NewRect(geom.Rect{}), fade: anim.NewFloat(0), ring: anim.NewFloat(0)}
 		t.label = text.Default().Shape(p.Title, 13)
+		if c := w.captions[p.ID]; w.titles && c != nil {
+			t.caption = text.Default().Shape(c.label.Text, smallText.Get(u.Theme()))
+			t.titled = true
+		}
 		s.tiles = append(s.tiles, t)
 		s.Add(t.box, t.fade, t.ring)
 		if p.ID == focus {
 			s.hot = i
 		}
-		// A pane on stage starts where it stands; the rest start in
-		// their places, faded.
-		if r, ok := w.standsAt(p.ID, u); ok {
+		// A pane on stage starts where it stands, its caption included;
+		// the rest start in their places, faded.
+		if r, ok := s.slotAt(t, u); ok {
 			t.box.Jump(r)
 			t.fade.Jump(1)
 		}
@@ -96,8 +106,26 @@ func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switch
 }
 
 // natural returns the size a pane's screen has on stage, or the size
-// it was last drawn at, or the whole of size for a pane never drawn.
-func (s *switcher) natural(t *tile, size geom.Size) geom.Size { return s.w.natural(t.id, size) }
+// it was last drawn at, or the whole of size for a pane never drawn,
+// with its caption over it while it has one.
+func (s *switcher) natural(t *tile, size geom.Size) geom.Size {
+	n := s.w.natural(t.id, size)
+	if t.titled {
+		n.H += captionHeight
+	}
+	return n
+}
+
+// slotAt is where tile t's pane stands on stage, with the line over it
+// while it has one, if it is on stage.
+func (s *switcher) slotAt(t *tile, u *gunim.UI) (geom.Rect, bool) {
+	if c := s.w.captions[t.id]; t.titled && c != nil {
+		if r, ok := u.Bounds(c); ok {
+			return r, true
+		}
+	}
+	return s.w.standsAt(t.id, u)
+}
 
 // natural is the size pane id draws at, from its terminal's grid or
 // its last drawing, or size when it has neither.
@@ -300,6 +328,21 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	// rounded, lifted, as the switcher comes in.
 	radius := 6 * min(max(shadow, 0), 1)
 	p.ShadowRRect(r, radius, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
+	// The caption line, shrunk as the pane is, over it.
+	if tl.titled {
+		nat := s.natural(tl, s.size)
+		scale := r.Size().H / nat.H
+		line := r
+		line.Max.Y = r.Min.Y + captionHeight*scale
+		p.RRect(line, 0, paint.Solid(widget.MenuFill.Get(th)))
+		func() {
+			defer p.Layer(paint.LayerOpts{Bounds: line, Opacity: 1, Clip: true})()
+			defer p.Push(paint.Translate(line.Min))()
+			defer p.Push(paint.Scale(scale, geom.Point{}))()
+			tl.caption.Paint(p, geom.Pt(10, (captionHeight-tl.caption.Height())/2), look.Faint.Get(th))
+		}()
+		r.Min.Y = line.Max.Y
+	}
 	// A terminal live, and any other pane as it was last drawn.
 	s.w.paintMiniature(p, f, tl.id, r, s.size)
 	if on := min(max(ring, 0), 1); on > 0.01 {
@@ -413,7 +456,7 @@ func (s *switcher) cancel(u *gunim.UI) {
 		return
 	}
 	for _, t := range s.tiles {
-		if r, ok := s.w.standsAt(t.id, u); ok {
+		if r, ok := s.slotAt(t, u); ok {
 			t.box.Animate(r, widget.Settle.Get(u.Theme()))
 			continue
 		}

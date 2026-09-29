@@ -89,30 +89,30 @@ func ReadPictureWatched(f vfs.FS, at string, side int, watch func(read int64)) (
 		return Pic{}, err
 	}
 	if len(raw) > MostPictureBytes {
-		return Pic{}, fmt.Errorf("the file is over %d bytes, which is more picture than this shows", MostPictureBytes)
+		return Pic{}, fmt.Errorf("the file is over %d bytes, which is more than this shows", MostPictureBytes)
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
-		return Pic{}, fmt.Errorf("work out what kind of picture this is: %w", err)
+		return Pic{}, fmt.Errorf("work out what kind of image this is: %w", err)
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		// A BMP of nought by nought decodes without complaint, and asking
 		// for a texture that size brings the window down.
-		return Pic{}, fmt.Errorf("the picture is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)
+		return Pic{}, fmt.Errorf("the image is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)
 	}
 	if n := int64(cfg.Width) * int64(cfg.Height); n > MostPicturePixels {
-		return Pic{}, fmt.Errorf("the picture is %d by %d, which is more than this shows", cfg.Width, cfg.Height)
+		return Pic{}, fmt.Errorf("the image is %d by %d, which is more than this shows", cfg.Width, cfg.Height)
 	}
 
 	img, kind, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return Pic{}, fmt.Errorf("decode the picture: %w", err)
+		return Pic{}, fmt.Errorf("decode the image: %w", err)
 	}
 	b := img.Bounds()
 	if b.Empty() {
 		// The header said one thing and the pixels another.
-		return Pic{}, errors.New("the picture has no pixels in it")
+		return Pic{}, errors.New("the image has no pixels in it")
 	}
 	return Pic{Img: fitPicture(img, side), Kind: kind, Was: image.Pt(b.Dx(), b.Dy())}, nil
 }

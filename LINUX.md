@@ -52,11 +52,11 @@ at all. Windows and macOS still use `atotto/clipboard` for text, in
 
 Since the move to gunim, `clip` carries less. Copying and pasting text
 in a pane goes through gunim's own clipboard. `clip` is what pastes a
-picture, puts a picture another window sent on this machine's clipboard,
+image, puts an image another window sent on this machine's clipboard,
 and copies a secret.
 
-A picture that cannot be read is still an error, told apart from a
-clipboard that holds no picture, which is what the paste command needs.
+An image that cannot be read is still an error, told apart from a
+clipboard that holds no image, which is what the paste command needs.
 `clipboard.Init` is asked once, lazily, and never at startup: a kakel
 with no display still runs, and there the clipboard is simply not one of
 the things it can do.
@@ -102,18 +102,18 @@ working it out for itself.
 found DejaVu Sans Mono, Liberation Mono, Nimbus Mono PS, Noto Sans Mono
 and the Noto CJK families.
 
-## Pasting a picture into a POSIX shell
+## Pasting an image into a POSIX shell
 
 Found by driving the window, and fixed. It was never Linux-only, and the
 fix is not either.
 
-With a picture on the clipboard and nothing else, the ordinary paste
+With an image on the clipboard and nothing else, the ordinary paste
 shortcut reaches `pastePicture`, and for a pane on this machine that was
 `PressPaste` -- which sends the program a literal ctrl+V. That is
-the right thing more often than it looks. Kakel cannot hand a picture
+the right thing more often than it looks. Kakel cannot hand an image
 down a pty, so what it does is nudge the program to go and read the
 clipboard itself, which is how Claude Code and the rest take one as a
-picture rather than as a path.
+image rather than as a path.
 
 It is wrong in one place: the shell's own line editor. readline reads
 ctrl+V as `quoted-insert`, which takes the next character literally, so
@@ -139,7 +139,7 @@ is running on:
   program on its own.
 
 So ctrl+V is kept for the case it is good for -- a program is running
-and the shell says so -- and the picture goes as a file otherwise.
+and the shell says so -- and the image goes as a file otherwise.
 `shellWouldQuoteIt` in `app/pictures.go` asks both questions. A
 shell that sends no marks lands on the file too: not knowing is not a
 reason to send a key that breaks a shell silently, and a path is
@@ -173,7 +173,7 @@ window was checked here:
 kakel -shot "until:$ shot:before.png type:pwd key:enter until:/ shot:after.png"
 ```
 
-It is the way to take a picture of the window from a script.
+It is the way to take an image of the window from a script.
 
 For driving it rather than photographing it, `xdotool` works on an
 unlocked screen, and is the better tool: its key presses go through X11

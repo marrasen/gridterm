@@ -124,7 +124,7 @@ func TestAFileThatIsNotAPictureSaysSo(t *testing.T) {
 	if err == nil {
 		t.Fatal("a file of words read as a picture")
 	}
-	if !strings.Contains(err.Error(), "picture") {
+	if !strings.Contains(err.Error(), "image") {
 		t.Errorf("it said %q, want it to say what it could not do", err)
 	}
 }

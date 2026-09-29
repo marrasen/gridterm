@@ -27,19 +27,19 @@ type PicturePutter func(png []byte) error
 // takes what it read as the failure.
 func (s *Server) runClipboard(ctx context.Context, nch ssh.NewChannel) {
 	if s.cfg.Picture == nil {
-		_ = nch.Reject(ssh.Prohibited, "this kakel does not take pictures")
+		_ = nch.Reject(ssh.Prohibited, "this kakel does not take images")
 		return
 	}
 	ch, reqs, err := nch.Accept()
 	if err != nil {
-		s.onError(fmt.Errorf("serve: take a picture: %w", err))
+		s.onError(fmt.Errorf("serve: take an image: %w", err))
 		return
 	}
 	defer func() { _ = ch.Close() }()
 	go ssh.DiscardRequests(reqs)
 
 	if err := s.takePicture(ctx, ch); err != nil {
-		s.onError(fmt.Errorf("serve: a picture from a client: %w", err))
+		s.onError(fmt.Errorf("serve: an image from a client: %w", err))
 		// Said down the channel as well, because the client is waiting
 		// to hear and has nowhere else to learn it from.
 		_, _ = io.WriteString(ch, err.Error())
@@ -56,10 +56,10 @@ func (s *Server) takePicture(ctx context.Context, ch io.Reader) error {
 		return fmt.Errorf("read it: %w", err)
 	}
 	if len(raw) == 0 {
-		return errors.New("the picture was empty")
+		return errors.New("the image was empty")
 	}
 	if len(raw) > mostClipboardBytes {
-		return fmt.Errorf("the picture is larger than the %d bytes this window takes", mostClipboardBytes)
+		return fmt.Errorf("the image is larger than the %d bytes this window takes", mostClipboardBytes)
 	}
 	if err := ctx.Err(); err != nil {
 		return err

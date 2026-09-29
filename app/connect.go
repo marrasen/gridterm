@@ -552,9 +552,9 @@ func (a *app) showStatus() {
 	}
 	switch {
 	case a.sending == 1:
-		said = append(said, "Sending a picture to "+a.sendingTo+"…")
+		said = append(said, "Sending an image to "+a.sendingTo+"…")
 	case a.sending > 1:
-		said = append(said, fmt.Sprintf("Sending %d pictures…", a.sending))
+		said = append(said, fmt.Sprintf("Sending %d images…", a.sending))
 	}
 	for _, key := range slices.Sorted(maps.Keys(a.saying)) {
 		said = append(said, a.saying[key])

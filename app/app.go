@@ -867,7 +867,7 @@ func failedTitle(in gunim.Intent) string {
 	case DropFiles:
 		return "Couldn't take the files dropped"
 	case PasteImage, PastePicture:
-		return "Couldn't paste the picture"
+		return "Couldn't paste the image"
 	case SaveServer:
 		return "Couldn't save the server"
 	case RemoveServer:

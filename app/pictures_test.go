@@ -280,7 +280,7 @@ func TestAPictureOnItsWayIsSaid(t *testing.T) {
 			return false
 		}
 	})
-	if !strings.HasPrefix(b.st.Status, "Sending a picture to ") {
+	if !strings.HasPrefix(b.st.Status, "Sending an image to ") {
 		t.Fatalf("on its way, the status says %q", b.st.Status)
 	}
 	close(landed)

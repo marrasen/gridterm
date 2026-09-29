@@ -16,7 +16,7 @@ import (
 func SetPNG(raw []byte) error {
 	img, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return fmt.Errorf("that is not a picture this window can read: %w", err)
+		return fmt.Errorf("that is not an image this window can read: %w", err)
 	}
 	return SetImage(img)
 }

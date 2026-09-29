@@ -103,7 +103,7 @@ kakel comes with:
 | `Ctrl+Shift+K` | the command palette |
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
-| `Ctrl+Alt+V` | paste a picture as a file, and type its path |
+| `Ctrl+Alt+V` | paste an image as a file, and type its path |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
 | `Ctrl+Shift+B` | show or hide the sidebar |
 | `Ctrl+Shift+L` | go to the sidebar |

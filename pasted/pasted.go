@@ -30,7 +30,7 @@ const DirName = "kakel-pasted"
 func PNG(img image.Image) ([]byte, error) {
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return nil, fmt.Errorf("read the picture: %w", err)
+		return nil, fmt.Errorf("read the image: %w", err)
 	}
 	return buf.Bytes(), nil
 }
@@ -45,7 +45,7 @@ func WriteHere(img image.Image, now func() time.Time) (string, error) {
 	}
 	dir := filepath.Join(os.TempDir(), DirName)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return "", fmt.Errorf("make somewhere to put the picture: %w", err)
+		return "", fmt.Errorf("make somewhere to put the image: %w", err)
 	}
 	// Named for the moment it was pasted, with the rest left to
 	// os.CreateTemp: it settles two pastes in one millisecond, and a
@@ -53,17 +53,17 @@ func WriteHere(img image.Image, now func() time.Time) (string, error) {
 	// to think about either.
 	f, err := os.CreateTemp(dir, at().Format("20060102-150405")+"-*.png")
 	if err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
+		return "", fmt.Errorf("write the image: %w", err)
 	}
 	path := f.Name()
 	if err := png.Encode(f, img); err != nil {
 		// Closed on the way out, and the half-written file taken away:
 		// a path typed into a shell has to name a picture that opens.
-		return "", fmt.Errorf("write the picture: %w",
+		return "", fmt.Errorf("write the image: %w",
 			errors.Join(err, f.Close(), os.Remove(path)))
 	}
 	if err := f.Close(); err != nil {
-		return "", fmt.Errorf("write the picture: %w", errors.Join(err, os.Remove(path)))
+		return "", fmt.Errorf("write the image: %w", errors.Join(err, os.Remove(path)))
 	}
 	return path, nil
 }
@@ -84,13 +84,13 @@ func WriteOn(fs vfs.FS, raw []byte, at time.Time) (string, error) {
 	path := dir + string(fs.Sep()) + at.Format("20060102-150405.000") + ".png"
 	w, err := fs.Create(path, 0o600)
 	if err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
+		return "", fmt.Errorf("write the image: %w", err)
 	}
 	if _, err := w.Write(raw); err != nil {
-		return "", fmt.Errorf("write the picture: %w", errors.Join(err, w.Close()))
+		return "", fmt.Errorf("write the image: %w", errors.Join(err, w.Close()))
 	}
 	if err := w.Close(); err != nil {
-		return "", fmt.Errorf("write the picture: %w", err)
+		return "", fmt.Errorf("write the image: %w", err)
 	}
 	return path, nil
 }

@@ -164,7 +164,7 @@ func Image() (image.Image, bool, error) {
 
 		size, _, _ := globalSize.Call(handle)
 		if size == 0 {
-			return errors.New("the picture on the clipboard is empty")
+			return errors.New("the image on the clipboard is empty")
 		}
 		raw := unsafe.Slice((*byte)(unsafe.Pointer(ptr)), int(size))
 		// Copied out from under the lock, because everything past this
@@ -193,11 +193,11 @@ func Image() (image.Image, bool, error) {
 func imageFromDIB(dib []byte) (image.Image, error) {
 	const headerLeast = headerSize
 	if len(dib) < headerLeast {
-		return nil, fmt.Errorf("the picture on the clipboard is %d bytes, too short for a header", len(dib))
+		return nil, fmt.Errorf("the image on the clipboard is %d bytes, too short for a header", len(dib))
 	}
 	headerSize := int(binary.LittleEndian.Uint32(dib[0:4]))
 	if headerSize < headerLeast || headerSize > len(dib) {
-		return nil, fmt.Errorf("the picture on the clipboard says its header is %d bytes", headerSize)
+		return nil, fmt.Errorf("the image on the clipboard says its header is %d bytes", headerSize)
 	}
 	width := int(int32(binary.LittleEndian.Uint32(dib[4:8])))
 	height := int(int32(binary.LittleEndian.Uint32(dib[8:12])))
@@ -205,17 +205,17 @@ func imageFromDIB(dib []byte) (image.Image, error) {
 	compression := int(binary.LittleEndian.Uint32(dib[16:20]))
 
 	if bits != 24 && bits != 32 {
-		return nil, fmt.Errorf("the picture on the clipboard is %d bits a pixel, and this reads 24 and 32", bits)
+		return nil, fmt.Errorf("the image on the clipboard is %d bits a pixel, and this reads 24 and 32", bits)
 	}
 	if compression != biRGB && compression != biBitfields {
-		return nil, fmt.Errorf("the picture on the clipboard is compressed, and this reads the plain forms")
+		return nil, fmt.Errorf("the image on the clipboard is compressed, and this reads the plain forms")
 	}
 	topDown := height < 0
 	if topDown {
 		height = -height
 	}
 	if width <= 0 || height <= 0 {
-		return nil, fmt.Errorf("the picture on the clipboard is %dx%d", width, height)
+		return nil, fmt.Errorf("the image on the clipboard is %dx%d", width, height)
 	}
 
 	// The pixels follow the header, and the colour masks when there are
@@ -229,7 +229,7 @@ func imageFromDIB(dib []byte) (image.Image, error) {
 	stride := (width*bits/8 + 3) &^ 3
 	if need := at + stride*height; need > len(dib) {
 		return nil, fmt.Errorf(
-			"the picture on the clipboard is %d bytes and its %dx%d pixels need %d", len(dib), width, height, need)
+			"the image on the clipboard is %d bytes and its %dx%d pixels need %d", len(dib), width, height, need)
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
@@ -292,7 +292,7 @@ func SetImage(img image.Image) error {
 
 	mem, _, err := globalAlloc.Call(gmemMoveable, uintptr(len(dib)))
 	if mem == 0 {
-		return fmt.Errorf("make room for the picture: %w", err)
+		return fmt.Errorf("make room for the image: %w", err)
 	}
 	// Given to the clipboard on success, and freed here on every way
 	// out before that.
@@ -304,7 +304,7 @@ func SetImage(img image.Image) error {
 	}()
 	ptr, _, err := globalLock.Call(mem)
 	if ptr == 0 {
-		return fmt.Errorf("lock the room for the picture: %w", err)
+		return fmt.Errorf("lock the room for the image: %w", err)
 	}
 	copy(unsafe.Slice((*byte)(unsafe.Pointer(ptr)), len(dib)), dib)
 	_, _, _ = globalUnlock.Call(mem)
@@ -314,7 +314,7 @@ func SetImage(img image.Image) error {
 			return fmt.Errorf("empty the clipboard: %w", err)
 		}
 		if got, _, err := setClipboardData.Call(cfDIB, mem); got == 0 {
-			return fmt.Errorf("put the picture on the clipboard: %w", err)
+			return fmt.Errorf("put the image on the clipboard: %w", err)
 		}
 		// The clipboard owns it now, and freeing it would take the
 		// picture out from under whoever pastes it.

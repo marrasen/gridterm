@@ -54,7 +54,7 @@ The file browser's own keys are not in the file.
 Pane → Go To → All Panes…, or `Ctrl+Shift+A`, draws every pane at
 once on a grid, each one live and shrunk to fit. The arrows walk them,
 `Enter` goes to the one marked and `Escape` leaves you where you were. A
-click goes straight there. `Ctrl+Shift+A` again closes it. The pictures are shrunk by the GPU rather
+click goes straight there. `Ctrl+Shift+A` again closes it. The images are shrunk by the GPU rather
 than cell by cell, and a window with nothing happening in it still skips
 the frames it would have skipped anyway.
 

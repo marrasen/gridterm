@@ -192,7 +192,7 @@ func (w *Window) termProgramDialog(u *gunim.UI) {
 	})
 	d := widget.NewDialog("Terminal Identity")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports kakel. Another name can turn on features such as pictures, and can also bring sequences that show as text. It applies to new panes.")).
+		Add("", widget.NewLabel("Programs read TERM_PROGRAM to identify the terminal. Blank reports kakel. Another name can turn on features such as images, and can also bring sequences that show as text. It applies to new panes.")).
 		Add("TERM_PROGRAM", called).Add("Known", known)
 	d.SetButtons("Save", "Cancel")
 	d.OnAccept = func() gunim.Intent { return app.SetTermProgram{Called: called.Text()} }

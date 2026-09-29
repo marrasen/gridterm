@@ -69,7 +69,7 @@ The whole list. The [README](README.md) has the short version.
 - **Splits that ask in place.** Split Right and Split Down split at
   once, and the new half offers what goes there: `+ Terminal`, one
   button for each shell here and each machine, `+ Command…`, and small
-  live pictures of the other panes, to move one in. Escape gives the
+  live images of the other panes, to move one in. Escape gives the
   half back.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
@@ -97,8 +97,8 @@ The whole list. The [README](README.md) has the short version.
   hex dump. A file being tailed is looked at every 300 ms and
   stays at its end as it grows; scroll back and it leaves you where you
   put yourself. Code is coloured by what the file is called, and a
-  markdown file gets its headings, bullets and quotes. A picture file
-  shows the picture, on a layer of its own over the pane: the grid is for
+  markdown file gets its headings, bullets and quotes. An image file
+  shows the image, on a layer of its own over the pane: the grid is for
   text. Nothing is read on the goroutine that draws, and a file that will
   not read says why rather than showing an empty pane.
 - **A strip beside the file**, where a code editor puts its minimap and
@@ -132,12 +132,12 @@ The whole list. The [README](README.md) has the short version.
   directory: Windows serves them on a share, so nothing of kakel's
   own is needed. A file dropped on a WSL pane lands in the directory
   that shell is in, on the same share.
-- **A picture a program put in its output.** OSC 1337, the sequence
+- **An image a program put in its output.** OSC 1337, the sequence
   iTerm2 made and the terminals after it copied. The pane holds the
-  picture on the line it landed on and it scrolls with the text, on a
+  image on the line it landed on and it scrolls with the text, on a
   layer of its own. It travels to a window watching the pane: a screen
-  is sent as the escape sequences that draw it, so the pictures go the
-  same way. Only an inline picture is taken -- the same sequence asks a
+  is sent as the escape sequences that draw it, so the images go the
+  same way. Only an inline image is taken -- the same sequence asks a
   terminal to save a file, which a pane should not be able to make this
   window do.
 - **Files dragged into a pane.** They land in the directory the shell
@@ -252,7 +252,7 @@ says which it is in two ways:
 Both say `kakel`, which is true and which no program has heard of
 yet. "Terminal Identity…" on the Options menu changes the
 name to a terminal a program does know, which is how to make one show
-pictures before it has heard of this one. It may then send the rest of
+images before it has heard of this one. It may then send the rest of
 that terminal's sequences, and whatever kakel does not read lands on
 the screen as text. That is the trade, and it is why the honest name is
 the default.

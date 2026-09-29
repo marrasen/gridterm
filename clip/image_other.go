@@ -29,5 +29,5 @@ func Image() (image.Image, bool, error) {
 // Only Windows is wired up, so everywhere else this says so rather than
 // reporting that it worked and leaving the clipboard untouched.
 func SetImage(image.Image) error {
-	return errors.New("this kakel cannot put a picture on the clipboard of " + runtime.GOOS)
+	return errors.New("this kakel cannot put an image on the clipboard of " + runtime.GOOS)
 }

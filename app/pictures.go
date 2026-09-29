@@ -54,7 +54,7 @@ func (a *app) pastePicture(id string, asFile bool) error {
 		id = a.st.Focus
 	}
 	if a.terminal(id) == nil {
-		return errors.New("a picture is pasted into a terminal, and this pane is none")
+		return errors.New("an image is pasted into a terminal, and this pane is none")
 	}
 	read := readPicture
 	go func() {
@@ -62,15 +62,15 @@ func (a *app) pastePicture(id string, asFile bool) error {
 		a.events <- func() {
 			switch {
 			case err != nil:
-				a.failed("Couldn't paste the picture", err.Error())
+				a.failed("Couldn't paste the image", err.Error())
 			case !have && asFile:
-				a.notify("There is no picture on the clipboard", "Copy one first, then paste it as a file.", "")
+				a.notify("There is no image on the clipboard", "Copy one first, then paste it as a file.", "")
 			case !have:
 				// An empty clipboard, and pasting nothing is what was
 				// asked for.
 			default:
 				if err := a.handPicture(id, img, asFile); err != nil {
-					a.failed("Couldn't paste the picture", err.Error())
+					a.failed("Couldn't paste the image", err.Error())
 				}
 			}
 		}
@@ -114,7 +114,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 				sent()
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture into "+a.machines.Name(machine), err.Error())
+					a.failed("Couldn't paste the image into "+a.machines.Name(machine), err.Error())
 				case a.terminal(id) == t:
 					t.PressPaste()
 				}
@@ -135,11 +135,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 				sent()
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture to "+a.machines.Name(key), err.Error())
+					a.failed("Couldn't paste the image to "+a.machines.Name(key), err.Error())
 				case a.terminal(id) == t:
 					t.Paste(path)
 				default:
-					a.worked("Picture saved", path+" on "+a.machines.Name(key)+".", path)
+					a.worked("Image saved", path+" on "+a.machines.Name(key)+".", path)
 				}
 			}
 		}()
@@ -211,6 +211,6 @@ func (a *app) distroOf(id string) string {
 // something to say: an empty clipboard says nothing.
 func (a *app) noTextToPaste() {
 	if img, have, err := readPicture(); err == nil && have && img != nil {
-		a.failed("Could not paste", "The clipboard holds a picture rather than text, and this takes text.")
+		a.failed("Could not paste", "The clipboard holds an image rather than text, and this takes text.")
 	}
 }

@@ -107,16 +107,16 @@ func Image() (image.Image, bool, error) {
 		// away, or the program holding it would not hand it over: both
 		// are failures rather than an empty clipboard, and pasting
 		// nothing here would say neither.
-		return nil, true, fmt.Errorf("read the picture on the clipboard: %w", err)
+		return nil, true, fmt.Errorf("read the image on the clipboard: %w", err)
 	}
 	if len(raw) == 0 {
-		return nil, true, errors.New("the picture on the clipboard is empty")
+		return nil, true, errors.New("the image on the clipboard is empty")
 	}
 	// Pictures are handed over PNG-encoded whatever the program that
 	// copied one used.
 	img, err := png.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return nil, true, fmt.Errorf("the picture on the clipboard will not open: %w", err)
+		return nil, true, fmt.Errorf("the image on the clipboard will not open: %w", err)
 	}
 	return img, true, nil
 }
@@ -134,13 +134,13 @@ func SetImage(img image.Image) error {
 	}
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
-		return fmt.Errorf("encode the picture: %w", err)
+		return fmt.Errorf("encode the image: %w", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), wait)
 	defer cancel()
 
 	if _, err := clipboard.Write(ctx, clipboard.FmtImage, buf.Bytes()); err != nil {
-		return fmt.Errorf("put the picture on the clipboard: %w", err)
+		return fmt.Errorf("put the image on the clipboard: %w", err)
 	}
 	return nil
 }

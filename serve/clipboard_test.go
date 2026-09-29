@@ -103,7 +103,7 @@ func TestAWindowThatTakesNoPicturesSaysSo(t *testing.T) {
 	if err == nil {
 		t.Fatal("a window taking no pictures took one")
 	}
-	if !strings.Contains(err.Error(), "does not take pictures") {
+	if !strings.Contains(err.Error(), "does not take images") {
 		t.Errorf("it says %q", err)
 	}
 }

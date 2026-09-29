@@ -41,18 +41,18 @@ something.
   a port, and it is open while a share has a pane in it.
 - **Sixel and the Kitty graphics protocol** are not implemented. OSC
   1337 is the one this reads.
-- **Only four megabytes of picture travel with a screen.** A pane may
-  hold sixty-four pictures of sixteen megabytes each, and a whole screen
-  is sent every time a window starts watching. The pictures past the
+- **Only four megabytes of images travel with a screen.** A pane may
+  hold sixty-four images of sixteen megabytes each, and a whole screen
+  is sent every time a window starts watching. The images past the
   budget are left out, and the watcher sees the text with a gap. A
-  picture sent while somebody is already watching is not affected: the
+  image sent while somebody is already watching is not affected: the
   sequence carrying it is part of what the program said.
 - **A path on a server is found one round trip late.** The machine is
   asked when the pointer first reaches the text, and the answer is what
   underlines it. Hold still for a moment and it lights up.
-- **An OSC payload other than a picture is capped at a kilobyte.** The
+- **An OSC payload other than an image is capped at a kilobyte.** The
   parser keeps that much and throws the rest away. The two sequences
-  that carry a picture are read before it sees them, so they are whole;
+  that carry an image are read before it sees them, so they are whole;
   a clipboard write longer than a kilobyte is cut short.
 - **A command is split on spaces, with no quoting.** That goes for
   `-e` and for Run Command alike.

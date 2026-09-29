@@ -81,8 +81,8 @@ func (a *app) nameOf(id string) string {
 
 // farName is what window calls the machine it reaches by key.
 func (a *app) farName(window, key string) string {
-	if w := a.windows[window]; w != nil && w.farNames[key] != "" {
-		return w.farNames[key]
+	if name := a.farNames[window+farSep+key]; name != "" {
+		return name
 	}
 	return key
 }
@@ -146,10 +146,8 @@ func (a *app) machines() []Machine {
 	}
 	// The machines windows reach, by the window's key for each, named
 	// as the window calls them.
-	for wid, w := range a.windows {
-		for key, name := range w.farNames {
-			out = append(out, Machine{ID: wid + farSep + key, Name: name})
-		}
+	for key, name := range a.farNames {
+		out = append(out, Machine{ID: key, Name: name})
 	}
 	for id, name := range a.goneNames {
 		if !slices.ContainsFunc(out, func(m Machine) bool { return m.ID == id }) {
@@ -189,6 +187,14 @@ func (a *app) forgetQuick() {
 		delete(a.accounts, id)
 		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == id })
 		a.forgetFar(id)
+	}
+	// Names of machines beyond windows go once their window is not
+	// connected and nothing open is on them.
+	for key := range a.farNames {
+		window, _, _ := strings.Cut(key, farSep)
+		if a.windows[window] == nil && !slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.On != "" && p.Machine+farSep+p.On == key }) {
+			delete(a.farNames, key)
+		}
 	}
 	// Names kept for removed servers go once nothing names them, and
 	// their logs with them.

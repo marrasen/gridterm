@@ -350,6 +350,6 @@ func (a *app) onWindowsOwn(id string) {
 	delete(a.farHost, id)
 	a.setPane(id, func(p *Pane) { p.On = "" })
 	if t := a.terminal(id); t != nil && was != "" {
-		t.Say("It ran on " + was + ", where it is not open any more: this one is on the window's own machine.")
+		t.Say("It ran on " + a.nameOf(a.machineOf(id)+farSep+was) + ", where it is not open any more: this one is on the window's own machine.")
 	}
 }

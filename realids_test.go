@@ -12,6 +12,7 @@ import (
 	"github.com/marrasen/kakel/internal/sshtest"
 	"github.com/marrasen/kakel/internal/testhome"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // realIDApp is dialApp with the IDs the server list gives, not names:
@@ -117,23 +118,25 @@ func TestACommandOnASavedWindowByItsIDIsRefused(t *testing.T) {
 }
 
 // Work kept on a machine beyond a window finds it again: the window as
-// kept, and the window's own key for the machine.
+// kept, and the machine by the window's name for it, which lasts where
+// the window's key for a quick connection there does not.
 func TestWorkKeptBeyondAWindowFindsItAgain(t *testing.T) {
 	a, _, _ := realIDApp(t)
 	win := a.newQuick("desk:7777", true)
-	a.windows[win] = &remoteWin{bound: map[string]string{}, farNames: map[string]string{"k1": "db"}}
+	a.windows[win] = &remoteWin{bound: map[string]string{}}
 	t.Cleanup(func() { delete(a.windows, win) })
-	far := win + farSep + "k1"
-	kept := a.keptAs(far)
-	if strings.Contains(kept, "quick-") {
-		t.Fatalf("kept as %q, with a quick connection's ID in it", kept)
-	}
-	got, err := a.machineNow(kept, a.serverID(far))
-	if got != far || err != nil {
-		t.Fatalf("kept as %q, it is found as %q, %v; want %q", kept, got, err, far)
-	}
+	far := win + farSep + "3fa2c1d4e5f6a7b8"
+	a.farNames[far] = "db"
 	if name := a.nameOf(far); name != "db through desk:7777" {
 		t.Fatalf("it is called %q", name)
+	}
+	kept := a.keptAs(far)
+	if strings.Contains(kept, "quick-") || strings.Contains(kept, "3fa2c1d4e5f6a7b8") {
+		t.Fatalf("kept as %q, with a key in it", kept)
+	}
+	got, err := a.machineNow(kept, a.serverID(far))
+	if want := win + farSep + "db"; got != want || err != nil {
+		t.Fatalf("kept as %q, it is found as %q, %v; want %q", kept, got, err, want)
 	}
 }
 
@@ -156,5 +159,30 @@ func TestKeptWorkIsFoundForItsMachine(t *testing.T) {
 		if got := win.keptFor(c.host, c.id, c.machine); got != c.want {
 			t.Errorf("kept on %q (%q), for %q: %v, want %v", c.host, c.id, c.machine, got, c.want)
 		}
+	}
+}
+
+// What goes wrong with a server's files names the server, not its ID,
+// and its new name once it is renamed.
+func TestAServersFilesSayWhatWentWrongByItsName(t *testing.T) {
+	a, srv, answering := realIDApp(t)
+	a.handle(ConnectTo{Server: srv})
+	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
+	var files vfs.FS
+	if err := a.withFiles(srv, func(f vfs.FS) { files = f }); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the files", func() bool { return files != nil })
+	_, err := files.ReadDir("/no-such-folder-here")
+	if err == nil || !strings.Contains(err.Error(), "srv") || strings.Contains(err.Error(), srv) {
+		t.Fatalf("its files said %v", err)
+	}
+	h, _ := a.book.LookupID(srv)
+	h.Name = "prod"
+	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := files.ReadDir("/no-such-folder-here"); err == nil || !strings.Contains(err.Error(), "prod") {
+		t.Fatalf("renamed, its files said %v", err)
 	}
 }

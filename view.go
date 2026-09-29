@@ -1832,7 +1832,7 @@ func (w *window) paneNode(id string) gunim.Node {
 			case p.Machine == "":
 				where = "This computer"
 			case p.On != "":
-				where = p.On + " through " + w.nameOf(p.Machine)
+				where = w.nameOf(p.Machine + farSep + p.On)
 			}
 			c.label.SetText(where + ": " + p.Title)
 		}

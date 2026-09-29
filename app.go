@@ -457,6 +457,9 @@ type app struct {
 	// while something open still names them.
 	quick     map[string]quickConn
 	goneNames map[string]string
+	// farNames are what windows call the machines beyond them, by the
+	// program's key for each, kept while anything is open on one.
+	farNames map[string]string
 	// hops are the connections made to jump hosts to reach the servers
 	// behind them, by the saved server's name, and hopUsers counts the
 	// connections going through each.
@@ -644,6 +647,7 @@ func newApp(c gunim.Client, sh *shells) *app {
 		hops:        map[string]*remote.Conn{},
 		quick:       map[string]quickConn{},
 		goneNames:   map[string]string{},
+		farNames:    map[string]string{},
 		hopUsers:    map[*remote.Conn]int{},
 		routes:      map[*remote.Conn]string{},
 		connIDs:     map[string]string{},

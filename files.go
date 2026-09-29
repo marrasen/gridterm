@@ -348,18 +348,20 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 // connection this window has to it, a server's or a window's, or nil
 // when it has none. What it returns runs on a goroutine of its own.
 func (a *app) filesOpener(machine string) func() (vfs.FS, error) {
+	// Named as the user knows it, in what goes wrong with its files.
+	called := a.nameOf(machine)
 	if window, host, far := strings.Cut(machine, farSep); far && a.windows[window] != nil {
 		w := a.windows[window]
 		return func() (vfs.FS, error) {
 			files, err := w.win.FilesOn(host)
 			if err != nil {
-				return nil, err
+				return nil, fmt.Errorf("the files on %s: %w", called, err)
 			}
 			client, err := sftp.NewClientPipe(files, files)
 			if err != nil {
 				return nil, errors.Join(err, files.Close())
 			}
-			return vfs.NewSFTP(host, farFiles{w, host}, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
+			return vfs.NewSFTP(called, farFiles{w, host}, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
 		}
 	}
 	if w, ok := a.windows[machine]; ok {
@@ -372,7 +374,7 @@ func (a *app) filesOpener(machine string) func() (vfs.FS, error) {
 			if err != nil {
 				return nil, errors.Join(err, files.Close())
 			}
-			return vfs.NewSFTP(machine, w, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
+			return vfs.NewSFTP(called, w, client, func() error { return errors.Join(client.Close(), files.Close()) }), nil
 		}
 	}
 	if conn, ok, err := a.connOf(machine); ok {
@@ -384,7 +386,7 @@ func (a *app) filesOpener(machine string) func() (vfs.FS, error) {
 			if err != nil {
 				return nil, err
 			}
-			return vfs.NewSFTP(machine, conn, files.Client(), files.Close), nil
+			return vfs.NewSFTP(called, conn, files.Client(), files.Close), nil
 		}
 	}
 	return nil

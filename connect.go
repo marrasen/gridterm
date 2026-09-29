@@ -401,6 +401,12 @@ func (a *app) saveServer(in SaveServer) error {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	// Its files say what goes wrong by its name, the new one.
+	if h, ok := a.book.Lookup(in.Host.Name); ok {
+		if f, ok := a.remoteFS[h.ID].(interface{ Renamed(string) }); ok {
+			f.Renamed(h.Name)
+		}
+	}
 	// Its key is kept, to be offered for the next server.
 	if len(in.Host.Identities) > 0 && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {

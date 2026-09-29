@@ -179,15 +179,17 @@ func (a *app) machineNow(name, id string) (string, error) {
 // keptAs is what a piece of work kept for next time says it runs on,
 // beside the ID of the saved server it runs on: the server's name, for
 // the list to show, a quick connection's address, to connect to it again
-// by, and "" for this computer.
+// by, and "" for this computer. Beyond a window: the window so, and
 func (a *app) keptAs(machine string) string {
 	if machine == "" {
 		return ""
 	}
 	// Beyond a window: the window as it is kept, and the window's own
 	// key for the machine, joined as the program joins them.
+	// its name there, which the window takes back as it does the key and
+	// which lasts where a quick connection's key does not.
 	if window, host, far := strings.Cut(machine, farSep); far {
-		return a.keptAs(window) + farSep + host
+		return a.keptAs(window) + farSep + a.farName(window, host)
 	}
 	return a.nameOf(machine)
 }

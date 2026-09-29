@@ -55,10 +55,8 @@ type remoteWin struct {
 	win           *serve.Window
 	addr, keyFile string
 	// bound is the pane here showing each thing it has open, by its id
-	// there, and farNames what it calls each machine beyond it, by the
-	// key it goes by, kept once seen.
-	bound    map[string]string
-	farNames map[string]string
+	// there.
+	bound map[string]string
 	// seen is its list as last told, to publish only a change, and
 	// leaving says the user let go of it.
 	seen    []serve.Open
@@ -158,7 +156,7 @@ func knownWindows() (string, error) {
 // holdWindow keeps a window connected to, following what it has open
 // and noticing when it goes.
 func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) {
-	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}, farNames: map[string]string{}}
+	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}}
 	a.windows[name] = w
 	delete(a.dropped, name)
 	a.showWindows()
@@ -266,7 +264,7 @@ func (a *app) showWindows() {
 		w.seen = w.win.Opens()
 		for _, o := range w.seen {
 			if o.Key() != "" {
-				w.farNames[o.Key()] = o.Host
+				a.farNames[name+farSep+o.Key()] = o.Host
 			}
 		}
 		rw := RemoteWindow{Name: name, Addr: w.addr}
@@ -348,7 +346,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
-				w.farNames[open.Key()] = open.Host
+				a.farNames[in.Window+farSep+open.Key()] = open.Host
 			}
 			w.bound[in.ID] = id
 			a.showWindows()

@@ -91,7 +91,7 @@ func TestAKeptKeyCanBeForgotten(t *testing.T) {
 		}
 	}
 	a.handle(ForgetKey{Path: "/keys/one"})
-	if len(a.st.Notices) != 0 || !slices.Equal(a.st.KeyFiles, []string{"/keys/two"}) || !slices.Equal(a.settings.Keys(), []string{"/keys/two"}) {
+	if len(a.st.Notices) != 1 || !slices.Equal(a.st.KeyFiles, []string{"/keys/two"}) || !slices.Equal(a.settings.Keys(), []string{"/keys/two"}) {
 		t.Fatalf("the list is %q, kept %q, notices %+v", a.st.KeyFiles, a.settings.Keys(), a.st.Notices)
 	}
 }

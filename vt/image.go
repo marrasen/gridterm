@@ -154,15 +154,16 @@ func (t *Terminal) say(line string) {
 	if t.scr.OnAltBuffer() {
 		return
 	}
-	pen, last := t.scr.Pen(), t.lastRune
+	pen, last, insert := t.scr.Pen(), t.lastRune, t.scr.mode.Insert
 	t.scr.SetPen(t.defaultPen())
+	t.scr.mode.Insert = false
 	for _, r := range line {
 		t.Print(r)
 	}
 	t.Execute('\r')
 	t.Execute('\n')
 	t.scr.SetPen(pen)
-	t.lastRune = last
+	t.lastRune, t.scr.mode.Insert = last, insert
 }
 
 // mostImagePixels is the largest image decoded, which is what stops

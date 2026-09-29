@@ -1077,3 +1077,21 @@ func TestTheFloorOnlyEverMovesForward(t *testing.T) {
 		t.Errorf("the second clear left a floor of %d, below the first at %d", got, first)
 	}
 }
+
+// A copy as the base64 command writes it, wrapped into lines, is
+// measured by what it holds: one just under the most is taken.
+func TestAWrappedClipboardSetIsMeasuredByWhatItHolds(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	text := strings.Repeat("x", mostClipboard-10)
+	enc := base64.StdEncoding.EncodeToString([]byte(text))
+	var wrapped strings.Builder
+	for len(enc) > 76 {
+		wrapped.WriteString(enc[:76] + "\r\n")
+		enc = enc[76:]
+	}
+	wrapped.WriteString(enc)
+	h.write("\x1b]52;c;" + wrapped.String() + "\x07")
+	if len(h.clips) != 1 || len(h.clips[0]) != len(text) {
+		t.Fatalf("got %d copies", len(h.clips))
+	}
+}

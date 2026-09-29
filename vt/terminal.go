@@ -851,12 +851,12 @@ func (t *Terminal) commandDone(params [][]byte) {
 	}
 }
 
-// clipboard handles OSC 52, which lets a program put text on the system
-// clipboard. Reads are deliberately not answered: replying would let any
-// program that can write to the terminal exfiltrate the clipboard.
 // mostClipboard is the most a program may copy at once, with OSC 52.
 const mostClipboard = 4 << 20
 
+// clipboard handles OSC 52, which lets a program put text on the system
+// clipboard. Reads are deliberately not answered: replying would let any
+// program that can write to the terminal exfiltrate the clipboard.
 func (t *Terminal) clipboard(params [][]byte) {
 	if len(params) < 3 || t.cb.ClipboardSet == nil {
 		return
@@ -867,9 +867,9 @@ func (t *Terminal) clipboard(params [][]byte) {
 	}
 	// A copy past mostClipboard is not taken: it is held while the
 	// window says it was copied, and an editor copies less than this.
-	if len(data) > base64.StdEncoding.EncodedLen(mostClipboard)+64 {
-		return
-	}
+	// Measured once decoded: base64 wrapped into lines, as the base64
+	// command writes it, is longer than what it holds. What reaches here
+	// was cut off at a few times this already.
 	raw, err := base64.StdEncoding.DecodeString(strings.TrimSpace(data))
 	if err != nil || len(raw) > mostClipboard {
 		return

@@ -98,6 +98,7 @@ func (a *app) forgetKey(path string) error {
 		return err
 	}
 	a.st.KeyFiles = a.settings.Keys()
+	a.worked("Forgot "+filepath.Base(path), "It is no longer offered for a server. The file is still at "+path+".", "")
 	return nil
 }
 

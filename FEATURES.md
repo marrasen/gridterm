@@ -151,7 +151,8 @@ The whole list. The [README](README.md) has the short version.
   is sent as the escape sequences that draw it, so the images go the
   same way. Only an inline image is taken -- the same sequence asks a
   terminal to save a file, which a pane should not be able to make this
-  window do.
+  window do. An inline image that can't be shown leaves a line saying
+  why, such as "[image not shown: it is over 16 MB]".
 - **Files dragged into a pane.** They land in the directory the shell
   said it was in, and nothing is typed: the file is already where the
   program is looking. The window says when it has arrived. A pane on a
@@ -241,7 +242,9 @@ The whole list. The [README](README.md) has the short version.
   need.
 - **Mouse, selection and clipboard.** Programs that ask for the mouse
   get it; hold Shift to select text anyway. Drag to select, Alt+drag for
-  a rectangle.
+  a rectangle. A program may copy text with OSC 52, as an editor over
+  SSH does, up to about 16 MB; asking to read the clipboard is never
+  answered.
 - **A window log.** Help → Window Log shows what the window did: when
   it started, each pane opened and closed, how a shell ended,
   connections made and lost, serving turned on and off, and every

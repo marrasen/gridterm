@@ -83,8 +83,11 @@ func (t *Terminal) setImage(params [][]byte) {
 		// terminal to save a file, which this does not do.
 		return
 	}
-	img, raw, ok := decodeImage(encoded)
-	if !ok {
+	img, raw, why := decodeImage(encoded)
+	if why != "" {
+		// Meant as an image, so a word where it would have gone, rather
+		// than nothing: a stray sequence is not an inline File.
+		t.say("[image not shown: " + why + "]")
 		return
 	}
 	t.placeImage(img, raw, args)
@@ -111,31 +114,44 @@ func imageArgs(head string) map[string]string {
 }
 
 // decodeImage reads the base64 a program sent and decodes the image
-// in it.
-func decodeImage(encoded string) (image.Image, []byte, bool) {
+// in it, or says why it could not, in words a user reads.
+func decodeImage(encoded string) (img image.Image, raw []byte, why string) {
 	encoded = strings.TrimSpace(encoded)
-	if encoded == "" || len(encoded) > base64.StdEncoding.EncodedLen(MostImageBytes) {
-		return nil, nil, false
+	switch {
+	case encoded == "":
+		return nil, nil, "it is empty"
+	case len(encoded) > base64.StdEncoding.EncodedLen(MostImageBytes):
+		return nil, nil, "it is over 16 MB"
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, nil, false
+		return nil, nil, "it is not base64"
 	}
 	if len(raw) > MostImageBytes {
-		return nil, nil, false
+		return nil, nil, "it is over 16 MB"
 	}
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 {
-		return nil, nil, false
+		return nil, nil, "it is not a PNG, JPEG, GIF, WebP, BMP or TIFF image"
 	}
 	if int64(cfg.Width)*int64(cfg.Height) > mostImagePixels {
-		return nil, nil, false
+		return nil, nil, strconv.Itoa(cfg.Width) + "×" + strconv.Itoa(cfg.Height) + " is more pixels than a pane takes"
 	}
-	img, _, err := image.Decode(bytes.NewReader(raw))
+	img, _, err = image.Decode(bytes.NewReader(raw))
 	if err != nil || img.Bounds().Empty() {
-		return nil, nil, false
+		return nil, nil, "it could not be read"
 	}
-	return img, raw, true
+	return img, raw, ""
+}
+
+// say writes a line of kakel's own into the output where the cursor
+// is, and moves to the start of the next line, as an image would have.
+func (t *Terminal) say(line string) {
+	for _, r := range line {
+		t.Print(r)
+	}
+	t.Execute('\r')
+	t.Execute('\n')
 }
 
 // mostImagePixels is the largest image decoded, which is what stops

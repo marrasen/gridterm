@@ -1,6 +1,7 @@
 package vt
 
 import (
+	"encoding/base64"
 	"image/color"
 	"strings"
 	"testing"
@@ -584,6 +585,17 @@ func TestClipboardSet(t *testing.T) {
 	h.write("\x1b]52;c;aGVsbG8=\x07") // "hello"
 	if len(h.clips) != 1 || h.clips[0] != "hello" {
 		t.Fatalf("clips = %v, want [hello]", h.clips)
+	}
+}
+
+// A copy longer than the kilobyte the parser keeps of a sequence
+// arrives whole, as an editor over SSH copies a file.
+func TestALongClipboardSetArrivesWhole(t *testing.T) {
+	h := newHarness(t, 4, 2)
+	text := strings.Repeat("a line of text\n", 400)
+	h.write("\x1b]52;c;" + base64.StdEncoding.EncodeToString([]byte(text)) + "\x1b\\")
+	if len(h.clips) != 1 || h.clips[0] != text {
+		t.Fatalf("got %d copies, the first %d bytes long, want one of %d", len(h.clips), len(strings.Join(h.clips, "")), len(text))
 	}
 }
 

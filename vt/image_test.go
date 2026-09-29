@@ -182,6 +182,21 @@ func TestSomethingThatIsNotAnImageIsNotTaken(t *testing.T) {
 	}
 }
 
+// An inline image that cannot be shown says why, where it would have
+// gone, and a stray sequence that is no inline image says nothing.
+func TestAnImageThatCannotBeShownSaysWhy(t *testing.T) {
+	h := newHarness(t, 60, 4)
+	sendImage(t, h.term, "inline=1", base64.StdEncoding.EncodeToString([]byte("not an image")))
+	sendImage(t, h.term, "name=eA==", "!!!")
+	h.write("after")
+	if got := h.line(0); got != "[image not shown: it is not a PNG, JPEG, GIF, WebP, BMP or TIFF image]"[:60] {
+		t.Fatalf("the first line reads %q", got)
+	}
+	if got := strings.TrimSpace(h.line(2)); got != "after" {
+		t.Fatalf("after the word, the output goes on at %q", got)
+	}
+}
+
 // Past the cap the oldest goes, so a program sending image after
 // image does not hold every one of them for ever.
 func TestPastTheCapTheOldestImageGoes(t *testing.T) {

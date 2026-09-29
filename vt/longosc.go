@@ -5,13 +5,13 @@ import (
 	"encoding/base64"
 )
 
-// longOSC pulls the sequences that carry an image out of the stream
-// before the parser sees them.
+// longOSC pulls the sequences that carry an image or a clipboard's
+// worth of text out of the stream before the parser sees them.
 //
 // The parser keeps a kilobyte of an OSC payload and throws the rest
-// away, which is nothing next to an image. These two are read here
-// instead, byte by byte, and everything else reaches the parser as it
-// always did.
+// away, which is nothing next to an image, and cuts a copy short. These
+// are read here instead, byte by byte, and everything else reaches the
+// parser as it always did.
 type longOSC struct {
 	// lead is the start of a marker, held back until enough of the
 	// next write arrives to say whether it is one.
@@ -33,11 +33,13 @@ type longOSC struct {
 }
 
 // longOSCMarkers are the sequences read here rather than by the
-// parser: the one a program sends an image with, and the one a window
-// hands an image to a window watching it with.
+// parser: the one a program sends an image with, the one a window
+// hands an image to a window watching it with, and the one a program
+// copies text with, which an editor over SSH sends a whole file in.
 var longOSCMarkers = [][]byte{
 	[]byte("\x1b]1337;"),
 	[]byte("\x1b]1338;"),
+	[]byte("\x1b]52;"),
 }
 
 // mostLongOSC is the largest payload held, which is the largest

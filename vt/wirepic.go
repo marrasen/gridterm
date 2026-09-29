@@ -62,8 +62,8 @@ func (t *Terminal) placeWirePic(params [][]byte) {
 	if line < 0 {
 		return
 	}
-	img, raw, ok := decodeImage(string(params[6]))
-	if !ok {
+	img, raw, why := decodeImage(string(params[6]))
+	if why != "" {
 		return
 	}
 	t.holdImage(Image{

@@ -99,10 +99,10 @@ func (a *app) startAgain(id string) error {
 	if !t.Exited() {
 		return nil
 	}
-	if cmd, ok := a.commands[id]; ok {
+	machine := a.machineOf(id)
+	if cmd, ok := a.commands[id]; ok && a.machines.Get(machine).Window == nil {
 		return a.runAgain(id, cmd)
 	}
-	machine := a.machineOf(id)
 	if machine == "" {
 		argv := a.argvs[id]
 		if argv == nil {
@@ -126,6 +126,8 @@ func (a *app) startAgain(id string) error {
 				farID = fid
 			}
 		}
+		// Where it ran, and what, for a window that has to open it anew.
+		key, cmd := a.farHostOf(id), a.commands[id]
 		go func() {
 			var sess session.Session
 			var err error
@@ -146,13 +148,26 @@ func (a *app) startAgain(id string) error {
 					err = nil
 				}
 			}
+			bind := func(n serve.Attached) {
+				go func() { a.events <- func() { a.bindFar(w, n.ID, id) } }()
+			}
+			if sess == nil && err == nil && (key != "" || len(cmd.argv) > 0) {
+				// Opened anew where it ran: the machine beyond, or the
+				// command again.
+				sess, err = w.Serve.OpenOn(key, strings.Join(cmd.argv, " "), cmd.dir, size.Cols, size.Rows, bind)
+				if errors.Is(err, serve.ErrCannotOpenOn) {
+					sess, err = nil, nil
+				}
+			}
 			if sess == nil && err == nil {
-				moved := farID != "" && a.farHostOf(id) != ""
+				// A window of a build before that: a shell on its own
+				// machine, in its place.
+				moved := key != ""
 				sess, err = w.Serve.Open(size.Cols, size.Rows, func(n serve.Attached) {
 					if moved {
 						go func() { a.events <- func() { a.onWindowsOwn(id) } }()
 					}
-					go func() { a.events <- func() { a.bindFar(w, n.ID, id) } }()
+					bind(n)
 				})
 			}
 			a.events <- func() {

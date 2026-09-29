@@ -1321,6 +1321,12 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	if then == nil {
 		then = func(string, error) {}
 	}
+	if window, key, far := machine.Far(); far {
+		// Beyond a window: that window opens it, on its connection.
+		a.next++
+		id := "p" + strconv.Itoa(a.next)
+		return a.openThrough(window, key, command{}, id, fmt.Sprintf("Terminal %d", a.next), at, then)
+	}
 	if machine != "" && a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 		// Not connected: connected to first, as a saved server's plus
 		// in the sidebar does.
@@ -1362,7 +1368,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		return nil
 	}
 	if a.machines.Get(machine).Window != nil {
-		return a.openOnWindow(machine, id, title, at, then)
+		return a.openThrough(machine, "", command{}, id, title, at, then)
 	}
 	conn, ok, err := a.connOf(machine)
 	switch {
@@ -1442,12 +1448,12 @@ func (a *app) machineOf(id string) machines.ID {
 // its own: on this computer, the one the focused pane runs.
 func (a *app) openTerminal() error {
 	a.likeHere()
-	return a.open(a.machineOf(a.st.Focus), Placement{})
+	return a.open(a.filesKey(a.st.Focus), Placement{})
 }
 
 // split opens a shell beside the focused pane, on its machine.
 func (a *app) split(in SplitPane) error {
-	machine := a.machineOf(a.st.Focus)
+	machine := a.filesKey(a.st.Focus)
 	if in.Elsewhere {
 		machine = in.Machine
 	}
@@ -1457,7 +1463,7 @@ func (a *app) split(in SplitPane) error {
 			return fmt.Errorf("this machine has no shell called %q", in.Shell)
 		}
 		a.nextShell, machine = argv, ""
-	} else if machine == a.machineOf(a.st.Focus) {
+	} else if machine == a.filesKey(a.st.Focus) {
 		a.likeHere()
 	}
 	return a.open(machine, Placement{Beside: a.st.Focus, Vertical: in.Vertical})

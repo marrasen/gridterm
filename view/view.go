@@ -2678,9 +2678,7 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	heading := func(title string) { add(nil, title, nil) }
 	heading("Terminal")
 	add(icon.SquareTerminal, "New Terminal", send(app.OpenOn{Machine: m}))
-	if !window {
-		add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
-	}
+	add(icon.SquareChevronRight, "Command…", func(u *gunim.UI) { w.commandDialogOn(m, u) })
 	if m == "" && len(w.shellChoices) > 1 {
 		// This computer's shells, each to open a terminal with.
 		heading("Shells")
@@ -2760,12 +2758,9 @@ func (w *Window) askSplit(vertical bool, u *gunim.UI) {
 			add("Move "+p.Title, w.nameOf(p.Machine), app.MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
 		}
 	}
-	here := machines.Local
-	for _, p := range w.panes {
-		if p.ID == focus {
-			here = p.Machine
-		}
-	}
+	// Where the focused pane runs: the machine beyond a window, for one
+	// on such a machine.
+	here := w.filesKeyOf(focus)
 	reach := w.machines()
 	for _, m := range reach {
 		if m != here {
@@ -2778,12 +2773,9 @@ func (w *Window) askSplit(vertical bool, u *gunim.UI) {
 			add("Terminal on "+h.Name+", connecting first", h.Address, app.SplitPane{Vertical: vertical, Machine: machines.ID(h.ID), Elsewhere: true})
 		}
 	}
-	// A command beside it, asked for once picked: not on a kakel
-	// window, which has no shell to run one in.
-	if !slices.ContainsFunc(w.remoteWindows, func(rw app.RemoteWindow) bool { return rw.Name == here }) {
-		add("Run a Command…", "program execute", nil)
-		w.splitCommand = commandAt{machine: here, at: app.Placement{Beside: focus, Vertical: vertical}}
-	}
+	// A command beside it, asked for once picked.
+	add("Run a Command…", "program execute", nil)
+	w.splitCommand = commandAt{machine: here, at: app.Placement{Beside: focus, Vertical: vertical}}
 	w.splitter.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
 

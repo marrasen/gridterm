@@ -26,12 +26,6 @@ func (w *Window) commandDialogOn(machine machines.ID, u *gunim.UI) {
 // commandDialogAt asks for a command to run on machine, its pane put
 // where at says.
 func (w *Window) commandDialogAt(machine machines.ID, at app.Placement, u *gunim.UI) {
-	for _, rw := range w.remoteWindows {
-		if rw.Name == machine {
-			w.toasts.Show(widget.Toast{Title: w.nameOf(machine) + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
-			return
-		}
-	}
 	where := w.nameOf(machine)
 	line, dir := widget.NewTextField(), widget.NewTextField()
 	line.Placeholder, dir.Placeholder = "such as top, or make test", "optional: where the login lands"

@@ -46,6 +46,16 @@ const (
 	// an unknown request away with a bare no, which a client takes as
 	// "cannot" and does something else.
 	reqStartAgain = "start-again@gridterm"
+
+	// SessionOnChannel opens something new on a machine the served
+	// window reaches, or a command on its own: a terminal, or a command
+	// when one is given. Its payload is openOn.
+	//
+	// A channel of its own rather than more of openSession, which is
+	// positional: a window of an older build refuses a channel it does
+	// not know by name, and the client says that it cannot, rather than
+	// both ends misreading each other.
+	SessionOnChannel = "session-on@gridterm"
 )
 
 // opened names what the served window opened, in the same three parts a
@@ -96,6 +106,19 @@ type openSession struct {
 	// own title, so it changes at every prompt.
 	AttachHost string
 	AttachKind string
+}
+
+// openOn is what a client asks for when it opens a session on a machine
+// the served window reaches: the size of the pane it will be drawn in,
+// the machine, as the served window's Open named it (its Key), and the
+// command to run there, split on spaces, in Dir. No command asks for a
+// terminal. Host "" is the served window's own machine.
+type openOn struct {
+	Cols    uint32
+	Rows    uint32
+	Host    string
+	Command string
+	Dir     string
 }
 
 // windowChange is the size of the pane a session is drawn in.

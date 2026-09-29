@@ -93,6 +93,16 @@ func (t *Terminal) Resync(w Watcher) error {
 	return w.Screen([]byte(screen))
 }
 
+// Replay is the escape sequences that would draw the screen as it
+// stands, for a watcher that arrives once the program has gone: Watch
+// refuses one, and a command that finished at once would otherwise
+// show nothing of what it printed.
+func (t *Terminal) Replay() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.liveScreen()
+}
+
 // liveScreen is the escape sequences that would draw this terminal's
 // live screen. The emulator's lock is already held.
 //

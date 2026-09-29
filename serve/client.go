@@ -307,11 +307,11 @@ func (w *Window) Addr() string { return w.addr }
 // hand-over.
 func (w *Window) Attach(open Open, cols, rows int) (session.Session, error) {
 	// Nothing to be told: this window already knows what it asked for.
-	return w.session(openSession{
+	return w.session(SessionChannel, ssh.Marshal(openSession{
 		Cols: uint32(cols), Rows: uint32(rows),
 		Attach:     open.ID,
 		AttachHost: open.Host, AttachKind: open.Kind,
-	}, nil)
+	}), nil)
 }
 
 // Files opens a file session on the machine the other window is on.
@@ -391,7 +391,24 @@ func (w *Window) Open(cols, rows int, named func(Attached)) (session.Session, er
 	// Sent as asked. The machine that has to make a terminal this size
 	// is the one that clamps it, and a second clamp here would only
 	// hide what this window actually asked for.
-	return w.session(openSession{Cols: uint32(cols), Rows: uint32(rows)}, named)
+	return w.session(SessionChannel, ssh.Marshal(openSession{Cols: uint32(cols), Rows: uint32(rows)}), named)
+}
+
+// ErrCannotOpenOn is what OpenOn says when the window over there does
+// not know how: a build from before it could.
+var ErrCannotOpenOn = errors.New("serve: that window cannot open anything on the machines it reaches: it is a kakel from before that")
+
+// OpenOn asks the other window for a terminal on host, a machine it
+// reaches as its Open named it, or for command in dir there when command
+// is not empty. Host "" is that window's own machine. named is as for
+// Open.
+func (w *Window) OpenOn(host, command, dir string, cols, rows int, named func(Attached)) (session.Session, error) {
+	sess, err := w.session(SessionOnChannel, ssh.Marshal(openOn{Cols: uint32(cols), Rows: uint32(rows), Host: host, Command: command, Dir: dir}), named)
+	var open *ssh.OpenChannelError
+	if errors.As(err, &open) && open.Reason == ssh.UnknownChannelType {
+		return nil, ErrCannotOpenOn
+	}
+	return sess, err
 }
 
 // ErrCannotStartAgain is what StartAgain says when the window over there
@@ -424,11 +441,11 @@ func (w *Window) StartAgain(what Attached) error {
 }
 
 // open asks the other window for a session and wraps what comes back.
-func (w *Window) session(want openSession, named func(Attached)) (session.Session, error) {
+func (w *Window) session(kind string, payload []byte, named func(Attached)) (session.Session, error) {
 	if w.isClosed() {
 		return nil, errors.New("serve: that window has been let go of")
 	}
-	ch, reqs, err := w.client.OpenChannel(SessionChannel, ssh.Marshal(want))
+	ch, reqs, err := w.client.OpenChannel(kind, payload)
 	if err != nil {
 		return nil, fmt.Errorf("serve: open a session on %s: %w", w.addr, err)
 	}

@@ -90,6 +90,29 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			})
 			continue
 		}
+		if nch.ChannelType() == SessionOnChannel {
+			var want openOn
+			if err := ssh.Unmarshal(nch.ExtraData(), &want); err != nil {
+				_ = nch.Reject(ssh.ConnectionFailed,
+					"that is not a session request this kakel understands: "+
+						"both windows have to be the same build")
+				continue
+			}
+			ch, reqs, err := nch.Accept()
+			if err != nil {
+				s.onError(fmt.Errorf("serve: take a session: %w", err))
+				continue
+			}
+			running.Go(func() {
+				s.runSession(ctx, ch, reqs, want.Cols, want.Rows, func(cols, rows int) (session.Session, Attached, error) {
+					if s.cfg.OpenOn == nil {
+						return nil, Attached{}, errors.New("this kakel cannot open anything on the machines it reaches")
+					}
+					return s.cfg.OpenOn(want.Host, want.Command, want.Dir, cols, rows)
+				})
+			})
+			continue
+		}
 		if nch.ChannelType() != SessionChannel {
 			_ = nch.Reject(ssh.UnknownChannelType,
 				"this is kakel, and it serves "+SessionChannel)
@@ -113,7 +136,7 @@ func (s *Server) serveChannels(ctx context.Context, c *Client, chans <-chan ssh.
 			continue
 		}
 		running.Go(func() {
-			s.runSession(ctx, ch, reqs, want)
+			s.runSession(ctx, ch, reqs, want.Cols, want.Rows, s.starter(want))
 		})
 	}
 	// The connection is finished. Waiting here is what keeps the window
@@ -186,40 +209,41 @@ func (s *Server) runFiles(ctx context.Context, nch ssh.NewChannel, host string) 
 // client opens.
 type Filer func(ctx context.Context, host string, ch io.ReadWriteCloser) error
 
-// runSession starts something for the client to work in and carries it
-// until one end or the other is done.
+// starter is how a session request starts what it asks for: work in
+// something open, or something new on this machine.
+func (s *Server) starter(want openSession) func(cols, rows int) (session.Session, Attached, error) {
+	return func(cols, rows int) (session.Session, Attached, error) {
+		switch {
+		case want.Attach != "":
+			if s.cfg.Attach == nil {
+				return nil, Attached{}, errors.New("this kakel cannot be worked in from elsewhere")
+			}
+			sess, err := s.cfg.Attach(Attached{
+				ID:   want.Attach,
+				Host: want.AttachHost,
+				Kind: want.AttachKind,
+			}, cols, rows)
+			return sess, Attached{}, err
+		case s.cfg.Open == nil:
+			return nil, Attached{}, errors.New("this kakel has nothing to open")
+		}
+		return s.cfg.Open(cols, rows)
+	}
+}
+
+// runSession starts something for the client to work in, with start,
+// and carries it until one end or the other is done.
 func (s *Server) runSession(ctx context.Context, ch ssh.Channel,
-	reqs <-chan *ssh.Request, want openSession) {
+	reqs <-chan *ssh.Request, wantCols, wantRows uint32,
+	start func(cols, rows int) (session.Session, Attached, error)) {
 
 	// Clamped here rather than where it was sent from. Nothing stops a
 	// client asking for a pane of four billion cells, and this is the
 	// end that has to make a terminal that size.
-	cols := min(max(int(want.Cols), 1), mostCells)
-	rows := min(max(int(want.Rows), 1), mostCells)
+	cols := min(max(int(wantCols), 1), mostCells)
+	rows := min(max(int(wantRows), 1), mostCells)
 
-	var (
-		sess  session.Session
-		named Attached
-		err   error
-	)
-	switch {
-	case want.Attach != "":
-		if s.cfg.Attach == nil {
-			s.refuseSession(ch, reqs,
-				errors.New("this kakel cannot be worked in from elsewhere"))
-			return
-		}
-		sess, err = s.cfg.Attach(Attached{
-			ID:   want.Attach,
-			Host: want.AttachHost,
-			Kind: want.AttachKind,
-		}, cols, rows)
-	case s.cfg.Open == nil:
-		s.refuseSession(ch, reqs, errors.New("this kakel has nothing to open"))
-		return
-	default:
-		sess, named, err = s.cfg.Open(cols, rows)
-	}
+	sess, named, err := start(cols, rows)
 	if err != nil {
 		s.refuseSession(ch, reqs, err)
 		return

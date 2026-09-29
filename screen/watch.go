@@ -1,6 +1,7 @@
 package screen
 
 import (
+	"errors"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -13,10 +14,19 @@ import (
 // it stands and then everything the program writes, with what is typed
 // going to the program. resize hears the size the watcher wants, and
 // gone that the watcher has gone; both are called on the watcher's
-// goroutine.
+// goroutine. A program that has gone already gives the screen it left,
+// and then ends.
 func Watch(t *uiterm.Terminal, resize func(cols, rows int), gone func()) (session.Session, error) {
 	w := &watched{pane: t, out: make(chan []byte, 256), done: make(chan struct{}), over: make(chan struct{}), resize: resize, gone: gone}
 	stop, err := t.Watch(feed{w})
+	if errors.Is(err, uiterm.ErrEnded) {
+		// Gone already, as a quick command is by the time it is asked
+		// for: the screen it left, and then the end.
+		w.out <- []byte(t.Replay())
+		w.stop = func() {}
+		feed{w}.Ended()
+		return w, nil
+	}
 	if err != nil {
 		return nil, err
 	}

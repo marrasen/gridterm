@@ -45,19 +45,25 @@ type command struct {
 }
 
 // runCommand starts a command in a pane of its own.
-func (a *app) runCommand(in RunCommand) error {
+func (a *app) runCommand(in RunCommand) error { return a.runCommandThen(in, nil) }
+
+// runCommandThen is runCommand, telling then the pane it opened, or why
+// it could not, once it has; one that fails at once is only returned.
+// then runs on the program's goroutine, and may be nil.
+func (a *app) runCommandThen(in RunCommand, then func(id string, err error)) error {
+	if then == nil {
+		then = func(string, error) {}
+	}
 	argv := strings.Fields(in.Line)
 	if len(argv) == 0 {
 		return errors.New("there is no command to run")
 	}
-	window := a.machines.Get(in.Machine).Window != nil
-	if a.book != nil {
-		if h, ok := a.machines.Saved(in.Machine); ok && h.Window {
-			window = true
-		}
+	through, key, far := in.Machine.Far()
+	if !far {
+		through = in.Machine
 	}
-	if window {
-		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", a.machines.Name(in.Machine))
+	if !far && a.machines.Get(in.Machine).Window == nil && a.machines.IsWindow(in.Machine) {
+		return fmt.Errorf("%s is a kakel window that is not connected: connect to it first", a.machines.Name(in.Machine))
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {
@@ -80,9 +86,18 @@ func (a *app) runCommand(in RunCommand) error {
 		a.argvs[id] = argv
 	}
 	title := strings.Join(argv, " ")
-	return a.startCommand(in.Machine, cmd, commandStart{then: func(sess session.Session) {
-		a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical})
-	}})
+	if a.machines.Get(through).Window != nil {
+		// The window runs it, in a pane of its own, which this one
+		// watches: its own machine's, or one it reaches.
+		return a.openThrough(through, key, cmd, id, title, Placement{Beside: in.Beside, Vertical: in.Vertical}, then)
+	}
+	return a.startCommand(in.Machine, cmd, commandStart{
+		then: func(sess session.Session) {
+			a.addPane(Pane{ID: id, Title: title, Machine: in.Machine, Command: true}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Machine)), Placement{Beside: in.Beside, Vertical: in.Vertical})
+			then(id, nil)
+		},
+		failed: func() { then("", errors.New("could not run "+title)) },
+	})
 }
 
 // commandStart is what is to be done with a command started: then

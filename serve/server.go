@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/kakel/session"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -100,6 +101,12 @@ type Config struct {
 	// window's panes. A nil one cannot be worked in from elsewhere, and
 	// a client that asks is told so.
 	Attach Attacher
+
+	// OpenOn starts something for a client to work in on a machine this
+	// window reaches: a terminal, or command in dir when command is not
+	// empty. host is the machine as this window's Open named it, "" for
+	// this machine. A nil one refuses, and a client is told so.
+	OpenOn func(host, command, dir string, cols, rows int) (session.Session, Attached, error)
 
 	// StartAgain starts again the program of something this window has
 	// open whose program has ended, in the pane it ended in, for a

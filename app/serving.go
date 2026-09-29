@@ -16,6 +16,7 @@ import (
 
 	"github.com/pkg/sftp"
 
+	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/screen"
@@ -150,6 +151,7 @@ func (a *app) startServing(in StartServing) error {
 		Opens:      a.opens,
 		Attach:     a.attachFor,
 		Open:       a.openFor,
+		OpenOn:     a.openOnFor,
 		StartAgain: a.startAgainFor,
 		Files:      a.serveFiles,
 		Picture:    func(png []byte) error { return takePicture(png) },
@@ -367,6 +369,73 @@ func (a *app) openFor(cols, rows int) (session.Session, serve.Attached, error) {
 		return nil, serve.Attached{}, err
 	}
 	return got.sess, serve.Attached{ID: got.id, Kind: "Terminal"}, nil
+}
+
+// openOnFor opens a terminal, or command in dir when there is one, on
+// a machine this window reaches, for a connected window, in a pane of
+// its own here that the other window watches. host is the machine as
+// this window's list names it, "" for this machine.
+func (a *app) openOnFor(host, command, dir string, cols, rows int) (session.Session, serve.Attached, error) {
+	type result struct {
+		id  string
+		err error
+	}
+	done := make(chan result, 1)
+	then := func(id string, err error) { done <- result{id, err} }
+	_, err := onApp(a, func() (struct{}, error) {
+		machine, err := a.servedMachine(host)
+		if err != nil {
+			return struct{}{}, err
+		}
+		if command == "" {
+			return struct{}{}, a.openThen(machine, Placement{}, then)
+		}
+		return struct{}{}, a.runCommandThen(RunCommand{Machine: machine, Line: command, Dir: dir}, then)
+	})
+	if err != nil {
+		return nil, serve.Attached{}, err
+	}
+	var got result
+	select {
+	case got = <-done:
+	case <-a.ctx.Done():
+		return nil, serve.Attached{}, a.ctx.Err()
+	}
+	if got.err != nil {
+		return nil, serve.Attached{}, got.err
+	}
+	sess, err := onApp(a, func() (session.Session, error) {
+		t := a.terminal(got.id)
+		if t == nil {
+			return nil, errors.New("it closed here before it could be shown")
+		}
+		a.setPane(got.id, func(p *Pane) { p.Title += " (opened from another window)" })
+		return a.watchPane(t, cols, rows)
+	})
+	if err != nil {
+		return nil, serve.Attached{}, err
+	}
+	return sess, serve.Attached{ID: got.id, Host: host, Kind: "Terminal"}, nil
+}
+
+// servedMachine is the machine a connected window asks for something
+// on, as this window's list names it: this machine for "", or a server
+// connected here. A kakel window beyond this one is refused: what it
+// has is its own to open.
+func (a *app) servedMachine(host string) (machines.ID, error) {
+	if host == "" {
+		return machines.Local, nil
+	}
+	id, ok := a.machines.Find(host)
+	switch {
+	case !ok:
+		return "", fmt.Errorf("this window knows no machine called %s", host)
+	case a.machines.IsWindow(id):
+		return "", fmt.Errorf("%s is another kakel window, which opens what it has itself", a.machines.Name(id))
+	case a.machines.Get(id).Conn == nil:
+		return "", fmt.Errorf("%s is not connected here", a.machines.Name(id))
+	}
+	return id, nil
 }
 
 // startAgainFor starts again a pane's program, for a connected window

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/session"
 
 	"github.com/marrasen/kakel/machines"
 
@@ -300,32 +301,48 @@ func (a *app) showWindows() {
 	a.st.Windows = out
 }
 
-// openOnWindow opens a shell on a window, in a pane here.
-func (a *app) openOnWindow(name machines.ID, id, title string, at Placement, then func(string, error)) error {
-	w := a.machines.Get(name).Window
+// openThrough opens something new on window, a kakel window connected
+// to, in a pane here: a terminal on the machine it reaches by key, ""
+// for its own, or cmd there when cmd has a command. The window opens it
+// in a pane of its own, which this one watches. then hears the pane,
+// or why there is none.
+func (a *app) openThrough(window machines.ID, key string, cmd command, id, title string, at Placement, then func(string, error)) error {
+	w := a.machines.Get(window).Window
+	if w == nil {
+		return fmt.Errorf("this window is not connected to %s any more", a.machines.Name(window))
+	}
+	on := window
+	if key != "" {
+		on = machines.FarID(window, key)
+	}
 	a.starting++
 	go func() {
-		// What the window calls the shell arrives on a goroutine of the
+		// What the window calls it arrives on a goroutine of the
 		// connection's, and is written down on the program's.
-		sess, err := w.Serve.Open(screen.Cols, screen.Rows, func(n serve.Attached) {
-			go func() {
-				a.events <- func() {
-					if n.ID != "" && a.has(id) {
-						w.Bound[n.ID] = id
-						a.showWindows()
-					}
-				}
-			}()
-		})
+		named := func(n serve.Attached) {
+			go func() { a.events <- func() { a.bindFar(w, n.ID, id) } }()
+		}
+		var sess session.Session
+		var err error
+		if key == "" && len(cmd.argv) == 0 {
+			// A terminal on its own machine, as every build can open.
+			sess, err = w.Serve.Open(screen.Cols, screen.Rows, named)
+		} else {
+			sess, err = w.Serve.OpenOn(key, strings.Join(cmd.argv, " "), cmd.dir, screen.Cols, screen.Rows, named)
+		}
 		a.events <- func() {
 			a.starting--
 			if err != nil {
-				a.failed("Couldn't open a shell on "+a.machines.Name(name), err.Error())
+				what := "Couldn't open a shell on "
+				if len(cmd.argv) > 0 {
+					what = "Couldn't run " + strings.Join(cmd.argv, " ") + " on "
+				}
+				a.failed(what+a.machines.Name(on), err.Error())
 				a.stayIfEmpty()
 				then("", err)
 				return
 			}
-			a.addPane(Pane{ID: id, Title: title, Machine: name}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, name)), at)
+			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, window)), at)
 			a.showWindows()
 			then(id, nil)
 		}

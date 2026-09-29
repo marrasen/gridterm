@@ -105,6 +105,13 @@ func takenOver(t *testing.T, open Opener) (*Server, *Window) {
 // in what it already has running.
 func takenOverWith(t *testing.T, open Opener, attach Attacher) (*Server, *Window) {
 	t.Helper()
+	return takenOverServing(t, Config{Open: open, Attach: attach})
+}
+
+// takenOverServing is takenOver for a window serving what cfg says;
+// the address, keys and errors are the test's.
+func takenOverServing(t *testing.T, cfg Config) (*Server, *Window) {
+	t.Helper()
 	mine, line := aKey(t, "marcus@laptop")
 	host, err := HostKey(t.TempDir() + "/host_key")
 	if err != nil {
@@ -114,12 +121,8 @@ func takenOverWith(t *testing.T, open Opener, attach Attacher) (*Server, *Window
 	if err != nil {
 		t.Fatalf("allowed: %v", err)
 	}
-	s, err := Listen(Config{
-		Addr: "127.0.0.1:0", HostKey: host, Allowed: keys,
-		Open:    open,
-		Attach:  attach,
-		OnError: func(error) {},
-	})
+	cfg.Addr, cfg.HostKey, cfg.Allowed, cfg.OnError = "127.0.0.1:0", host, keys, func(error) {}
+	s, err := Listen(cfg)
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}

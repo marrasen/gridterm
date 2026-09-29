@@ -2176,10 +2176,12 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 			return true
 		}
 		return false
-	case input.FocusGained:
-		r.ring.Animate(1, widget.Quick.Get(u.Theme()))
-	case input.FocusLost:
-		r.ring.Animate(0, widget.Settle.Get(u.Theme()))
+	case input.FocusRing:
+		if e.On {
+			r.ring.Animate(1, widget.Quick.Get(u.Theme()))
+		} else {
+			r.ring.Animate(0, widget.Settle.Get(u.Theme()))
+		}
 	case input.KeyPress:
 		switch {
 		case e.Key == input.KeyUp, e.Key == input.KeyDown:

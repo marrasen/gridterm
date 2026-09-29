@@ -32,7 +32,10 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 		Windows: []app.RemoteWindow{{Name: "desk", Addr: "desk:2222"}},
 		Tunnels: []app.Tunnel{{ID: "t1", Machine: "srv", Label: ":8080", Live: true, Meter: busy}},
 		Jobs: []app.Job{{ID: "j1", Title: "Copying 2 items", Machine: "srv", Kind: "copy", Share: 0.4},
-			{ID: "j2", Title: "Deleting 1 item", Machine: "srv", Kind: "delete", Share: 1, Done: true}},
+			{ID: "j2", Title: "Deleting 1 item", Machine: "srv", Kind: "delete", Share: 1, Done: true},
+			// On a machine the window reached with nothing open there:
+			// under the window.
+			{ID: "j3", Title: "Copying 1 item", Machine: machines.FarID("desk", "web"), Kind: "copy", Share: 0.1}},
 		Stage:    &app.Box{Pane: "p2"},
 		Focus:    "p2",
 		Browsers: map[string]app.Browser{"p2": {Path: "/", Seq: 1}},
@@ -63,6 +66,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 		t.Fatal("a machine the window reached has no heading a step in")
 	}
 	row("p3")
+	row("job:j3")
 
 	// The cross on a row closes it.
 	for len(lastWindow.Client().Intents()) > 0 {

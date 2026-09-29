@@ -264,3 +264,67 @@ func TestEnterOnTheOverwriteQuestionLeavesTheFile(t *testing.T) {
 		}
 	}
 }
+
+// A copy done lists again every file pane on the filesystems it worked
+// on, not only those at its folders as it started: a pane may have
+// gone to the folder since.
+func TestAFinishedCopyListsEveryPaneOnItsFilesystemAgain(t *testing.T) {
+	a, _ := agentApp(t)
+	from, into, elsewhere := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(from, "a.txt"), []byte("one"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.filesOn("", elsewhere); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	seq := a.st.Browsers[pane].Seq
+	local := vfs.NewLocal()
+	a.follow(jobs.Op{Kind: jobs.Copy, From: local, At: from, Names: []string{"a.txt"}, To: local, Into: into}, "Copying 1 item to x")
+	waitFor(t, a, "the pane listed again", func() bool { return a.st.Browsers[pane].Seq > seq })
+}
+
+// A copy's saved tick holds whichever way round its names were picked.
+func TestACopyIsSavedWhateverTheOrderOfItsNames(t *testing.T) {
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	r := &running{op: jobs.Op{Kind: jobs.Copy, At: "/a", Into: "/b", Names: []string{"x", "y"}}}
+	saved := a.savedCopyOf(r)
+	saved.Names = []string{"y", "x"}
+	a.st.SavedCopies = []settings.SavedCopy{saved}
+	if !a.isSaved(r) {
+		t.Fatal("saved with its names the other way round, the copy reads as not saved")
+	}
+}
+
+// A copy is filed under the machine it writes to, unless that is this
+// one; then under the machine it reads from. A delete is filed where it
+// happens.
+func TestAJobIsFiledWhereItsFilesAre(t *testing.T) {
+	far := machines.FarID("desk", "db")
+	for _, c := range []struct {
+		kind     jobs.Kind
+		from, to machines.ID
+		want     machines.ID
+	}{
+		{jobs.Copy, "srv", machines.Local, "srv"},
+		{jobs.Copy, machines.Local, "srv", "srv"},
+		{jobs.Copy, far, machines.Local, far},
+		{jobs.Delete, "srv", machines.Local, "srv"},
+	} {
+		r := &running{op: jobs.Op{Kind: c.kind}, from: c.from, to: c.to}
+		if got := jobRow(r, jobs.Progress{}).Machine; got != c.want {
+			t.Errorf("a %v from %q to %q is filed under %q, want %q", c.kind, c.from, c.to, got, c.want)
+		}
+	}
+}
+
+// Where a saved copy goes names a machine a window reached through
+// that window, not by kakel's own key for it.
+func TestASavedCopyThroughAWindowIsNamed(t *testing.T) {
+	c := settings.SavedCopy{From: "desk" + KeptFarSep + "db", FromID: "d1", At: "/srv", Into: "/tmp"}
+	named := func(id machines.ID) string { return map[machines.ID]string{"d1": "desk"}[id] }
+	if got := CopiedWhere(c, named); got != "/srv on db through desk → /tmp on this computer" {
+		t.Fatalf("the copy reads %q", got)
+	}
+}

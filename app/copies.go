@@ -122,12 +122,7 @@ func (a *app) isSaved(r *running) bool {
 		return false
 	}
 	saved := a.savedCopyOf(r)
-	return slices.ContainsFunc(a.st.SavedCopies, func(c settings.SavedCopy) bool { return sameCopy(c, saved) })
-}
-
-// sameCopy reports whether two saved copies are the same work.
-func sameCopy(x, y settings.SavedCopy) bool {
-	return x.From == y.From && x.To == y.To && x.At == y.At && x.Into == y.Into && slices.Equal(x.Names, y.Names)
+	return slices.ContainsFunc(a.st.SavedCopies, saved.Same)
 }
 
 // runSavedCopy does a saved copy, between the machines it was saved

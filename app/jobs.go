@@ -139,8 +139,6 @@ type running struct {
 	lastAt    time.Time
 	// ended is set once its end has been reported.
 	ended bool
-	// panes are the file panes to list again once it is done.
-	panes []string
 }
 
 // folderOf returns a file pane's filesystem and folder.
@@ -205,25 +203,27 @@ func (a *app) followOn(op jobs.Op, title string, from, to machines.ID) *jobs.Job
 		a.jobs = jobs.New(2)
 	}
 	job := a.jobs.Start(a.ctx, op, jobs.Options{Ask: overwriteAsker{a}})
-	var panes []string
-	for id, b := range a.st.Browsers {
-		f := a.filesOf(id)
-		if f == nil {
-			continue
-		}
-		if (vfs.Same(f, op.From) && b.Path == op.At) || (op.To != nil && vfs.Same(f, op.To) && b.Path == op.Into) {
-			panes = append(panes, id)
-		}
-	}
 	a.clearJobs(false)
 	a.jobSeq++
-	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, panes: panes, op: op, from: from, to: to})
+	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, op: op, from: from, to: to})
 	if !a.watching {
 		a.watching = true
 		go a.watchJobs()
 	}
 	a.showJobs()
 	return job
+}
+
+// relistOn lists again every file pane on either filesystem op worked
+// on, wherever it has gone since the job started: a folder under the
+// one copied into changed too.
+func (a *app) relistOn(op jobs.Op) {
+	for id, b := range a.st.Browsers {
+		f := a.filesOf(id)
+		if f != nil && (vfs.Same(f, op.From) || (op.To != nil && vfs.Same(f, op.To))) {
+			a.browse(Browse{Pane: id, Path: b.Path})
+		}
+	}
 }
 
 // watchJobs looks at the jobs four times a second while any runs.
@@ -276,14 +276,13 @@ func (a *app) showJobs() bool {
 			a.worked(pastTense(r.title), row.Detail, "")
 			a.done()
 		}
-		for _, id := range r.panes {
-			if b, ok := a.st.Browsers[id]; ok {
-				a.browse(Browse{Pane: id, Path: b.Path})
-			}
-		}
+		a.relistOn(r.op)
 	}
 	a.st.Jobs = rows
 	a.st.Status = strings.Join(lines, "  ·  ")
+	if len(lines) == 0 {
+		a.showDialling()
+	}
 	if !live {
 		a.watching = false
 	}
@@ -294,7 +293,10 @@ func (a *app) showJobs() bool {
 func jobRow(r *running, p jobs.Progress) Job {
 	row := Job{ID: r.id, Title: r.title, Share: -1, Done: p.Done, Names: r.op.Names, Current: p.Current,
 		Speeds: slices.Clone(r.speeds), Sampled: r.sampled, Repeatable: p.Done && r.op.Kind == jobs.Copy, Machine: r.to, Kind: jobKind(r.op.Kind)}
-	if r.op.Kind == jobs.Delete {
+	// Filed under the machine it writes to, unless that is this one: a
+	// copy down from a server stays under the server, where the files
+	// it reads are. A delete is filed where it happens.
+	if r.op.Kind == jobs.Delete || r.to == machines.Local {
 		row.Machine = r.from
 	}
 	if p.Files == len(r.op.Names) {

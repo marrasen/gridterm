@@ -310,6 +310,11 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 	// one keeps its row, saying how it ended, until it is cleared.
 	for _, j := range st.Jobs {
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:"+string(j.Machine) })
+		// A machine a window reached has a heading only while something
+		// is open on it; otherwise the work goes under the window.
+		if window, _, far := j.Machine.Far(); at < 0 && far {
+			at = slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:"+string(window) })
+		}
 		if at < 0 {
 			continue
 		}

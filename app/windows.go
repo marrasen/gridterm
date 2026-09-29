@@ -110,7 +110,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	logLine(acct, "", "connecting to the window at "+addr)
 	logPane := a.watchDial(name)
 	began := time.Now()
-	a.st.Status = "Connecting to the window at " + addr + "…"
+	a.showDialling()
 	go func() {
 		win, err := remote.ReachWindow(dctx, remote.Reach{
 			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a, name),
@@ -121,7 +121,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 		a.events <- func() {
 			a.machines.At(name).Dialing = nil
 			cancel()
-			a.st.Status = ""
+			a.showDialling()
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
 				if errors.Is(err, context.Canceled) && logPane != "" {

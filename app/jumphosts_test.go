@@ -183,3 +183,25 @@ func TestDisconnectingAJumpHostLetsGoOfWhatWentThroughIt(t *testing.T) {
 		t.Fatalf("let go of on purpose, they are kept as dropped: %v", a.machines.Dropped())
 	}
 }
+
+// A jump host connected to only to go through is taken as it is when
+// the user connects to it, rather than signed in to again; it is theirs
+// from then on, and stays once what went through it has gone.
+func TestConnectingToAJumpHostInUseTakesIt(t *testing.T) {
+	a, s, answering := jumpApp(t)
+	a.handle(ConnectTo{Server: "inner1"})
+	waitFor(t, a, "inner1", func() bool { answering(); return a.machines.Get("inner1").Conn != nil })
+	a.handle(ConnectTo{Server: "bastion"})
+	waitFor(t, a, "the bastion", func() bool { answering(); return a.machines.Get("bastion").Conn != nil })
+	if n := s.Conns(); n != 2 {
+		t.Fatalf("connecting to the bastion in use signed in %d times in all, want 2", n)
+	}
+	a.handle(Disconnect{Machine: "inner1"})
+	waitFor(t, a, "inner1 to go", func() bool { return a.machines.Get("inner1").Conn == nil })
+	waitFor(t, a, "inner1 to close", func() bool { return s.Live() == 1 })
+	if c := a.machines.Get("bastion").Conn; c == nil || c.Closed() {
+		t.Fatal("the bastion taken as the user's closed with what went through it")
+	}
+	a.handle(Disconnect{Machine: "bastion"})
+	waitFor(t, a, "the bastion to close", func() bool { return s.Live() == 0 })
+}

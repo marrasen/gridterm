@@ -45,6 +45,14 @@ const agentMark = " (agent)"
 // and 0. names are the saved servers of the hops, "" for one that is
 // not saved.
 func (r *Registry) HopConnected(names []ID, hops []remote.Config) (*remote.Conn, int) {
+	// The far end itself, connected already only to go through to
+	// another: taken as it is, rather than signed in to again, when it
+	// carries no agent it would have been asked to.
+	if last := len(names) - 1; last >= 0 && names[last] != "" && !hops[last].ForwardAgent {
+		if c := r.hops[names[last]]; c != nil && !c.Closed() && strings.TrimSuffix(r.routes[c], agentMark) == RouteOf(hops) {
+			return c, last + 1
+		}
+	}
 	for i := len(names) - 2; i >= 0; i-- {
 		n := names[i]
 		if n == "" {

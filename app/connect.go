@@ -140,7 +140,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
 	}
-	a.st.Status = "Connecting to " + called + "…"
+	a.showDialling()
 	// From the nearest hop already connected, so a second server behind
 	// a jump host does not sign in to the jump host again.
 	start, from := a.machines.HopConnected(names, hops)
@@ -162,7 +162,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					w(err)
 				}
 			}()
-			a.st.Status = ""
+			a.showDialling()
 			if err != nil {
 				// The hops reached on the way are no use to anything now.
 				for _, h := range made {
@@ -502,4 +502,22 @@ func (a *app) savedWindowAt(cfg remote.Config) (remote.Host, bool) {
 		}
 	}
 	return remote.Host{}, false
+}
+
+// showDialling says on the status line what is being connected to: the
+// connections on their way, all of them, so one that lands does not
+// clear the line while another is still being made.
+func (a *app) showDialling() {
+	var names []string
+	for _, id := range a.machines.Dialing() {
+		names = append(names, a.machines.Name(id))
+	}
+	switch len(names) {
+	case 0:
+		a.st.Status = ""
+	case 1:
+		a.st.Status = "Connecting to " + names[0] + "…"
+	default:
+		a.st.Status = "Connecting to " + strings.Join(names[:len(names)-1], ", ") + " and " + names[len(names)-1] + "…"
+	}
 }

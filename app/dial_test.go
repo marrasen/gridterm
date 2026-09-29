@@ -308,3 +308,26 @@ func TestAServersShellAsksForItsTerm(t *testing.T) {
 		t.Fatalf("the shell asked for TERM %q", got)
 	}
 }
+
+// The status line names every connection on its way, so one that lands
+// leaves the other said.
+func TestTheStatusNamesEveryDial(t *testing.T) {
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	one, two := a.machines.NewQuick("one.example", false), a.machines.NewQuick("two.example", false)
+	a.machines.At(one).Dialing = func() {}
+	a.machines.At(two).Dialing = func() {}
+	a.showDialling()
+	if !strings.Contains(a.st.Status, "one.example") || !strings.Contains(a.st.Status, "two.example") {
+		t.Fatalf("dialling two, the status says %q", a.st.Status)
+	}
+	a.machines.At(one).Dialing = nil
+	a.showDialling()
+	if a.st.Status != "Connecting to two.example…" {
+		t.Fatalf("one landed, the status says %q", a.st.Status)
+	}
+	a.machines.At(two).Dialing = nil
+	a.showDialling()
+	if a.st.Status != "" {
+		t.Fatalf("both landed, the status says %q", a.st.Status)
+	}
+}

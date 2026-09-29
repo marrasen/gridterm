@@ -2,9 +2,11 @@ package app
 
 import (
 	"os"
+	"strings"
 	"time"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/serve"
 
 	"github.com/marrasen/kakel/machines"
 
@@ -27,28 +29,39 @@ const KindLog = "log"
 var windowLog = logs.New(0, os.Stderr)
 
 // account returns the connection log of machine, made on first use.
-// A log that has one already carries on, under a line saying so.
 func (a *app) account(machine machines.ID) *logs.Lines {
 	l := a.machines.Get(machine).Log
-	ok := l != nil
-	if !ok {
+	if l == nil {
 		l = logs.New(0, nil)
 		a.machines.At(machine).Log = l
 		a.st.Accounts = append(a.st.Accounts, machine)
-		return l
 	}
-	logLine(l, "", "connecting again")
 	return l
 }
 
-// logLine writes one line into a log, stamped with the time, in colour
-// when it is given one: an SGR number such as "31" for red.
+// dialLog is the connection log of machine for a dial starting now: a
+// log it has already carries on, under a line saying so.
+func (a *app) dialLog(machine machines.ID) *logs.Lines {
+	if l := a.machines.Get(machine).Log; l != nil {
+		logLine(l, "", "connecting again")
+		return l
+	}
+	return a.account(machine)
+}
+
+// logLine writes a line into a log, stamped with the time, in colour
+// when it is given one: an SGR number such as "31" for red. What a
+// server said is in it, so it is cleaned first of what would draw in
+// the log's pane rather than read, and a line break in it starts a
+// line of its own.
 func logLine(l *logs.Lines, colour, line string) {
 	stamp := time.Now().Format("15:04:05") + "  "
-	if colour != "" {
-		line = "\x1b[" + colour + "m" + line + "\x1b[0m"
+	for _, one := range strings.Split(serve.Plain(line), "\n") {
+		if colour != "" {
+			one = "\x1b[" + colour + "m" + one + "\x1b[0m"
+		}
+		_, _ = l.Write([]byte(stamp + one + "\n"))
 	}
-	_, _ = l.Write([]byte(stamp + line + "\n"))
 }
 
 // Colours for lines that went badly, and lines that went well.

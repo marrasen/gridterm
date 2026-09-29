@@ -217,7 +217,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 	}
 	a.sayIfMoved(id, t, machine)
 	go func() {
-		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: size.Cols, Rows: size.Rows})
+		sess, err := conn.Shell(a.ctx, a.shellConfig(machine, size.Cols, size.Rows))
 		a.events <- func() {
 			if err == nil {
 				err = a.restarted(id, t, sess)

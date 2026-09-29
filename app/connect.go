@@ -123,7 +123,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	}
 	dctx, cancel := context.WithCancel(a.ctx)
 	a.machines.At(name).Dialing = cancel
-	acct := a.account(name)
+	acct := a.dialLog(name)
 	logLine(acct, "", "connecting to "+called)
 	logPane := a.watchDial(name)
 	began := time.Now()

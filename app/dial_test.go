@@ -266,3 +266,45 @@ func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
 		return strings.Contains(a.shells.Get(failed).T.AllText(), "could not connect")
 	})
 }
+
+// A saved server's shell asks for the TERM the server list names for
+// it.
+func TestAServersShellAsksForItsTerm(t *testing.T) {
+	testhome.New(t)
+	t.Setenv("SSH_AUTH_SOCK", "")
+	s := sshtest.New(t)
+	host, port := s.Host()
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	a.ctx = t.Context()
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Put(remote.Host{Name: "srv", Address: host, Port: port, User: "tester", Term: "screen-256color"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	idsAsNames(t, book)
+	a.book = book
+	t.Cleanup(func() {
+		for len(a.st.Panes) > 0 {
+			a.remove(a.st.Panes[0].ID)
+		}
+		for _, id := range a.machines.Connected() {
+			_ = a.machines.Get(id).Conn.Close()
+		}
+	})
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell", func() bool {
+		for _, q := range a.st.Asks {
+			ans := AskAnswered{ID: q.ID, Yes: true}
+			if len(q.Prompts) > 0 {
+				ans.Answers = []string{sshtest.Password}
+			}
+			a.handle(ans)
+		}
+		return oneShell(a)
+	})
+	if got := s.LastTerm(); got != "screen-256color" {
+		t.Fatalf("the shell asked for TERM %q", got)
+	}
+}

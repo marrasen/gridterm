@@ -42,6 +42,7 @@ type Server struct {
 	mu       sync.Mutex
 	banner   string
 	lastSize [2]int // cols, rows
+	lastTerm string
 	winches  int
 	conns    []net.Conn
 	accepted int
@@ -542,6 +543,7 @@ func (s *Server) session(sc *ssh.ServerConn, ch ssh.Channel, reqs <-chan *ssh.Re
 			cols, rows := parsePtyReq(req.Payload)
 			s.mu.Lock()
 			s.lastSize = [2]int{cols, rows}
+			s.lastTerm = ptyTerm(req.Payload)
 			stall := s.stallingPty
 			s.mu.Unlock()
 			if stall {
@@ -661,6 +663,25 @@ func parsePtyReq(p []byte) (cols, rows int) {
 		return 0, 0
 	}
 	return int(be32(rest)), int(be32(rest[4:]))
+}
+
+// ptyTerm is the TERM a pty-req payload asks for.
+func ptyTerm(p []byte) string {
+	if len(p) < 4 {
+		return ""
+	}
+	n := int(be32(p))
+	if n < 0 || 4+n > len(p) {
+		return ""
+	}
+	return string(p[4 : 4+n])
+}
+
+// LastTerm is the TERM the last pseudo-terminal asked for was for.
+func (s *Server) LastTerm() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.lastTerm
 }
 
 // parseWinch reads a window-change payload: width, height, then pixels.

@@ -1385,7 +1385,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 	}
 	a.starting++
 	go func() {
-		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Cols: screen.Cols, Rows: screen.Rows})
+		sess, err := conn.Shell(a.ctx, a.shellConfig(machine, screen.Cols, screen.Rows))
 		a.events <- func() {
 			a.starting--
 			if err != nil {

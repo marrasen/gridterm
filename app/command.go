@@ -164,7 +164,9 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 	}
 	a.starting++
 	go func() {
-		sess, err := conn.Shell(a.ctx, remote.ShellConfig{Command: cmd.argv, Dir: cmd.dir, Cols: screen.Cols, Rows: screen.Rows})
+		cfg := a.shellConfig(machine, screen.Cols, screen.Rows)
+		cfg.Command, cfg.Dir = cmd.argv, cmd.dir
+		sess, err := conn.Shell(a.ctx, cfg)
 		a.events <- func() {
 			a.starting--
 			if err != nil {
@@ -225,4 +227,13 @@ func (a *app) runAgain(id string, cmd command) error {
 		a.paneEnded(id)
 	}
 	return err
+}
+
+// shellConfig is how a shell on machine starts, at cols by rows: as its
+// saved server says, with the TERM it names, or as any other.
+func (a *app) shellConfig(machine machines.ID, cols, rows int) remote.ShellConfig {
+	if h, ok := a.machines.Saved(machine); ok {
+		return h.Shell(cols, rows)
+	}
+	return remote.ShellConfig{Cols: cols, Rows: rows}
 }

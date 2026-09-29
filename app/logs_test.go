@@ -3,6 +3,7 @@ package app
 import (
 	"log"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 
@@ -53,5 +54,32 @@ func TestANoticeIsInTheWindowLog(t *testing.T) {
 	a.notify("That didn't work", "start the shell: the directory name is invalid", "")
 	if !strings.Contains(got.String(), "That didn't work: start the shell: the directory name is invalid") {
 		t.Fatalf("the log says %q", got.String())
+	}
+}
+
+// What a server said is written into the log clean, a line at a time,
+// and looking at a log does not say it is connecting again.
+func TestALogLineIsCleanAndAskingForTheLogSaysNothing(t *testing.T) {
+	a := newApp(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), screen.NewShells())
+	l := a.account("srv")
+	logLine(l, badly, "disconnected: \x1b]0;owned\x07bye\r\nsee you")
+	a.account("srv")
+	logLine(a.dialLog("srv"), "", "connecting to srv")
+	var got []string
+	r := l.Open()
+	defer r.Close()
+	buf := make([]byte, 4096)
+	for len(got) < 4 {
+		n, err := r.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, line := range strings.Split(strings.TrimRight(string(buf[:n]), "\n"), "\n") {
+			got = append(got, strings.TrimSuffix(line[len("15:04:05  "):], "\r"))
+		}
+	}
+	want := []string{"\x1b[" + badly + "mdisconnected: ]0;ownedbye\x1b[0m", "\x1b[" + badly + "msee you\x1b[0m", "connecting again", "connecting to srv"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the log reads %q, want %q", got, want)
 	}
 }

@@ -106,7 +106,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	a.withdrawLost(name)
 	dctx, cancel := context.WithCancel(a.ctx)
 	a.machines.At(name).Dialing = cancel
-	acct := a.account(name)
+	acct := a.dialLog(name)
 	logLine(acct, "", "connecting to the window at "+addr)
 	logPane := a.watchDial(name)
 	began := time.Now()

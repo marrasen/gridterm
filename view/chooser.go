@@ -331,8 +331,13 @@ func (t *thumb) Handle(e input.Event, u *gunim.UI) bool {
 			t.pick(u)
 			return true
 		}
-	case input.FocusGained:
-		t.ring.Animate(1, widget.Quick.Get(u.Theme()))
+	case input.FocusRing:
+		// Shown as gunim shows a button's: while the keyboard is in use.
+		to := float32(0)
+		if e.On {
+			to = 1
+		}
+		t.ring.Animate(to, widget.Quick.Get(u.Theme()))
 	case input.FocusLost:
 		t.ring.Animate(0, widget.Settle.Get(u.Theme()))
 	case input.KeyPress:

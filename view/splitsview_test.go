@@ -100,3 +100,31 @@ func TestAChooserFollowsThePanes(t *testing.T) {
 		t.Fatal("the picture offered is not in the tree")
 	}
 }
+
+// A picture in the chooser shows its ring as gunim's buttons do: after
+// Tab, and not from a click.
+func TestAChoosersPictureRingsOnlyForTheKeyboard(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "left", Kind: app.KindFiles}, {ID: "p2", Title: "two", Kind: app.KindFiles},
+		{ID: "c1", Title: "Split", Kind: app.KindChooser, SplitFrom: "p1"}},
+		Stage: &app.Box{ID: "s1", A: &app.Box{Pane: "p1"}, B: &app.Box{Pane: "c1"}, Share: 0.5}, Focus: "c1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}, "p2": {Path: "/"}}})
+	run := func() {
+		for range 20 {
+			lastWindow.Frame(time.Second / 60)
+		}
+	}
+	run()
+	pic := win.choosers["c1"].thumbs[0]
+	lastUI.Focus(pic)
+	run()
+	if pic.ring.Value() > 0.01 {
+		t.Fatal("focused without the keyboard in use, the picture shows its ring")
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Mods: gi.ModShift, Time: time.Now()})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Time: time.Now()})
+	run()
+	if lastUI.Focused() != pic || pic.ring.Value() < 0.9 {
+		t.Fatalf("after Tab, the keyboard is on %T and the ring at %v", lastUI.Focused(), pic.ring.Value())
+	}
+}

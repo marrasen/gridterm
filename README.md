@@ -117,6 +117,7 @@ kakel comes with:
 | `Ctrl+Shift+G` | go to a directory, in a file pane |
 | `Ctrl+Shift+H` | every command and shortcut |
 | `F10` | the menus |
+| `Alt`, then an underlined letter | a menu, then a line in it |
 | `F11` | fill the screen with the pane or split in front |
 
 [USAGE.md](USAGE.md) covers the rest, and how to change a shortcut.

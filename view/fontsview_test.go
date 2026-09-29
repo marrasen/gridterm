@@ -52,7 +52,7 @@ func TestTheWindowDrawsInTheFontAndZoomsWithCtrlAndTheWheel(t *testing.T) {
 		t.Fatal("the terminal is not drawn in the font picked")
 	}
 	for i, m := range win.bar.Menus {
-		if m.Title != "Font" {
+		if i != menuAt("Font") {
 			continue
 		}
 		if len(m.Checked) < 2 || !m.Checked[1] || m.Checked[0] {

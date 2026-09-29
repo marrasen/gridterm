@@ -7,8 +7,6 @@ import (
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/kakel/machines"
-
-	"github.com/marrasen/gunim/widget"
 )
 
 func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
@@ -41,8 +39,8 @@ func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
 	// One not saved is connected to from the Servers menu.
 	win, _, publish := windowStage(t)
 	publish(app.State{Sidebar: true, SidebarWidth: 220})
-	i := slices.IndexFunc(win.bar.Menus, func(m widget.BarMenu) bool { return m.Title == "Servers" })
-	if i < 0 || !slices.Contains(win.bar.Menus[i].Items, "Quick Connect…") {
+	i := menuAt("Servers")
+	if i < 0 || !slices.ContainsFunc(win.bar.Menus[i].Items, func(s string) bool { return shownText(s) == "Quick Connect…" }) {
 		t.Fatal("the Servers menu has no Quick Connect")
 	}
 }

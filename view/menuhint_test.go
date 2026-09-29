@@ -11,7 +11,9 @@ import (
 
 func TestAMenuLineSaysItsFullTitleAtTheBottom(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{})
+	// A pane in front, for Close Pane to apply to.
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/"}}})
 	frame := func() { lastWindow.Frame(time.Second / 60) }
 	win.bar.Open(0, lastUI)
 	frame()

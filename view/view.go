@@ -280,7 +280,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 				bm.Breaks = append(bm.Breaks, i)
 			}
 		}
-		w.bar.Menus = append(w.bar.Menus, bm)
+		w.bar.Menus = append(w.bar.Menus, withAccessKeys(bm))
 	}
 	w.bar.OnHighlight = func(m, i int, u *gunim.UI) {
 		id := ""
@@ -696,10 +696,8 @@ func (w *Window) showFonts(st app.State) {
 			m.Breaks = append(m.Breaks, i)
 		}
 	}
-	for i := range w.bar.Menus {
-		if w.bar.Menus[i].Title == "Font" {
-			w.bar.Menus[i] = m
-		}
+	if i := menuAt("Font"); i >= 0 && i < len(w.bar.Menus) {
+		w.bar.Menus[i] = withAccessKeys(m)
 	}
 }
 
@@ -982,10 +980,8 @@ func (w *Window) servers(saved []remote.Host) {
 	m.Hints = append(m.Hints, hint("server.connect"), "", "")
 	m.Icons = append(m.Icons, icon.Plug, icon.Plus, icon.RefreshCw)
 	w.serverIDs = append(w.serverIDs, "server.connect", "server.add", "server.reload")
-	for i := range w.bar.Menus {
-		if w.bar.Menus[i].Title == "Servers" {
-			w.bar.Menus[i] = m
-		}
+	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
+		w.bar.Menus[i] = withAccessKeys(m)
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
@@ -1968,11 +1964,17 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	// The menus and the palette tick a switch while it is on, such as
 	// the sidebar while it shows.
 	for m := range menus {
+		if len(menus[m].items) == 0 {
+			continue
+		}
+		off := make([]bool, len(menus[m].items))
 		for i, it := range menus[m].items {
 			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
 				w.bar.Menus[m].Checked[i] = on
 			}
+			off[i] = !it.caption && !w.applies(it.id)
 		}
+		w.bar.Menus[m].Disabled = off
 	}
 	for i, id := range w.paletteIDs {
 		if on, isSwitch := w.switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
@@ -1980,6 +1982,36 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 	u.Invalidate()
+}
+
+// applies reports whether command id can act on the pane in front now,
+// for the menus to grey out the lines that cannot.
+func (w *Window) applies(id string) bool {
+	switch id {
+	case "conn.log", "conn.disconnect":
+		return w.machineOf(w.focused) != ""
+	case "server.editThis", "server.forget":
+		m := w.machineOf(w.focused)
+		return m != "" && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m })
+	case "pane.scrollback":
+		k := w.kindOf(w.focused)
+		return w.focused != "" && (k == app.KindTerminal || k == app.KindLog)
+	case "files.goTo":
+		_, ok := w.browsers[w.focused]
+		return ok
+	case "edit.copy", "edit.paste":
+		_, ok := w.terms[w.focused]
+		return ok
+	case "view.scrollUp", "view.scrollDown":
+		_, term := w.terms[w.focused]
+		_, reader := w.readers[w.focused]
+		return term || reader
+	case "pane.close", "pane.rename":
+		return w.focused != ""
+	case "sshkey.forget":
+		return len(w.keyFiles) > 0
+	}
+	return true
 }
 
 // tickSwitch ticks the menus' and the palette's rows for the switch id
@@ -2834,7 +2866,7 @@ func (w *Window) fullTitle(id string, menu, item int) string {
 	if at := slices.Index(w.paletteIDs, id); id != "" && at >= 0 {
 		return w.palette.Items[at].Title
 	}
-	return w.bar.Menus[menu].Items[item]
+	return shownText(w.bar.Menus[menu].Items[item])
 }
 
 // focusRow gives the keyboard to the row step rows from the one keyed

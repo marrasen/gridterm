@@ -92,6 +92,10 @@ type State struct {
 	Serving Serving
 	// Windows are the windows this one is connected to.
 	Windows []RemoteWindow
+	// Machines are what everything else names machines by, their IDs,
+	// with the names to show: the saved servers and windows, and the
+	// quick connections.
+	Machines []Machine
 	// PaneTitles says each pane shows a line naming it, and Bells
 	// counts the bells rung in panes, for the window to ask for the
 	// user's attention.
@@ -387,10 +391,11 @@ type (
 	FontSize struct{ Step int }
 	// PickTheme draws the window, terminals and all, in a theme.
 	PickTheme struct{ Name string }
-	// ConnectTo connects to a server typed as user@host:port, or to a
-	// saved one by name, and opens a shell there. Connected already, it
-	// opens another shell.
-	ConnectTo struct{ Target, Saved string }
+	// ConnectTo connects to a saved server by its ID, Server, or to one
+	// typed as user@host:port, as a quick connection, and opens a shell
+	// there. Connected already, it opens another shell. As is the ID of
+	// the quick connection a typed one is made again for.
+	ConnectTo struct{ Target, Server, As string }
 	// SaveServer saves a server, in place of the one named Under when
 	// that is set.
 	SaveServer struct {
@@ -398,7 +403,7 @@ type (
 		Under string
 	}
 	// RemoveServer forgets a saved server.
-	RemoveServer struct{ Name string }
+	RemoveServer struct{ ID string }
 	// AskAnswered answers a question: Yes and the answers, or no.
 	AskAnswered struct {
 		ID      uint64
@@ -447,6 +452,11 @@ type app struct {
 	// keys unlocked so far. book is the saved servers.
 	ctx   context.Context
 	conns map[string]*remote.Conn
+	// quick are the connections made by typing an address, by the ID
+	// each was given, and goneNames the names of saved servers removed
+	// while something open still names them.
+	quick     map[string]quickConn
+	goneNames map[string]string
 	// hops are the connections made to jump hosts to reach the servers
 	// behind them, by the saved server's name, and hopUsers counts the
 	// connections going through each.
@@ -460,9 +470,6 @@ type app struct {
 	// for one reached by a typed address.
 	connIDs map[string]string
 	dialing map[string]bool
-	// dialRoutes are the saved servers each dial under way goes
-	// through, by the one it is for.
-	dialRoutes map[string][]string
 	ring       *remote.Ring
 	book       *remote.Book
 	// replies waits for the answers to asks, by ID, and askIDs counts
@@ -573,9 +580,6 @@ type app struct {
 	// for a window that asked for one to hear how it went.
 	restarts map[string]int
 	endings  map[string]int
-	// linkNames are the machine each terminal pane's links go to, by
-	// pane, changed as that machine is renamed.
-	linkNames map[string]*machineName
 	// reads are what each reader pane reads, to read it again, and
 	// following the readers with a follow loop running.
 	reads     map[string]readSpec
@@ -638,11 +642,12 @@ func newApp(c gunim.Client, sh *shells) *app {
 		groupOf:     map[string]int{},
 		conns:       map[string]*remote.Conn{},
 		hops:        map[string]*remote.Conn{},
+		quick:       map[string]quickConn{},
+		goneNames:   map[string]string{},
 		hopUsers:    map[*remote.Conn]int{},
 		routes:      map[*remote.Conn]string{},
 		connIDs:     map[string]string{},
 		dialing:     map[string]bool{},
-		dialRoutes:  map[string][]string{},
 		ring:        remote.NewRing(),
 		replies:     map[uint64]chan AskAnswered{},
 		closing:     map[string]bool{},
@@ -664,7 +669,6 @@ func newApp(c gunim.Client, sh *shells) *app {
 		typed:       map[string]*typedLog{},
 		reads:       map[string]readSpec{},
 		following:   map[string]bool{},
-		linkNames:   map[string]*machineName{},
 		restarts:    map[string]int{},
 		endings:     map[string]int{},
 		far:         pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
@@ -914,6 +918,8 @@ func (a *app) emptyAndIdle() bool {
 }
 
 func (a *app) publish() {
+	a.forgetQuick()
+	a.st.Machines = a.machines()
 	a.notePanes()
 	a.st.FileClip = FileClip{}
 	if c := a.clip; c != nil {
@@ -1068,7 +1074,7 @@ func (a *app) handle(in gunim.Intent) {
 	case SaveServer:
 		err = a.saveServer(in)
 	case RemoveServer:
-		err = a.removeServer(in.Name)
+		err = a.removeServer(in.ID)
 	case AskAnswered:
 		if reply, ok := a.replies[in.ID]; ok {
 			a.dropAsk(in.ID)
@@ -1143,11 +1149,11 @@ func (a *app) handle(in gunim.Intent) {
 	case DisconnectClient:
 		err = a.disconnectClient(in)
 	case ClearMachine:
-		a.clearMachine(in.Name)
+		a.clearMachine(in.ID)
 	case ConnectWindow:
 		err = a.connectWindow(in)
 	case DisconnectWindow:
-		err = a.disconnectWindow(in.Name)
+		err = a.disconnectWindow(in.ID)
 	case AttachWindow:
 		err = a.attachWindow(in)
 	case Disconnect:
@@ -1397,12 +1403,12 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
 				err := errors.New("the connection was made under another name. Open a terminal on it from the sidebar")
-				a.failed("Couldn't open a shell on "+machine, upperFirst(err.Error())+".")
+				a.failed("Couldn't open a shell on "+a.nameOf(machine), upperFirst(err.Error())+".")
 				then("", err)
 				return
 			}
 			if err := a.openThen(machine, at, then); err != nil {
-				a.failed("Couldn't open a shell on "+machine, err.Error())
+				a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
 				a.problem()
 			}
 		})
@@ -1433,7 +1439,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 	case err != nil:
 		return err
 	case !ok:
-		return fmt.Errorf("kakel: %s is not connected", machine)
+		return fmt.Errorf("kakel: %s is not connected", a.nameOf(machine))
 	}
 	a.starting++
 	go func() {
@@ -1441,7 +1447,7 @@ func (a *app) openThen(machine string, at placement, then func(id string, err er
 		a.events <- func() {
 			a.starting--
 			if err != nil {
-				a.failed("Couldn't open a shell on "+machine, err.Error())
+				a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
 				a.problem()
 				a.stayIfEmpty()
 				then("", err)
@@ -1647,7 +1653,6 @@ func (a *app) remove(id string) {
 	delete(a.farHost, id)
 	delete(a.typed, id)
 	delete(a.reads, id)
-	delete(a.linkNames, id)
 	delete(a.restarts, id)
 	delete(a.endings, id)
 	// A scrollback of it has nothing left to read again, and says so.

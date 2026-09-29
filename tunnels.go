@@ -142,7 +142,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	case err != nil:
 		return err
 	case !ok:
-		return fmt.Errorf("nothing is connected to %s any more", in.Machine)
+		return fmt.Errorf("nothing is connected to %s any more", a.nameOf(in.Machine))
 	}
 	t := in.Tunnel
 	if err := t.Validate(); err != nil {
@@ -153,7 +153,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 		return nil
 	}
 	if a.settings != nil && !in.Saved {
-		saved := asSaved(in.Machine, a.serverID(in.Machine), t)
+		saved := asSaved(a.keptAs(in.Machine), a.serverID(in.Machine), t)
 		switch {
 		case in.Keep:
 			if err := a.settings.KeepTunnel(saved, mostSavedTunnels); err != nil {
@@ -187,7 +187,7 @@ func (a *app) openTunnel(in OpenTunnel) error {
 	label := tunnelLabel(f)
 	open.say("opened " + label + " over " + in.Machine)
 	a.st.Tunnels = append(slices.Clone(a.st.Tunnels), Tunnel{ID: id, Machine: in.Machine, Label: label, Note: open.note(), Live: true, Meter: open.count})
-	a.worked("Tunnel open", label+", over "+in.Machine, "")
+	a.worked("Tunnel open", label+", over "+a.nameOf(in.Machine), "")
 	a.tickTunnels()
 	return nil
 }
@@ -417,10 +417,8 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 
 // serverID is the ID of the saved server named machine, or "".
 func (a *app) serverID(machine string) string {
-	for _, h := range a.st.Saved {
-		if h.Name == machine {
-			return h.ID
-		}
+	if _, ok := a.savedHost(machine); ok {
+		return machine
 	}
 	return ""
 }

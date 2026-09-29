@@ -9,6 +9,18 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**Servers are known by an ID, not their name.** Everything open on a
+saved server, its connection, panes, files, log and tunnels, goes by the
+ID the server list gave it. Renaming a server is saving its new name:
+nothing moves, and nothing is refused.
+
+**Quick Connect replaces "+ Connect to server…".** It is on the Servers
+menu, with the same shortcut. A server connected to by typing its
+address gets an ID of its own, is listed marked "quick", and is
+forgotten once it is not connected and nothing is open on it.
+
 ### Added
 
 **The menus behind one button.** The title bar reads kakel's icon, a

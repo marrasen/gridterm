@@ -141,7 +141,7 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	waitFor(t, a, "the line saying it moved", func() bool {
 		// The line wraps at the screen's edge.
 		said := strings.ReplaceAll(a.terminal(id).Text(), "\n", "")
-		return strings.Contains(said, "is "+name+" now. This pane was on tester@elsewhere:22")
+		return strings.Contains(said, "is "+a.nameOf(name)+" now. This pane was on tester@elsewhere:22")
 	})
 }
 

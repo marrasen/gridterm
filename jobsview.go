@@ -278,7 +278,7 @@ func newCopiesPane(w *window) *copiesPane {
 	p.table = widget.NewTable(widget.TableColumn{Title: "What"}, widget.TableColumn{Title: "From → To", Width: 380})
 	p.table.Row = func(k widget.Key) widget.TableRow {
 		c := p.kept[k]
-		return widget.TableRow{Cells: []string{copiedWhat(c), copiedWhere(c)}}
+		return widget.TableRow{Cells: []string{copiedWhat(c), copiedWhere(c, p.w.nameOf)}}
 	}
 	p.table.OnActivate = func(k widget.Key, u *gunim.UI) { u.Send(p.table, RunSavedCopy{Saved: p.kept[k]}) }
 	p.col = widget.Column(p.table, p.bar).Grow(p.table, 1)

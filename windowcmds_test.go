@@ -191,7 +191,8 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 
 func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Saved: []remote.Host{{Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []string{"My Desk"}})
+	publish(State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []string{"d1"},
+		Machines: []Machine{{ID: "d1", Name: "My Desk"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -199,11 +200,11 @@ func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 		id   string
 		want gunim.Intent
 	}{
-		{"server.open.my-desk", ConnectTo{Saved: "My Desk"}},
-		{"conn.terminal.my-desk", OpenOn{Machine: "My Desk"}},
+		{"server.open.my-desk", ConnectTo{Server: "d1"}},
+		{"conn.terminal.my-desk", OpenOn{Machine: "d1"}},
 		{"conn.terminal.", OpenOn{Machine: ""}},
-		{"conn.files.my-desk", FilesOn{Machine: "My Desk"}},
-		{"conn.files.my-desk.1", FilesOn{Machine: "My Desk", Path: "/srv/www"}},
+		{"conn.files.my-desk", FilesOn{Machine: "d1"}},
+		{"conn.files.my-desk.1", FilesOn{Machine: "d1", Path: "/srv/www"}},
 	} {
 		if !win.run(c.id, lastUI) {
 			t.Fatalf("%s was not taken", c.id)
@@ -296,10 +297,12 @@ func TestEditingAServerKeepsItsKeysAndRefusesATakenName(t *testing.T) {
 			break
 		}
 	}
+	// Everything goes by the server's ID: a new name takes nothing
+	// from anything connected.
 	renamed := desk
 	renamed.Name = "laptop"
-	if why := win.savingClashes(renamed, &desk); why == "" {
-		t.Fatal("renamed to a name something is connected as, it was taken")
+	if why := win.savingClashes(renamed, &desk); why != "" {
+		t.Fatalf("renamed, it was refused: %s", why)
 	}
 }
 

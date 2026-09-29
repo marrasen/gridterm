@@ -214,7 +214,7 @@ func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine string) {
 	if was == "" || now == "" || was == now {
 		return
 	}
-	t.Say("-- kakel: " + machine + " is " + now + " now. This pane was on " + was + " --")
+	t.Say("-- kakel: " + a.nameOf(machine) + " is " + now + " now. This pane was on " + was + " --")
 	a.paneAt[id] = now
 }
 
@@ -293,7 +293,7 @@ func (a *app) giveSavedIDs() {
 
 // ClearMachine takes a machine whose connection went off the sidebar,
 // with the ended panes on it.
-type ClearMachine struct{ Name string }
+type ClearMachine struct{ ID string }
 
 // clearMachine takes a machine whose connection went off the sidebar.
 func (a *app) clearMachine(name string) {

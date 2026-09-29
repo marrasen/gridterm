@@ -72,7 +72,7 @@ var commands = []struct{ id, title string }{
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
 	{"font.reset", "Reset Font Size"},
-	{"server.connect", "Connect to Server"},
+	{"server.connect", "Quick Connect"},
 	{"server.add", "Add Server"},
 	{"conn.files", "Files Here"},
 	{"files.goTo", "Go to Directory"},

@@ -284,7 +284,12 @@ func (a *app) tellServed() {
 		if kind == "" {
 			continue
 		}
-		o := serve.Open{ID: p.ID, Host: p.Machine, Kind: kind, Label: p.Title, State: meter.Opened.String()}
+		// By its name, which the other window shows, and asks for back.
+		host := ""
+		if p.Machine != "" {
+			host = a.nameOf(p.Machine)
+		}
+		o := serve.Open{ID: p.ID, Host: host, Kind: kind, Label: p.Title, State: meter.Opened.String()}
 		if t := a.terminal(p.ID); t != nil {
 			size := t.Size()
 			o.Cols, o.Rows = size.Cols, size.Rows
@@ -423,8 +428,11 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 		return errors.Join(served, srv.Close())
 	}
 	conn, err := onApp(a, func() (*remote.Conn, error) {
-		if c, ok, err := a.connOf(host); ok {
-			return c, err
+		// Asked for by the name this window gave it.
+		if id, known := a.idOf(host); known {
+			if c, ok, err := a.connOf(id); ok {
+				return c, err
+			}
 		}
 		return nil, fmt.Errorf("this window is not connected to %s", host)
 	})

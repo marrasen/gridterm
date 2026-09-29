@@ -16,7 +16,7 @@ import (
 func TestSplitOffersServersNotConnectedAndACommand(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(State{Panes: []Pane{{ID: "p1", Title: "one", Kind: kindFiles}}, Stage: &Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{Name: "far", Address: "far.example"}}})
+		Browsers: map[string]Browser{"p1": {Path: "/"}}, Saved: []remote.Host{{ID: "far", Name: "far", Address: "far.example"}}})
 	win.run("pane.splitRight", lastUI)
 	titles := []string{}
 	for _, it := range win.splitter.Items {

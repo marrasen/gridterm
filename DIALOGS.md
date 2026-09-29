@@ -91,9 +91,11 @@ from: this file is the change sheet, that one is the standing rule.
 # 1. Connecting to machines
 
 ## D01
-- **Title:** `Connect to server`
+- **Title:** `Quick Connect`
 - **Body:** none
-- **Fields:** `Server` — placeholder `[user@]host[:port]`
+- **Fields:** `Server` — placeholder `user@host or user@host:port`. A saved
+  server's name connects to that server; anything else is a quick
+  connection, kept while anything is open on it.
 - **Buttons:** `Connect` · `Cancel`
 
 ## D02

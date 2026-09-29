@@ -143,25 +143,32 @@ func TestStopOnAReplaceQuestionStopsTheCopy(t *testing.T) {
 func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
-	a.st.Saved = []remote.Host{{ID: "s1", Name: "desk"}, {ID: "s2", Name: "laptop"}}
-	// A list read, as the names above were.
-	a.book = remote.UnusableBook(nil)
-	for _, c := range []struct {
-		name, id, want, err string
-		held                map[string]string
-	}{
-		{name: "old", id: "s1", want: "desk"},
-		{name: "typed", want: "typed"},
-		{name: "desk", id: "s9", err: "desk was removed from the server list"},
-		{name: "desk", id: "s1", want: "was-desk", held: map[string]string{"was-desk": "s1"}},
-		{name: "laptop", id: "s2", err: "laptop is connected to another machine", held: map[string]string{"laptop": "s1"}},
-		{name: "laptop", id: "s2", want: "laptop", held: map[string]string{"laptop": ""}},
-	} {
-		a.connIDs = c.held
-		got, err := a.machineNow(c.name, c.id)
-		if got != c.want || (err == nil) != (c.err == "") || (err != nil && err.Error() != c.err) {
-			t.Errorf("%s (%s) with %v is %q, %v; want %q, %s", c.name, c.id, c.held, got, err, c.want, c.err)
-		}
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.Put(remote.Host{Name: "desk", Address: "desk.example"}, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.book = book
+	desk, _ := book.Lookup("desk")
+	// By its ID, whatever it was called when the work was kept.
+	if got, err := a.machineNow("old name", desk.ID); got != desk.ID || err != nil {
+		t.Fatalf("kept on desk as old name, it runs on %q, %v", got, err)
+	}
+	// Removed from the list since: refused.
+	if _, err := a.machineNow("gone", "no-such-id"); err == nil || !strings.Contains(err.Error(), "removed") {
+		t.Fatalf("kept on a removed server, it said %v", err)
+	}
+	// Kept with no ID: this computer, or a quick connection to the
+	// address, the same one each time.
+	if got, err := a.machineNow("", ""); got != "" || err != nil {
+		t.Fatalf("kept on this computer, it runs on %q, %v", got, err)
+	}
+	first, _ := a.machineNow("me@typed.example", "")
+	again, _ := a.machineNow("me@typed.example", "")
+	if !strings.HasPrefix(first, "quick-") || again != first || a.nameOf(first) != "me@typed.example" {
+		t.Fatalf("kept on a typed address, it runs on %q then %q, called %q", first, again, a.nameOf(first))
 	}
 }
 
@@ -174,11 +181,13 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	if err := a.repeatJob("j1"); err != nil {
 		t.Fatal(err)
 	}
-	if !a.running[0].repeating || !a.dialing["10.255.255.1:1"] {
+	// A quick connection to the address kept, by the ID it has.
+	quick, _ := a.idOf("10.255.255.1:1")
+	if !a.running[0].repeating || !a.dialing[quick] {
 		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.dialing)
 	}
-	a.dialing["10.255.255.1:1"] = false
-	if err := a.repeatJob("j1"); err != nil || a.dialing["10.255.255.1:1"] {
+	a.dialing[quick] = false
+	if err := a.repeatJob("j1"); err != nil || a.dialing[quick] {
 		t.Fatalf("pressed again, %v, and it dialled again", err)
 	}
 }

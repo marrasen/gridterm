@@ -124,7 +124,7 @@ machine's row in the sidebar.
 - ⟨header: Connect To⟩ *(only when there is a saved server)*
 - ⟨built at run time⟩ the saved servers, under their bare names
 - ⟨separator⟩
-- `[id: server.connect]` Connect to Server… — `Ctrl+Shift+N`
+- `[id: server.connect]` Quick Connect… — `Ctrl+Shift+N`
 - ⟨separator⟩
 - `[id: server.add]` Add Server…
 - `[id: server.editThis]` Edit This Server…

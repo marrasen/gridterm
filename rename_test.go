@@ -1,38 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
 
-	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/vfs"
 )
-
-// A server renamed while connected takes what is open with it: its
-// connection and its panes are under the new name, and letting go of it
-// there lets go of it.
-func TestRenamingAConnectedServerTakesWhatIsOpenWithIt(t *testing.T) {
-	a, answering := dialApp(t)
-	a.handle(OpenOn{Machine: "srv"})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	h, _ := a.book.Lookup("srv")
-	h.Name = "prod"
-	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
-		t.Fatal(err)
-	}
-	if a.conns["prod"] == nil || a.conns["srv"] != nil {
-		t.Fatalf("renamed, the connections are %v", a.conns)
-	}
-	if !slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == "prod" }) {
-		t.Fatalf("renamed, the panes are %+v", a.st.Panes)
-	}
-	a.handle(Disconnect{Machine: "prod"})
-	waitFor(t, a, "the connection to go", func() bool { return a.conns["prod"] == nil })
-	if a.dropped["prod"] || a.dropped["srv"] {
-		t.Fatalf("let go of on purpose, it is kept as dropped: %v", a.dropped)
-	}
-}
 
 // A server saved at another address while connected is not opened on
 // through the old connection.
@@ -46,43 +21,12 @@ func TestAServerChangedWhileConnectedIsNotOpenedOnAsItWas(t *testing.T) {
 		t.Fatal(err)
 	}
 	panes := len(a.st.Panes)
-	err := a.connect(ConnectTo{Saved: "srv"})
+	err := a.connect(ConnectTo{Server: "srv"})
 	if err == nil || !strings.Contains(err.Error(), "Disconnect it first") {
 		t.Fatalf("opening on it said %v", err)
 	}
 	if len(a.st.Panes) != panes {
 		t.Fatal("a shell opened through the connection as it was")
-	}
-}
-
-// A server being connected to is not renamed until that is over.
-func TestAServerBeingConnectedToIsNotRenamed(t *testing.T) {
-	a, _ := dialApp(t)
-	a.dialing["srv"] = true
-	h, _ := a.book.Lookup("srv")
-	h.Name = "prod"
-	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err == nil {
-		t.Fatal("a server being connected to was renamed")
-	}
-	if _, ok := a.book.Lookup("srv"); !ok {
-		t.Fatal("the refused rename was saved")
-	}
-}
-
-// A terminal open before its server was renamed follows its links
-// under the new name.
-func TestATerminalFollowsItsLinksAfterItsServerIsRenamed(t *testing.T) {
-	a, answering := dialApp(t)
-	a.handle(OpenOn{Machine: "srv"})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	id := a.st.Panes[0].ID
-	h, _ := a.book.Lookup("srv")
-	h.Name = "prod"
-	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
-		t.Fatal(err)
-	}
-	if got := a.linkNames[id].get(); got != "prod" {
-		t.Fatalf("renamed, the pane's links go to %q", got)
 	}
 }
 
@@ -112,54 +56,104 @@ func TestNothingOpensOnAServerChangedSinceItConnected(t *testing.T) {
 	}
 }
 
-// A server renamed onto a name something is still open on is refused;
-// onto one with only a log of before, it takes the name, and the log
-// of the other machine goes.
-func TestRenamingOntoANameInUse(t *testing.T) {
+
+// A server renamed while connected is only renamed: its connection and
+// its panes go by its ID, and stay as they are, under the new name.
+func TestRenamingAConnectedServerIsOnlyANewName(t *testing.T) {
 	a, answering := dialApp(t)
 	a.handle(OpenOn{Machine: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	a.addPane(Pane{ID: "px", Title: "ended", Machine: "other", Ended: true}, nil, placement{})
-	h, _ := a.book.Lookup("srv")
-	h.Name = "other"
-	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err == nil {
-		t.Fatal("renamed onto a name a pane is open on")
-	}
-	a.remove("px")
-	a.account("other")
-	a.dropped["other"] = true
-	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
-		t.Fatal(err)
-	}
-	if a.dropped["other"] || a.conns["other"] == nil {
-		t.Fatalf("renamed, other is dropped %v, connected %v", a.dropped["other"], a.conns["other"] != nil)
-	}
-	if n := slices.Index(a.st.Accounts, "other"); n < 0 || slices.Index(a.st.Accounts[n+1:], "other") >= 0 {
-		t.Fatalf("the logs are %v", a.st.Accounts)
-	}
-}
-
-// A connection typed by the name a saved server has is not moved when
-// the saved server is renamed.
-func TestATypedConnectionStaysWhenTheSavedServerIsRenamed(t *testing.T) {
-	a, _ := dialApp(t)
-	typed := &remote.Conn{}
-	a.conns["srv"] = typed
-	a.connIDs["srv"] = ""
-	t.Cleanup(func() {
-		// Not a connection to close.
-		for n, c := range a.conns {
-			if c == typed {
-				delete(a.conns, n)
-			}
-		}
-	})
-	h, _ := a.book.Lookup("srv")
+	h, _ := a.book.LookupID("srv")
 	h.Name = "prod"
 	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
 		t.Fatal(err)
 	}
-	if a.conns["srv"] != typed || a.conns["prod"] != nil {
-		t.Fatal("the typed connection moved with the saved server's name")
+	if a.conns["srv"] == nil || a.st.Panes[0].Machine != "srv" {
+		t.Fatalf("renamed, the connection moved: %v, the pane is on %q", a.conns, a.st.Panes[0].Machine)
+	}
+	if got := a.nameOf("srv"); got != "prod" {
+		t.Fatalf("renamed, it is called %q", got)
+	}
+	a.publish()
+	if i := slices.IndexFunc(a.st.Machines, func(m Machine) bool { return m.ID == "srv" }); i < 0 || a.st.Machines[i].Name != "prod" {
+		t.Fatalf("the window is told %+v", a.st.Machines)
+	}
+	a.handle(Disconnect{Machine: "srv"})
+	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil })
+	if a.dropped["srv"] {
+		t.Fatal("let go of on purpose, it is kept as dropped")
+	}
+}
+
+// A quick connection, typed rather than saved, gets an ID of its own,
+// is called by its address, and is forgotten once it is not connected
+// and nothing is open on it.
+func TestAQuickConnectionIsForgottenOnceNothingIsOpenOnIt(t *testing.T) {
+	a, answering := dialApp(t)
+	h, _ := a.book.LookupID("srv")
+	target := fmt.Sprintf("tester@%s:%d", h.Address, h.Port)
+	a.handle(ConnectTo{Target: target})
+	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
+	id := a.st.Panes[0].Machine
+	if !strings.HasPrefix(id, "quick-") || a.conns[id] == nil {
+		t.Fatalf("typed, it is kept as %q", id)
+	}
+	if got := a.nameOf(id); got != target {
+		t.Fatalf("it is called %q, want %q", got, target)
+	}
+	a.publish()
+	if i := slices.IndexFunc(a.st.Machines, func(m Machine) bool { return m.ID == id }); i < 0 || !a.st.Machines[i].Quick {
+		t.Fatalf("the window is told %+v", a.st.Machines)
+	}
+	// Its connection gone, with its pane open, it is kept.
+	a.handle(Disconnect{Machine: id})
+	waitFor(t, a, "the connection to go", func() bool { return a.conns[id] == nil })
+	a.publish()
+	if !a.isQuick(id) {
+		t.Fatal("with its pane open, the quick connection was forgotten")
+	}
+	a.remove(a.st.Panes[0].ID)
+	a.publish()
+	if a.isQuick(id) || slices.ContainsFunc(a.st.Machines, func(m Machine) bool { return m.ID == id }) {
+		t.Fatal("with nothing open on it, the quick connection is kept")
+	}
+}
+
+// A quick connection whose connection went is connected to again as
+// itself: the same ID, its panes on it still.
+func TestAQuickConnectionReconnectsAsItself(t *testing.T) {
+	a, answering := dialApp(t)
+	h, _ := a.book.LookupID("srv")
+	a.handle(ConnectTo{Target: fmt.Sprintf("tester@%s:%d", h.Address, h.Port)})
+	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
+	id := a.st.Panes[0].Machine
+	_ = a.conns[id].Close() // as if the network went
+	waitFor(t, a, "the drop", func() bool { return a.conns[id] == nil })
+	if err := a.dialAgain(id, nil); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the connection back", func() bool { answering(); return a.conns[id] != nil })
+	if len(a.quick) != 1 {
+		t.Fatalf("reconnected, there are %d quick connections", len(a.quick))
+	}
+}
+
+// A saved server removed while its pane is open is named as it was
+// until that pane goes.
+func TestARemovedServerIsNamedWhileSomethingIsOpenOnIt(t *testing.T) {
+	a, answering := dialApp(t)
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	if err := a.removeServer("srv"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the connection to go", func() bool { return a.conns["srv"] == nil })
+	if got := a.nameOf("srv"); got != "srv" {
+		t.Fatalf("removed, it is called %q", got)
+	}
+	a.remove(a.st.Panes[0].ID)
+	a.publish()
+	if _, kept := a.goneNames["srv"]; kept {
+		t.Fatal("with nothing open on it, its name is still kept")
 	}
 }

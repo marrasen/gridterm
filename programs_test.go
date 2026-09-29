@@ -21,7 +21,7 @@ func TestAProgramsProgressAndMessageGoOnItsRow(t *testing.T) {
 	if got := a.st.Panes[0].Note; got != "42%, build done" {
 		t.Fatalf("the pane's note is %q", got)
 	}
-	rows := sidebarRows(a.st.Panes, nil, Share{}, nil, nil)
+	rows := sidebarRows(a.st.Panes, nil, Share{}, nil, nil, nil)
 	if rows[1].note != "42%, build done" {
 		t.Fatalf("the sidebar row says %q", rows[1].note)
 	}

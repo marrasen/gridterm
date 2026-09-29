@@ -267,8 +267,8 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
 	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })
-	if p := b.st.Panes[0]; p.Machine != addr {
-		t.Fatalf("the terminal is on %q, want the window at %s", p.Machine, addr)
+	if p := b.st.Panes[0]; b.nameOf(p.Machine) != addr {
+		t.Fatalf("the terminal is on %q, want the window at %s", b.nameOf(p.Machine), addr)
 	}
 	// It opened a pane on the first window too, which that one shows.
 	pumpBoth(t, a, b, "the pane on the first window", func() bool { return len(a.st.Panes) == 2 })
@@ -282,7 +282,7 @@ func TestAWindowConnectsToAServedOne(t *testing.T) {
 	if first.ID != a.st.Panes[0].ID {
 		t.Fatalf("listed %+v, want the first window's own pane %s", first, a.st.Panes[0].ID)
 	}
-	b.handle(AttachWindow{Window: addr, ID: first.ID})
+	b.handle(AttachWindow{Window: b.st.Panes[0].Machine, ID: first.ID})
 	pumpBoth(t, a, b, "the pane attached", func() bool { return len(b.st.Panes) == 2 })
 	there := b.terminal(b.st.Panes[1].ID)
 	line, want := saysAnswer("from-b")
@@ -319,9 +319,10 @@ func TestASavedWindowIsConnectedToAsOne(t *testing.T) {
 	if err := book.Put(remote.Host{Name: "desk", Address: host, Port: p, Window: true, Identities: []string{keyFile}}, ""); err != nil {
 		t.Fatal(err)
 	}
+	idsAsNames(t, book)
 	b.book = book
 	b.st.Saved = book.Hosts()
-	b.handle(ConnectTo{Saved: "desk"})
+	b.handle(ConnectTo{Server: "desk"})
 	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
 	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
 	pumpBoth(t, a, b, "a terminal on the window", func() bool { return oneShell(b) })

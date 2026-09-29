@@ -231,17 +231,19 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	if got := focused(); got != "p1" {
 		t.Fatalf("up went to %q", got)
 	}
+	keys := win.list.Keys()
+	last := string(keys[len(keys)-1])
 	press(gi.KeyEnd)
-	if got := focused(); got != "connect:new" {
-		t.Fatalf("End went to %q, want the last row", got)
+	if got := focused(); got != last {
+		t.Fatalf("End went to %q, want the last row, %q", got, last)
 	}
 	press(gi.KeyHome)
 	if got := focused(); got != "p1" {
 		t.Fatalf("Home went to %q", got)
 	}
 	press(gi.KeyPageDown)
-	if got := focused(); got != "connect:new" {
-		t.Fatalf("PageDown went to %q, want the last row", got)
+	if got := focused(); got != last {
+		t.Fatalf("PageDown went to %q, want the last row, %q", got, last)
 	}
 	press(gi.KeyPageUp)
 	press(gi.KeyEnter)

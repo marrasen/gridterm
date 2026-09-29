@@ -7,7 +7,6 @@ import (
 
 	gi "github.com/marrasen/gunim/input"
 
-	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/vfs"
 )
@@ -72,21 +71,6 @@ func TestGoToIsNumberedPastTheOnesAnswered(t *testing.T) {
 			}
 			return
 		}
-	}
-}
-
-// A rename of the letter case alone onto a name held by another
-// connection is refused.
-func TestARenameOfCaseOntoAnotherConnectionIsRefused(t *testing.T) {
-	a, _ := dialApp(t)
-	a.conns["SRV"] = &remote.Conn{}
-	t.Cleanup(func() { delete(a.conns, "SRV") })
-	if err := a.canRename("srv", "SRV"); err == nil {
-		t.Fatal("renamed onto a name another connection has")
-	}
-	delete(a.conns, "SRV")
-	if err := a.canRename("srv", "SRV"); err != nil {
-		t.Fatalf("a rename of the case alone was refused: %v", err)
 	}
 }
 

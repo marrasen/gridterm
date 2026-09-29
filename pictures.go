@@ -109,7 +109,7 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture into "+machine, err.Error())
+					a.failed("Couldn't paste the picture into "+a.nameOf(machine), err.Error())
 				case a.terminal(id) == t:
 					t.PressPaste()
 				}
@@ -128,11 +128,11 @@ func (a *app) handPicture(id string, img image.Image, asFile bool) error {
 			a.events <- func() {
 				switch {
 				case err != nil:
-					a.failed("Couldn't paste the picture to "+placeName(key), err.Error())
+					a.failed("Couldn't paste the picture to "+a.nameOf(key), err.Error())
 				case a.terminal(id) == t:
 					t.Paste(path)
 				default:
-					a.worked("Picture saved", path+" on "+placeName(key)+".", path)
+					a.worked("Picture saved", path+" on "+a.nameOf(key)+".", path)
 				}
 			}
 		}()

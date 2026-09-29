@@ -4,13 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
-	"github.com/marrasen/kakel/logs"
 	"github.com/marrasen/kakel/remote"
-	"github.com/marrasen/kakel/vfs"
 )
 
 // Connecting to servers, with kakel's remote package, and answering
@@ -64,15 +61,15 @@ func (a *app) connect(in ConnectTo) error { return a.connectThen(in, nil) }
 // shell there when then is nil.
 func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	var hops []remote.Config
-	// names are the hops' names, the saved servers they are, and empty
-	// for a typed target.
-	var names []string
-	name := in.Saved
-	if in.Saved != "" {
+	// names are the hops' IDs, the saved servers they are, and empty for
+	// a typed target; shown is what each is called.
+	var names, shown []string
+	name := in.Server
+	if in.Server != "" {
 		if a.book == nil {
-			return fmt.Errorf("kakel: no saved servers")
+			return fmt.Errorf("kakel: the server list could not be read")
 		}
-		hosts, err := a.book.Route(in.Saved)
+		hosts, err := a.book.RouteID(in.Server)
 		if err != nil {
 			return err
 		}
@@ -82,11 +79,12 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			if len(last.Identities) > 0 {
 				key = last.Identities[0]
 			}
-			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, Name: last.Name})
+			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: last.ID})
 		}
 		for _, h := range hosts {
 			hops = append(hops, h.Config())
-			names = append(names, h.Name)
+			names = append(names, h.ID)
+			shown = append(shown, h.Name)
 		}
 	} else {
 		cfg, err := remote.ParseTarget(strings.TrimSpace(in.Target))
@@ -94,13 +92,15 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			return err
 		}
 		hops = []remote.Config{cfg}
-		names = []string{""}
-		name = cfg.Target()
+		names, shown = []string{""}, []string{cfg.Target()}
+		// A quick connection, by the ID it has while it is kept.
+		name = in.As
+		if !a.isQuick(name) {
+			name = a.newQuick(cfg.Target(), false)
+		}
 	}
-	savedID := ""
-	if in.Saved != "" {
-		savedID = a.serverID(in.Saved)
-	}
+	savedID := in.Server
+	called := a.nameOf(name)
 	if _, ok, err := a.connOf(name); ok {
 		if err != nil {
 			return err
@@ -116,11 +116,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		return nil
 	}
 	a.dialing[name] = true
-	a.dialRoutes[name] = names
 	dctx, cancel := context.WithCancel(a.ctx)
 	a.dialCancel[name] = cancel
 	acct := a.account(name)
-	logLine(acct, "", "connecting to "+name)
+	logLine(acct, "", "connecting to "+called)
 	logPane := a.watchDial(name)
 	began := time.Now()
 	for i := range hops {
@@ -129,7 +128,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
 	}
-	a.st.Status = "Connecting to " + name + "…"
+	a.st.Status = "Connecting to " + called + "…"
 	// From the nearest hop already connected, so a second server behind
 	// a jump host does not sign in to the jump host again.
 	start, from := a.hopConnected(names, hops)
@@ -137,11 +136,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	// the dial when what else went through it goes.
 	a.holdHops(start)
 	go func() {
-		conn, made, err := dialFrom(dctx, start, from, hops, names)
+		conn, made, err := dialFrom(dctx, start, from, hops, shown)
 		a.events <- func() {
 			defer a.letHopsGo(start)
 			delete(a.dialing, name)
-			delete(a.dialRoutes, name)
 			delete(a.dialCancel, name)
 			cancel()
 			// Whoever asked for it again waits on this one, and hears
@@ -166,7 +164,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.closePane(logPane)
 				}
 				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
-					a.failed("Couldn't connect to "+name, err.Error())
+					a.failed("Couldn't connect to "+called, err.Error())
 					a.problem()
 				}
 				if then != nil {
@@ -186,11 +184,6 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 				a.events <- func() {
 					a.letHopsGo(conn.Via())
 					delete(a.routes, conn)
-					// By its name now: it may have been renamed since.
-					name := a.nameOfConn(conn, name)
-					if l := a.accounts[name]; l != nil {
-						acct = l
-					}
 					if err != nil {
 						logLine(acct, badly, "disconnected: "+err.Error())
 					} else {
@@ -199,7 +192,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					delete(a.conns, name)
 					delete(a.connIDs, name)
 					if err := a.tunnelsDiedOn(name, a.letGo[name]); err != nil {
-						a.failed("Trouble closing the tunnels on "+name, err.Error())
+						a.failed("Trouble closing the tunnels on "+a.nameOf(name), err.Error())
 					}
 					if f, ok := a.remoteFS[name]; ok {
 						_ = f.Close()
@@ -214,7 +207,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						a.dropped[name] = true
 						a.problem()
 					}
-					a.notify("Disconnected from "+name, "", "")
+					a.notify("Disconnected from "+a.nameOf(name), "", "")
 				}
 			}()
 			a.dialed(logPane, name, then == nil)
@@ -230,8 +223,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 // connected to: wait for that one, which then does what was asked; give
 // it up and connect again; or drop what was asked.
 func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)) {
+	called := a.nameOf(name)
 	go func() {
-		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + name, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
+		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + called, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
 		if err != nil {
 			// Whoever asked for it hears it was not.
 			if then != nil {
@@ -246,7 +240,7 @@ func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)
 		a.events <- func() {
 			again := func(error) {
 				if err := a.connectThen(in, then); err != nil {
-					a.failed("Couldn't connect to "+name, err.Error())
+					a.failed("Couldn't connect to "+called, err.Error())
 					a.problem()
 				}
 			}
@@ -401,19 +395,12 @@ func (a *app) saveServer(in SaveServer) error {
 	if a.book == nil {
 		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
-	old, renamed := in.Under, in.Under != "" && in.Under != in.Host.Name
-	if renamed {
-		if err := a.canRename(old, in.Host.Name); err != nil {
-			return err
-		}
-	}
+	// Everything open on it goes by its ID, so a new name is only a
+	// new name.
 	if err := a.book.Put(in.Host, in.Under); err != nil {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
-	if renamed {
-		a.renameMachine(old, in.Host.Name)
-	}
 	// Its key is kept, to be offered for the next server.
 	if len(in.Host.Identities) > 0 && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
@@ -425,15 +412,18 @@ func (a *app) saveServer(in SaveServer) error {
 	return nil
 }
 
-// removeServer forgets a saved server.
+// removeServer forgets the saved server with ID name.
 func (a *app) removeServer(name string) error {
 	if a.book == nil {
 		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
-	if err := a.book.Remove(name); err != nil {
+	called := a.nameOf(name)
+	if err := a.book.RemoveID(name); err != nil {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	// Named still by what is left of it, until that goes.
+	a.goneNames[name] = called
 	// What the window holds under the name goes with it, as the
 	// question said: a dial on its way, a window, a connection.
 	switch {
@@ -441,10 +431,12 @@ func (a *app) removeServer(name string) error {
 	case a.windows[name] != nil:
 		return a.disconnectWindow(name)
 	case a.conns[name] != nil:
+		// On purpose: no dropped row kept for it to reconnect from.
+		a.letGo[name] = true
 		a.letGoOfRiders(a.conns[name])
 		return a.conns[name].Close()
 	}
-	a.worked("Removed "+name, "", "")
+	a.worked("Removed "+called, "", "")
 	return nil
 }
 
@@ -636,144 +628,7 @@ func (a *app) savedOtherwise(machine string, c *remote.Conn) error {
 		hops = append(hops, h.Config())
 	}
 	if now := routeOf(hops); now != was {
-		return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", machine, was, now)
+		return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", a.nameOf(machine), was, now)
 	}
 	return nil
-}
-
-// nameOfConn is the name conn is kept under now, or was when it is
-// kept under none.
-func (a *app) nameOfConn(conn *remote.Conn, was string) string {
-	for n, c := range a.conns {
-		if c == conn {
-			return n
-		}
-	}
-	return was
-}
-
-// canRename says why a saved server cannot be renamed from old to name
-// now, or nil. One being connected to, or a window connected to, is
-// renamed once that is over: what watches them knows them by their
-// name.
-func (a *app) canRename(old, name string) error {
-	for dialled, route := range a.dialRoutes {
-		if dialled != old && slices.Contains(route, old) {
-			return fmt.Errorf("%s is being gone through to reach %s. Rename it once that is over", old, dialled)
-		}
-	}
-	switch {
-	case a.dialing[old]:
-		return fmt.Errorf("%s is being connected to. Rename it once that is over", old)
-	case a.windows[old] != nil:
-		return fmt.Errorf("the window %s is connected to. Disconnect it first, then rename it", old)
-	case slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Machine == name }),
-		slices.ContainsFunc(a.st.Tunnels, func(t Tunnel) bool { return t.Machine == name }):
-		return fmt.Errorf("something is still open on %s, and something else cannot take its name. Close it first", name)
-	case a.dialing[name]:
-		return fmt.Errorf("%s is being connected to, and something else cannot take its name", name)
-	case a.conns[name] != nil || a.windows[name] != nil:
-		return fmt.Errorf("%s is connected already, and something else cannot take its name", name)
-	}
-	return nil
-}
-
-// renameMachine moves what the window holds under a server's old name
-// to its new one, once the saved server is renamed: its connection, its
-// files, its log, its panes, readers, jobs and tunnels' rows. A
-// tunnel's forwarder holds the connection itself, not its name.
-func (a *app) renameMachine(old, name string) {
-	if c := a.conns[old]; c != nil && a.connIDs[old] != a.serverID(name) {
-		// Connected to by typing the same name, not as this server:
-		// that one stays as it is.
-		return
-	}
-	// What was kept under the new name before, a log and a row of a
-	// connection that went, is of another machine, and goes.
-	if !strings.EqualFold(old, name) {
-		delete(a.accounts, name)
-		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == name })
-		delete(a.dropped, name)
-		delete(a.reached, name)
-		a.forgetFar(name)
-	}
-	move := func(m any) {
-		switch m := m.(type) {
-		case map[string]*remote.Conn:
-			if v, ok := m[old]; ok {
-				delete(m, old)
-				m[name] = v
-			}
-		case map[string]string:
-			if v, ok := m[old]; ok {
-				delete(m, old)
-				m[name] = v
-			}
-		case map[string]bool:
-			if v, ok := m[old]; ok {
-				delete(m, old)
-				m[name] = v
-			}
-		case map[string]vfs.FS:
-			if v, ok := m[old]; ok {
-				delete(m, old)
-				m[name] = v
-			}
-		case map[string]*logs.Lines:
-			if v, ok := m[old]; ok {
-				delete(m, old)
-				m[name] = v
-			}
-		}
-	}
-	for _, m := range []any{a.conns, a.hops, a.connIDs, a.reached, a.dropped, a.letGo, a.remoteFS, a.accounts} {
-		move(m)
-	}
-	for i, n := range a.st.Accounts {
-		if n == old {
-			a.st.Accounts[i] = name
-		}
-	}
-	a.forgetFar(old)
-	for i := range a.st.Panes {
-		if p := &a.st.Panes[i]; p.Machine == old {
-			p.Machine = name
-		}
-	}
-	for _, on := range a.linkNames {
-		if on.get() == old {
-			on.set(name)
-		}
-	}
-	for id, spec := range a.reads {
-		if spec.machine == old {
-			spec.machine = name
-			a.reads[id] = spec
-		}
-	}
-	for i := range a.st.Tunnels {
-		if a.st.Tunnels[i].Machine == old {
-			a.st.Tunnels[i].Machine = name
-		}
-	}
-	for _, r := range a.running {
-		if r.from == old {
-			r.from = name
-		}
-		if r.to == old {
-			r.to = name
-		}
-	}
-	for i := range a.st.Jobs {
-		if a.st.Jobs[i].Machine == old {
-			a.st.Jobs[i].Machine = name
-		}
-	}
-	if c := a.clip; c != nil && c.machine == old {
-		c.machine = name
-	}
-	// Its files say what went wrong by its name.
-	if f, ok := a.remoteFS[name].(interface{ Renamed(string) }); ok {
-		f.Renamed(name)
-	}
 }

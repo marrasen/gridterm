@@ -392,9 +392,9 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 
 // agentLabel is what the agent calls a pane: its title and where it is.
 func (a *app) agentLabel(id string) string {
-	where := a.machineOf(id)
-	if where == "" {
-		where = "this machine"
+	where := "this machine"
+	if m := a.machineOf(id); m != "" {
+		where = a.nameOf(m)
 	}
 	return a.titleOf(id) + " on " + where
 }
@@ -599,7 +599,7 @@ func (w agentWindow) Restart(id string) (agent.Pane, error) {
 		// the box allows is a program started again on a connection the
 		// window already holds.
 		if machine := w.a.machineOf(h.pane); machine != "" && w.a.conns[machine] == nil && w.a.windows[machine] == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", machine)
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.nameOf(machine))
 		}
 		// The question the pane asks goes: a restart on its way would
 		// otherwise read as one that failed, which asks it again.
@@ -677,7 +677,7 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		}
 		machine := w.a.machineOf(h.pane)
 		if machine != "" && w.a.conns[machine] == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", machine)
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.nameOf(machine))
 		}
 		from = h
 		focus := w.a.st.Focus

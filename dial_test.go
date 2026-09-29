@@ -35,6 +35,7 @@ func dialApp(t *testing.T) (a *app, answering func()) {
 	if err := book.Put(remote.Host{Name: "srv", Address: host, Port: port, User: "tester"}, ""); err != nil {
 		t.Fatal(err)
 	}
+	idsAsNames(t, book)
 	a.book = book
 	a.st.Saved = book.Hosts()
 	t.Cleanup(func() {
@@ -64,7 +65,7 @@ func oneShell(a *app) bool {
 
 func TestADialIsGivenUp(t *testing.T) {
 	a, _ := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
 	a.handle(Disconnect{Machine: "srv"})
 	waitFor(t, a, "the dial to end", func() bool { return len(a.dialing) == 0 && len(a.st.Asks) == 0 })
@@ -78,9 +79,9 @@ func TestADialIsGivenUp(t *testing.T) {
 
 func TestRemovingAServerClosesItsConnection(t *testing.T) {
 	a, answering := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	a.handle(RemoveServer{Name: "srv"})
+	a.handle(RemoveServer{ID: "srv"})
 	waitFor(t, a, "the connection to close", func() bool { return a.conns["srv"] == nil && a.st.Panes[0].Ended })
 	if len(a.st.Saved) != 0 {
 		t.Fatalf("removed, the list is %+v", a.st.Saved)
@@ -103,9 +104,9 @@ func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 
 func TestConnectingAgainWhileConnectingAsks(t *testing.T) {
 	a, answering := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the second question", func() bool { return len(a.st.Asks) == 2 })
 	q := a.st.Asks[1]
 	if q.Title != "Already connecting to srv" || !slices.Equal(q.Choose, []string{"Wait", "Retry"}) {
@@ -129,14 +130,16 @@ func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
 }
 
 func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
-	rows := sidebarRows(nil, nil, Share{}, nil, []string{"desk"})
+	rows := sidebarRows(nil, nil, Share{}, nil, []string{"desk"}, nil)
 	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
 		t.Fatalf("a saved server has no heading: %+v", rows)
 	}
+	// One not saved is connected to from the Servers menu.
 	win, _, publish := windowStage(t)
 	publish(State{Sidebar: true, SidebarWidth: 220})
-	if _, ok := widget.RowOf[*sideRow](win.list, "connect:new"); !ok {
-		t.Fatal("the sidebar has no way to connect to a server")
+	i := slices.IndexFunc(win.bar.Menus, func(m widget.BarMenu) bool { return m.Title == "Servers" })
+	if i < 0 || !slices.Contains(win.bar.Menus[i].Items, "Quick Connect…") {
+		t.Fatal("the Servers menu has no Quick Connect")
 	}
 }
 
@@ -144,7 +147,7 @@ func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
 // and a new key's question opens on Cancel.
 func TestSigningInSaysAPasswordWasRefused(t *testing.T) {
 	a, _ := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "the host key question", func() bool { return len(a.st.Asks) > 0 })
 	if q := a.st.Asks[0]; !q.Careful || q.Danger {
 		t.Fatalf("the host key question is %+v", q)
@@ -210,18 +213,18 @@ func (b *syncBuffer) String() string {
 // until cleared; one let go of on purpose takes it along.
 func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
 	a, answering := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell", func() bool { answering(); return oneShell(a) })
 	_ = a.conns["srv"].Close() // as if the network went
 	waitFor(t, a, "the drop", func() bool { return a.conns["srv"] == nil })
 	if !a.dropped["srv"] {
 		t.Fatalf("dropped, the machines kept are %v", a.dropped)
 	}
-	a.handle(ClearMachine{Name: "srv"})
+	a.handle(ClearMachine{ID: "srv"})
 	if len(a.dropped) != 0 || len(a.st.Panes) != 0 {
 		t.Fatalf("cleared, it keeps %v and panes %+v", a.dropped, a.st.Panes)
 	}
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	waitFor(t, a, "a shell again", func() bool { answering(); return oneShell(a) })
 	a.handle(Disconnect{Machine: "srv"})
 	waitFor(t, a, "the disconnect", func() bool { return a.conns["srv"] == nil })
@@ -234,7 +237,7 @@ func TestADroppedConnectionStaysUntilCleared(t *testing.T) {
 // the shell once it is; a connection that fails leaves it, saying why.
 func TestTheConnectionLogShowsWhileConnecting(t *testing.T) {
 	a, answering := dialApp(t)
-	a.handle(ConnectTo{Saved: "srv"})
+	a.handle(ConnectTo{Server: "srv"})
 	if len(a.st.Panes) != 1 || a.st.Panes[0].Kind != kindLog || a.st.Focus != a.st.Panes[0].ID {
 		t.Fatalf("connecting, the panes are %+v", a.st.Panes)
 	}

@@ -179,13 +179,14 @@ func (a *app) openFirst() error {
 		if err != nil {
 			return err
 		}
-		machine := cfg.Target()
+		machine := a.newQuick(cfg.Target(), false)
+		in.As = machine
 		return a.connectThen(in, func(err error) {
 			if err != nil {
 				return
 			}
 			if err := a.runCommand(RunCommand{Machine: machine, Line: line}); err != nil {
-				a.failed("Couldn't run "+line+" on "+machine, err.Error())
+				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
 			}
 		})
 	case strings.TrimSpace(a.opts.command) != "":

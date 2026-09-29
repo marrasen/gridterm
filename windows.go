@@ -34,10 +34,13 @@ type RemoteWindow struct {
 type (
 	// ConnectWindow connects to a window served at Addr, which is
 	// host, or host:port, with the key in KeyFile, or the usual keys
-	// when it is empty.
-	ConnectWindow struct{ Addr, KeyFile, Name string }
-	// DisconnectWindow lets go of a window, closing the panes on it.
-	DisconnectWindow struct{ Name string }
+	// when it is empty. ID is the saved window's, or the quick
+	// connection's it is made again for; with none, it is a quick
+	// connection of its own.
+	ConnectWindow struct{ Addr, KeyFile, ID string }
+	// DisconnectWindow lets go of a window, by its ID, closing the
+	// panes on it.
+	DisconnectWindow struct{ ID string }
 	// AttachWindow works in something a window has open, in a pane
 	// here.
 	AttachWindow struct{ Window, ID string }
@@ -83,12 +86,12 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	if addr == "" {
 		return errors.New("type the address of the window to connect to")
 	}
-	name := addr
-	if in.Name != "" {
-		name = in.Name
+	name := in.ID
+	if name == "" {
+		name = a.newQuick(addr, true)
 	}
 	if _, ok := a.windows[name]; ok || a.dialing[name] {
-		return fmt.Errorf("this window is already connected to %s", name)
+		return fmt.Errorf("this window is already connected to %s", a.nameOf(name))
 	}
 	a.dialing[name] = true
 	dctx, cancel := context.WithCancel(a.ctx)
@@ -209,19 +212,19 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 		// The connection went, rather than the window saying so on
 		// purpose: offered to reach again, the connection alone, with
 		// what it has open listed once it answers.
-		text := name
+		text := a.nameOf(name)
 		if why != nil && !serve.Ended(why) {
 			text += "\n\n" + serve.Plain(why.Error())
 		}
 		logLine(a.accounts[name], "", "connection lost")
 		a.problem()
-		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, Name: name}
+		again := ConnectWindow{Addr: w.addr, KeyFile: w.keyFile, ID: name}
 		a.askThen(a.ctx, Ask{Title: "Connection lost", Icon: "unplug", Text: text, Yes: "Reconnect", No: "Close"}, func(ans AskAnswered) {
 			if !ans.Yes {
 				return
 			}
 			if err := a.reachWindow(again, false); err != nil {
-				a.failed("Couldn't reconnect to "+name, err.Error())
+				a.failed("Couldn't reconnect to "+a.nameOf(name), err.Error())
 				a.problem()
 			}
 		})
@@ -289,7 +292,7 @@ func (a *app) openOnWindow(name, id, title string, at placement, then func(strin
 		a.events <- func() {
 			a.starting--
 			if err != nil {
-				a.failed("Couldn't open a shell on "+name, err.Error())
+				a.failed("Couldn't open a shell on "+a.nameOf(name), err.Error())
 				a.stayIfEmpty()
 				then("", err)
 				return
@@ -366,7 +369,7 @@ func (a *app) disconnect(machine string) error {
 	}
 	conn, ok := a.conns[machine]
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", machine)
+		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
 	}
 	// Let go of on purpose: its row goes with it, and those of the
 	// servers reached through it.

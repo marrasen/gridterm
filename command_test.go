@@ -142,24 +142,16 @@ func TestACommandOnAServerNotConnectedConnectsFirst(t *testing.T) {
 	}
 }
 
-// A command on a machine whose connection is kept under another name,
-// as "web:22" is kept as "web", says so rather than connecting again
-// and again.
-func TestACommandConnectedUnderAnotherNameSaysSo(t *testing.T) {
-	a, answering := dialApp(t)
-	a.handle(OpenOn{Machine: "srv"})
-	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	a.conns["web"] = a.conns["srv"]
-	t.Cleanup(func() { delete(a.conns, "web") })
-	failed := false
+// A command on a machine that is neither saved nor a quick connection
+// is refused at once, rather than dialled as an address.
+func TestACommandOnAMachineNotKnownIsRefused(t *testing.T) {
+	a, _ := dialApp(t)
 	err := a.startCommand("web:22", command{argv: []string{"true"}}, commandStart{
-		then:   func(session.Session) { t.Fatal("the command started") },
-		failed: func() { failed = true },
+		then: func(session.Session) { t.Fatal("the command started") },
 	})
-	if err != nil {
-		t.Fatal(err)
+	if err == nil || len(a.dialing) != 0 {
+		t.Fatalf("a command on a machine not known said %v, and dialled %v", err, a.dialing)
 	}
-	waitFor(t, a, "the refusal", func() bool { return failed })
 }
 
 // A command whose connection could not be made says so to whoever
@@ -167,7 +159,8 @@ func TestACommandConnectedUnderAnotherNameSaysSo(t *testing.T) {
 func TestACommandWhoseConnectionFailsSaysSo(t *testing.T) {
 	a, answering := dialApp(t)
 	failed := false
-	err := a.startCommand("127.0.0.1:1", command{argv: []string{"true"}}, commandStart{
+	nowhere := a.newQuick("tester@127.0.0.1:1", false)
+	err := a.startCommand(nowhere, command{argv: []string{"true"}}, commandStart{
 		then:   func(session.Session) { t.Fatal("the command started") },
 		failed: func() { failed = true },
 	})

@@ -97,7 +97,7 @@ func (a *app) copyDropped(machine string, paths []string, dir string) error {
 			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, into), "", machine))
 		}
 		if len(already) > 0 {
-			a.tell(arrived(already, dir, machine), "Already there.")
+			a.tell(arrived(already, dir, a.nameOf(machine)), "Already there.")
 		}
 		if len(started) > 0 {
 			a.sayWhenArrived(started, paths, dir, machine)
@@ -136,18 +136,19 @@ func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir, machine s
 			if failed > 0 {
 				body = strconv.Itoa(failed) + " failed. The Jobs pane says why."
 			}
-			a.tell(arrived(names, dir, machine), body)
+			a.tell(arrived(names, dir, a.nameOf(machine)), body)
 		}
 	}()
 }
 
-// arrived says what landed and where.
-func arrived(names []string, dir, machine string) string {
+// arrived says what landed and where: in dir, on the machine called
+// where.
+func arrived(names []string, dir, where string) string {
 	what := "Copied " + strconv.Itoa(len(names)) + " files"
 	if len(names) == 1 {
 		what = "Copied " + names[0]
 	}
-	return fmt.Sprintf("%s to %s on %s", what, dir, placeName(machine))
+	return fmt.Sprintf("%s to %s on %s", what, dir, where)
 }
 
 // uploadDropped copies files into the folder for pasted files on the
@@ -162,14 +163,14 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 			dir, err := pasted.DirOn(to)
 			a.events <- func() {
 				if err != nil {
-					a.failed("Couldn't copy the files to "+placeName(machine), err.Error())
+					a.failed("Couldn't copy the files to "+a.nameOf(machine), err.Error())
 					a.problem()
 					return
 				}
 				for _, path := range paths {
 					name := filepath.Base(path)
 					op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{name}, To: to, Into: dir}
-					j := a.followOn(op, "Copying "+name+" to "+placeName(machine), "", machine)
+					j := a.followOn(op, "Copying "+name+" to "+a.nameOf(machine), "", machine)
 					at := strings.TrimSuffix(dir, string(to.Sep())) + string(to.Sep()) + name
 					go func() {
 						<-j.Done()
@@ -183,7 +184,7 @@ func (a *app) uploadDropped(id, machine string, paths []string) error {
 								// The pane closed while the file was on
 								// its way; the notice's Copy is the way
 								// left to the path.
-								a.worked("File copied", at+" on "+placeName(machine)+".", at)
+								a.worked("File copied", at+" on "+a.nameOf(machine)+".", at)
 								a.done()
 							}
 						}

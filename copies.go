@@ -53,7 +53,7 @@ func (a *app) runningNamed(id string) *running {
 // savedCopyOf is a copy written down to keep.
 func (a *app) savedCopyOf(r *running) settings.SavedCopy {
 	return settings.SavedCopy{
-		From: r.from, To: r.to, FromID: a.serverID(r.from), ToID: a.serverID(r.to),
+		From: a.keptAs(r.from), To: a.keptAs(r.to), FromID: a.serverID(r.from), ToID: a.serverID(r.to),
 		At: r.op.At, Into: r.op.Into, Names: slices.Clone(r.op.Names),
 	}
 }
@@ -145,35 +145,38 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 }
 
 // machineNow is the machine a piece of work kept from before runs on:
-// the saved server with id, as the connection to it is called, or by
-// its name on the list now. A server removed from the list is refused,
-// and so is one whose name a connection to another machine holds. A
-// machine kept without an id is name, as it was.
+// the saved server with id, whatever it is called now, or, kept with
+// none, this computer or a quick connection to name, the address it was
+// kept with. A server removed from the list is refused.
 func (a *app) machineNow(name, id string) (string, error) {
-	if id == "" {
-		return name, nil
-	}
-	for held, heldID := range a.connIDs {
-		if heldID == id {
-			return held, nil
+	switch {
+	case id == "" && name == "":
+		return "", nil
+	case id == "":
+		// A quick connection, the one there is to that address or one
+		// made for it.
+		if known, ok := a.idOf(name); ok && !strings.Contains(known, farSep) {
+			return known, nil
 		}
-	}
-	now := ""
-	for _, h := range a.st.Saved {
-		if h.ID == id {
-			now = h.Name
-		}
-	}
-	if now == "" && a.book == nil {
+		return a.newQuick(name, false), nil
+	case a.book == nil:
 		return "", fmt.Errorf("the server list could not be read, so %s cannot be found", name)
 	}
-	if now == "" {
+	if _, ok := a.savedHost(id); !ok {
 		return "", fmt.Errorf("%s was removed from the server list", name)
 	}
-	if heldID := a.connIDs[now]; heldID != "" {
-		return "", fmt.Errorf("%s is connected to another machine", now)
+	return id, nil
+}
+
+// keptAs is what a piece of work kept for next time says it runs on,
+// beside the ID of the saved server it runs on: the server's name, for
+// the list to show, a quick connection's address, to connect to it again
+// by, and "" for this computer.
+func (a *app) keptAs(machine string) string {
+	if machine == "" {
+		return ""
 	}
-	return now, nil
+	return a.nameOf(machine)
 }
 
 // forgetCopy takes a copy off the saved list.
@@ -206,13 +209,17 @@ func copiedWhat(c settings.SavedCopy) string {
 	return count(len(c.Names), "item") + ": " + strings.Join(c.Names, ", ")
 }
 
-// copiedWhere says where a saved copy goes from and to.
-func copiedWhere(c settings.SavedCopy) string {
-	end := func(machine, at string) string {
-		if machine == "" {
+// copiedWhere says where a saved copy goes from and to: a saved server
+// by what named calls it now, and anything else as it was kept.
+func copiedWhere(c settings.SavedCopy, named func(string) string) string {
+	end := func(machine, id, at string) string {
+		switch {
+		case id != "" && named != nil:
+			machine = named(id)
+		case machine == "":
 			machine = "this computer"
 		}
 		return at + " on " + machine
 	}
-	return end(c.From, c.At) + " → " + end(c.To, c.Into)
+	return end(c.From, c.FromID, c.At) + " → " + end(c.To, c.ToID, c.Into)
 }

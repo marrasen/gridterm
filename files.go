@@ -251,7 +251,7 @@ func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
 func (a *app) filesOn(machine, path string) error {
 	return a.withFiles(machine, func(f vfs.FS) {
 		if err := a.openFilesOn(machine, f, path); err != nil {
-			a.failed("Couldn't open the files on "+placeName(machine), err.Error())
+			a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
 		}
 	})
 }
@@ -289,17 +289,6 @@ func (a *app) paneOn(key string, p Pane) Pane {
 	return p
 }
 
-// placeName is what a files key is called where the user reads it.
-func placeName(key string) string {
-	if window, host, far := strings.Cut(key, farSep); far {
-		return host + " through " + window
-	}
-	if key == "" {
-		return "this computer"
-	}
-	return key
-}
-
 // withFiles runs then with machine's files, on the program's goroutine,
 // opening them first when they are not open: over a server's
 // connection, or a window's, with SFTP, once for all its file panes.
@@ -331,13 +320,13 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 				}
 				if err := a.withFilesOr(machine, then, failed); err != nil {
 					failed()
-					a.failed("Couldn't open the files on "+placeName(machine), err.Error())
+					a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
 				}
 			})
 		}
-		return fmt.Errorf("this window is not connected to %s", placeName(machine))
+		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
 	}
-	a.st.Status = "Opening the files on " + placeName(machine) + "…"
+	a.st.Status = "Opening the files on " + a.nameOf(machine) + "…"
 	a.starting++
 	go func() {
 		f, err := open()
@@ -346,7 +335,7 @@ func (a *app) withFilesOr(machine string, then func(vfs.FS), failed func()) erro
 			a.st.Status = ""
 			if err != nil {
 				failed()
-				a.failed("Couldn't open the files on "+placeName(machine), err.Error())
+				a.failed("Couldn't open the files on "+a.nameOf(machine), err.Error())
 				return
 			}
 			then(a.keepFiles(machine, f))
@@ -568,10 +557,10 @@ func (a *app) readerFiles(id string, dial bool, then func(vfs.FS)) {
 		return
 	}
 	lost := func() {
-		a.readerSays(id, "The connection to "+placeName(spec.machine)+" went. Ctrl+R connects again.")
+		a.readerSays(id, "The connection to "+a.nameOf(spec.machine)+" went. Ctrl+R connects again.")
 	}
 	if spec.window && a.fsFor(spec.machine) == nil {
-		a.readerSays(id, "The connection to "+placeName(spec.machine)+" went. Connect to it again, then Ctrl+R.")
+		a.readerSays(id, "The connection to "+a.nameOf(spec.machine)+" went. Connect to it again, then Ctrl+R.")
 		return
 	}
 	if !dial && a.fsFor(spec.machine) == nil {

@@ -163,7 +163,9 @@ The whole list. The [README](README.md) has the short version.
   dot in the same colours, as does a row in a sidebar dragged too narrow
   to draw an icon. The bar follows whatever pane is in front, so the
   sidebar is the list of what is open and says which one you are looking
-  at. "Connect to server…" is pinned under the list. Nothing polls and
+  at. A server not saved is connected to with Quick Connect on the
+  Servers menu, and listed, marked "quick", while anything is open on
+  it. Nothing polls and
   nothing ticks: the row is worked out afresh each frame from when the
   last byte went by, so an idle sidebar redraws nothing at all.
   `Ctrl+Shift+B` hides it and shows it again.

@@ -24,14 +24,11 @@ func (w *window) commandDialogOn(machine string, u *gunim.UI) {
 func (w *window) commandDialogAt(machine string, at placement, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
-			w.toasts.Show(widget.Toast{Title: machine + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
+			w.toasts.Show(widget.Toast{Title: w.nameOf(machine) + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
 			return
 		}
 	}
-	where := machine
-	if where == "" {
-		where = "this computer"
-	}
+	where := w.nameOf(machine)
 	line, dir := widget.NewTextField(), widget.NewTextField()
 	line.Placeholder, dir.Placeholder = "such as top, or make test", "optional: where the login lands"
 	keep := widget.NewCheckbox("Save this command")

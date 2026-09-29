@@ -33,15 +33,16 @@ func (w *window) tunnelDialogOn(machine string, socks bool, u *gunim.UI) {
 	}
 	listen, target := widget.NewTextField(), widget.NewTextField()
 	listen.Placeholder, target.Placeholder = "[address:]port", "host:port"
-	way := widget.NewDropdown("Local — listen here", "Remote — listen on "+machine)
+	called := w.nameOf(machine)
+	way := widget.NewDropdown("Local — listen here", "Remote — listen on "+called)
 	way.Label = "Direction"
 	keep := widget.NewCheckbox("Save this tunnel")
 	form := widget.NewForm()
-	title := "Tunnel via " + machine
+	title := "Tunnel via " + called
 	if socks {
-		title = "SOCKS proxy via " + machine
+		title = "SOCKS proxy via " + called
 		listen.SetText("1080")
-		note := widget.NewLabel("A SOCKS port here. Connections go out from " + machine + ".")
+		note := widget.NewLabel("A SOCKS port here. Connections go out from " + called + ".")
 		form.Add("", note).Add("Listen on", listen)
 	} else {
 		form.Add("Listen on", listen).Add("Forward to", target).Add("Direction", way)

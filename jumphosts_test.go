@@ -46,6 +46,7 @@ func jumpApp(t *testing.T) (a *app, s *sshtest.Server, answering func()) {
 	put(remote.Host{Name: "inner2", Address: host, Port: port, User: "tester", Via: bastion})
 	mid := put(remote.Host{Name: "mid", Address: "127.0.0.1", Port: 1, User: "tester", Via: bastion})
 	put(remote.Host{Name: "far", Address: host, Port: port, User: "tester", Via: mid})
+	idsAsNames(t, book)
 	a.book = book
 	a.st.Saved = book.Hosts()
 	t.Cleanup(func() {
@@ -70,12 +71,12 @@ func jumpApp(t *testing.T) (a *app, s *sshtest.Server, answering func()) {
 // closes once neither needs it.
 func TestServersBehindAJumpHostShareIt(t *testing.T) {
 	a, s, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "inner1"})
+	a.handle(ConnectTo{Server: "inner1"})
 	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
 	if n := s.Conns(); n != 2 {
 		t.Fatalf("reaching inner1 signed in %d times, want 2: the jump host and inner1", n)
 	}
-	a.handle(ConnectTo{Saved: "inner2"})
+	a.handle(ConnectTo{Server: "inner2"})
 	waitFor(t, a, "inner2", func() bool { answering(); return a.conns["inner2"] != nil })
 	if n := s.Conns(); n != 3 {
 		t.Fatalf("reaching inner2 as well signed in %d times, want 3: the jump host once", n)
@@ -95,9 +96,9 @@ func TestServersBehindAJumpHostShareIt(t *testing.T) {
 // in to nothing twice, and it stays once what went through it has gone.
 func TestAJumpHostConnectedToStays(t *testing.T) {
 	a, s, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "bastion"})
+	a.handle(ConnectTo{Server: "bastion"})
 	waitFor(t, a, "the bastion", func() bool { answering(); return a.conns["bastion"] != nil })
-	a.handle(ConnectTo{Saved: "inner1"})
+	a.handle(ConnectTo{Server: "inner1"})
 	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
 	if n := s.Conns(); n != 2 {
 		t.Fatalf("signed in %d times, want 2", n)
@@ -114,7 +115,7 @@ func TestAJumpHostConnectedToStays(t *testing.T) {
 // says which hop it failed at.
 func TestAFailedRouteClosesItsHopsAndNamesTheOneThatFailed(t *testing.T) {
 	a, s, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "far"})
+	a.handle(ConnectTo{Server: "far"})
 	waitFor(t, a, "the dial to fail", func() bool { answering(); return len(a.dialing) == 0 && len(a.st.Notices) > 0 })
 	if n := a.st.Notices[len(a.st.Notices)-1]; !strings.Contains(n.Body, "through mid") {
 		t.Fatalf("the failure says %q, want it to name mid", n.Body)
@@ -129,10 +130,10 @@ func TestAFailedRouteClosesItsHopsAndNamesTheOneThatFailed(t *testing.T) {
 // through it may leave meanwhile, and the jump host stays for the dial.
 func TestADialHoldsTheJumpHostItGoesThrough(t *testing.T) {
 	a, s, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "inner1"})
+	a.handle(ConnectTo{Server: "inner1"})
 	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
 	// inner2's dial waits on its password, unanswered for now.
-	a.handle(ConnectTo{Saved: "inner2"})
+	a.handle(ConnectTo{Server: "inner2"})
 	waitFor(t, a, "inner2's password question", func() bool { return len(a.st.Asks) > 0 })
 	a.handle(Disconnect{Machine: "inner1"})
 	waitFor(t, a, "inner1 to go", func() bool { return a.conns["inner1"] == nil })
@@ -149,14 +150,14 @@ func TestADialHoldsTheJumpHostItGoesThrough(t *testing.T) {
 // the connection to it is to where it was.
 func TestAChangedJumpHostIsNotGoneThroughAgain(t *testing.T) {
 	a, _, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "inner1"})
+	a.handle(ConnectTo{Server: "inner1"})
 	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
 	b, _ := a.book.Lookup("bastion")
 	b.Address, b.Port = "127.0.0.1", 1
 	if err := a.book.Put(b, "bastion"); err != nil {
 		t.Fatal(err)
 	}
-	a.handle(ConnectTo{Saved: "inner2"})
+	a.handle(ConnectTo{Server: "inner2"})
 	waitFor(t, a, "the dial to end", func() bool { answering(); return len(a.dialing) == 0 })
 	if a.conns["inner2"] != nil {
 		t.Fatal("inner2 connected through the bastion as it was before the change")
@@ -167,9 +168,9 @@ func TestAChangedJumpHostIsNotGoneThroughAgain(t *testing.T) {
 // reached through it with it, as let go of rather than dropped.
 func TestDisconnectingAJumpHostLetsGoOfWhatWentThroughIt(t *testing.T) {
 	a, _, answering := jumpApp(t)
-	a.handle(ConnectTo{Saved: "bastion"})
+	a.handle(ConnectTo{Server: "bastion"})
 	waitFor(t, a, "the bastion", func() bool { answering(); return a.conns["bastion"] != nil })
-	a.handle(ConnectTo{Saved: "inner1"})
+	a.handle(ConnectTo{Server: "inner1"})
 	waitFor(t, a, "inner1", func() bool { answering(); return a.conns["inner1"] != nil })
 	a.handle(Disconnect{Machine: "bastion"})
 	waitFor(t, a, "both to go", func() bool { return a.conns["bastion"] == nil && a.conns["inner1"] == nil })

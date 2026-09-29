@@ -3,7 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 
@@ -53,7 +52,7 @@ func (a *app) runCommand(in RunCommand) error {
 		}
 	}
 	if window {
-		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", in.Machine)
+		return fmt.Errorf("%s is a kakel window, which has no shell to run a command in: open a terminal on it instead", a.nameOf(in.Machine))
 	}
 	if in.Forget != "" && !in.Keep && a.settings != nil {
 		if err := a.settings.DropCommand(in.Forget); err != nil {
@@ -62,7 +61,7 @@ func (a *app) runCommand(in RunCommand) error {
 		a.st.SavedCommands = a.settings.Commands()
 	}
 	if in.Keep && a.settings != nil {
-		saved := settings.SavedCommand{Line: strings.Join(argv, " "), Dir: strings.TrimSpace(in.Dir), Host: in.Machine, HostID: a.serverID(in.Machine)}
+		saved := settings.SavedCommand{Line: strings.Join(argv, " "), Dir: strings.TrimSpace(in.Dir), Host: a.keptAs(in.Machine), HostID: a.serverID(in.Machine)}
 		if err := a.settings.KeepCommand(saved, mostSavedCommands); err != nil {
 			a.failed("Couldn't keep the command for next time", err.Error())
 		}
@@ -126,19 +125,19 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 			if a.conns[machine] == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				a.failed("Couldn't run "+line+" on "+machine, "The connection was made under another name. Open a terminal on it from the sidebar.")
+				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), "The connection was made under another name. Open a terminal on it from the sidebar.")
 				s.fail()
 				return
 			}
 			if err := a.startCommand(machine, cmd, s); err != nil {
-				a.failed("Couldn't run "+line+" on "+machine, err.Error())
+				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
 				a.problem()
 				s.fail()
 			}
 		})
 	}
 	if !ok {
-		return fmt.Errorf("this window is not connected to %s", machine)
+		return fmt.Errorf("this window is not connected to %s", a.nameOf(machine))
 	}
 	if !s.wanted() {
 		return nil
@@ -152,7 +151,7 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 				if !s.wanted() {
 					return
 				}
-				a.failed("Couldn't run "+line+" on "+machine, err.Error())
+				a.failed("Couldn't run "+line+" on "+a.nameOf(machine), err.Error())
 				a.problem()
 				s.fail()
 				a.stayIfEmpty()
@@ -171,17 +170,9 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 // runSavedCommand runs a command kept from before, on the machine it
 // was kept for, by that machine's name now.
 func (a *app) runSavedCommand(saved settings.SavedCommand) error {
-	machine := saved.Host
-	if saved.HostID != "" && a.book == nil {
-		return errors.New("the server list could not be read, so the server this was kept for cannot be found")
-	}
-	if saved.HostID != "" {
-		i := slices.IndexFunc(a.st.Saved, func(h remote.Host) bool { return h.ID == saved.HostID })
-		if i < 0 {
-			// Its name may be another machine's now, or an address.
-			return fmt.Errorf("%s was removed from the server list, so there is nowhere to run it", saved.Host)
-		}
-		machine = a.st.Saved[i].Name
+	machine, err := a.machineNow(saved.Host, saved.HostID)
+	if err != nil {
+		return err
 	}
 	return a.runCommand(RunCommand{Machine: machine, Line: saved.Line, Dir: saved.Dir})
 }

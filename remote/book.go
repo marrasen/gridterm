@@ -153,6 +153,17 @@ func (b *Book) NameOf(id string) (string, bool) {
 	return "", false
 }
 
+// LookupID returns the machine with an id.
+func (b *Book) LookupID(id string) (Host, bool) {
+	if id == "" {
+		return Host{}, false
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	h, ok := withID(b.hosts, id)
+	return h.clone(), ok
+}
+
 func (b *Book) lookupLocked(name string) (Host, bool) {
 	for _, h := range b.hosts {
 		if strings.EqualFold(h.Name, name) {
@@ -239,21 +250,26 @@ func (b *Book) Put(h Host, under string) error {
 
 // Remove takes a machine out of the list and saves.
 func (b *Book) Remove(name string) error {
+	return b.remove(func(h Host) bool { return strings.EqualFold(h.Name, name) }, fmt.Sprintf("%q", name))
+}
+
+// RemoveID takes the machine with an id out of the list and saves.
+func (b *Book) RemoveID(id string) error {
+	return b.remove(func(h Host) bool { return id != "" && h.ID == id }, "with that id")
+}
+
+// remove takes the machine is picks out of the list and saves; said
+// says which it was, for when there is none.
+func (b *Book) remove(is func(Host) bool, said string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if err := b.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 
-	at := -1
-	for i, h := range b.hosts {
-		if strings.EqualFold(h.Name, name) {
-			at = i
-			break
-		}
-	}
+	at := slices.IndexFunc(b.hosts, is)
 	if at < 0 {
-		return fmt.Errorf("there is no saved server called %q", name)
+		return fmt.Errorf("there is no saved server %s", said)
 	}
 	for _, h := range b.hosts {
 		if h.Via == b.hosts[at].ID {
@@ -289,6 +305,24 @@ func (b *Book) Route(name string) ([]Host, error) {
 	if !ok {
 		return nil, fmt.Errorf("there is no saved server called %q", name)
 	}
+	return b.routeLocked(h)
+}
+
+// RouteID is Route for the machine with an id.
+func (b *Book) RouteID(id string) ([]Host, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	h, ok := withID(b.hosts, id)
+	if !ok || id == "" {
+		return nil, errors.New("that server is not in the server list any more")
+	}
+	return b.routeLocked(h)
+}
+
+// routeLocked is the route to h.
+func (b *Book) routeLocked(h Host) ([]Host, error) {
+	name := h.Name
 	var route []Host
 	seen := map[string]bool{}
 	for {
@@ -300,9 +334,11 @@ func (b *Book) Route(name string) ([]Host, error) {
 		if h.Via == "" {
 			break
 		}
-		if h, ok = withID(b.hosts, h.Via); !ok {
+		next, ok := withID(b.hosts, h.Via)
+		if !ok {
 			return nil, fmt.Errorf("the server %q is reached through is not saved", route[len(route)-1].Name)
 		}
+		h = next
 	}
 	slices.Reverse(route)
 	return route, nil
@@ -484,6 +520,14 @@ func giveIDs(hosts []Host) {
 func derivedID(name string, try int) string {
 	sum := sha256.Sum256(fmt.Appendf(nil, "gridterm server\x00%s\x00%d", strings.ToLower(name), try))
 	return hex.EncodeToString(sum[:8])
+}
+
+// QuickID is an id for a connection made without a saved server, which
+// no saved server has, nor can: theirs are hex alone.
+func QuickID() string {
+	var raw [8]byte
+	_, _ = rand.Read(raw[:])
+	return "quick-" + hex.EncodeToString(raw[:])
 }
 
 // newID is an id for a server being added, and one none of hosts has.

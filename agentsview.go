@@ -50,7 +50,7 @@ func (w *window) shareDialog(st Share, u *gunim.UI) {
 		}
 		label := p.Title
 		if p.Machine != "" {
-			label += " on " + p.Machine
+			label += " on " + w.nameOf(p.Machine)
 		}
 		if shared[p.ID] {
 			label += mayWords(mays[p.ID])

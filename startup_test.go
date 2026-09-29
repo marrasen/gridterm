@@ -51,7 +51,7 @@ func TestSshWithACommandRunsItThere(t *testing.T) {
 		return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Command && strings.Contains(p.Title, "echo hi") })
 	})
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.Command })
-	if p := a.st.Panes[i]; p.Machine != target {
-		t.Fatalf("the command ran on %q, want %q", p.Machine, target)
+	if p := a.st.Panes[i]; a.nameOf(p.Machine) != target {
+		t.Fatalf("the command ran on %q, want %q", a.nameOf(p.Machine), target)
 	}
 }

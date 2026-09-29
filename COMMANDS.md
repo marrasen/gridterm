@@ -158,7 +158,7 @@ the shells sort directly under `New Terminal`.
 
 | ID | Title | Also found under |
 |---|---|---|
-| `server.connect` | Connect to Server… | ssh, host, machine |
+| `server.connect` | Quick Connect… | ssh, host, machine |
 | `server.add` | Add Server… | new, save |
 | `server.editThis` | Edit This Server… | |
 | `server.forget` | Remove This Server… | forget, delete |

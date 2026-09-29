@@ -64,7 +64,7 @@ func (a *app) showLog(machine string) {
 	if machine != "" {
 		var ok bool
 		if l, ok = a.accounts[machine]; !ok {
-			a.notify("Connection logs start as a connection does", "Connect to "+machine+" first.", "")
+			a.notify("Connection logs start as a connection does", "Connect to "+a.nameOf(machine)+" first.", "")
 			return
 		}
 		title = "Connection Log"
@@ -87,7 +87,7 @@ func (a *app) watchDial(machine string) string {
 	}
 	a.next++
 	id := "p" + itoa(a.next)
-	a.addPane(Pane{ID: id, Title: "Connecting to " + machine, Machine: machine, Kind: kindLog},
+	a.addPane(Pane{ID: id, Title: "Connecting to " + a.nameOf(machine), Machine: machine, Kind: kindLog},
 		openShell(a.accounts[machine].Open(), a.palette, a.hooks(id)), placement{})
 	return id
 }
@@ -99,7 +99,7 @@ func (a *app) watchDial(machine string) string {
 func (a *app) dialed(logPane, machine string, open bool) {
 	if open {
 		if err := a.open(machine, placement{beside: logPane}); err != nil {
-			a.failed("Couldn't open a shell on "+machine, err.Error())
+			a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())
 			return
 		}
 	}

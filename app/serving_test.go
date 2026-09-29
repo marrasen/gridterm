@@ -541,3 +541,35 @@ func TestDisconnectingAWindowAlreadyGoneSaysSo(t *testing.T) {
 		t.Fatalf("it said %v", err)
 	}
 }
+
+// A saved window's address typed in the Connect to Window dialog, with
+// no key file typed, is dialled with the key saved for it.
+func TestASavedWindowTypedIsDialledWithItsKey(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	b, keyFile := clientOf(t, a)
+	host, port, err := net.SplitHostPort(a.st.Serving.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := strconv.Atoi(port)
+	if err := book.Put(remote.Host{Name: "desk", Address: host, Port: n, Window: true, Identities: []string{keyFile}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	b.book = book
+	desk, _ := book.Lookup("desk")
+	if err := b.connectWindow(ConnectWindow{Addr: a.st.Serving.Addr}); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the window", func() bool {
+		for _, q := range b.st.Asks {
+			b.handle(AskAnswered{ID: q.ID, Yes: true})
+		}
+		return b.machines.Get(machines.ID(desk.ID)).Window != nil
+	})
+}

@@ -123,6 +123,11 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 		// Typed: a window known at that address already is that one,
 		// rather than a second connection under a second heading.
 		name = a.windowAt(addr)
+		// A saved one is dialled with its own key when none was typed,
+		// as it is from the Servers menu.
+		if h, saved := a.machines.Saved(name); saved && strings.TrimSpace(in.KeyFile) == "" {
+			in.KeyFile = h.KeyFile()
+		}
 	}
 	if _, saved := a.machines.Saved(name); name == "" || (!saved && !a.machines.IsQuick(name)) {
 		// A quick one, or one again that was forgotten meanwhile, as

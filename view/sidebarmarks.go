@@ -341,7 +341,9 @@ func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 				r.traffic = sh.Traffic()
 			}
 			if t, ok := w.terms[p.ID]; ok {
-				r.shared, r.hues = t.shared, t.marks
+				// The colours of this update, which the terminal takes
+				// only after the rows.
+				r.shared, r.hues = t.shared, st.Marks
 			}
 			ended := p.Ended
 			r.live = func(now time.Time) meter.State {

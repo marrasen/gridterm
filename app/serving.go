@@ -651,7 +651,7 @@ const startAgainWait = 2 * time.Minute
 // serveFiles gives a connected window the files of this machine, or
 // of a server this window is connected to, carried over its
 // connection.
-func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) error {
+func (a *app) serveFiles(client context.Context, host string, ch io.ReadWriteCloser) error {
 	if host == "" {
 		opts := []sftp.ServerOption{sftp.WindowsRootEnumeratesDrives()}
 		if home, err := os.UserHomeDir(); err == nil {
@@ -690,32 +690,52 @@ func (a *app) serveFiles(_ context.Context, host string, ch io.ReadWriteCloser) 
 	if err != nil {
 		return fmt.Errorf("could not open a file session on %s: %w", host, err)
 	}
-	done := make(chan error, 2)
-	go func() { _, err := io.Copy(relay, ch); done <- err }()
-	go func() { _, err := io.Copy(ch, relay); done <- err }()
-	first := <-done
-	if errors.Is(first, io.EOF) {
-		first = nil
+	// What the client sends, on to the machine, and what the machine
+	// says, back to the client.
+	sent, back := make(chan error, 1), make(chan error, 1)
+	go func() { _, err := io.Copy(relay, ch); sent <- err }()
+	go func() { _, err := io.Copy(ch, relay); back <- err }()
+	plain := func(err error) error {
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		return err
 	}
-	closed := relay.Close()
-	// The other copy ends once the close is answered. A machine that
-	// has stopped answering never answers it: the copy is left waiting,
-	// counted against the connection until it ends, which it does when
-	// the connection goes.
 	select {
-	case <-done:
-	case <-time.After(relayGrace):
-		go func() {
-			post(a, func() { a.parked[conn]++ })
-			<-done
-			post(a, func() {
-				if a.parked[conn]--; a.parked[conn] <= 0 {
-					delete(a.parked, conn)
-				}
-			})
-		}()
+	case err := <-back:
+		// The machine's end came first. The copy from the client waits
+		// on the client's channel, which is closed once this returns,
+		// so it ends then: nothing is left waiting on the machine.
+		return errors.Join(plain(err), relay.Close())
+	case err := <-sent:
+		// The client is finished, which is how a file session usually
+		// ends. The copy from the machine ends once the machine answers
+		// the close. One that has stopped answering never does: the copy
+		// is left waiting, counted against the connection until it ends,
+		// which it does when the connection goes. A client whose whole
+		// connection has gone is waited for no longer, and what it left
+		// is counted too.
+		closed := relay.Close()
+		parked := true
+		select {
+		case <-back:
+			parked = false
+		case <-client.Done():
+		case <-time.After(relayGrace):
+		}
+		if parked {
+			go func() {
+				post(a, func() { a.parked[conn]++ })
+				<-back
+				post(a, func() {
+					if a.parked[conn]--; a.parked[conn] <= 0 {
+						delete(a.parked, conn)
+					}
+				})
+			}()
+		}
+		return errors.Join(plain(err), closed)
 	}
-	return errors.Join(first, closed)
 }
 
 // mostParked is how many file sessions may be left waiting to end on a

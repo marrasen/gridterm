@@ -138,7 +138,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	// the dial when what else went through it goes.
 	a.machines.Hold(start)
 	go func() {
-		conn, made, err := dialFrom(dctx, start, from, hops, shown)
+		conn, made, err := machines.DialFrom(dctx, start, from, hops, shown)
 		a.events <- func() {
 			defer a.machines.Release(start)
 			a.machines.At(name).Dialing = nil
@@ -452,35 +452,6 @@ func (a *app) removeServer(name machines.ID) error {
 	}
 	a.worked("Removed "+called, "", "")
 	return nil
-}
-
-// dialFrom dials hops[from:], through start when it is not nil. It
-// returns the far end, and the connections it made to the hops before
-// it, first to last. An error names the hop it came from, when that is
-// not the far end.
-func dialFrom(ctx context.Context, start *remote.Conn, from int, hops []remote.Config, names []string) (*remote.Conn, []*remote.Conn, error) {
-	var made []*remote.Conn
-	conn := start
-	for i := from; i < len(hops); i++ {
-		var next *remote.Conn
-		var err error
-		if conn == nil {
-			next, err = remote.Connect(ctx, hops[i])
-		} else {
-			next, err = conn.Through(ctx, hops[i])
-		}
-		if err != nil {
-			if i < len(hops)-1 && names[i] != "" {
-				err = fmt.Errorf("through %s: %w", names[i], err)
-			}
-			return nil, made, err
-		}
-		if i < len(hops)-1 {
-			made = append(made, next)
-		}
-		conn = next
-	}
-	return conn, made, nil
 }
 
 // connOf is the connection to machine to open something on, and

@@ -101,3 +101,55 @@ func WindowsAbs(p string) bool {
 	c := p[0]
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
+
+// linkSchemes, linkLeading and linkTrailing are what a link in a
+// server's words starts with, and the marks around it that are not
+// part of it.
+var linkSchemes = []string{"http://", "https://"}
+
+const (
+	linkLeading  = `(<"'`
+	linkTrailing = `.,)>"'`
+)
+
+// Only is the one web link in lines, as a server writes one, and false when there is none or
+// more than one: several give nothing to guess between.
+func Only(lines []string) (string, bool) {
+	var found string
+	for _, line := range lines {
+		for _, word := range strings.Fields(line) {
+			at, ok := linkIn(word)
+			if !ok {
+				continue
+			}
+			if found != "" && found != at {
+				return "", false
+			}
+			found = at
+		}
+	}
+	return found, found != ""
+}
+
+// linkIn is the link a word is, if it is one.
+func linkIn(word string) (string, bool) {
+	word = strings.TrimLeft(word, linkLeading)
+	lower := strings.ToLower(word)
+	is := false
+	for _, scheme := range linkSchemes {
+		is = is || strings.HasPrefix(lower, scheme)
+	}
+	if !is {
+		return "", false
+	}
+	at := strings.TrimRight(word, linkTrailing)
+	for _, scheme := range linkSchemes {
+		if strings.EqualFold(at, scheme) {
+			return "", false
+		}
+	}
+	if Openable(at) != nil {
+		return "", false
+	}
+	return at, true
+}

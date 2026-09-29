@@ -1,6 +1,7 @@
 package machines
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -175,4 +176,33 @@ func (r *Registry) SavedOtherwise(id ID) error {
 		return fmt.Errorf("%s is connected as it was saved before, to %s, and is saved as %s now. Disconnect it first", r.Name(id), was, now)
 	}
 	return nil
+}
+
+// DialFrom dials hops[from:], through start when it is not nil. It
+// returns the far end, and the connections it made to the hops before
+// it, first to last. An error names the hop it came from, when that is
+// not the far end.
+func DialFrom(ctx context.Context, start *remote.Conn, from int, hops []remote.Config, names []string) (*remote.Conn, []*remote.Conn, error) {
+	var made []*remote.Conn
+	conn := start
+	for i := from; i < len(hops); i++ {
+		var next *remote.Conn
+		var err error
+		if conn == nil {
+			next, err = remote.Connect(ctx, hops[i])
+		} else {
+			next, err = conn.Through(ctx, hops[i])
+		}
+		if err != nil {
+			if i < len(hops)-1 && names[i] != "" {
+				err = fmt.Errorf("through %s: %w", names[i], err)
+			}
+			return nil, made, err
+		}
+		if i < len(hops)-1 {
+			made = append(made, next)
+		}
+		conn = next
+	}
+	return conn, made, nil
 }

@@ -31,3 +31,23 @@ func TestAWindowsPathFromTheTopOfADriveStandsAlone(t *testing.T) {
 		}
 	}
 }
+
+// A server's words give the one link in them, and none when they give
+// several or none; the marks around a link are not part of it.
+func TestTheOneLinkInAServersWords(t *testing.T) {
+	for _, c := range []struct {
+		lines []string
+		want  string
+	}{
+		{[]string{"Sign in at <https://sso.example/device>, then enter ABCD."}, "https://sso.example/device"},
+		{[]string{"Go to https://a.example", "or https://a.example again"}, "https://a.example"},
+		{[]string{"https://a.example or https://b.example"}, ""},
+		{[]string{"nothing to open here, not even https://"}, ""},
+		{[]string{"javascript:alert(1)"}, ""},
+	} {
+		got, ok := Only(c.lines)
+		if got != c.want || ok != (c.want != "") {
+			t.Errorf("%q gives %q, %v; want %q", c.lines, got, ok, c.want)
+		}
+	}
+}

@@ -421,6 +421,10 @@ type (
 	FontSize struct{ Step int }
 	// PickTheme draws the window, terminals and all, in a theme.
 	PickTheme struct{ Name string }
+	// PreviewTheme shows a theme, as picking it would, and keeps nothing:
+	// the theme picker shows the one its highlight is on. Name empty
+	// ends the preview, and the theme in use comes back.
+	PreviewTheme struct{ Name string }
 	// ConnectTo connects to a saved server by its ID, Server, or to one
 	// typed as user@host:port, as a quick connection, and opens a shell
 	// there. Connected already, it opens another shell. As is the ID of
@@ -592,6 +596,9 @@ type app struct {
 	families   []glyph.Family
 	wantFont   string
 	fontPicked bool
+	// previewing is the theme in use, and whether its font was picked by
+	// hand, while the theme picker shows another; nil when it shows none.
+	previewing *themeWas
 	// fontFixed says the command line named the face, which no theme
 	// overrules.
 	fontFixed bool
@@ -1031,7 +1038,11 @@ func (a *app) handle(in gunim.Intent) {
 				}
 			}
 		}
+	case PreviewTheme:
+		a.previewTheme(in.Name)
 	case PickTheme:
+		// Picked, the preview is over: what it showed is what is on.
+		a.previewing = nil
 		// Written down once it is on: a theme not in the list is not
 		// one to come back to.
 		if !a.pickTheme(in.Name) {
@@ -1857,6 +1868,36 @@ func (a *app) pickTheme(name string) bool {
 		return true
 	}
 	return false
+}
+
+// themeWas is the theme in use, and whether its font was picked by
+// hand, to come back to once a preview ends.
+type themeWas struct {
+	name       string
+	fontPicked bool
+	// font is the typeface the window was drawn in, which a theme with
+	// a font of its own changes and the one in use may not name.
+	font Font
+}
+
+// previewTheme shows theme name as picking it would, keeping nothing,
+// or with name empty, brings back the theme in use before the preview.
+func (a *app) previewTheme(name string) {
+	if name == "" {
+		if was := a.previewing; was != nil {
+			a.previewing = nil
+			a.pickTheme(was.name)
+			a.fontPicked = was.fontPicked
+			// The very typeface it was in, as it was: the theme in use
+			// may name none to go back to.
+			a.st.Font = was.font
+		}
+		return
+	}
+	if a.previewing == nil {
+		a.previewing = &themeWas{name: a.st.Theme, fontPicked: a.fontPicked, font: a.st.Font}
+	}
+	a.pickTheme(name)
 }
 
 // Config is what the program side starts with: its first window, the

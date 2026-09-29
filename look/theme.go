@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
@@ -210,9 +211,11 @@ func Of(t themes.Theme) (Themed, error) {
 	if look.Set {
 		buttonBG, buttonFG = nrgba(look.ButtonBG), nrgba(look.ButtonFG)
 		primaryBG, primaryInk = nrgba(look.ActiveBG), nrgba(look.ActiveFG)
-		// Drawn as a text screen's boxes: a black shadow under each
-		// button, as the old app cast, and a double rule if asked for.
-		buttonShadow = color.NRGBA{A: 0xff}
+		// A shadow under each button, and a double rule round dialogs,
+		// where the theme asks for them, as a text screen drew its boxes.
+		if look.ButtonShadow.A != 0 {
+			buttonShadow = nrgba(look.ButtonShadow)
+		}
 		if look.Double {
 			borderLines = 2
 		}
@@ -225,6 +228,15 @@ func Of(t themes.Theme) (Themed, error) {
 	if err != nil {
 		return Themed{}, err
 	}
+	shape, err := shapeOf(t)
+	if err != nil {
+		return Themed{}, err
+	}
+	motion, err := motionOf(t)
+	if err != nil {
+		return Themed{}, err
+	}
+	echo = append(append(echo, shape...), motion...)
 	th := theme.Make(t.Name, append(echo,
 		theme.Set(widget.Background, bg),
 		theme.Set(widget.Ink, frameFG),
@@ -308,4 +320,102 @@ func MarksOf(p vt.Palette) Marks {
 	}
 	nrgba := func(c color.RGBA) color.NRGBA { return color.NRGBA{R: c.R, G: c.G, B: c.B, A: 0xff} }
 	return Marks{Agent: nrgba(p.ANSI[6]), Watched: nrgba(grid.Blend(p.ANSI[9], far, 2, 5))}
+}
+
+// The room tokens a theme's Shape.Room scales, and the corners its
+// Shape.Corners scales: gunim's own, and the sidebar's.
+var (
+	roomTokens = []theme.Token[float32]{
+		widget.ButtonPadding, widget.ButtonHeight,
+		widget.DialogPadding, widget.DialogGap, widget.DialogWidth,
+		widget.FieldHeight, widget.FieldPadding,
+		widget.MenuPadding, widget.MenuRowHeight, widget.MenuRowPadding, widget.MenuMargin, widget.MenubarHeight,
+		widget.PaletteRowHeight, widget.ListSpacing, widget.FormGap, widget.Gap,
+		widget.ControlHeight, widget.ControlGap, widget.TabHeight, widget.TabPadding,
+		widget.TableRowHeight, widget.ToastGap, widget.TilePadding, widget.TileGap,
+		widget.SegmentedHeight, widget.SegmentedPadding,
+		SidebarRow, SidebarPad,
+	}
+	cornerTokens = []theme.Token[float32]{
+		widget.ButtonRadius, widget.DialogRadius, widget.CardRadius, widget.FieldRadius,
+		widget.MenuRadius, widget.TooltipRadius, widget.RowRadius, widget.GroupRadius,
+		widget.CheckRadius, widget.TileRadius, widget.ToolbarRadius, widget.GridChipRadius,
+		RowRadius,
+	}
+)
+
+// Measures of the sidebar a theme's Shape scales.
+var (
+	// SidebarRow is how tall a sidebar row is, and SidebarPad the room
+	// at either end of it.
+	SidebarRow = theme.Length("kakel.sidebar.row", 28)
+	SidebarPad = theme.Length("kakel.sidebar.pad", 12)
+	// RowRadius rounds the mark behind a sidebar row.
+	RowRadius = theme.Length("kakel.row.radius", 6)
+)
+
+// shapeOf is a theme's Shape as settings: gunim's corners and room
+// scaled from their defaults, and the size of the window's words.
+func shapeOf(t themes.Theme) ([]theme.Entry, error) {
+	s := t.Shape
+	if s == nil {
+		return nil, nil
+	}
+	var out []theme.Entry
+	scale := func(name string, v *float64, least, most float64, tokens []theme.Token[float32]) error {
+		if v == nil {
+			return nil
+		}
+		if *v < least || *v > most {
+			return fmt.Errorf("%s: shape: %s is %v, and it runs from %v to %v", t.Name, name, *v, least, most)
+		}
+		for _, tok := range tokens {
+			out = append(out, theme.Set(tok, tok.Default()*float32(*v)))
+		}
+		return nil
+	}
+	if err := errors.Join(scale("corners", s.Corners, 0, 3, cornerTokens), scale("room", s.Room, 0.5, 2, roomTokens)); err != nil {
+		return nil, err
+	}
+	if s.Text != nil {
+		size := float32(*s.Text)
+		if size < 9 || size > 24 {
+			return nil, fmt.Errorf("%s: shape: text is %v, and it runs from 9 to 24", t.Name, *s.Text)
+		}
+		// The rest of the window's words in step with it.
+		k := size / widget.TextSize.Default()
+		out = append(out, theme.Set(widget.TextSize, size),
+			theme.Set(widget.DialogTitleSize, widget.DialogTitleSize.Default()*k),
+			theme.Set(widget.HeadingSize, widget.HeadingSize.Default()*k),
+			theme.Set(widget.TooltipSize, widget.TooltipSize.Default()*k))
+	}
+	return out, nil
+}
+
+// motionOf is a theme's Motion as settings: every animation gunim and
+// kakel draw, near enough instant for "still", with a bounce for
+// "lively", and as they are for "calm".
+func motionOf(t themes.Theme) ([]theme.Entry, error) {
+	var quick, settle, bounce anim.Spring
+	switch t.Motion {
+	case "", themes.MotionCalm:
+		return nil, nil
+	case themes.MotionStill:
+		// Not quite none: a change that is seen to happen is still read
+		// as one, where a jump reads as a flicker.
+		quick = anim.Spring{Response: 0.04, Damping: 1}
+		settle, bounce = quick, quick
+	case themes.MotionLively:
+		quick = anim.Spring{Response: 0.3, Damping: 0.62}
+		settle = anim.Spring{Response: 0.5, Damping: 0.6}
+		bounce = anim.Spring{Response: 0.45, Damping: 0.42}
+	default:
+		return nil, fmt.Errorf("%s: motion is %q. Write %q, %q or %q", t.Name, t.Motion, themes.MotionStill, themes.MotionCalm, themes.MotionLively)
+	}
+	return []theme.Entry{
+		theme.Set(widget.Quick, quick), theme.Set(widget.Settle, settle), theme.Set(widget.Bounce, bounce),
+		theme.Set(widget.Reflow, quick), theme.Set(widget.Crossfade, settle), theme.Set(widget.HeroMotion, settle),
+		theme.Set(widget.TileMotion, settle), theme.Set(widget.DragGhostTrail, quick),
+		theme.Set(theme.Switch, settle),
+	}, nil
 }

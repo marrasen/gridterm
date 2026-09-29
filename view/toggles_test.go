@@ -357,3 +357,30 @@ func TestAlwaysOnTopPinsTheWindow(t *testing.T) {
 		t.Fatal("the title bar has no pin")
 	}
 }
+
+// The theme picker shows the theme its highlight moves to, not the one
+// it opens on, and closed with nothing picked, ends the preview.
+func TestTheThemePickerPreviewsWhatItIsOn(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Themes: []string{"Dark", "Paper", "Ink"}, Theme: "Dark"})
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	win.pickTheme(lastUI)
+	for range 10 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if len(lastWindow.Client().Intents()) != 0 {
+		t.Fatalf("opened, the picker already sent %#v", nextIntent(t))
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown, Time: time.Now()})
+	lastWindow.Frame(time.Second / 60)
+	if in, ok := nextIntent(t).(app.PreviewTheme); !ok || in.Name != "Paper" {
+		t.Fatalf("down one, the picker sent %#v", in)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEscape, Time: time.Now()})
+	lastWindow.Frame(time.Second / 60)
+	if in, ok := nextIntent(t).(app.PreviewTheme); !ok || in.Name != "" {
+		t.Fatalf("closed, the picker sent %#v", in)
+	}
+}

@@ -86,6 +86,11 @@ leave out borrows one you gave.
   its edges, onto the desktop: red for a failure, green for work done,
   amber for a bell, and a faint grey ring while a connection is made. A
   theme sets the echo's colours and strength.
+- **Themes that change more than colour.** A theme sets how round and
+  how roomy the window is, and how it moves: Phosphor is a tight green
+  screen in the IBM VGA font, Marshmallow a round and bouncy pastel,
+  and Ink an e-paper page with next to no motion. The theme picker
+  shows each one as the highlight moves onto it.
 
 [FEATURES.md](FEATURES.md) has the whole list, in detail.
 

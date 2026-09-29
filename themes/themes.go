@@ -52,6 +52,37 @@ type Theme struct {
 	// Echo is how the rings kakel sends past its window's edges look
 	// under this theme. Nil takes them from the palette.
 	Echo *Echo `json:",omitempty"`
+
+	// Shape is how round and how roomy the window's furniture is. Nil
+	// leaves it as kakel draws it.
+	Shape *Shape `json:"shape,omitempty"`
+
+	// Motion is how things move: "still", with almost no animation;
+	// "calm", as kakel moves them, which empty means too; or "lively",
+	// with a bounce.
+	Motion string `json:"motion,omitempty"`
+}
+
+// Motions a theme can ask for.
+const (
+	MotionStill  = "still"
+	MotionCalm   = "calm"
+	MotionLively = "lively"
+)
+
+// Shape is how round and how roomy the window's furniture is, each a
+// scale on how kakel draws it, where 1 is as it is. Unset is 1.
+type Shape struct {
+	// Corners scales every rounded corner: 0 squares them all, 2 makes
+	// them twice as round.
+	Corners *float64 `json:"corners,omitempty"`
+	// Room scales the room in and around things: the padding in
+	// buttons, fields, menus and dialogs, how tall they and the rows
+	// of lists are, and the gaps between them. 0.75 is tight, 1.4 roomy.
+	Room *float64 `json:"room,omitempty"`
+	// Text is the size of the window's own words, in logical pixels.
+	// The terminals keep the font size set for them. Unset is 14.
+	Text *float64 `json:"text,omitempty"`
 }
 
 // Echo is the look of the rings kakel sends out past its window's
@@ -173,40 +204,73 @@ func Built() []Theme {
 			},
 		},
 		{
-			// The Borland IDE: bright yellow on the blue that DOS wrote
-			// it on, with the grey and cyan of that era round it.
+			// A green phosphor screen: green on black in the IBM VGA
+			// character set, which comes with kakel, square corners,
+			// everything close together, and buttons that cast a dark
+			// green shadow, as a text screen's did.
 			//
-			// The lower eight are the era's hues lifted off the PC's own
-			// levels. A blue ground carries almost no brightness, so the
-			// dark half of that palette cannot be read on it, and the
-			// window writes its own labels and notes in those colours.
-			Name: "Turbo", FG: "#ffff55", BG: "#0000aa",
-			Selection: "#007b7b",
-			// The IBM VGA character set, which comes with kakel, so
-			// the theme reads as a DOS program rather than as DOS
-			// colours in a modern typeface.
-			Font: "PxPlus IBM VGA8",
-			// The furniture written down rather than shaded off the blue:
-			// black on the light grey a DOS dialog sat on, a double rule
-			// round it, and green buttons the way Turbo Pascal drew them.
-			// The one Enter presses is the one written in white, which is
-			// how the original marked the button it would press.
+			// The colours keep their hues, only leaning green, so a
+			// failure a program writes in red still reads as one; the
+			// bright blue, which the window takes its accent from, is a
+			// green of its own.
+			Name: "Phosphor", FG: "#33ff66", BG: "#050a05",
+			Selection: "#0f4a1f",
+			Font:      "PxPlus IBM VGA8",
 			Frame: &Frame{
-				FG: "#000000", BG: "#aaaaaa", Border: "double",
-				ButtonFG: "#000000", ButtonBG: "#00aa00",
-				ActiveFG: "#ffffff", ActiveBG: "#00aa00",
-				// The sidebar a darker grey than the menu bar, so the
-				// list of what is open reads as a panel beside the
-				// window rather than as more of the bar above it. The
-				// row in front is written in white: the ground that
-				// marks it moves towards the black the rest is in.
-				SidebarBG: "#808080", CurrentFG: "#ffffff",
+				FG: "#33ff66", BG: "#081208",
+				ButtonFG: "#050a05", ButtonBG: "#33ff66",
+				ActiveFG: "#050a05", ActiveBG: "#7dffa8",
+				SidebarBG: "#040804", CurrentFG: "#d6ffe0",
+				ButtonShadow: "#0f3a1a",
 			},
+			Shape: &Shape{Corners: ptr(0), Room: ptr(0.78), Text: ptr(13)},
 			ANSI: []string{
-				"#000000", "#ec6464", "#55cc55", "#e0a030",
-				"#6f8fff", "#d070d0", "#40c8c8", "#aaaaaa",
-				"#8a8a8a", "#ff5555", "#55ff55", "#ffff55",
-				"#5555ff", "#ff55ff", "#55ffff", "#ffffff",
+				"#0a140a", "#e0605a", "#33cc55", "#c8d65a",
+				"#3fbf80", "#b87ad0", "#3fc8b0", "#9fdfae",
+				"#2e5a38", "#ff7a70", "#33ff66", "#ecff7a",
+				"#7dffa8", "#d69cf0", "#6fffe0", "#e8ffee",
+			},
+		},
+		{
+			// Soft and round: pastel pink on a warm white, corners twice
+			// as round as usual, room to breathe everywhere, and things
+			// that bounce as they move.
+			Name: "Marshmallow", FG: "#4a4058", BG: "#fff7fb",
+			Selection: "#f5d6ec",
+			Frame: &Frame{
+				FG: "#4a4058", BG: "#fdeef6",
+				ButtonFG: "#4a4058", ButtonBG: "#f6dcea",
+				ActiveFG: "#ffffff", ActiveBG: "#e27fb8",
+				SidebarBG: "#f8e6f1", CurrentFG: "#b84f8f",
+			},
+			Shape:  &Shape{Corners: ptr(2.2), Room: ptr(1.35), Text: ptr(15)},
+			Motion: MotionLively,
+			ANSI: []string{
+				"#5a5068", "#e0607e", "#4f9e6a", "#c98a2e",
+				"#6a7fd8", "#b061c9", "#3f9ea8", "#8a8098",
+				"#a89cb8", "#f07896", "#6abf86", "#e0a64a",
+				"#e27fb8", "#c77ee0", "#5ab8c2", "#2e2838",
+			},
+		},
+		{
+			// Electronic paper: near black on a warm grey, colours kept
+			// but faded, next to no rounding, and next to no motion, as
+			// a page that is redrawn rather than one that moves.
+			Name: "Ink", FG: "#1a1a1a", BG: "#ebe9e4",
+			Selection: "#c9c6be",
+			Frame: &Frame{
+				FG: "#1a1a1a", BG: "#e2dfd8",
+				ButtonFG: "#1a1a1a", ButtonBG: "#d2cec5",
+				ActiveFG: "#ebe9e4", ActiveBG: "#1a1a1a",
+				SidebarBG: "#dcd8cf", CurrentFG: "#000000",
+			},
+			Shape:  &Shape{Corners: ptr(0.3), Room: ptr(1.1)},
+			Motion: MotionStill,
+			ANSI: []string{
+				"#1a1a1a", "#8c2f2f", "#3f6b3f", "#7a6420",
+				"#2f4f7a", "#6a3f7a", "#2f6a6a", "#5a5752",
+				"#7a766e", "#a33c3c", "#4f8050", "#8f7628",
+				"#1a1a1a", "#7f4f90", "#3a7f7f", "#000000",
 			},
 		},
 		{
@@ -221,6 +285,9 @@ func Built() []Theme {
 		},
 	}
 }
+
+// ptr is v, for a Shape's settings, which are unset when nil.
+func ptr(v float64) *float64 { return &v }
 
 // File is what the user's own themes are kept in, in the directory conf
 // gives kakel.

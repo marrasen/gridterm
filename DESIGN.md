@@ -148,8 +148,8 @@ a font that is there and will not read is a failure rather than a miss,
 so that error reaches the user instead of being swallowed as "not
 found".
 
-Two faces are compiled in: Go Mono, and the IBM VGA set the Turbo theme
-asks for. `fonts/README.md` says where the second came from and what its
+Two faces are compiled in: Go Mono, and the IBM VGA set the Phosphor
+theme asks for. `fonts/README.md` says where the second came from and what its
 licence asks of anyone shipping it.
 
 **Paste takes whatever is on the clipboard.** Text when there is text,

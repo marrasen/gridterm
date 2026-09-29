@@ -764,6 +764,21 @@ func (w *Window) pickTheme(u *gunim.UI) {
 	}
 	names := w.themes
 	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.PickTheme{Name: names[i]}) }
+	// The theme the highlight is on shows at once, the window and the
+	// terminals in it, from the first move: the highlight the palette
+	// opens with is not one the user put there. Closed with nothing
+	// picked, the theme in use comes back.
+	opened := false
+	p.Hot = func(i int, u *gunim.UI) {
+		if !opened {
+			opened = true
+			return
+		}
+		if i >= 0 && i < len(names) {
+			u.Send(w, app.PreviewTheme{Name: names[i]})
+		}
+	}
+	p.Cancel = func(u *gunim.UI) { u.Send(w, app.PreviewTheme{}) }
 	w.themePicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }
@@ -2512,8 +2527,10 @@ func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note}
 
 // Layout implements [gunim.Node]: the title at the start, the note at
 // the end.
-func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const padX, gap, height = 12, 8, 28
+func (r *sideRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	// As tall, and with as much room at the ends, as the theme says.
+	const gap = 8
+	padX, height := look.SidebarPad.Get(f.Theme), look.SidebarRow.Get(f.Theme)
 	// Room at the end for the cross a closing row shows on hover, and
 	// for a traffic graph.
 	end := c.Max.W - padX - r.marks.endRoom(r)
@@ -2538,20 +2555,21 @@ func (r *sideRow) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 // Paint implements [gunim.Node].
 func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	inset := geom.Rect{Min: geom.Pt(6, 1), Max: geom.Pt(box.W-6, box.H-1)}
+	radius := look.RowRadius.Get(f.Theme)
 	if t := r.hover.Value(); t > 0.01 {
 		c := look.RowHover.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
-		p.RRect(inset, 6, paint.Solid(c))
+		p.RRect(inset, radius, paint.Solid(c))
 	}
 	if t := r.active.Value(); t > 0.01 {
 		c := look.RowActive.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
-		p.RRect(inset, 6, paint.Solid(c))
+		p.RRect(inset, radius, paint.Solid(c))
 	}
 	if t := r.ring.Value(); t > 0.01 {
 		c := widget.Accent.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
-		p.RRectStroke(inset, 6, paint.Fill{}, paint.Stroke{Width: 1.5, Color: c})
+		p.RRectStroke(inset, radius, paint.Fill{}, paint.Stroke{Width: 1.5, Color: c})
 	}
 	r.marks.paintUnder(p, f, inset)
 	kids.At(0).Paint(p)

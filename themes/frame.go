@@ -39,6 +39,10 @@ type Frame struct {
 	// CurrentFG is the row on the sidebar for whatever is in front.
 	// Empty means the sidebar's own text.
 	CurrentFG string `json:"currentFG,omitempty"`
+
+	// ButtonShadow is the colour of a shadow each button casts down and
+	// to the right, as a text screen's buttons did. Empty casts none.
+	ButtonShadow string `json:"buttonShadow,omitempty"`
 }
 
 // Look is a Frame with its colours read, and what a window draws its
@@ -65,6 +69,8 @@ type Look struct {
 	// the row for whatever is in front.
 	SidebarFG, SidebarBG color.RGBA
 	CurrentFG            color.RGBA
+	// ButtonShadow is the shadow under each button, clear for none.
+	ButtonShadow color.RGBA
 }
 
 // Look reads the theme's frame block. A theme with no block gets the
@@ -123,6 +129,7 @@ func (t Theme) Look() (Look, error) {
 		{"sidebarFG", f.SidebarFG, &l.SidebarFG},
 		{"sidebarBG", f.SidebarBG, &l.SidebarBG},
 		{"currentFG", f.CurrentFG, &l.CurrentFG},
+		{"buttonShadow", f.ButtonShadow, &l.ButtonShadow},
 	} {
 		if c.raw == "" {
 			continue

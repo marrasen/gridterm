@@ -40,13 +40,19 @@ func TestTheBuiltInThemesAreGood(t *testing.T) {
 	if _, ok := Named(built, "dark"); !ok {
 		t.Error("there is no Dark to open on")
 	}
-	// The Borland IDE, which is the look the menus already have.
-	turbo, ok := Named(built, "turbo")
-	if !ok {
-		t.Fatal("there is no Turbo")
+	// Three that differ in more than colour: how round and how roomy,
+	// and how they move.
+	for name, motion := range map[string]string{"Phosphor": "", "Marshmallow": MotionLively, "Ink": MotionStill} {
+		th, ok := Named(built, name)
+		if !ok {
+			t.Fatalf("there is no %s", name)
+		}
+		if th.Shape == nil || th.Motion != motion {
+			t.Errorf("%s has the shape %+v and moves %q, want a shape and %q", name, th.Shape, th.Motion, motion)
+		}
 	}
-	if turbo.BG != "#0000aa" || turbo.FG != "#ffff55" {
-		t.Errorf("Turbo is %s on %s, want yellow on the Borland blue", turbo.FG, turbo.BG)
+	if _, ok := Named(built, "Turbo"); ok {
+		t.Error("Turbo is still built in")
 	}
 }
 
@@ -477,12 +483,12 @@ func TestAStatedFrameIsAFlatOne(t *testing.T) {
 // like rather than leaving them to guess.
 func TestAStartFileCarriesTheFrameBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), File)
-	turbo, ok := Named(Built(), "Turbo")
+	phosphor, ok := Named(Built(), "Phosphor")
 	if !ok {
-		t.Fatal("there is no Turbo to write from")
+		t.Fatal("there is no Phosphor to write from")
 	}
 
-	if err := WriteStart(path, turbo); err != nil {
+	if err := WriteStart(path, phosphor); err != nil {
 		t.Fatalf("write it: %v", err)
 	}
 
@@ -497,16 +503,19 @@ func TestAStartFileCarriesTheFrameBlock(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load what it wrote: %v", err)
 	}
-	mine, ok := Named(all, turbo.Name+" of my own")
+	mine, ok := Named(all, phosphor.Name+" of my own")
 	if !ok {
-		t.Fatalf("it wrote %v, want a copy of Turbo", Names(all))
+		t.Fatalf("it wrote %v, want a copy of Phosphor", Names(all))
 	}
 	got, err := mine.Look()
 	if err != nil {
 		t.Fatalf("its look: %v", err)
 	}
-	want, _ := turbo.Look()
+	want, _ := phosphor.Look()
 	if got != want {
-		t.Errorf("the copy's frame is %+v, want Turbo's %+v", got, want)
+		t.Errorf("the copy's frame is %+v, want Phosphor's %+v", got, want)
+	}
+	if mine.Shape == nil || *mine.Shape.Corners != 0 {
+		t.Errorf("the copy's shape is %+v, want Phosphor's square corners", mine.Shape)
 	}
 }

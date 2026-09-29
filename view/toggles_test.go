@@ -8,6 +8,7 @@ import (
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/app"
@@ -226,4 +227,28 @@ func TestTheDividerBetweenFilePanesDrags(t *testing.T) {
 		return
 	}
 	t.Fatal("no divider to take hold of between the file panes")
+}
+
+// The switcher's ground is solid once it is in: the panes show only as
+// its tiles, not behind them as well.
+func TestTheSwitcherHidesThePanesBehindIt(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	win.openSwitcher(lastUI)
+	for range 90 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	// The last rectangle the size of the window is the switcher's ground,
+	// painted over everything else.
+	size := lastWindow.Offscreen().Size()
+	var ground *paint.RRectOp
+	for _, op := range lastWindow.Offscreen().Ops() {
+		if r, ok := op.(*paint.RRectOp); ok && r.Rect.Size() == size {
+			ground = r
+		}
+	}
+	if ground == nil || ground.Fill.Solid.A != 0xff {
+		t.Fatalf("the ground under the switcher's tiles is %+v", ground)
+	}
 }

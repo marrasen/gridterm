@@ -26,8 +26,7 @@ import (
 // and the pane picked grows back to fill the stage.
 
 var (
-	switcherScrim = theme.Color("kakel.switcher.scrim", color.NRGBA{R: 0x0c, G: 0x0e, B: 0x12, A: 0xe8})
-	switcherRing  = theme.Color("kakel.switcher.ring", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
+	switcherRing = theme.Color("kakel.switcher.ring", color.NRGBA{R: 0x5e, G: 0x9c, B: 0xff, A: 0xff})
 )
 
 // switcher is the overview, over the window while it is open.
@@ -216,7 +215,9 @@ func (s *switcher) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) 
 func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.Children) {
 	th := f.Theme
 	t := min(max(s.in.Value(), 0), 1)
-	scrim := switcherScrim.Get(th)
+	// The window's own ground, solid once the switcher is in: the panes
+	// are shown only as the tiles, not behind them as well.
+	scrim := widget.Background.Get(th)
 	scrim.A = uint8(float32(scrim.A) * t)
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(scrim))
 	for i, tl := range s.tiles {

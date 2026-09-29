@@ -463,6 +463,9 @@ type app struct {
 	// openedFor are the panes opened here for another window, which
 	// their rows say for as long as they are open.
 	openedFor map[string]bool
+	// programTitle is the title each pane's program last gave, as it
+	// gave it, to name the pane again once the shells here are known.
+	programTitle map[string]string
 	// parked counts the file sessions relayed for another window that
 	// are left waiting to end, by the connection they ride on.
 	parked map[*remote.Conn]int
@@ -620,40 +623,41 @@ type app struct {
 
 func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
-		c:         c,
-		shells:    sh,
-		st:        State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
-		groups:    map[int]*Box{},
-		groupOf:   map[string]int{},
-		ring:      remote.NewRing(),
-		replies:   map[uint64]chan AskAnswered{},
-		closing:   map[string]bool{},
-		tunnels:   map[string]*tunnel.Held{},
-		agents:    agents{by: map[string]*handover{}},
-		commands:  map[string]command{},
-		noticed:   map[string]uint64{},
-		paneFiles: map[string]wrappedFiles{},
-		paneAt:    map[string]string{},
-		farLogs:   map[machines.ID]bool{},
-		notRun:    map[string]bool{},
-		listing:   map[string]int{},
-		listingAt: map[string]Browse{},
-		saying:    map[string]string{},
-		openedFor: map[string]bool{},
-		parked:    map[*remote.Conn]int{},
-		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
-		argvs:     map[string][]string{},
-		farHost:   map[string]string{},
-		typed:     map[string]*typedLog{},
-		reads:     map[string]readSpec{},
-		following: map[string]bool{},
-		restarts:  map[string]int{},
-		endings:   map[string]int{},
-		far:       pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
-		wake:      make(chan struct{}, 1),
-		events:    make(chan func(), 64),
-		winOf:     map[string]int{},
-		intents:   make(chan windowIn, 64),
+		c:            c,
+		shells:       sh,
+		st:           State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
+		groups:       map[int]*Box{},
+		groupOf:      map[string]int{},
+		ring:         remote.NewRing(),
+		replies:      map[uint64]chan AskAnswered{},
+		closing:      map[string]bool{},
+		tunnels:      map[string]*tunnel.Held{},
+		agents:       agents{by: map[string]*handover{}},
+		commands:     map[string]command{},
+		noticed:      map[string]uint64{},
+		paneFiles:    map[string]wrappedFiles{},
+		paneAt:       map[string]string{},
+		farLogs:      map[machines.ID]bool{},
+		notRun:       map[string]bool{},
+		listing:      map[string]int{},
+		listingAt:    map[string]Browse{},
+		saying:       map[string]string{},
+		openedFor:    map[string]bool{},
+		programTitle: map[string]string{},
+		parked:       map[*remote.Conn]int{},
+		linksAt:      map[string]*atomic.Pointer[machines.ID]{},
+		argvs:        map[string][]string{},
+		farHost:      map[string]string{},
+		typed:        map[string]*typedLog{},
+		reads:        map[string]readSpec{},
+		following:    map[string]bool{},
+		restarts:     map[string]int{},
+		endings:      map[string]int{},
+		far:          pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
+		wake:         make(chan struct{}, 1),
+		events:       make(chan func(), 64),
+		winOf:        map[string]int{},
+		intents:      make(chan windowIn, 64),
 	}
 	a.machines = machines.New(func() *remote.Book { return a.book })
 	a.addWindow(c, nil)
@@ -1635,6 +1639,7 @@ func (a *app) remove(id string) {
 	delete(a.listing, id)
 	delete(a.listingAt, id)
 	delete(a.openedFor, id)
+	delete(a.programTitle, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)
@@ -1704,6 +1709,9 @@ func (a *app) popOut() {
 }
 
 func (a *app) retitle(id, title string) {
+	if title != "" {
+		a.programTitle[id] = title
+	}
 	title = a.shellTitle(id, title)
 	for i := range a.st.Panes {
 		if p := &a.st.Panes[i]; p.ID == id && title != "" {

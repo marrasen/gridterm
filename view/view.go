@@ -651,18 +651,14 @@ func (w *Window) showFonts(st app.State) {
 
 // showTitle names the window after the pane in front: "kakel" and the
 // pane's title on the window's own title bar, and the two together for
-// the taskbar. A terminal the user has not named goes by what its
-// program calls it now.
+// the taskbar. The title is the one its row in the sidebar shows, which
+// follows what its program calls it, with a shell's path given as the
+// shell's name.
 func (w *Window) showTitle(st app.State, u *gunim.UI) {
 	pane := ""
 	for _, p := range st.Panes {
 		if p.ID == st.Focus {
 			pane = p.Title
-			if t, ok := w.terms[p.ID]; ok && !p.Named {
-				if program := t.sh.T.Title(); program != "" {
-					pane = program
-				}
-			}
 		}
 	}
 	title := app.ProgramName

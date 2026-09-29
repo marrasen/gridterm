@@ -62,7 +62,9 @@ func TestAPictureInTheOutputIsDrawnOverItsCells(t *testing.T) {
 
 func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 	win, sh, publish := windowStage(t)
-	s := sessiontest.NewPrinted([]byte("\x1b]2;vim notes.txt\x07"))
+	// The program calls itself by its path; the pane, as the program
+	// side names it, by the shell's name.
+	s := sessiontest.NewPrinted([]byte("\x1b]2;C:\\WINDOWS\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\x07"))
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(s, vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
@@ -73,23 +75,16 @@ func TestTheWindowIsNamedAfterThePaneInFront(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	panes := []app.Pane{{ID: "p1", Title: "Terminal 1"}, {ID: "p2", Title: "files", Kind: app.KindFiles}}
+	panes := []app.Pane{{ID: "p1", Title: "Windows PowerShell"}, {ID: "p2", Title: "files", Kind: app.KindFiles}}
 	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	if got := lastWindow.Offscreen().Title(); got != "kakel — vim notes.txt" {
+	if got := lastWindow.Offscreen().Title(); got != "kakel — Windows PowerShell" {
 		t.Fatalf("the window is called %q", got)
 	}
-	if win.bar.Title != "kakel" || win.bar.Subtitle != "vim notes.txt" {
+	if win.bar.Title != "kakel" || win.bar.Subtitle != "Windows PowerShell" {
 		t.Fatalf("the title bar says %q and %q", win.bar.Title, win.bar.Subtitle)
 	}
-	// A pane that is no terminal goes by its own title.
 	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p2"}, Focus: "p2"})
 	if got := lastWindow.Offscreen().Title(); got != "kakel — files" {
 		t.Fatalf("on a file pane, the window is called %q", got)
-	}
-	// A terminal the user named goes by that name.
-	panes[0].Named = true
-	publish(app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
-	if got := lastWindow.Offscreen().Title(); got != "kakel — Terminal 1" {
-		t.Fatalf("on a named terminal, the window is called %q", got)
 	}
 }

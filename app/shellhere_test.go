@@ -136,3 +136,24 @@ func TestTheVersionAnswerMatchesTheName(t *testing.T) {
 		t.Fatalf("called iTerm.app, the answer names %q", got)
 	}
 }
+
+// A pane whose program named itself before the shells here were known,
+// as the first pane's does, is named again once they are.
+func TestAPaneTitledBeforeTheShellsWereKnownIsNamedAgain(t *testing.T) {
+	cmd := `C:\Windows\System32\cmd.exe`
+	was := findShells
+	findShells = func() ([]shellfind.Shell, error) {
+		return []shellfind.Shell{{ID: "cmd", Title: "Command Prompt", Path: cmd}}, nil
+	}
+	t.Cleanup(func() { findShells = was })
+	w := gunimtest.New(t, geom.Sz(400, 300), nil)
+	a := newApp(w.Client(), screen.NewShells())
+	a.addPane(Pane{ID: "p1", Title: "Terminal 1"}, nil, Placement{})
+	a.argvs["p1"] = []string{cmd}
+	a.retitle("p1", `C:\WINDOWS\system32\cmd.exe`)
+	if got := a.titleOf("p1"); got != `C:\WINDOWS\system32\cmd.exe` {
+		t.Fatalf("before the shells are known, the pane is called %q", got)
+	}
+	a.scanShells()
+	waitFor(t, a, "the pane named again", func() bool { return a.titleOf("p1") == "Command Prompt" })
+}

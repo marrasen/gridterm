@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/marrasen/kakel/machines"
 	shellfind "github.com/marrasen/kakel/shells"
 )
 
@@ -46,6 +47,14 @@ func (a *app) scanShells() {
 				a.failed("Couldn't list the shells here", err.Error())
 			}
 			a.found, a.scanned = found, err == nil
+			// Panes that opened before the shells were known, such as
+			// the first, are named again: "Command Prompt", not the
+			// path its program calls itself by.
+			for _, p := range a.st.Panes {
+				if raw := a.programTitle[p.ID]; raw != "" && p.Machine == machines.Local {
+					a.retitle(p.ID, raw)
+				}
+			}
 			// A kept shell found gone is said now: the first pane may
 			// have tried it before the shells were looked for.
 			if a.scanned && a.settings != nil {

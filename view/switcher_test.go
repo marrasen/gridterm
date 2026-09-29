@@ -92,8 +92,8 @@ func TestTheSwitcherShowsAFilePane(t *testing.T) {
 }
 
 // The pane picked is live the moment it is picked: it is asked onto the
-// stage at once, with the keyboard, and grows over the stage as it was,
-// held, while the switcher stays until it has grown.
+// stage at once, with the keyboard, and grows while the switcher keeps
+// the stage covered, and stays until it has grown.
 func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 	win := switcherStage(t)
 	sw := win.sw
@@ -107,10 +107,39 @@ func TestThePanePickedIsLiveAtOnce(t *testing.T) {
 	if !ok || in.Pane != sw.tiles[sw.picked].id {
 		t.Fatalf("at the pick, it asked for %#v", in)
 	}
-	if sw.stageDrawn == nil || sw.stageDrawn.Recording().Empty() {
-		t.Fatal("the stage as it was is not held")
+	// The stage stays covered while the pane grows: what grows is the
+	// pane, not a copy over it.
+	covered := false
+	for _, op := range lastWindow.Offscreen().Ops() {
+		if r, ok := op.(*paint.RRectOp); ok && r.Rect == sw.stageAt && r.Fill.Solid.A == 0xff {
+			covered = true
+		}
+	}
+	if sw.stageAt.Empty() || !covered {
+		t.Fatalf("growing, the stage at %v is not covered", sw.stageAt)
 	}
 	if !sw.tiles[sw.picked].box.Active() || lastUI.Presence(sw) != gunim.Exiting {
 		t.Fatal("the switcher went before the pane grew into place")
 	}
+}
+
+// Opening, the stage is covered from the first frame: the tile standing
+// where the pane stands is the pane, and the pane does not show beside
+// it, fading.
+func TestTheSwitcherCoversTheStageAtOnce(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	for range 5 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	win.openSwitcher(lastUI)
+	lastWindow.Frame(time.Second / 60)
+	sw := win.sw
+	for _, op := range lastWindow.Offscreen().Ops() {
+		if r, ok := op.(*paint.RRectOp); ok && r.Rect == sw.stageAt && r.Fill.Solid.A == 0xff {
+			return
+		}
+	}
+	t.Fatalf("on its first frame, the switcher leaves the stage at %v showing", sw.stageAt)
 }

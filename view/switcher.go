@@ -45,12 +45,10 @@ type switcher struct {
 	// landed is when the pane picked was asked onto the stage; zero
 	// until then.
 	landed time.Time
-	// stageDrawn is what the stage draws, kept while the switcher is
-	// open, and held at the pick: the stage as it was, for the pane
-	// picked to grow over while the stage underneath already shows it.
-	// stageAt is where the stage stood then.
-	stageDrawn *gunim.Drawing
-	stageAt    geom.Rect
+	// stageAt is where the stage stands. It is covered whole while the
+	// switcher is there, from the first frame to the last: the tiles are
+	// the panes, and the panes themselves must not show beside them.
+	stageAt geom.Rect
 	// mates are the panes that share the picked pane's split, which grow
 	// into their places beside it, so the split comes together as it
 	// lands rather than appearing once it has.
@@ -76,6 +74,9 @@ type tile struct {
 func newSwitcher(w *Window, panes []app.Pane, focus string, u *gunim.UI) *switcher {
 	s := &switcher{w: w, panes: panes, in: anim.NewFloat(0), picked: -1}
 	s.Add(s.in)
+	if r, ok := u.Bounds(w.stage); ok {
+		s.stageAt = r
+	}
 	for i, p := range panes {
 		t := &tile{id: p.ID, title: p.Title, box: anim.NewRect(geom.Rect{}), fade: anim.NewFloat(0), ring: anim.NewFloat(0)}
 		t.label = text.Default().Shape(p.Title, 13)
@@ -250,28 +251,26 @@ func (s *switcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim
 	scrim := widget.Background.Get(th)
 	scrim.A = uint8(float32(scrim.A) * t)
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(scrim))
+	// The stage is covered at once, and until the switcher has gone:
+	// the tiles standing where the panes stand are the panes, zooming,
+	// not copies over them.
+	p.RRect(s.stageAt, 0, paint.Solid(widget.Background.Get(th)))
 	for i, tl := range s.tiles {
 		if i == s.picked || s.mates[tl] {
 			continue
 		}
 		s.paintTile(p, f, tl, t)
 	}
-	// The pane picked grows over the rest, and over the stage as it
-	// was, while the stage underneath already shows it.
+	// The pane picked grows over the rest, and those beside it in its
+	// split with it. Their shadows and corners go as they land, so they
+	// are the panes on the stage when the switcher goes.
 	if s.picked >= 0 && s.picked < len(s.tiles) {
-		if d := s.stageDrawn; d != nil && !d.Recording().Empty() {
-			func() {
-				defer p.Layer(paint.LayerOpts{Bounds: s.stageAt, Opacity: 1, Clip: true})()
-				defer p.Push(paint.Translate(s.stageAt.Min))()
-				p.Replay(d.Recording())
-			}()
-		}
 		for _, tl := range s.tiles {
 			if s.mates[tl] {
-				s.paintTile(p, f, tl, 1)
+				s.paintTile(p, f, tl, t)
 			}
 		}
-		s.paintTile(p, f, s.tiles[s.picked], 1)
+		s.paintTile(p, f, s.tiles[s.picked], t)
 	}
 }
 
@@ -297,7 +296,10 @@ func (s *switcher) paintPane(p *paint.Painter, f gunim.Frame, tl *tile, r geom.R
 	th := f.Theme
 	close := p.Layer(paint.LayerOpts{Bounds: r.Inset(geom.Uniform(-30)), Opacity: alpha})
 	defer close()
-	p.ShadowRRect(r, 6, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
+	// Square and flat where it stands on the stage, as the pane is, and
+	// rounded, lifted, as the switcher comes in.
+	radius := 6 * min(max(shadow, 0), 1)
+	p.ShadowRRect(r, radius, paint.Solid(widget.Background.Get(th)), paint.Shadow{Offset: geom.Pt(0, 4), Blur: 18, Color: color.NRGBA{A: uint8(0x90 * shadow)}})
 	// A terminal live, and any other pane as it was last drawn.
 	s.w.paintMiniature(p, f, tl.id, r, s.size)
 	if on := min(max(ring, 0), 1); on > 0.01 {
@@ -395,10 +397,9 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 		o.box.Animate(r.Inset(geom.Uniform(min(r.Size().W, r.Size().H)*0.08)), widget.Quick.Get(u.Theme()))
 	}
 	// The pane comes on stage at once, with the keyboard, so it is live
-	// the moment it is picked. The stage as it was is held, drawn where
-	// the stage stands, for the pane to grow over; once it has grown
-	// into place, the switcher goes, and the stage shows the pane.
-	u.ForgetDrawing(s.w.stage)
+	// the moment it is picked, under the switcher, which covers the
+	// stage until the pane has grown into place; then the switcher goes,
+	// and the stage shows the pane where it landed.
 	s.stageAt = stage
 	s.landed = time.Now()
 	u.Send(s.w, app.FocusPane{Pane: t.id})

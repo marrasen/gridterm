@@ -414,4 +414,26 @@ func TestATallDialogFitsTheWindowAndScrolls(t *testing.T) {
 	if len(s.Focusables()) != 40 {
 		t.Fatalf("Tab reaches %d of the 40 fields", len(s.Focusables()))
 	}
+	fields := s.Focusables()
+	// The wheel over it scrolls it, and it stays scrolled.
+	before, _ := lastUI.Bounds(fields[0])
+	lastWindow.Input(gi.PointerMove{Pos: at.Center()})
+	lastWindow.Input(gi.Scroll{Pos: at.Center(), Delta: geom.Pt(0, -120)})
+	for range 40 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if after, _ := lastUI.Bounds(fields[0]); after.Min.Y > before.Min.Y-100 {
+		t.Fatalf("the wheel moved the first field from %v to %v", before.Min.Y, after.Min.Y)
+	}
+	// Tab to a field out of sight brings it into view.
+	lastUI.Focus(fields[0])
+	for range 30 {
+		lastWindow.Input(gi.KeyPress{Key: gi.KeyTab, Time: time.Now()})
+	}
+	for range 40 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	if got, ok := lastUI.Bounds(fields[30]); !ok || got.Min.Y < at.Min.Y || got.Max.Y > at.Max.Y {
+		t.Fatalf("Tab to field 31 left it at %v, out of the form's view %v", got, at)
+	}
 }

@@ -41,6 +41,12 @@ type term struct {
 	// away says the window is without the keyboard, another program
 	// having it: no cursor shows, and none blinks, until it is back.
 	away bool
+	// along says typing goes to this pane too, from the one with the
+	// keyboard, as Type in All Panes does: its cursor shows and blinks
+	// as that one's does. alongWith is the other panes typing goes to
+	// from this one while it has the keyboard, nil for none.
+	along     bool
+	alongWith func() []*term
 	// wheel gathers the wheel's movement until it makes a whole notch.
 	wheel float32
 	// held is the button down in the pane, and at the cell the pointer
@@ -116,7 +122,7 @@ const blinkHalf = 500 * time.Millisecond
 // blink starts the cursor blinking, while the pane has the keyboard and
 // its program asked for a blinking cursor.
 func (t *term) blink(u *gunim.UI) {
-	if t.blinking || !t.focused || t.away || !t.wantBlink {
+	if t.blinking || !t.typedIn() || t.away || !t.wantBlink {
 		return
 	}
 	t.blinking = true
@@ -128,7 +134,7 @@ func (t *term) blinkStep(run int, u *gunim.UI) {
 	if run != t.blinkRun {
 		return
 	}
-	if !t.focused || t.away || !t.wantBlink {
+	if !t.typedIn() || t.away || !t.wantBlink {
 		t.blinking, t.blinkOff = false, false
 	} else {
 		t.blinkOff = !t.blinkOff
@@ -295,14 +301,14 @@ func (t *term) sync() {
 		t.wantBlink = cur.Blink
 		// A pane whose program has ended takes no typing, and one without
 		// the keyboard takes none now, so neither shows a cursor.
-		visible := cur.Visible && !sh.T.Exited() && t.focused && !t.away
+		visible := cur.Visible && !sh.T.Exited() && t.typedIn() && !t.away
 		if at := (grid.Point{X: cur.X, Y: cur.Y}); at != t.cursorAt {
 			t.cursorAt = at
 			t.blinkAgain()
 		}
 		t.cursorShown = visible
 		t.cells.SetCursor(widget.Cursor{Col: cur.X, Row: cur.Y, Shape: shape, Visible: visible,
-			Blinked: t.blinkOff && t.wantBlink && t.focused})
+			Blinked: t.blinkOff && t.wantBlink && t.typedIn()})
 	})
 }
 
@@ -589,9 +595,47 @@ func (t *term) command(id string, u *gunim.UI) bool {
 func (t *term) key(ev input.Event) {
 	t.blinkAgain()
 	_, _ = t.sh.T.HandleKey(ev)
+	// Each pane typed along with encodes the key itself, for the mode
+	// its own program has set, such as the arrows an editor asks for.
+	for _, o := range t.alongOthers() {
+		o.blinkAgain()
+		_, _ = o.sh.T.HandleKey(ev)
+		o.sync()
+	}
 }
 
-func (t *term) paste(s string) { t.sh.T.Paste(s) }
+func (t *term) paste(s string) {
+	t.sh.T.Paste(s)
+	for _, o := range t.alongOthers() {
+		o.sh.T.Paste(s)
+		o.sync()
+	}
+}
+
+// alongOthers is the other panes what is typed here goes to as well.
+func (t *term) alongOthers() []*term {
+	if t.alongWith == nil {
+		return nil
+	}
+	return t.alongWith()
+}
+
+// typedIn reports whether what is typed reaches this pane: it has the
+// keyboard, or types along with the one that has.
+func (t *term) typedIn() bool { return t.focused || t.along }
+
+// setAlong has typing reach this pane from the one with the keyboard,
+// or stop reaching it.
+func (t *term) setAlong(on bool, u *gunim.UI) {
+	if on == t.along {
+		return
+	}
+	t.along = on
+	t.blinkAgain()
+	t.blink(u)
+	t.sync()
+	u.Invalidate()
+}
 
 // clipboardWhy is why the clipboard could not be read, as a sentence
 // for the user: the library's name taken off the front.

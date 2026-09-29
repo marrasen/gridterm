@@ -23,6 +23,10 @@ type chip struct {
 	text   string
 	colour color.NRGBA
 	do     func(*gunim.UI)
+	// off, when set, puts an × on the chip that turns off what it says
+	// is on. accent colours it in the theme's accent, in place of colour.
+	off    func(*gunim.UI)
+	accent bool
 }
 
 // chipBar shows the chips.
@@ -66,8 +70,9 @@ func (b *chipBar) Children() []gunim.Node {
 	return out
 }
 
-// chipPad and chipGap are a chip's room.
-const chipPad, chipGap, chipHeight = 10, 6, 28
+// chipPad and chipGap are a chip's room, and chipCross the room its ×
+// takes.
+const chipPad, chipGap, chipHeight, chipCross = 10, 6, 28, 14
 
 // Layout implements [gunim.Node]: the chips side by side, as wide as
 // they need.
@@ -87,7 +92,11 @@ func (b *chipBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 		}
 		i++
 		s := k.Layout(gunim.Constraints{Max: geom.Sz(300, h)})
-		box := geom.Rc(x, (h-s.H)/2-3, s.W+2*chipPad, min(s.H+6, h))
+		w := s.W + 2*chipPad
+		if b.chips[i-1].off != nil {
+			w += chipCross
+		}
+		box := geom.Rc(x, (h-s.H)/2-3, w, min(s.H+6, h))
 		k.Place(geom.Pt(x+chipPad, (h-s.H)/2))
 		b.boxes = append(b.boxes, box)
 		x += box.Size().W + chipGap
@@ -99,7 +108,7 @@ func (b *chipBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 }
 
 // Paint implements [gunim.Node].
-func (b *chipBar) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.Children) {
+func (b *chipBar) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, kids gunim.Children) {
 	i := 0
 	for k := range kids.All {
 		if i >= len(b.boxes) {
@@ -107,12 +116,25 @@ func (b *chipBar) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim
 		}
 		{
 			fill := b.chips[i].colour
+			if b.chips[i].accent {
+				fill = widget.Accent.Get(f.Theme)
+			}
 			fill.A = 0x30
 			p.RRect(b.boxes[i], b.boxes[i].Size().H/2, paint.Solid(fill))
 		}
 		k.Paint(p)
+		if b.chips[i].off != nil {
+			paintCross(p, b.crossOf(i), widget.Ink.Get(f.Theme))
+		}
 		i++
 	}
+}
+
+// crossOf is where chip i's × is.
+func (b *chipBar) crossOf(i int) geom.Rect {
+	r := b.boxes[i]
+	const s = 9
+	return geom.Rc(r.Max.X-chipPad-s+2, r.Min.Y+(r.Size().H-s)/2, s, s)
 }
 
 // Handle implements [gunim.Handler]: a click on a chip does what it
@@ -123,6 +145,10 @@ func (b *chipBar) Handle(e gi.Event, u *gunim.UI) bool {
 		return false
 	}
 	for i, r := range b.boxes {
+		if b.chips[i].off != nil && b.crossOf(i).Inset(geom.Uniform(-4)).Contains(down.Pos) {
+			b.chips[i].off(u)
+			return true
+		}
 		if r.Contains(down.Pos) && b.chips[i].do != nil {
 			b.chips[i].do(u)
 			return true
@@ -136,6 +162,11 @@ func (w *Window) showChips(st app.State) {
 	var chips []chip
 	if st.Share.Code != "" && len(st.Share.Panes) > 0 {
 		chips = append(chips, chip{text: "Agent Share", colour: st.Marks.Agent, do: func(u *gunim.UI) { w.shareDialog(w.share, u) }})
+	}
+	if w.typeAll {
+		// Said plainly while it lasts, as a key typed where it was not
+		// meant is typed in every pane.
+		chips = append(chips, chip{text: "Typing in All Panes", accent: true, off: func(u *gunim.UI) { w.setTypeAll(false, u) }})
 	}
 	if st.Serving.On {
 		text := "Serving"

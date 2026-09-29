@@ -71,6 +71,11 @@ The whole list. The [README](README.md) has the short version.
   button for each shell here and each machine, `+ Command…`, and small
   live images of the other panes, to move one in. Escape gives the
   half back.
+- **Typing in every pane of a split at once.** Pane › Type in All
+  Panes sends what is typed to every terminal in the split on screen,
+  each showing its cursor, for the same command on several servers. A
+  chip in the title bar says so while it is on, and its × turns it
+  off.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
   sidebar: this machine, a server, or five of each with kakel in the

@@ -64,6 +64,13 @@ type Window struct {
 	choosers map[string]*chooser
 	// groups are how each pane is arranged, by pane, for the switcher.
 	groups map[string]*app.Box
+	// typeAll says what is typed goes to every terminal in the split on
+	// stage, stageBox, as Type in All Panes asks; lastChips is the
+	// state the chips were last shown from, to show them again as it
+	// turns on or off.
+	typeAll   bool
+	stageBox  *app.Box
+	lastChips app.State
 	// tunnelPanes are the tunnels' panes, and savedTunnels the tunnels
 	// kept, as the palette lists them.
 	tunnelPanes map[string]*tunnelPane
@@ -470,6 +477,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.fullScreen":
 		w.present(!w.presenting, u)
+		return true
+	case "pane.typeAll":
+		w.setTypeAll(!w.typeAll, u)
 		return true
 	case "view.pin":
 		if err := u.SetPinned(!u.Pinned()); err != nil {
@@ -1863,6 +1873,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.placeSidebar(u)
 	w.status.set(st.Status, u)
+	w.stageBox = st.Stage
+	w.lastChips = st
+	w.showTypeAll(u)
 	w.showChips(st)
 	for _, n := range st.Notices {
 		if n.ID <= w.shown {
@@ -1890,13 +1903,13 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	// the sidebar while it shows.
 	for m := range menus {
 		for i, it := range menus[m].items {
-			if on, isSwitch := switchOn(it.id, st, u); isSwitch {
+			if on, isSwitch := w.switchOn(it.id, st, u); isSwitch {
 				w.bar.Menus[m].Checked[i] = on
 			}
 		}
 	}
 	for i, id := range w.paletteIDs {
-		if on, isSwitch := switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
+		if on, isSwitch := w.switchOn(id, st, u); isSwitch && i < len(w.palette.Items) {
 			w.palette.Items[i].Checked = on
 		}
 	}
@@ -1923,8 +1936,10 @@ func (w *Window) tickSwitch(id string, on bool) {
 
 // switchOn reports whether the command id switches something, and
 // whether that is on now.
-func switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bool) {
+func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bool) {
 	switch id {
+	case "pane.typeAll":
+		return w.typeAll, true
 	case "sidebar.toggle":
 		return st.Sidebar, true
 	case "pane.titles":
@@ -2105,6 +2120,7 @@ func (w *Window) term(id string) *term {
 	t := newTerm(id, w.shells.Get(id), w.keys)
 	t.ctrl = w.ctrlHeld
 	t.away = w.away
+	t.alongWith = func() []*term { return w.typingAlong(t) }
 	if w.fontSize > 0 {
 		t.cells.Size = w.fontSize
 	}
@@ -3199,4 +3215,58 @@ func commaFolderKept(saved []string, line string) bool {
 		}
 	}
 	return false
+}
+
+// setTypeAll turns Type in All Panes on or off: what is typed goes to
+// every terminal in the split on stage, each showing its cursor.
+func (w *Window) setTypeAll(on bool, u *gunim.UI) {
+	w.typeAll = on
+	w.showTypeAll(u)
+	w.tickSwitch("pane.typeAll", on)
+	w.showChips(w.lastChips)
+	u.Invalidate()
+}
+
+// showTypeAll has the terminals on stage type along while Type in All
+// Panes is on, and the rest not.
+func (w *Window) showTypeAll(u *gunim.UI) {
+	on := map[string]bool{}
+	if w.typeAll {
+		for _, id := range boxLeaves(w.stageBox, nil) {
+			on[id] = true
+		}
+	}
+	for id, t := range w.terms {
+		t.setAlong(on[id], u)
+	}
+}
+
+// typingAlong is the other terminals what is typed in t goes to: those
+// in the split on stage with it, while Type in All Panes is on.
+func (w *Window) typingAlong(t *term) []*term {
+	if !w.typeAll {
+		return nil
+	}
+	leaves := boxLeaves(w.stageBox, nil)
+	if !slices.Contains(leaves, t.id) {
+		return nil
+	}
+	var out []*term
+	for _, id := range leaves {
+		if o, ok := w.terms[id]; ok && o != t && !o.sh.T.Exited() {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// boxLeaves adds the panes an arrangement shows to out.
+func boxLeaves(b *app.Box, out []string) []string {
+	switch {
+	case b == nil:
+		return out
+	case b.Pane != "":
+		return append(out, b.Pane)
+	}
+	return boxLeaves(b.B, boxLeaves(b.A, out))
 }

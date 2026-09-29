@@ -188,8 +188,11 @@ func (a *app) enter(in EnterEntry) {
 		return
 	}
 	path := vfs.Join(f, b.Path, in.Name)
+	// A file is read, and a folder or a zip walked into. A link to a
+	// zip is walked into too, but not a zip inside a zip: only the
+	// outer one opens, and the inner one would show as an empty folder.
 	for _, e := range b.Entries {
-		if e.Name == in.Name && !e.IsDir() && !vfs.IsArchive(e.Name) {
+		if e.Name == in.Name && !e.IsDir() && !(e.IsLink() && vfs.IsArchive(e.Name)) {
 			a.readFile(ReadFile{Pane: in.Pane, Path: path})
 			return
 		}

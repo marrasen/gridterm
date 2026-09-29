@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -115,6 +116,11 @@ func TestAnArchiveOpensAsAFolder(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = w.Write([]byte("from the zip"))
+	// A zip inside it, which is a file there: only the outer one opens.
+	if w, err = z.Create("inner.zip"); err != nil {
+		t.Fatal(err)
+	}
+	_, _ = w.Write([]byte("PK"))
 	if err := errors.Join(z.Close(), f.Close()); err != nil {
 		t.Fatal(err)
 	}
@@ -126,8 +132,17 @@ func TestAnArchiveOpensAsAFolder(t *testing.T) {
 	a.handle(EnterEntry{Pane: pane, Name: "bundle.zip"})
 	waitFor(t, a, "the archive's insides", func() bool {
 		es := a.st.Browsers[pane].Entries
-		return len(es) == 1 && es[0].Name == "inside.txt"
+		return len(es) == 2 && slices.ContainsFunc(es, func(e vfs.Entry) bool { return e.Name == "inside.txt" })
 	})
+	// Enter on the zip inside reads it, rather than walking into an
+	// empty folder.
+	a.handle(EnterEntry{Pane: pane, Name: "inner.zip"})
+	waitFor(t, a, "a reader of the inner zip", func() bool {
+		return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.Kind == KindReader })
+	})
+	if got := a.st.Browsers[pane].Path; strings.HasSuffix(got, "inner.zip") {
+		t.Fatalf("Enter on the inner zip walked into it: %q", got)
+	}
 }
 
 // A rename that changes only the letter case goes through, unless the

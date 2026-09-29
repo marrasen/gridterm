@@ -206,7 +206,8 @@ func toolList() []tool {
 			Description: "Open a second pane where a pane you have is: another shell on the" +
 				" same machine, handed to you as it opens. The answer names it. It runs" +
 				" nothing, and it opens no connection: kakel must already be connected" +
-				" to that machine. A pane opened to run one command is refused." +
+				" to that machine. From a pane that runs one command, it opens a shell" +
+				" beside it, not that command again." +
 				" It works only if the user ticked \"" + agent.BoxOpenMore + "\", which" +
 				" use_session_code and list_panes both report.",
 			InputSchema: schema{
@@ -444,7 +445,8 @@ func (s *server) runTool(name string, args json.RawMessage) (result, *rpcError) 
 			return wrong(err.Error())
 		}
 		return say(fmt.Sprintf(
-			"You have a second pane on %s: a %dx%d screen, as pane %q."+
+			"You have a second pane on %s: a new shell, a %dx%d screen, as pane %q."+
+				" It runs a shell whatever the pane you opened it from runs."+
 				" It is yours the same way the first one is, and the user is watching it too.",
 			pane.Label, pane.Cols, pane.Rows, pane.ID))
 

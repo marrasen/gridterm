@@ -166,12 +166,6 @@ func TestAnAgentMakesTheWindowDialNothing(t *testing.T) {
 	if a.terminal(id).Asking() == "" {
 		t.Fatal("refused, the pane's question went")
 	}
-	a.setPane(id, func(p *Pane) { p.Machine = "" })
-	a.commands[id] = command{argv: []string{"top"}}
-	asAgent(t, a, func() { _, err = c.Open(sh.Panes[0].ID) })
-	if err == nil || !strings.Contains(err.Error(), "run one command") {
-		t.Fatalf("opening beside a command said %v", err)
-	}
 }
 
 func TestClearFinishedClosesEndedPanes(t *testing.T) {

@@ -621,12 +621,8 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if !w.a.agents.allowed(h).OpenMore {
 			return struct{}{}, errors.New(`this hand-over does not let you open another pane. Ask the user to tick "` + agent.BoxOpenMore + `"`)
 		}
-		// Not from a pane opened to run one command:
-		// "another pane there" would read as the command run again, and
-		// this opens a shell.
-		if _, ok := w.a.commands[h.pane]; ok {
-			return struct{}{}, errors.New("that pane was opened to run one command, and this does not run commands. Ask the user to open the pane you need")
-		}
+		// From a pane that runs one command too: what opens is a shell
+		// beside it, as the answer says, not the command again.
 		n := 0
 		for _, other := range w.a.agents.by {
 			for at := other.from; at != nil; at = at.from {

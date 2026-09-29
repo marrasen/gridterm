@@ -269,3 +269,30 @@ func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
 		t.Fatalf("with no path, the prompt said %+v", a.st.Notices)
 	}
 }
+
+// From a pane that runs one command, an agent opens a shell beside it,
+// not the command again.
+func TestAnAgentOpensAShellBesideACommand(t *testing.T) {
+	a, _ := agentApp(t)
+	if err := a.runCommand(RunCommand{Line: "sleep 30"}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := a.st.Panes[len(a.st.Panes)-1].ID
+	a.handle(SharePane{Pane: cmd})
+	a.handle(SetAgentMay{Pane: cmd, May: settings.AgentMay{OpenMore: true}})
+	c, sh := dial(t, a, a.st.Share.Code)
+	i := slices.IndexFunc(sh.Panes, func(p agent.Pane) bool { return strings.HasPrefix(p.Label, "sleep 30") })
+	if i < 0 {
+		t.Fatalf("the share holds %+v", sh.Panes)
+	}
+	var opened agent.Pane
+	var err error
+	asAgent(t, a, func() { opened, err = c.Open(sh.Panes[i].ID) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	shell := a.st.Panes[len(a.st.Panes)-1]
+	if _, isCommand := a.commands[shell.ID]; isCommand || shell.Command || !strings.HasPrefix(opened.Label, "Terminal ") {
+		t.Fatalf("opened %+v, as pane %+v", opened, shell)
+	}
+}

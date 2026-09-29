@@ -868,7 +868,7 @@ const (
 	hostOther      = "Another host"
 )
 
-// agentHost is an agent program: cmd adds an MCP server from the
+// AgentHost is an agent program: cmd adds an MCP server from the
 // command line, and configAt is where one without a command keeps its
 // servers.
 type AgentHost struct {
@@ -903,7 +903,7 @@ func AgentHostNames() []string {
 	return out
 }
 
-// exePath is this program's path, for the MCP server's command line.
+// ExePath is this program's path, for the MCP server's command line.
 func ExePath() string {
 	if exe, ok := exeKnown(); ok {
 		return exe
@@ -930,7 +930,7 @@ func mcpConfig(exe string) string {
 	return `{"mcpServers": {"kakel": {` + "\n" + `  "command": "` + inJSON + `",` + "\n" + `  "args": ["-mcp"]}}}`
 }
 
-// setupToCopy is what adds the MCP server to h.
+// SetupToCopy is what adds the MCP server to h.
 func (h AgentHost) SetupToCopy(exe string) string {
 	if h.Cmd != "" {
 		return h.Cmd + " mcp add kakel -- " + quotedPath(exe) + " -mcp"

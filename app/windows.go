@@ -57,7 +57,7 @@ type (
 	}
 )
 
-// knownWindowsFile is where the host keys of the windows connected to
+// KnownWindowsFile is where the host keys of the windows connected to
 // are kept.
 const KnownWindowsFile = "known_windows"
 

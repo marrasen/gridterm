@@ -41,12 +41,12 @@ var TermBackground = theme.Color("kakel.background", color.NRGBA{R: 0x14, G: 0x1
 type Themed struct {
 	Name  string
 	Theme theme.Theme
-	// content is what the panes on stage wear: the terminal's own text
+	// Content is what the panes on stage wear: the terminal's own text
 	// and ground, which a theme's frame may not share, as Turbo's grey
 	// frame round its blue ground does not.
 	Content theme.Theme
 	Palette vt.Palette
-	// source is the kakel theme it came from, for writing a copy.
+	// Source is the kakel theme it came from, for writing a copy.
 	Source themes.Theme
 }
 

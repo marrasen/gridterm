@@ -33,11 +33,11 @@ func fontApp(t *testing.T) *app {
 
 func TestTheFontMenuPicksAFace(t *testing.T) {
 	a := fontApp(t)
-	a.handle(PickFont{Name: DosFamily})
-	if f := a.st.Font; f.Name != DosFamily || f.Faces[0] == nil {
+	a.handle(PickFont{Name: dosFamily})
+	if f := a.st.Font; f.Name != dosFamily || f.Faces[0] == nil {
 		t.Fatalf("picked the DOS face, the font is %q with %v", f.Name, f.Faces)
 	}
-	a.handle(PickFont{Name: BundledFamily})
+	a.handle(PickFont{Name: bundledFamily})
 	if f := a.st.Font; f.Name != "" || f.Faces != [4]*text.Face{} {
 		t.Fatalf("picked Go Mono, the font is %q", f.Name)
 	}
@@ -51,7 +51,7 @@ func TestAThemeNamingAFaceDrawsInItUnlessOneWasPicked(t *testing.T) {
 	a := fontApp(t)
 	dos := ""
 	for _, th := range a.themes {
-		if th.Source.Font == DosFamily {
+		if th.Source.Font == dosFamily {
 			dos = th.Name
 		}
 	}
@@ -59,10 +59,10 @@ func TestAThemeNamingAFaceDrawsInItUnlessOneWasPicked(t *testing.T) {
 		t.Fatal("no theme names the DOS face")
 	}
 	a.pickTheme(dos)
-	if a.st.Font.Name != DosFamily {
+	if a.st.Font.Name != dosFamily {
 		t.Fatalf("the theme %s names the DOS face, the font is %q", dos, a.st.Font.Name)
 	}
-	a.handle(PickFont{Name: BundledFamily})
+	a.handle(PickFont{Name: bundledFamily})
 	a.pickTheme(dos)
 	if a.st.Font.Name != "" {
 		t.Fatalf("with Go Mono picked, taking the theme again drew in %q", a.st.Font.Name)
@@ -72,7 +72,7 @@ func TestAThemeNamingAFaceDrawsInItUnlessOneWasPicked(t *testing.T) {
 func TestTheFontSizeIsKept(t *testing.T) {
 	a := fontApp(t)
 	a.handle(FontSize{Step: 2})
-	if size, ok := a.settings.FontSize(); !ok || float32(size) != DefaultFontSize+2 {
+	if size, ok := a.settings.FontSize(); !ok || float32(size) != defaultFontSize+2 {
 		t.Fatalf("kept %v, %v", size, ok)
 	}
 }
@@ -83,20 +83,20 @@ func TestAnotherThemesFaceWinsOverOnePickedBefore(t *testing.T) {
 	a := fontApp(t)
 	dos, plain := "", ""
 	for _, th := range a.themes {
-		if th.Source.Font == DosFamily {
+		if th.Source.Font == dosFamily {
 			dos = th.Name
 		} else if plain == "" {
 			plain = th.Name
 		}
 	}
 	a.pickTheme(plain)
-	a.handle(PickFont{Name: BundledFamily})
+	a.handle(PickFont{Name: bundledFamily})
 	a.pickTheme(plain)
 	if a.st.Font.Name != "" {
 		t.Fatalf("the same theme again moved the face to %q", a.st.Font.Name)
 	}
 	a.pickTheme(dos)
-	if a.st.Font.Name != DosFamily {
+	if a.st.Font.Name != dosFamily {
 		t.Fatalf("another theme naming a face left it at %q", a.st.Font.Name)
 	}
 	a.handle(PickTheme{Name: "No Such Theme"})
@@ -123,5 +123,15 @@ func TestAThemesFileThatCannotBeReadIsSaid(t *testing.T) {
 	}
 	if len(all) != len(themes.Built()) {
 		t.Fatalf("with the file broken, %d themes are left, want the %d built in", len(all), len(themes.Built()))
+	}
+}
+
+// The Font menu lists the faces compiled in first, Go Mono and then the
+// DOS face, at the size a new window opens with; the window ticks them
+// by that order.
+func TestTheFontsStartWithTheFacesCompiledIn(t *testing.T) {
+	a := fontApp(t)
+	if len(a.st.Fonts) < 2 || a.st.Fonts[0] != "Go Mono (bundled)" || a.st.Fonts[1] != "PxPlus IBM VGA8" || a.st.FontSize != 15 {
+		t.Fatalf("the fonts are %q at %v", a.st.Fonts, a.st.FontSize)
 	}
 }

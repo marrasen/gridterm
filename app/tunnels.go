@@ -72,7 +72,7 @@ type (
 	ShowTunnel struct{ ID string }
 )
 
-// kindTunnel is a tunnel's pane.
+// KindTunnel is a tunnel's pane.
 const KindTunnel = "tunnel"
 
 // mostTunnelLines is how much of a tunnel's account is kept, and
@@ -439,7 +439,7 @@ func asSaved(host, id string, t remote.Tunnel) settings.SavedTunnel {
 	return settings.SavedTunnel{Host: host, HostID: id, Kind: t.Kind.String(), Listen: t.Listen, Target: t.Target}
 }
 
-// asTunnel is a kept tunnel read back.
+// AsTunnel is a kept tunnel read back.
 func AsTunnel(saved settings.SavedTunnel) (remote.Tunnel, error) {
 	for _, k := range []remote.TunnelKind{remote.LocalForward, remote.RemoteForward, remote.DynamicForward} {
 		if saved.Kind == k.String() {

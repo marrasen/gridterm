@@ -70,9 +70,9 @@ type PaneDrag struct {
 	Window int
 }
 
-// windowOpener opens another window, placed at at in from's space, and
+// WindowOpener opens another window, placed at at in from's space, and
 // returns its client and the window. It runs on a goroutine of its own.
-type windowOpener func(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error)
+type WindowOpener func(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error)
 
 // addWindow adds a window to the program's, and returns it. What it
 // asks for is heard once serveWin starts listening.

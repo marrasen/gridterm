@@ -84,7 +84,7 @@ type Job struct {
 	Repeatable, Saved bool
 }
 
-// kindJobs is the jobs pane.
+// KindJobs is the jobs pane.
 const KindJobs = "jobs"
 
 // mostFinishedJobs is how many finished jobs the pane keeps.

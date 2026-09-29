@@ -21,8 +21,8 @@ import (
 	"github.com/marrasen/kakel/vt"
 )
 
-// options are what the command line asks for.
-type options struct {
+// Options are what the command line asks for.
+type Options struct {
 	fontSize   float64
 	command    string
 	scrollback int
@@ -39,11 +39,11 @@ type options struct {
 	sizeSet bool
 }
 
-// parseOptions reads the command line.
-func ParseOptions(args []string) (options, error) {
-	var o options
+// ParseOptions reads the command line.
+func ParseOptions(args []string) (Options, error) {
+	var o Options
 	fs := flag.NewFlagSet(ProgramName, flag.ContinueOnError)
-	fs.Float64Var(&o.fontSize, "font-size", float64(DefaultFontSize), "font size in logical pixels")
+	fs.Float64Var(&o.fontSize, "font-size", float64(defaultFontSize), "font size in logical pixels")
 	fs.StringVar(&o.command, "e", "",
 		"run this command instead of the login shell; split on spaces, no quoting")
 	fs.IntVar(&o.scrollback, "scrollback", vt.DefaultScrollback, "lines of history to keep")
@@ -217,14 +217,14 @@ func (a *app) openFirst() error {
 	return a.open("", Placement{})
 }
 
-// programName is what the window is called, before the focused
+// ProgramName is what the window is called, before the focused
 // terminal's title.
 const ProgramName = "kakel"
 
-// runAlone does what opts asks for that opens no window: serving an
+// RunAlone does what opts asks for that opens no window: serving an
 // agent program over MCP, or printing the skill or the fonts. It
 // reports whether there was such a thing to do.
-func RunAlone(ctx context.Context, opts options) (bool, error) {
+func RunAlone(ctx context.Context, opts Options) (bool, error) {
 	switch {
 	case opts.asMCP:
 		// kakel's MCP server, for an agent program to start: it holds
@@ -239,13 +239,13 @@ func RunAlone(ctx context.Context, opts options) (bool, error) {
 	return false, nil
 }
 
-// showStats says to log how the window draws, each second.
-func (o options) ShowStats() bool { return o.stats }
+// ShowStats says to log how the window draws, each second.
+func (o Options) ShowStats() bool { return o.stats }
 
-// windowSize is the first window's size: room for a terminal of the
+// WindowSize is the first window's size: room for a terminal of the
 // usual size, at the font size given or kept from last time.
-func (o options) WindowSize() geom.Size {
-	size := DefaultFontSize
+func (o Options) WindowSize() geom.Size {
+	size := defaultFontSize
 	if o.sizeSet {
 		size = float32(o.fontSize)
 	} else if path, err := settings.Path(); err == nil {
@@ -255,9 +255,9 @@ func (o options) WindowSize() geom.Size {
 			}
 		}
 	}
-	return FirstSize(size, 220)
+	return firstSize(size, 220)
 }
 
-// captureLog keeps what kakel logs for the window log to show, and
+// CaptureLog keeps what kakel logs for the window log to show, and
 // still writes it to stderr.
 func CaptureLog() { log.SetOutput(windowLog) }

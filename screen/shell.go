@@ -40,11 +40,11 @@ type Hooks struct {
 	Exit      func()
 	Clipboard func(string)
 	Bell      func()
-	// commandDone says a command finished, as a shell that marks its
+	// CommandDone says a command finished, as a shell that marks its
 	// commands says so: its exit status, whether the shell gave one, and
 	// how long it ran.
 	CommandDone func(status int, ok bool, took time.Duration)
-	// link, findPath and openPath follow the links in the pane; nil
+	// Link, FindPath and OpenPath follow the links in the pane; nil
 	// follows none.
 	Link     func(string)
 	FindPath func(text, dir string) (at string, isDir, ok bool)

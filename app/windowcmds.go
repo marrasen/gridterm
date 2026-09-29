@@ -46,7 +46,7 @@ type (
 	ShowHelp struct{}
 )
 
-// kindHelp is the pane listing every command.
+// KindHelp is the pane listing every command.
 const KindHelp = "help"
 
 // latestRelease asks for the newest release. A variable, so a test

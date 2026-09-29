@@ -19,7 +19,7 @@ import (
 // Machine, or the window's own when Machine is "".
 type ShowLog struct{ Machine machines.ID }
 
-// kindLog is a log's pane.
+// KindLog is a log's pane.
 const KindLog = "log"
 
 // windowLog is what this process logs. The lines still reach stderr;

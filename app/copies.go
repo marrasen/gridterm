@@ -37,7 +37,7 @@ type (
 	ShowCopies struct{}
 )
 
-// kindCopies is the Saved Copies pane.
+// KindCopies is the Saved Copies pane.
 const KindCopies = "copies"
 
 // mostSavedCopies is how many copies are kept.
@@ -230,7 +230,7 @@ func (a *app) showCopies() {
 	a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Saved Copies", Kind: KindCopies}, nil, Placement{})
 }
 
-// copiedWhat names what a saved copy copies.
+// CopiedWhat names what a saved copy copies.
 func CopiedWhat(c settings.SavedCopy) string {
 	if len(c.Names) == 1 {
 		return c.Names[0]
@@ -238,7 +238,7 @@ func CopiedWhat(c settings.SavedCopy) string {
 	return words.Count(len(c.Names), "item") + ": " + strings.Join(c.Names, ", ")
 }
 
-// copiedWhere says where a saved copy goes from and to: a saved server
+// CopiedWhere says where a saved copy goes from and to: a saved server
 // by what named calls it now, and anything else as it was kept.
 func CopiedWhere(c settings.SavedCopy, named func(machines.ID) string) string {
 	end := func(machine, id, at string) string {

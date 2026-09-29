@@ -438,7 +438,7 @@ type app struct {
 	nextWin    int
 	winOf      map[string]int
 	intents    chan windowIn
-	openWindow windowOpener
+	openWindow WindowOpener
 	opening    int
 	// starting counts the panes on their way, a shell on a server being
 	// started, which keep an empty window open for them; stayEmpty keeps
@@ -512,7 +512,7 @@ type app struct {
 	copiedAt time.Time
 	// opts are what the command line asked for; fixedFont is a family
 	// -font-family named, and shotErr why a -shot script gave up.
-	opts      options
+	opts      Options
 	fixedFont string
 	shotErr   error
 	// gone says the window is on its way out, leaving with what it
@@ -581,7 +581,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
 		c:         c,
 		shells:    sh,
-		st:        State{Sidebar: true, SidebarWidth: 220, FontSize: DefaultFontSize, Fonts: []string{BundledFamily, DosFamily}},
+		st:        State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
 		groups:    map[int]*Box{},
 		groupOf:   map[string]int{},
 		ring:      remote.NewRing(),
@@ -962,7 +962,7 @@ func (a *app) handle(in gunim.Intent) {
 			}
 		}
 	case FontSize:
-		size := DefaultFontSize
+		size := defaultFontSize
 		if in.Step != 0 {
 			size = min(max(a.st.FontSize+float32(in.Step), 8), 40)
 		}
@@ -1267,7 +1267,7 @@ func (a *app) has(id string) bool {
 	return slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
 }
 
-// placement says where a new pane goes: on a stage of its own, or
+// Placement says where a new pane goes: on a stage of its own, or
 // beside a pane, below it with vertical.
 type Placement struct {
 	Beside   string
@@ -1639,9 +1639,9 @@ func (a *app) retitle(id, title string) {
 }
 
 // defaultFontSize is the terminals' font size to begin with.
-const DefaultFontSize float32 = 15
+const defaultFontSize float32 = 15
 
-// windowTopic is what the program publishes the window's state to.
+// WindowTopic is what the program publishes the window's state to.
 const WindowTopic = "window"
 
 func itoa(n int) string { return strconv.Itoa(n) }
@@ -1675,21 +1675,21 @@ func (a *app) pickTheme(name string) bool {
 	return false
 }
 
-// config is what the program side starts with: its first window, the
+// Config is what the program side starts with: its first window, the
 // shells the windows draw, a way to open more windows, the command
 // line, and the themes on offer, with what went wrong reading them.
 type Config struct {
 	Client         gunim.Client
 	Window         *gunim.Window
 	Shells         *screen.Shells
-	OpenWindow     windowOpener
-	Options        options
+	OpenWindow     WindowOpener
+	Options        Options
 	Themes         []look.Themed
 	ThemeTrouble   error
 	RegisterThemes func([]look.Themed)
 }
 
-// start runs the program side until its last window closes.
+// Start runs the program side until its last window closes.
 func Start(ctx context.Context, cfg Config) error {
 	a := newApp(cfg.Client, cfg.Shells)
 	a.wins[0].gw = cfg.Window

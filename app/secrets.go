@@ -83,10 +83,10 @@ type (
 	RevealSecret struct{ ID string }
 )
 
-// kindSecrets is the secrets pane.
+// KindSecrets is the secrets pane.
 const KindSecrets = "secrets"
 
-// clipboardHolds is how long a copied secret stays on the clipboard.
+// ClipboardHolds is how long a copied secret stays on the clipboard.
 const ClipboardHolds = 30
 
 // vault is the vault, read off disk the first time anything asks. It

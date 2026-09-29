@@ -21,8 +21,8 @@ import (
 // bundledFamily and dosFamily are what the Font menu calls the faces
 // compiled in.
 const (
-	BundledFamily = "Go Mono (bundled)"
-	DosFamily     = "PxPlus IBM VGA8"
+	bundledFamily = "Go Mono (bundled)"
+	dosFamily     = "PxPlus IBM VGA8"
 )
 
 // Font is the terminals' typeface as the window uses it.
@@ -48,9 +48,9 @@ func (a *app) scanFonts() {
 		found, err := glyph.Monospaced()
 		a.events <- func() {
 			a.families = found
-			a.st.Fonts = []string{BundledFamily, DosFamily}
+			a.st.Fonts = []string{bundledFamily, dosFamily}
 			for _, f := range found {
-				if !strings.EqualFold(f.Name, DosFamily) {
+				if !strings.EqualFold(f.Name, dosFamily) {
 					a.st.Fonts = append(a.st.Fonts, f.Name)
 				}
 			}
@@ -111,10 +111,10 @@ func (a *app) familyNamed(name string) (glyph.Family, bool) {
 // name is one: Go Mono answers to the empty name and to its menu line.
 func compiledIn(name string) (string, bool) {
 	switch {
-	case name == "", strings.EqualFold(name, BundledFamily):
+	case name == "", strings.EqualFold(name, bundledFamily):
 		return "", true
-	case strings.EqualFold(name, DosFamily):
-		return DosFamily, true
+	case strings.EqualFold(name, dosFamily):
+		return dosFamily, true
 	}
 	return "", false
 }
@@ -124,7 +124,7 @@ func (a *app) setFont(name string) error {
 	var files glyph.Fonts
 	if settled, ok := compiledIn(name); ok {
 		name = settled
-		if name == DosFamily {
+		if name == dosFamily {
 			files = glyph.Fonts{Regular: fonts.DOS}
 		}
 	} else {
@@ -182,10 +182,10 @@ func parseFace(data []byte, index int) (*text.Face, error) {
 	return all[index], nil
 }
 
-// fontCommandID names the command that draws in a family, as gridterm
+// FontCommandID names the command that draws in a family, as gridterm
 // names it: lowercase, with dashes for spaces, and Go Mono "bundled".
 func FontCommandID(family string) string {
-	if _, ok := compiledIn(family); ok && !strings.EqualFold(family, DosFamily) {
+	if _, ok := compiledIn(family); ok && !strings.EqualFold(family, dosFamily) {
 		return "font.use.bundled"
 	}
 	return "font.use." + strings.ToLower(strings.ReplaceAll(family, " ", "-"))
@@ -193,7 +193,7 @@ func FontCommandID(family string) string {
 
 // openCols and openRows are the terminal a new window opens with, beside
 // the sidebar: 100 by 32 for the whole window, less its sidebar and bar.
-const OpenCols, OpenRows = 80, 30
+const openCols, openRows = 80, 30
 
 // frameW and frameH are the window around the terminal: the divider
 // beside the sidebar, and the menu bar and the pane's title above.
@@ -201,7 +201,7 @@ const frameW, frameH = 6, 52
 
 // firstSize is how big a new window opens: room for the sidebar and a
 // terminal of openCols by openRows at font size, in Go Mono.
-func FirstSize(size float32, sidebar float32) geom.Size {
+func firstSize(size float32, sidebar float32) geom.Size {
 	face := text.GoMono(false, false)
 	ascent, descent, gap := face.Metrics(size)
 	_, advance, ok := face.Glyph('M', size)
@@ -210,5 +210,5 @@ func FirstSize(size float32, sidebar float32) geom.Size {
 	}
 	w := float32(math.Round(float64(advance)))
 	h := float32(math.Round(float64(ascent + descent + gap)))
-	return geom.Sz(sidebar+frameW+OpenCols*w, frameH+OpenRows*h)
+	return geom.Sz(sidebar+frameW+openCols*w, frameH+openRows*h)
 }

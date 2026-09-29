@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/grid"
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
@@ -539,5 +541,62 @@ func TestATunnelsNoteIsShownPlainAndShort(t *testing.T) {
 	got := a.serving.carried[c]
 	if len(got) != mostCarried || strings.ContainsAny(got[0].Label, "\n\x1b") || len([]rune(got[1].Label)) > 121 {
 		t.Fatalf("kept %d, the first %q, the second %d long", len(got), got[0].Label, len([]rune(got[1].Label)))
+	}
+}
+
+// Ctrl+click on a path in a pane on a server beyond a window looks for
+// it on that server and opens it from there, as for a server of this
+// window's own; not on the window's machine.
+func TestAPathBeyondAWindowIsFoundOnItsServer(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	win := b.st.Windows[0].Name
+	far := machines.FarID(win, "srv")
+	b.handle(OpenOn{Machine: far})
+	pumpBoth(t, a, b, "the terminal on the server", func() bool { return len(b.st.Panes) == 2 })
+	onFar := b.st.Panes[1].ID
+	file := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(file, []byte("one\ntwo\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The server's shell says back what it is sent: the path, on a line
+	// of its own.
+	term := b.terminal(onFar)
+	term.Paste("\n" + file + "\n")
+	var row int
+	pumpBoth(t, a, b, "the path on the screen", func() bool {
+		for i, line := range strings.Split(term.Text(), "\n") {
+			if strings.HasPrefix(line, file) {
+				row = i
+				return true
+			}
+		}
+		return false
+	})
+	click := func() {
+		b.shells.Get(onFar).Drawn(func(*grid.Grid) {})
+		_, _ = term.HandleMouse(input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Col: 2, Row: row, Mods: input.ModCtrl})
+		_, _ = term.HandleMouse(input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 2, Row: row, Mods: input.ModCtrl})
+	}
+	// Clicked until the path is known: the first look opens the files.
+	pumpBoth(t, a, b, "the reader", func() bool {
+		click()
+		for id, r := range b.st.Readers {
+			if r.Path == file && len(r.Lines) >= 2 {
+				p := slices.IndexFunc(b.st.Panes, func(p Pane) bool { return p.ID == id })
+				if p < 0 || b.st.Panes[p].Machine != win || b.st.Panes[p].On != "srv" {
+					t.Fatalf("the reader is %+v, want on srv through the window", b.st.Panes[p])
+				}
+				return true
+			}
+		}
+		return false
+	})
+	// Started again on the window's own machine, as a window of an older
+	// build does, its paths are looked for there.
+	b.onWindowsOwn(onFar)
+	if got := *b.linksAt[onFar].Load(); got != win {
+		t.Fatalf("moved, its paths are looked for on %q", got)
 	}
 }

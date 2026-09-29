@@ -445,6 +445,9 @@ type app struct {
 	intents    chan windowIn
 	openWindow WindowOpener
 	opening    int
+	// linksAt is where each pane with links runs, for its paths, which
+	// its terminal looks up on a goroutine of its own.
+	linksAt map[string]*atomic.Pointer[machines.ID]
 	// farLogs are the logs of machines beyond windows on their way here,
 	// so a second ask waits for the first rather than opening another.
 	farLogs map[machines.ID]bool
@@ -602,6 +605,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		paneFiles: map[string]wrappedFiles{},
 		paneAt:    map[string]string{},
 		farLogs:   map[machines.ID]bool{},
+		linksAt:   map[string]*atomic.Pointer[machines.ID]{},
 		argvs:     map[string][]string{},
 		farHost:   map[string]string{},
 		typed:     map[string]*typedLog{},
@@ -1580,6 +1584,7 @@ func (a *app) remove(id string) {
 		sh.Close()
 	}
 	a.shells.Set(id, nil)
+	delete(a.linksAt, id)
 	if _, ok := a.st.Browsers[id]; ok {
 		m := maps.Clone(a.st.Browsers)
 		delete(m, id)

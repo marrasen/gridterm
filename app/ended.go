@@ -388,6 +388,10 @@ func (a *app) onWindowsOwn(id string) {
 	was := a.farHost[id]
 	delete(a.farHost, id)
 	a.setPane(id, func(p *Pane) { p.On = "" })
+	if where := a.linksAt[id]; where != nil {
+		own := a.machineOf(id)
+		where.Store(&own)
+	}
 	if t := a.terminal(id); t != nil && was != "" {
 		t.Say("It ran on " + a.machines.Name(machines.FarID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
 	}

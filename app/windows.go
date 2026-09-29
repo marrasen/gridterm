@@ -372,7 +372,7 @@ func (a *app) openThrough(window machines.ID, key string, cmd command, id, title
 				then("", err)
 				return
 			}
-			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, window)), at)
+			a.addPane(a.paneOn(on, Pane{ID: id, Title: title, Command: len(cmd.argv) > 0}), screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), at)
 			a.showWindows()
 			then(id, nil)
 		}
@@ -408,7 +408,13 @@ func (a *app) attachWindow(in AttachWindow) error {
 				a.failed("Couldn't work in "+open.Label, err.Error())
 				return
 			}
-			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), Placement{})
+			// Its links and paths are followed where it runs: beyond the
+			// window, for one on a machine the window reaches.
+			on := in.Window
+			if open.Key() != "" {
+				on = machines.FarID(in.Window, open.Key())
+			}
+			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, screen.Open(sess, a.palette, a.withLinks(a.hooks(id), id, on)), Placement{})
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
 				a.machines.NameFar(in.Window, open.Key(), open.Host)

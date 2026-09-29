@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"github.com/marrasen/kakel/links"
 	"github.com/marrasen/kakel/screen"
@@ -27,6 +28,12 @@ import (
 // withLinks gives pane id's hooks what follows its links, for a pane
 // on machine.
 func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.Hooks {
+	// Where the pane runs, for FindPath, which the terminal calls on a
+	// goroutine of its own: set here, and changed by onWindowsOwn when a
+	// pane beyond a window starts again on the window's own machine.
+	where := new(atomic.Pointer[machines.ID])
+	where.Store(&machine)
+	a.linksAt[id] = where
 	post := func(f func()) {
 		go func() {
 			select {
@@ -45,14 +52,15 @@ func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.H
 		})
 	}
 	h.FindPath = func(text, dir string) (string, bool, bool) {
-		if machine == "" {
-			return links.OnDisk(text, dir)
+		if on := *where.Load(); on != machines.Local {
+			return a.findFar(on, text, dir)
 		}
-		return a.findFar(machine, text, dir)
+		return links.OnDisk(text, dir)
 	}
 	h.OpenPath = func(at string, isDir bool, line int) {
 		post(func() {
-			if err := a.openPath(machine, at, isDir, line); err != nil {
+			// Where the pane runs as the path is followed, as for a link.
+			if err := a.openPath(a.filesKey(id), at, isDir, line); err != nil {
 				a.failed("Couldn't open "+at, err.Error())
 			}
 		})

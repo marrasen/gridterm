@@ -155,17 +155,17 @@ func (p *secretsPane) show(st app.Secrets, u *gunim.UI) {
 	switch {
 	case !st.Open:
 		p.head.set("Secrets", u, p.unlock)
-		p.act.set("Locked. Unlock to see what is in them.", u)
+		p.act.set("Locked", u)
 	case len(st.Items) == 0:
 		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
-		p.act.set("No secrets yet. Add one to keep it here, locked by your key.", u)
+		p.act.set("No secrets yet", u)
 	default:
 		p.head.set(secretsHeading(st), u, p.add, p.note, p.lock)
 		switch shown := len(keys); {
 		case shown == len(st.Items):
 			p.act.set(words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
 		case shown == 0:
-			p.act.set("None of the "+words.Count(len(st.Items), "secret")+" matches.", u)
+			p.act.set("No matches in "+words.Count(len(st.Items), "secret"), u)
 		default:
 			p.act.set(strconv.Itoa(shown)+" of "+words.Count(len(st.Items), "secret")+" · Enter copies the one selected", u, p.typ, p.cp, p.reveal, p.change, p.remove)
 		}
@@ -194,18 +194,26 @@ func (p *secretsPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kid
 // makes one up; a note is typed in the open.
 func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI) {
 	name, user, value := widget.NewTextField(), widget.NewTextField(), widget.NewTextField()
-	user.Placeholder = "optional: who or what it is for"
-	value.Secret = kind != secrets.Note
-	label, title := "Password", "Add Secret"
+	user.Placeholder = "Optional"
+	value.Secret = true
+	// A note is lines of text, and a password one line, hidden.
+	var field gunim.Node = value
+	text := value.Text
+	label, title, missing := "Password", "Add Secret", "Enter a password"
 	if kind == secrets.Note {
-		label, title = "Note", "Add Note"
+		note := widget.NewTextArea()
+		field, text = note, note.Text
+		label, title, missing = "Note", "Add Note", "Enter a note"
+		if old != nil {
+			note.Placeholder = "Unchanged"
+		}
 	}
 	id := ""
 	if old != nil {
 		id, title = old.ID, "Change "+old.Name
 		name.SetText(old.Name)
 		user.SetText(old.User)
-		value.Placeholder = "empty keeps the one saved"
+		value.Placeholder = "Unchanged"
 	} else if m := w.machineOf(w.lastTerm); m != "" {
 		// The server in front of the user, which a password typed now
 		// is nearly always for.
@@ -214,10 +222,10 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 	// Who or what it is for, completed from the servers' names.
 	servers := w.serverNames()
 	user.OnEdit = func(text string, u *gunim.UI) { user.Ghost = restOf(false, servers, text) }
-	form := widget.NewForm().Add("", widget.NewLabel("Only your key opens the secrets.")).Add("Name", name).Add("For", user).Add(label, value)
+	form := widget.NewForm().Add("Name", name).Add("For", user).Add(label, field)
 	d := widget.NewDialog(title)
 	if kind != secrets.Note {
-		reveal := widget.NewCheckbox("Show the password")
+		reveal := widget.NewCheckbox("Show password")
 		reveal.OnFlip(func(on bool, u *gunim.UI) { value.Secret = !on; u.Invalidate() })
 		form.Add("", reveal)
 		d.AddAction("Generate", func(u *gunim.UI) {
@@ -233,14 +241,14 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 	d.Check = func() string {
 		switch {
 		case strings.TrimSpace(name.Text()) == "":
-			return "A secret needs a name."
-		case old == nil && value.Text() == "":
-			return "There is nothing to keep yet."
+			return "Enter a name"
+		case old == nil && text() == "":
+			return missing
 		}
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
-		return app.PutSecret{ID: id, Name: strings.TrimSpace(name.Text()), User: strings.TrimSpace(user.Text()), Kind: kind, Value: value.Text()}
+		return app.PutSecret{ID: id, Name: strings.TrimSpace(name.Text()), User: strings.TrimSpace(user.Text()), Kind: kind, Value: text()}
 	}
 	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
@@ -249,7 +257,7 @@ func (w *Window) secretForm(kind secrets.Kind, old *app.SecretItem, u *gunim.UI)
 // confirmRemoveSecret asks before taking a secret out of the vault.
 func (w *Window) confirmRemoveSecret(it app.SecretItem, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + it.Name + "?")
-	d.Body = widget.NewLabel("It goes from the secrets for good.")
+	d.Body = widget.NewLabel("This can't be undone.")
 	d.SetButtons("Remove", "Cancel")
 	d.Danger = true
 	d.Accept, d.Dismiss = app.RemoveSecret{ID: it.ID}, app.DialogClosed{}
@@ -264,7 +272,7 @@ func (w *Window) confirmRemoveSecrets(items []app.SecretItem, u *gunim.UI) {
 		names[i], ids[i] = it.Name, it.ID
 	}
 	d := widget.NewDialog("Remove " + words.Count(len(items), "secret") + "?")
-	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". They go from the secrets for good.")
+	d.Body = widget.NewLabel(strings.Join(names, ", ") + ". This can't be undone.")
 	d.SetButtons("Remove "+strconv.Itoa(len(items)), "Cancel")
 	d.Danger = true
 	d.Accept, d.Dismiss = app.RemoveSecrets{IDs: ids}, app.DialogClosed{}
@@ -275,22 +283,22 @@ func (w *Window) confirmRemoveSecrets(items []app.SecretItem, u *gunim.UI) {
 // none of their keys is.
 func (w *Window) passphraseForm(st app.Secrets, u *gunim.UI) {
 	if st.Passphrase {
-		w.toasts.Show(widget.Toast{Title: "A passphrase opens the secrets already", Body: "Remove it first to set another."}, u)
+		w.toasts.Show(widget.Toast{Title: "The secrets already have a passphrase", Body: "Remove it to add another."}, u)
 		return
 	}
 	pass, again := widget.NewTextField(), widget.NewTextField()
 	pass.Secret, again.Secret = true, true
 	d := widget.NewDialog("Add Secrets Passphrase")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("A way in where none of their keys is. Anyone with a copy of the secrets can try passphrases against them, so make it long.")).
-		Add("Passphrase", pass).Add("Again", again)
+		Add("", widget.NewLabel("Unlocks your secrets on a computer without your SSH keys. Anyone with a copy of your secrets can try to guess it, so make it long.")).
+		Add("Passphrase", pass).Add("Confirm", again)
 	d.SetButtons("Add", "Cancel")
 	d.Check = func() string {
 		switch {
 		case pass.Text() == "":
-			return "Type a passphrase."
+			return "Enter a passphrase"
 		case pass.Text() != again.Text():
-			return "The two passphrases differ."
+			return "Passphrases don't match"
 		}
 		return ""
 	}
@@ -303,7 +311,7 @@ func (w *Window) passphraseForm(st app.Secrets, u *gunim.UI) {
 // the secrets, saying what still opens them after.
 func (w *Window) confirmRemoveKey(st app.Secrets, k app.SecretKey, u *gunim.UI) {
 	if len(st.Keys) < 2 {
-		w.toasts.Show(widget.Toast{Title: "Only one key opens the secrets", Body: "Add another first, so something still opens them."}, u)
+		w.toasts.Show(widget.Toast{Title: "Only one key unlocks the secrets", Body: "Add another key before removing this one."}, u)
 		return
 	}
 	d := widget.NewDialog("Remove " + k.Name + "?")
@@ -321,16 +329,16 @@ func (w *Window) exportForm(u *gunim.UI) {
 	// what keeps this from happening by accident. A question naming the
 	// file follows.
 	path := widget.NewTextField()
-	path.Placeholder = "a new CSV file, such as ~/secrets.csv"
+	path.Placeholder = "~/secrets.csv"
 	completesPaths(path)
 	d := widget.NewDialog("Export Secrets")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("Every secret goes into the file in plain text. Anyone who can read the file can read them all.")).
+		Add("", widget.NewLabel("The file holds every secret in plain text.")).
 		Add("File", path)
 	d.SetButtons("Export…", "Cancel")
 	d.Check = func() string {
 		if strings.TrimSpace(path.Text()) == "" {
-			return "Type where the file goes."
+			return "Enter a file"
 		}
 		return ""
 	}
@@ -343,16 +351,16 @@ func (w *Window) exportForm(u *gunim.UI) {
 // with a secret that is here already.
 func (w *Window) importForm(u *gunim.UI) {
 	path := widget.NewTextField()
-	path.Placeholder = "a CSV file, such as ~/Downloads/passwords.csv"
+	path.Placeholder = "~/Downloads/passwords.csv"
 	completesPaths(path)
 	dup := widget.NewDropdown(app.KeepBoth, app.SkipThem, app.Replace)
-	dup.Label = "One already here"
+	dup.Label = "Duplicates"
 	d := widget.NewDialog("Import Secrets")
-	d.Body = widget.NewForm().Add("File", path).Add("Already here", dup)
+	d.Body = widget.NewForm().Add("File", path).Add("Duplicates", dup)
 	d.SetButtons("Import", "Cancel")
 	d.Check = func() string {
 		if strings.TrimSpace(path.Text()) == "" {
-			return "Type where the file is."
+			return "Enter a file"
 		}
 		return ""
 	}
@@ -372,29 +380,27 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 		path.SetText(at)
 	}
 	completesPaths(path)
-	comment.Placeholder, pass.Placeholder = "optional", "optional"
+	comment.Placeholder, pass.Placeholder = "Optional", "Optional"
 	pass.Secret, again.Secret = true, true
 	form := widget.NewForm().
-		Add("", widget.NewLabel("Creates an ed25519 key pair. The public half is saved beside it, as the file's name with .pub.")).
+		Add("", widget.NewLabel("Creates an ed25519 key pair. The public key is saved beside it, with .pub added to the name.")).
 		Add("File", path).Add("Comment", comment)
 	var generate *widget.Checkbox
 	if w.secretsExist {
-		generate = widget.NewCheckbox("Make up a passphrase and keep it in the secrets")
-		// Ticked, the passphrase fields are not used: said in them, and
-		// emptied, rather than what is typed there quietly ignored.
+		generate = widget.NewCheckbox("Generate a passphrase and save it in your secrets")
+		// Ticked, the passphrase fields take nothing: they are emptied
+		// and disabled.
 		generate.OnFlip(func(on bool, u *gunim.UI) {
 			if on {
 				pass.SetText("")
 				again.SetText("")
-				pass.Placeholder, again.Placeholder = "not used: one is made up", ""
-			} else {
-				pass.Placeholder, again.Placeholder = "optional", ""
 			}
+			pass.Disabled, again.Disabled = on, on
 			u.Invalidate()
 		})
 		form.Add("", generate)
 	}
-	form.Add("Passphrase", pass).Add("Again", again)
+	form.Add("Passphrase", pass).Add("Confirm", again)
 	made := func() bool { return generate != nil && generate.On }
 	d := widget.NewDialog("New SSH Key")
 	d.Body = form
@@ -402,11 +408,9 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 	d.Check = func() string {
 		switch {
 		case strings.TrimSpace(path.Text()) == "":
-			return "Type where the key goes."
-		case made() && (pass.Text() != "" || again.Text() != ""):
-			return "A passphrase is made up for it: untick that to use the one typed."
+			return "Enter a file"
 		case !made() && pass.Text() != again.Text():
-			return "The two passphrases differ."
+			return "Passphrases don't match"
 		}
 		// What would make it fail, said now, while what was typed is
 		// still here to change.
@@ -415,7 +419,7 @@ func (w *Window) makeKeyDialog(u *gunim.UI) {
 			err = remote.KeyPathProblem(at)
 		}
 		if err != nil {
-			return words.UpperFirst(err.Error()) + "."
+			return words.UpperFirst(err.Error())
 		}
 		return ""
 	}

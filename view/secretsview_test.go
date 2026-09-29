@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/widget"
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/secrets"
@@ -134,5 +135,36 @@ func TestANewKeyWhereOneIsStaysOpenSayingSo(t *testing.T) {
 	path.SetText(filepath.Join("keys", "new_ed25519"))
 	if said := win.dialog.Check(); !strings.Contains(said, "is not a full path") {
 		t.Fatalf("with a path that is not full, the dialog says %q", said)
+	}
+}
+
+// A note is lines of text: Enter in it starts a line, and the dialog
+// saves only from its button.
+func TestANoteTakesSeveralLines(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(app.State{})
+	win.secretForm(secrets.Note, nil, lastUI)
+	for range 10 {
+		lastWindow.Frame(time.Second / 60)
+	}
+	for len(lastWindow.Client().Intents()) > 0 {
+		<-lastWindow.Client().Intents()
+	}
+	var note *widget.TextArea
+	for _, n := range formOf(win.dialog.Body).Focusables() {
+		if a, ok := n.(*widget.TextArea); ok {
+			note = a
+		}
+	}
+	if note == nil {
+		t.Fatal("the note is no text area")
+	}
+	lastUI.Focus(note)
+	lastWindow.Input(gi.TextInput{Text: "one"})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter, Time: time.Now()})
+	lastWindow.Input(gi.TextInput{Text: "two"})
+	lastWindow.Frame(time.Second / 60)
+	if note.Text() != "one\ntwo" || len(lastWindow.Client().Intents()) != 0 {
+		t.Fatalf("the note reads %q, with %d intents sent", note.Text(), len(lastWindow.Client().Intents()))
 	}
 }

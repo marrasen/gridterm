@@ -174,7 +174,7 @@ func (a *app) openFirst() error {
 		// it.
 		if a.book != nil {
 			if h, ok := a.book.Lookup(strings.TrimSpace(a.opts.ssh)); ok && !h.Window {
-				in = ConnectTo{Server: h.ID}
+				in = ConnectTo{Server: MachineID(h.ID)}
 			}
 		}
 		line := strings.TrimSpace(a.opts.command)

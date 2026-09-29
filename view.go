@@ -90,7 +90,7 @@ type window struct {
 	// termProgram is what new shells are told the terminal is called.
 	termProgram string
 	// connected are the servers connected to, as last published.
-	connected []string
+	connected []MachineID
 	// help is the list of commands, once opened, and shortcutsRead
 	// the shortcuts file's reads as last taken on.
 	help          *helpPane
@@ -110,7 +110,7 @@ type window struct {
 	savedTunnels []settings.SavedTunnel
 	// accounts are the machines with a connection log, as the palette
 	// lists them.
-	accounts []string
+	accounts []MachineID
 	splits   map[string]*widget.Split
 	focused  string
 	palette  *widget.Palette
@@ -133,10 +133,10 @@ type window struct {
 	// title is the window's title as last set.
 	title string
 	// dropped are the machines whose connection went by itself.
-	dropped []string
+	dropped []MachineID
 	// dialing are the servers being connected to, fileClip what the
 	// file clipboard holds, and keyFiles the key files kept.
-	dialing  []string
+	dialing  []MachineID
 	fileClip FileClip
 	keyFiles []string
 	// fonts are the families on the Font menu, and font the one the
@@ -387,7 +387,7 @@ func (w *window) run(id string, u *gunim.UI) bool {
 		return true
 	case "server.editThis", "server.forget":
 		m := w.machineOf(w.focused)
-		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return h.ID == m })
+		i := slices.IndexFunc(w.saved, func(h remote.Host) bool { return MachineID(h.ID) == m })
 		if i < 0 {
 			w.toasts.Show(widget.Toast{Title: "This pane is on no saved server", Body: "Edit This Server works on a pane on a server from the Servers menu."}, u)
 			return true
@@ -714,7 +714,7 @@ func (w *window) connectDialog(u *gunim.UI) {
 		typed := strings.TrimSpace(target.Text())
 		for _, h := range w.saved {
 			if strings.EqualFold(h.Name, typed) {
-				return ConnectTo{Server: h.ID}
+				return ConnectTo{Server: MachineID(h.ID)}
 			}
 		}
 		return ConnectTo{Target: typed}
@@ -929,14 +929,14 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 		}
 		return remote.Host{}, false
 	}
-	machineNamed := func(cmd string) (string, bool) {
+	machineNamed := func(cmd string) (MachineID, bool) {
 		for _, m := range append(w.machines(), w.accounts...) {
 			if w.cmdName(m) == cmd {
 				return m, true
 			}
 		}
 		if h, ok := savedNamed(cmd); ok {
-			return h.ID, true
+			return MachineID(h.ID), true
 		}
 		return "", false
 	}
@@ -947,7 +947,7 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 	switch {
 	case strings.HasPrefix(id, "server.open."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.open.")); ok {
-			u.Send(w, ConnectTo{Server: h.ID})
+			u.Send(w, ConnectTo{Server: MachineID(h.ID)})
 		}
 	case strings.HasPrefix(id, "server.edit."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.edit.")); ok {
@@ -955,7 +955,7 @@ func (w *window) runItem(id string, u *gunim.UI) bool {
 		}
 	case strings.HasPrefix(id, "server.remove."):
 		if h, ok := savedNamed(strings.TrimPrefix(id, "server.remove.")); ok {
-			w.confirmRemove(h.ID, u)
+			w.confirmRemove(MachineID(h.ID), u)
 		}
 	case strings.HasPrefix(id, "conn.log."):
 		if m, ok := machineNamed(strings.TrimPrefix(id, "conn.log.")); ok {
@@ -1036,7 +1036,7 @@ func (w *window) savingClashes(h remote.Host, old *remote.Host) string {
 		}
 	}
 	for _, rw := range w.remoteWindows {
-		if was != "" && rw.Name == was && (!h.Window || rw.Addr != h.ServeAddr()) {
+		if was != "" && rw.Name == MachineID(was) && (!h.Window || rw.Addr != h.ServeAddr()) {
 			return fmt.Sprintf("%s is connected at %s; let go of it before changing where it is.", old.Name, rw.Addr)
 		}
 	}
@@ -1166,7 +1166,7 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 	if old != nil {
 		d.AddAction("Remove…", func(u *gunim.UI) {
 			d.Close(u)
-			w.confirmRemove(under, u)
+			w.confirmRemove(MachineID(old.ID), u)
 		})
 	}
 	d.Check = func() string {
@@ -1182,7 +1182,7 @@ func (w *window) serverForm(old *remote.Host, u *gunim.UI) {
 }
 
 // confirmRemove asks before forgetting the saved server with ID id.
-func (w *window) confirmRemove(id string, u *gunim.UI) {
+func (w *window) confirmRemove(id MachineID, u *gunim.UI) {
 	d := widget.NewDialog("Remove " + w.nameOf(id) + "?")
 	if said := w.removeSays(id); said != "" {
 		d.Body = widget.NewLabel(said)
@@ -1196,11 +1196,11 @@ func (w *window) confirmRemove(id string, u *gunim.UI) {
 
 // filesKeyOf is the name a pane's files are kept under, as the program
 // names it.
-func (w *window) filesKeyOf(id string) string {
+func (w *window) filesKeyOf(id string) MachineID {
 	for _, p := range w.panes {
 		if p.ID == id {
 			if p.On != "" {
-				return p.Machine + farSep + p.On
+				return farID(p.Machine, p.On)
 			}
 			return p.Machine
 		}
@@ -1231,10 +1231,10 @@ func (w *window) nextFilePane(id string, back bool) string {
 // foldersOn are the folders offered for a machine: the ones saved for
 // it, and on this computer each WSL distribution's, which Windows serves
 // on a share of its own.
-func (w *window) foldersOn(m string) []string {
+func (w *window) foldersOn(m MachineID) []string {
 	var out []string
 	for _, h := range w.saved {
-		if h.ID == m {
+		if MachineID(h.ID) == m {
 			out = append(out, h.Folders...)
 		}
 	}
@@ -1250,7 +1250,7 @@ func (w *window) foldersOn(m string) []string {
 
 // removeSays is what removing a server closes, and nothing when it
 // closes nothing.
-func (w *window) removeSays(name string) string {
+func (w *window) removeSays(name MachineID) string {
 	called := w.nameOf(name)
 	switch {
 	case slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == name }):
@@ -1306,8 +1306,8 @@ func (w *window) rename(u *gunim.UI) {
 
 // nameOf is what machine id is called, as the program says: a saved
 // server's name, a quick connection's address, "this computer" for "".
-func (w *window) nameOf(id string) string {
-	if win, _, far := strings.Cut(id, farSep); far {
+func (w *window) nameOf(id MachineID) string {
+	if win, _, far := id.Far(); far {
 		return w.farHostName(id) + " through " + w.nameOf(win)
 	}
 	if id == "" {
@@ -1318,30 +1318,30 @@ func (w *window) nameOf(id string) string {
 			return m.Name
 		}
 	}
-	return id
+	return string(id)
 }
 
 // farHostName is what a window calls the machine beyond it that key,
 // window and the window's own key for it joined by farSep, names.
-func (w *window) farHostName(key string) string {
+func (w *window) farHostName(key MachineID) string {
 	for _, m := range w.machineList {
 		if m.ID == key {
 			return m.Name
 		}
 	}
-	_, host, _ := strings.Cut(key, farSep)
+	_, host, _ := key.Far()
 	return host
 }
 
 // quick reports whether machine id is a quick connection.
-func (w *window) quick(id string) bool {
+func (w *window) quick(id MachineID) bool {
 	return slices.ContainsFunc(w.machineList, func(m Machine) bool { return m.ID == id && m.Quick })
 }
 
 // named is nameOf for the sidebar: a machine's name, and whether it is
 // a quick connection.
-func (w *window) named(id string) (string, bool) {
-	if strings.Contains(id, farSep) {
+func (w *window) named(id MachineID) (string, bool) {
+	if _, _, far := id.Far(); far {
 		// Under its window's heading: its own name alone.
 		return w.farHostName(id), false
 	}
@@ -1350,7 +1350,7 @@ func (w *window) named(id string) (string, bool) {
 
 // cmdName is what a machine is called in a command's ID, as a
 // shortcuts file names it: by its name, not its ID.
-func (w *window) cmdName(id string) string {
+func (w *window) cmdName(id MachineID) string {
 	if id == "" {
 		return remote.CommandName("")
 	}
@@ -1359,7 +1359,7 @@ func (w *window) cmdName(id string) string {
 
 // commandAt is a machine to run a command on, and where its pane goes.
 type commandAt struct {
-	machine string
+	machine MachineID
 	at      placement
 }
 
@@ -1504,9 +1504,9 @@ func (w *window) update(st State, u *gunim.UI) {
 			r.cells.Size = st.FontSize
 		}
 	}
-	saved := make([]string, 0, len(st.Saved))
+	saved := make([]MachineID, 0, len(st.Saved))
 	for _, h := range st.Saved {
-		saved = append(saved, h.ID)
+		saved = append(saved, MachineID(h.ID))
 	}
 	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows, saved, w.named, st.Dropped...)
 	// The windows connected to this one, under this computer.
@@ -1832,7 +1832,7 @@ func (w *window) paneNode(id string) gunim.Node {
 			case p.Machine == "":
 				where = "This computer"
 			case p.On != "":
-				where = w.nameOf(p.Machine + farSep + p.On)
+				where = w.nameOf(farID(p.Machine, p.On))
 			}
 			c.label.SetText(where + ": " + p.Title)
 		}
@@ -2028,17 +2028,17 @@ type sideItem struct {
 // first, then each server in the order its first pane opened, and
 // each server's tunnels after its panes. A tunnel's pane is lit on the
 // tunnel's row.
-func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []string, named func(string) (string, bool), dropped ...string) []sideItem {
+func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWindow, saved []MachineID, named func(MachineID) (string, bool), dropped ...MachineID) []sideItem {
 	if named == nil {
-		named = func(m string) (string, bool) { return m, false }
+		named = func(m MachineID) (string, bool) { return string(m), false }
 	}
 	notes := map[string]string{}
 	for _, p := range share.Panes {
 		notes[p.Pane] = p.Note
 	}
-	machines := []string{""}
-	seen := map[string]bool{"": true}
-	add := func(m string) {
+	machines := []MachineID{Local}
+	seen := map[MachineID]bool{Local: true}
+	add := func(m MachineID) {
 		if !seen[m] {
 			seen[m] = true
 			machines = append(machines, m)
@@ -2089,7 +2089,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 			// the heading, whose right is its plus.
 			name += " (quick)"
 		}
-		out = append(out, sideItem{key: "machine:" + m, text: name, heading: true})
+		out = append(out, sideItem{key: "machine:" + string(m), text: name, heading: true})
 		for _, p := range panes {
 			if p.Machine == m && p.On == "" && !shown[p.Tunnel] {
 				out = append(out, paneRow(p))
@@ -2104,7 +2104,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 			// from here.
 			for _, o := range w.Open {
 				if o.Key() == "" {
-					out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+					out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
 				} else if !slices.Contains(far, o.Key()) {
 					far = append(far, o.Key())
 				}
@@ -2119,8 +2119,8 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 		// step in: this window's panes on it, and what the window has
 		// open there.
 		for _, host := range far {
-			hostName, _ := named(m + farSep + host)
-			out = append(out, sideItem{key: "machine:" + m + farSep + host, text: hostName, heading: true, depth: 1})
+			hostName, _ := named(farID(m, host))
+			out = append(out, sideItem{key: "machine:" + string(farID(m, host)), text: hostName, heading: true, depth: 1})
 			for _, p := range panes {
 				if p.Machine == m && p.On == host {
 					out = append(out, paneRow(p))
@@ -2132,7 +2132,7 @@ func sidebarRows(panes []Pane, tunnels []Tunnel, share Share, windows []RemoteWi
 				}
 				for _, o := range w.Open {
 					if o.Key() == host {
-						out = append(out, sideItem{key: "window:" + m + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
+						out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: AttachWindow{Window: m, ID: o.ID}, dim: true})
 					}
 				}
 			}
@@ -2155,7 +2155,7 @@ type sideRow struct {
 	// machine is the machine a heading heads, which its plus opens a
 	// menu for; menu is that menu while it is open, which holds the
 	// keyboard, and back what had the keyboard before.
-	machine string
+	machine MachineID
 	menu    *widget.Menu
 	popup   *gunim.Popup
 	back    gunim.Node
@@ -2196,7 +2196,7 @@ func (r *sideRow) set(it sideItem) {
 	r.click, r.local, r.closes, r.key = it.click, it.local, it.closes, it.key
 	r.marks.set(it)
 	if m, ok := strings.CutPrefix(it.key, "machine:"); ok && it.heading {
-		r.machine = m
+		r.machine = MachineID(m)
 	}
 	if !it.heading {
 		r.title.Color = widget.Ink
@@ -2520,8 +2520,8 @@ func (w *window) focusSidebar(u *gunim.UI) {
 
 // machines are the machines panes can open on: this computer, the
 // servers connected to, and the windows connected to.
-func (w *window) machines() []string {
-	out := []string{""}
+func (w *window) machines() []MachineID {
+	out := []MachineID{Local}
 	out = append(out, w.connected...)
 	for _, rw := range w.remoteWindows {
 		out = append(out, rw.Name)
@@ -2650,7 +2650,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	send := func(in gunim.Intent) func(*gunim.UI) { return func(u *gunim.UI) { u.Send(w, in) } }
 	window := slices.ContainsFunc(w.remoteWindows, func(rw RemoteWindow) bool { return rw.Name == m })
 	for _, h := range w.saved {
-		if h.ID == m && h.Window && !window {
+		if MachineID(h.ID) == m && h.Window && !window {
 			// Saved as a window and not connected: nothing that needs a
 			// shell applies.
 			saved := h
@@ -2697,7 +2697,7 @@ func (w *window) openMachineMenu(r *sideRow, u *gunim.UI) {
 			add(icon.Unplug, "Disconnect", send(Disconnect{Machine: m}))
 		}
 		for _, h := range w.saved {
-			if h.ID == m {
+			if MachineID(h.ID) == m {
 				saved := h
 				what := "Server"
 				if h.Window {
@@ -2749,7 +2749,7 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 			add("Move "+p.Title, w.nameOf(p.Machine), MovePane{Pane: p.ID, Beside: focus, Vertical: vertical})
 		}
 	}
-	here := ""
+	here := Local
 	for _, p := range w.panes {
 		if p.ID == focus {
 			here = p.Machine
@@ -2763,8 +2763,8 @@ func (w *window) askSplit(vertical bool, u *gunim.UI) {
 	}
 	// The saved servers not connected to, which cost a sign-in first.
 	for _, h := range w.saved {
-		if !h.Window && !slices.Contains(machines, h.ID) {
-			add("Terminal on "+h.Name+", connecting first", h.Address, SplitPane{Vertical: vertical, Machine: h.ID, Elsewhere: true})
+		if !h.Window && !slices.Contains(machines, MachineID(h.ID)) {
+			add("Terminal on "+h.Name+", connecting first", h.Address, SplitPane{Vertical: vertical, Machine: MachineID(h.ID), Elsewhere: true})
 		}
 	}
 	// A command beside it, asked for once picked: not on a kakel

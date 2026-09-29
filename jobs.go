@@ -56,7 +56,8 @@ type Job struct {
 	Title string
 	// Machine is where it works, as its row in the sidebar is filed,
 	// and Kind is copy, move or delete.
-	Machine, Kind string
+	Machine MachineID
+	Kind    string
 	// Detail says how far it has got, or how it ended.
 	Detail string
 	// Share is how much is done, from 0 to 1, and below zero while the
@@ -90,7 +91,7 @@ const mostFinishedJobs = 20
 type fileClip struct {
 	kind    jobs.Kind
 	from    vfs.FS
-	machine string
+	machine MachineID
 	at      string
 	names   []string
 }
@@ -98,9 +99,10 @@ type fileClip struct {
 // FileClip is the file clipboard as the window shows it: the names
 // waiting in folder At of the files kept under Key.
 type FileClip struct {
-	Key, At string
-	Names   []string
-	Cut     bool
+	Key   MachineID
+	At    string
+	Names []string
+	Cut   bool
 }
 
 // jobKind names a kind of job for its row's icon.
@@ -123,7 +125,7 @@ type running struct {
 	// do it again; speeds are its speed, sampled as it is looked at,
 	// from lastBytes at lastAt.
 	op       jobs.Op
-	from, to string
+	from, to MachineID
 	// fromID and toID are the saved servers at either end, which a
 	// repeat finds by id, whatever they are called by then.
 	fromID, toID string
@@ -198,7 +200,7 @@ func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
 
 // followOn is follow, for a job between the machines from and to, which
 // a repeat opens again.
-func (a *app) followOn(op jobs.Op, title, from, to string) *jobs.Job {
+func (a *app) followOn(op jobs.Op, title string, from, to MachineID) *jobs.Job {
 	if a.jobs == nil {
 		a.jobs = jobs.New(2)
 	}

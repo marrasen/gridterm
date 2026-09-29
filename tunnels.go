@@ -25,7 +25,7 @@ import (
 // Tunnel is a forwarded port, as the sidebar lists it.
 type Tunnel struct {
 	ID      string
-	Machine string
+	Machine MachineID
 	// Label says what it forwards, as ":8080 → db:5432".
 	Label string
 	// Note says what it is doing: the streams it carries, how many
@@ -47,7 +47,7 @@ type (
 	// asked about first; Sure is the answer. Saved says it was opened
 	// from the saved list, whose order stays as it is.
 	OpenTunnel struct {
-		Machine string
+		Machine MachineID
 		Tunnel  remote.Tunnel
 		Keep    bool
 		Sure    bool
@@ -304,7 +304,7 @@ func (a *app) tunnelStopped(id, why string, err error) error {
 // local one listens here, which the far end going does nothing to, so
 // each is closed. A connection let go of on purpose takes its tunnels'
 // rows with it; one that dropped leaves them, stopped, until cleared.
-func (a *app) tunnelsDiedOn(machine string, letGo bool) error {
+func (a *app) tunnelsDiedOn(machine MachineID, letGo bool) error {
 	var errs []error
 	for _, t := range slices.Clone(a.st.Tunnels) {
 		switch {
@@ -417,11 +417,11 @@ func (a *app) openSavedTunnel(saved settings.SavedTunnel) error {
 }
 
 // serverID is the ID of the saved server named machine, or "".
-func (a *app) serverID(machine string) string {
+func (a *app) serverID(machine MachineID) string {
 	// Beyond a window: the window's.
-	machine, _, _ = strings.Cut(machine, farSep)
+	machine, _, _ = machine.Far()
 	if _, ok := a.savedHost(machine); ok {
-		return machine
+		return string(machine)
 	}
 	return ""
 }

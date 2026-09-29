@@ -90,7 +90,7 @@ func TestRemovingAServerClosesItsConnection(t *testing.T) {
 
 func TestTheRemoveQuestionSaysWhatItCloses(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []string{"srv"}, Dialing: []string{"far"}})
+	publish(State{Panes: []Pane{{ID: "p1", Title: "Terminal 1", Machine: "srv"}}, Connected: []MachineID{"srv"}, Dialing: []MachineID{"far"}})
 	if got := win.removeSays("srv"); got != "srv is connected. Removing it closes the connection and everything through it: 1 pane." {
 		t.Fatalf("for a connected server it says %q", got)
 	}
@@ -130,7 +130,7 @@ func TestOpeningOnASavedServerConnectsFirst(t *testing.T) {
 }
 
 func TestSavedServersAreListedWithAWayToConnect(t *testing.T) {
-	rows := sidebarRows(nil, nil, Share{}, nil, []string{"desk"}, nil)
+	rows := sidebarRows(nil, nil, Share{}, nil, []MachineID{"desk"}, nil)
 	if !slices.ContainsFunc(rows, func(r sideItem) bool { return r.key == "machine:desk" && r.heading }) {
 		t.Fatalf("a saved server has no heading: %+v", rows)
 	}

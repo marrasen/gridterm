@@ -18,9 +18,41 @@ import (
 //
 // A name is looked up from the ID wherever one is shown.
 
+// MachineID is what the program knows a machine by, and keys
+// everything on it by: a saved server's or window's ID in the server
+// list, a quick connection's own, Local, or the key of a machine beyond
+// a served window. Never a name: a name is shown, and looked up from
+// this, and one is turned into this only where a person or another
+// window names a machine, by idOf.
+type MachineID string
+
+// Local is this computer.
+const Local MachineID = ""
+
+// farID is the key of the machine window reaches, which window knows by
+// key.
+func farID(window MachineID, key string) MachineID {
+	return window + MachineID(farSep+key)
+}
+
+// Far splits the key of a machine beyond a window into the window and
+// the window's key for it, and reports whether m is one.
+func (m MachineID) Far() (window MachineID, key string, ok bool) {
+	w, k, ok := strings.Cut(string(m), farSep)
+	return MachineID(w), k, ok
+}
+
+// Of reports whether m is machine, or a machine beyond it: a window's
+// own, or one it reaches.
+func (m MachineID) Of(machine MachineID) bool {
+	window, _, far := m.Far()
+	return m == machine || (far && window == machine)
+}
+
 // Machine is a machine the window can show, by its ID, with its name.
 type Machine struct {
-	ID, Name string
+	ID   MachineID
+	Name string
 	// Quick says it was connected to by typing its address, Target, and
 	// is not saved. Window says it is another kakel window.
 	Quick  bool
@@ -38,37 +70,37 @@ type quickConn struct {
 // newQuick notes a quick connection to target, and returns its ID: the
 // one it has already while one to that address is kept, for a
 // reconnect, and a new one otherwise.
-func (a *app) newQuick(target string, window bool) string {
+func (a *app) newQuick(target string, window bool) MachineID {
 	for id, q := range a.quick {
 		if q.target == target && q.window == window {
 			return id
 		}
 	}
-	id := remote.QuickID()
+	id := MachineID(remote.QuickID())
 	a.quick[id] = quickConn{target: target, window: window}
 	return id
 }
 
 // isQuick reports whether id is a quick connection's.
-func (a *app) isQuick(id string) bool {
+func (a *app) isQuick(id MachineID) bool {
 	_, ok := a.quick[id]
 	return ok
 }
 
 // nameOf is what machine id is called: a saved server's name now, a
-// quick connection's address, and "this computer" for "".
-func (a *app) nameOf(id string) string {
-	if window, host, far := strings.Cut(id, farSep); far {
-		return a.farName(window, host) + " through " + a.nameOf(window)
+// quick connection's address, and "this computer" for Local.
+func (a *app) nameOf(id MachineID) string {
+	if window, key, far := id.Far(); far {
+		return a.farName(window, key) + " through " + a.nameOf(window)
 	}
 	switch {
-	case id == "":
+	case id == Local:
 		return "this computer"
 	case a.quick[id].target != "":
 		return a.quick[id].target
 	}
 	if a.book != nil {
-		if name, ok := a.book.NameOf(id); ok {
+		if name, ok := a.book.NameOf(string(id)); ok {
 			return name
 		}
 	}
@@ -76,12 +108,12 @@ func (a *app) nameOf(id string) string {
 	if name := a.goneNames[id]; name != "" {
 		return name
 	}
-	return id
+	return string(id)
 }
 
 // farName is what window calls the machine it reaches by key.
-func (a *app) farName(window, key string) string {
-	if name := a.farNames[window+farSep+key]; name != "" {
+func (a *app) farName(window MachineID, key string) string {
+	if name := a.farNames[farID(window, key)]; name != "" {
 		return name
 	}
 	return key
@@ -90,20 +122,22 @@ func (a *app) farName(window, key string) string {
 // idOf is the machine a name says, as one typed, or asked for by an
 // agent or another window: this computer for "" or its name, a saved
 // server by its name, a quick connection by its address, and one known
-// by its ID already. It reports false for none.
-func (a *app) idOf(name string) (string, bool) {
+// by its ID already. It reports false for none. Names become IDs here,
+// and nowhere else.
+func (a *app) idOf(name string) (MachineID, bool) {
+	id := MachineID(name)
 	switch {
 	case name == "" || strings.EqualFold(name, "this computer"):
-		return "", true
-	case a.isQuick(name), a.conns[name] != nil, a.windows[name] != nil:
-		return name, true
+		return Local, true
+	case a.isQuick(id), a.conns[id] != nil, a.windows[id] != nil:
+		return id, true
 	}
 	if a.book != nil {
 		if h, ok := a.book.LookupID(name); ok {
-			return h.ID, true
+			return MachineID(h.ID), true
 		}
 		if h, ok := a.book.Lookup(name); ok {
-			return h.ID, true
+			return MachineID(h.ID), true
 		}
 	}
 	for id, q := range a.quick {
@@ -111,20 +145,20 @@ func (a *app) idOf(name string) (string, bool) {
 			return id, true
 		}
 	}
-	return "", false
+	return Local, false
 }
 
 // savedHost is the saved server or window with ID id.
-func (a *app) savedHost(id string) (remote.Host, bool) {
-	if a.book == nil {
+func (a *app) savedHost(id MachineID) (remote.Host, bool) {
+	if a.book == nil || id == Local {
 		return remote.Host{}, false
 	}
-	return a.book.LookupID(id)
+	return a.book.LookupID(string(id))
 }
 
 // isWindow reports whether machine id is a kakel window: one connected
 // to, a saved one, or a quick one.
-func (a *app) isWindow(id string) bool {
+func (a *app) isWindow(id MachineID) bool {
 	if a.windows[id] != nil || a.quick[id].window {
 		return true
 	}
@@ -138,7 +172,7 @@ func (a *app) machines() []Machine {
 	var out []Machine
 	if a.book != nil {
 		for _, h := range a.book.Hosts() {
-			out = append(out, Machine{ID: h.ID, Name: h.Name, Window: h.Window})
+			out = append(out, Machine{ID: MachineID(h.ID), Name: h.Name, Window: h.Window})
 		}
 	}
 	for id, q := range a.quick {
@@ -154,17 +188,17 @@ func (a *app) machines() []Machine {
 			out = append(out, Machine{ID: id, Name: name})
 		}
 	}
-	slices.SortFunc(out, func(x, y Machine) int { return strings.Compare(x.ID, y.ID) })
+	slices.SortFunc(out, func(x, y Machine) int { return strings.Compare(string(x.ID), string(y.ID)) })
 	return out
 }
 
 // used reports whether anything is kept on machine id: a connection, a
-// dial, a pane, a tunnel, a job or a dropped row.
-func (a *app) used(id string) bool {
+// dial, a pane, a tunnel, a job or a dropped row, on it or beyond it.
+func (a *app) used(id MachineID) bool {
 	if a.conns[id] != nil || a.windows[id] != nil || a.dialing[id] || a.dropped[id] {
 		return true
 	}
-	on := func(m string) bool { return m == id || strings.HasPrefix(m, id+farSep) }
+	on := func(m MachineID) bool { return m.Of(id) }
 	if c := a.clip; c != nil && on(c.machine) {
 		return true
 	}
@@ -184,15 +218,14 @@ func (a *app) forgetQuick() {
 			continue
 		}
 		delete(a.quick, id)
-		delete(a.accounts, id)
-		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == id })
+		a.forgetAccount(id)
 		a.forgetFar(id)
 	}
 	// Names of machines beyond windows go once their window is not
 	// connected and nothing open is on them.
 	for key := range a.farNames {
-		window, _, _ := strings.Cut(key, farSep)
-		if a.windows[window] == nil && !slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.On != "" && p.Machine+farSep+p.On == key }) {
+		window, _, _ := key.Far()
+		if a.windows[window] == nil && !slices.ContainsFunc(a.st.Panes, func(p Pane) bool { return p.On != "" && farID(p.Machine, p.On) == key }) {
 			delete(a.farNames, key)
 		}
 	}
@@ -201,8 +234,13 @@ func (a *app) forgetQuick() {
 	for id := range a.goneNames {
 		if !a.used(id) {
 			delete(a.goneNames, id)
-			delete(a.accounts, id)
-			a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n string) bool { return n == id })
+			a.forgetAccount(id)
 		}
 	}
+}
+
+// forgetAccount lets go of machine id's connection log.
+func (a *app) forgetAccount(id MachineID) {
+	delete(a.accounts, id)
+	a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n MachineID) bool { return n == id })
 }

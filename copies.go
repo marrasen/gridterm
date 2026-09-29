@@ -67,11 +67,13 @@ func (a *app) repeatJob(id string) error {
 	if r.repeating {
 		return nil
 	}
-	from, err := a.machineNow(r.from, r.fromID)
+	// Found again as a saved copy is: the machines may have gone and
+	// come back under other IDs meanwhile.
+	from, err := a.machineNow(a.keptAs(r.from), r.fromID)
 	if err != nil {
 		return err
 	}
-	to, err := a.machineNow(r.to, r.toID)
+	to, err := a.machineNow(a.keptAs(r.to), r.toID)
 	if err != nil {
 		return err
 	}
@@ -82,7 +84,7 @@ func (a *app) repeatJob(id string) error {
 // copyBetween copies names from a folder on one machine into a folder
 // on another, opening the files of both first. over is run once the
 // copy has started, or could not.
-func (a *app) copyBetween(from, to, at, into string, names []string, over func()) error {
+func (a *app) copyBetween(from, to MachineID, at, into string, names []string, over func()) error {
 	err := a.withFilesOr(from, func(ff vfs.FS) {
 		if err := a.withFilesOr(to, func(tf vfs.FS) {
 			over()
@@ -148,14 +150,14 @@ func (a *app) runSavedCopy(c settings.SavedCopy) error {
 // the saved server with id, whatever it is called now, or, kept with
 // none, this computer or a quick connection to name, the address it was
 // kept with. A server removed from the list is refused.
-func (a *app) machineNow(name, id string) (string, error) {
+func (a *app) machineNow(name, id string) (MachineID, error) {
 	if window, host, far := strings.Cut(name, farSep); far {
 		// Beyond a window, the window found as it was kept.
 		w, err := a.machineNow(window, id)
 		if err != nil {
 			return "", err
 		}
-		return w + farSep + host, nil
+		return farID(w, host), nil
 	}
 	switch {
 	case id == "" && name == "":
@@ -163,32 +165,32 @@ func (a *app) machineNow(name, id string) (string, error) {
 	case id == "":
 		// A quick connection, the one there is to that address or one
 		// made for it.
-		if known, ok := a.idOf(name); ok && !strings.Contains(known, farSep) {
-			return known, nil
+		if known, ok := a.idOf(name); ok {
+			if _, _, far := known.Far(); !far {
+				return known, nil
+			}
 		}
 		return a.newQuick(name, false), nil
 	case a.book == nil:
 		return "", fmt.Errorf("the server list could not be read, so %s cannot be found", name)
 	}
-	if _, ok := a.savedHost(id); !ok {
+	if _, ok := a.savedHost(MachineID(id)); !ok {
 		return "", fmt.Errorf("%s was removed from the server list", name)
 	}
-	return id, nil
+	return MachineID(id), nil
 }
 
 // keptAs is what a piece of work kept for next time says it runs on,
 // beside the ID of the saved server it runs on: the server's name, for
 // the list to show, a quick connection's address, to connect to it again
 // by, and "" for this computer. Beyond a window: the window so, and
-func (a *app) keptAs(machine string) string {
-	if machine == "" {
+// its name there, which the window takes back as it does the key and
+// which lasts where a quick connection's key does not.
+func (a *app) keptAs(machine MachineID) string {
+	if machine == Local {
 		return ""
 	}
-	// Beyond a window: the window as it is kept, and the window's own
-	// key for the machine, joined as the program joins them.
-	// its name there, which the window takes back as it does the key and
-	// which lasts where a quick connection's key does not.
-	if window, host, far := strings.Cut(machine, farSep); far {
+	if window, host, far := machine.Far(); far {
 		return a.keptAs(window) + farSep + a.farName(window, host)
 	}
 	return a.nameOf(machine)
@@ -226,16 +228,16 @@ func copiedWhat(c settings.SavedCopy) string {
 
 // copiedWhere says where a saved copy goes from and to: a saved server
 // by what named calls it now, and anything else as it was kept.
-func copiedWhere(c settings.SavedCopy, named func(string) string) string {
+func copiedWhere(c settings.SavedCopy, named func(MachineID) string) string {
 	end := func(machine, id, at string) string {
 		window, host, far := strings.Cut(machine, farSep)
 		switch {
 		case far && id != "" && named != nil:
-			machine = host + " through " + named(id)
+			machine = host + " through " + named(MachineID(id))
 		case far:
 			machine = host + " through " + window
 		case id != "" && named != nil:
-			machine = named(id)
+			machine = named(MachineID(id))
 		case machine == "":
 			machine = "this computer"
 		}

@@ -13,7 +13,7 @@ import (
 
 // ShowLog opens a log's pane, or goes to it: the connection log of
 // Machine, or the window's own when Machine is "".
-type ShowLog struct{ Machine string }
+type ShowLog struct{ Machine MachineID }
 
 // kindLog is a log's pane.
 const kindLog = "log"
@@ -24,7 +24,7 @@ var windowLog = logs.New(0, os.Stderr)
 
 // account returns the connection log of machine, made on first use.
 // A log that has one already carries on, under a line saying so.
-func (a *app) account(machine string) *logs.Lines {
+func (a *app) account(machine MachineID) *logs.Lines {
 	l, ok := a.accounts[machine]
 	if !ok {
 		l = logs.New(0, nil)
@@ -53,7 +53,7 @@ const (
 )
 
 // showLog opens a log's pane, or goes to the one open.
-func (a *app) showLog(machine string) {
+func (a *app) showLog(machine MachineID) {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
 			a.bringHere(p.ID)
@@ -78,7 +78,7 @@ func (a *app) showLog(machine string) {
 // the dial's steps, and why it failed, where the user is looking. It
 // returns the pane it opened, or "" when the log's pane was open
 // already, which it goes to instead. Closing the pane gives the dial up.
-func (a *app) watchDial(machine string) string {
+func (a *app) watchDial(machine MachineID) string {
 	for _, p := range a.st.Panes {
 		if p.Kind == kindLog && p.Machine == machine {
 			a.bringHere(p.ID)
@@ -96,7 +96,7 @@ func (a *app) watchDial(machine string) string {
 // pane watchDial opened: a terminal, when open says so, beside it,
 // with the log folding away so the terminal takes its room. The log
 // stays under the machine's menu.
-func (a *app) dialed(logPane, machine string, open bool) {
+func (a *app) dialed(logPane string, machine MachineID, open bool) {
 	if open {
 		if err := a.open(machine, placement{beside: logPane}); err != nil {
 			a.failed("Couldn't open a shell on "+a.nameOf(machine), err.Error())

@@ -293,7 +293,7 @@ func (a *app) tellServed() {
 		// which lasts where its ID does not.
 		hostID := ""
 		if _, saved := a.savedHost(p.Machine); saved {
-			hostID = p.Machine
+			hostID = string(p.Machine)
 		}
 		o := serve.Open{ID: p.ID, Host: host, HostID: hostID, Kind: kind, Label: p.Title, State: meter.Opened.String()}
 		if t := a.terminal(p.ID); t != nil {

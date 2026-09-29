@@ -80,7 +80,7 @@ func (a *app) droppedInto(id string) (string, bool) {
 // copyDropped copies dropped files into the folder the shell in a pane
 // said it was in, and says so once they are there. Nothing is typed:
 // the files are where the program is already looking.
-func (a *app) copyDropped(machine string, paths []string, dir string) error {
+func (a *app) copyDropped(machine MachineID, paths []string, dir string) error {
 	return a.withFiles(machine, func(to vfs.FS) {
 		// The shell's own spelling stays for what the user is told.
 		into := vfs.Spelled(to, dir)
@@ -113,7 +113,7 @@ func sameDir(a, b string) bool {
 // sayWhenArrived waits for a drop's copies and says what landed, in one
 // notice for the drop: a handful of files dragged in together is one
 // thing the user did.
-func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir, machine string) {
+func (a *app) sayWhenArrived(started []*jobs.Job, paths []string, dir string, machine MachineID) {
 	go func() {
 		failed := 0
 		for _, j := range started {
@@ -155,7 +155,7 @@ func arrived(names []string, dir, where string) string {
 // machine a pane runs on, and types each path once it is there. One
 // job for each, so each has a card of its own and a cross that stops
 // that one.
-func (a *app) uploadDropped(id, machine string, paths []string) error {
+func (a *app) uploadDropped(id string, machine MachineID, paths []string) error {
 	t := a.terminal(id)
 	return a.withFiles(machine, func(to vfs.FS) {
 		// Found off the program's goroutine, since it asks the machine.

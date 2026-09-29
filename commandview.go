@@ -15,13 +15,13 @@ import (
 func (w *window) commandDialog(u *gunim.UI) { w.commandDialogOn(w.machineOf(w.focused), u) }
 
 // commandDialogOn asks for a command to run on machine.
-func (w *window) commandDialogOn(machine string, u *gunim.UI) {
+func (w *window) commandDialogOn(machine MachineID, u *gunim.UI) {
 	w.commandDialogAt(machine, placement{}, u)
 }
 
 // commandDialogAt asks for a command to run on machine, its pane put
 // where at says.
-func (w *window) commandDialogAt(machine string, at placement, u *gunim.UI) {
+func (w *window) commandDialogAt(machine MachineID, at placement, u *gunim.UI) {
 	for _, rw := range w.remoteWindows {
 		if rw.Name == machine {
 			w.toasts.Show(widget.Toast{Title: w.nameOf(machine) + " is a kakel window", Body: "It has no shell to run a command in. Open a terminal on it instead."}, u)
@@ -96,12 +96,12 @@ func (w *window) savedCommandOn(c settings.SavedCommand) string {
 // server hostID, or on host as it was kept with none, is for machine:
 // the saved server by its ID, this computer, or a quick connection by
 // its address.
-func (w *window) keptFor(host, hostID, machine string) bool {
+func (w *window) keptFor(host, hostID string, machine MachineID) bool {
 	switch {
 	case hostID != "":
-		return hostID == machine
+		return MachineID(hostID) == machine
 	case host == "":
-		return machine == ""
+		return machine == Local
 	}
 	return machine != "" && w.nameOf(machine) == host
 }

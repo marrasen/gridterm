@@ -79,7 +79,7 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 // by its ID: a saved one, or a quick connection's address, as the same
 // quick connection. then hears how it went. A window is connected to
 // again by the user, and a server removed from the list is not.
-func (a *app) dialAgain(machine string, then func(error)) error {
+func (a *app) dialAgain(machine MachineID, then func(error)) error {
 	if q, ok := a.quick[machine]; ok {
 		if q.window {
 			return errors.New("the window " + a.nameOf(machine) + " has gone. Connect to it again first")

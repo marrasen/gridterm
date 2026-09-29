@@ -240,7 +240,7 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 	for _, t := range st.Tunnels {
 		tunnels[t.ID] = t
 	}
-	connected := func(m string) bool {
+	connected := func(m MachineID) bool {
 		return m == "" || slices.Contains(st.Connected, m) ||
 			slices.ContainsFunc(st.Windows, func(rw RemoteWindow) bool { return rw.Name == m })
 	}
@@ -248,8 +248,8 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 		r := &rows[i]
 		switch {
 		case r.heading && strings.HasPrefix(r.key, "machine:"):
-			m := strings.TrimPrefix(r.key, "machine:")
-			if _, _, far := strings.Cut(m, farSep); far {
+			m := MachineID(strings.TrimPrefix(r.key, "machine:"))
+			if _, _, far := m.Far(); far {
 				// A machine a window reached is there while the window is.
 				r.live = func(time.Time) meter.State { return meter.Opened }
 				continue
@@ -303,7 +303,7 @@ func (w *window) markRows(rows []sideItem, st State) []sideItem {
 	// The file work, each under the machine it works on. A finished
 	// one keeps its row, saying how it ended, until it is cleared.
 	for _, j := range st.Jobs {
-		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:"+j.Machine })
+		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:"+string(j.Machine) })
 		if at < 0 {
 			continue
 		}

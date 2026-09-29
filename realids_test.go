@@ -17,7 +17,7 @@ import (
 
 // realIDApp is dialApp with the IDs the server list gives, not names:
 // what tests of an ID and a name told apart need. It returns srv's ID.
-func realIDApp(t *testing.T) (a *app, srv string, answering func()) {
+func realIDApp(t *testing.T) (a *app, srv MachineID, answering func()) {
 	t.Helper()
 	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
@@ -44,7 +44,7 @@ func realIDApp(t *testing.T) (a *app, srv string, answering func()) {
 		}
 		a.hangUp()
 	})
-	return a, h.ID, func() {
+	return a, MachineID(h.ID), func() {
 		for _, q := range a.st.Asks {
 			ans := AskAnswered{ID: q.ID, Yes: true}
 			if len(q.Prompts) > 0 {
@@ -65,7 +65,7 @@ func TestAServerGoesByItsIDAndIsNamedByItsName(t *testing.T) {
 	if a.conns[srv] == nil || a.st.Panes[0].Machine != srv || a.nameOf(srv) != "srv" {
 		t.Fatalf("connected, it is kept as %v, the pane on %q, called %q", a.conns, a.st.Panes[0].Machine, a.nameOf(srv))
 	}
-	h, _ := a.book.LookupID(srv)
+	h, _ := a.book.LookupID(string(srv))
 	h.Name = "prod"
 	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
 		t.Fatal(err)
@@ -112,7 +112,7 @@ func TestACommandOnASavedWindowByItsIDIsRefused(t *testing.T) {
 		t.Fatal(err)
 	}
 	box, _ := a.book.Lookup("box")
-	if err := a.runCommand(RunCommand{Machine: box.ID, Line: "uptime"}); err == nil || !strings.Contains(err.Error(), "box is a kakel window") {
+	if err := a.runCommand(RunCommand{Machine: MachineID(box.ID), Line: "uptime"}); err == nil || !strings.Contains(err.Error(), "box is a kakel window") {
 		t.Fatalf("a command on a saved window said %v", err)
 	}
 }
@@ -146,8 +146,9 @@ func TestKeptWorkIsFoundForItsMachine(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(State{Machines: []Machine{{ID: "a1", Name: "srv"}, {ID: "quick-1", Name: "me@typed", Quick: true}}})
 	for _, c := range []struct {
-		host, id, machine string
-		want              bool
+		host, id string
+		machine  MachineID
+		want     bool
 	}{
 		{"old name", "a1", "a1", true},
 		// Kept before servers had IDs, by its name.
@@ -174,10 +175,10 @@ func TestAServersFilesSayWhatWentWrongByItsName(t *testing.T) {
 	}
 	waitFor(t, a, "the files", func() bool { return files != nil })
 	_, err := files.ReadDir("/no-such-folder-here")
-	if err == nil || !strings.Contains(err.Error(), "srv") || strings.Contains(err.Error(), srv) {
+	if err == nil || !strings.Contains(err.Error(), "srv") || strings.Contains(err.Error(), string(srv)) {
 		t.Fatalf("its files said %v", err)
 	}
-	h, _ := a.book.LookupID(srv)
+	h, _ := a.book.LookupID(string(srv))
 	h.Name = "prod"
 	if err := a.saveServer(SaveServer{Host: h, Under: "srv"}); err != nil {
 		t.Fatal(err)

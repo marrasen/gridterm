@@ -25,7 +25,7 @@ import (
 
 // withLinks gives pane id's hooks what follows its links, for a pane
 // on machine.
-func (a *app) withLinks(h shellHooks, id, machine string) shellHooks {
+func (a *app) withLinks(h shellHooks, id string, machine MachineID) shellHooks {
 	post := func(f func()) {
 		go func() {
 			select {
@@ -59,7 +59,7 @@ func (a *app) withLinks(h shellHooks, id, machine string) shellHooks {
 
 // openLink opens an address in the browser: through a tunnel when it
 // is on a server's own loopback.
-func (a *app) openLink(machine, at string) error {
+func (a *app) openLink(machine MachineID, at string) error {
 	if err := linkIsOpenable(at); err != nil {
 		return err
 	}
@@ -90,7 +90,7 @@ func (a *app) openLink(machine, at string) error {
 
 // tunnelTo is the address here of a tunnel to target on machine: one
 // already open, or a new one on a free port.
-func (a *app) tunnelTo(machine, target string) (string, error) {
+func (a *app) tunnelTo(machine MachineID, target string) (string, error) {
 	for _, t := range a.st.Tunnels {
 		open, ok := a.tunnels[t.ID]
 		if !ok || open.done || t.Machine != machine {
@@ -110,7 +110,7 @@ func (a *app) tunnelTo(machine, target string) (string, error) {
 
 // serviceOnTheFarEnd is where an address on a server's own loopback
 // points, as a target for a tunnel, and whether it is one.
-func serviceOnTheFarEnd(machine, at string) (string, bool) {
+func serviceOnTheFarEnd(machine MachineID, at string) (string, bool) {
 	if machine == "" {
 		return "", false
 	}
@@ -222,7 +222,7 @@ type farPath struct {
 
 // findFar is the file or folder a path in a pane on machine names, as
 // far as is known yet.
-func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
+func (a *app) findFar(machine MachineID, text, dir string) (string, bool, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" || strings.ContainsAny(text, "\r\n\x00") {
 		return "", false, false
@@ -234,7 +234,7 @@ func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
 		}
 		at = strings.TrimRight(dir, `/\`) + "/" + text
 	}
-	key := machine + "\x00" + at
+	key := string(machine) + "\x00" + at
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()
 	if known, ok := a.far.known[key]; ok {
@@ -299,11 +299,11 @@ func (a *app) findFar(machine, text, dir string) (string, bool, bool) {
 // forgetFar forgets what a machine said about its paths, once the files
 // it was said through have gone: a machine reached again under the same
 // name may be another, and its files may have changed meanwhile.
-func (a *app) forgetFar(machine string) {
+func (a *app) forgetFar(machine MachineID) {
 	a.far.mu.Lock()
 	defer a.far.mu.Unlock()
 	for key := range a.far.known {
-		if strings.HasPrefix(key, machine+"\x00") {
+		if strings.HasPrefix(key, string(machine)+"\x00") {
 			delete(a.far.known, key)
 		}
 	}
@@ -322,7 +322,7 @@ func windowsAbs(p string) bool {
 
 // openPath opens a path a link named: a folder in a file pane, a file
 // in the reader at line.
-func (a *app) openPath(machine, at string, isDir bool, line int) error {
+func (a *app) openPath(machine MachineID, at string, isDir bool, line int) error {
 	// A server's files are opened first when no file pane has yet.
 	return a.withFiles(machine, func(f vfs.FS) {
 		if !isDir {

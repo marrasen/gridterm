@@ -56,9 +56,9 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 
 // teachFar teaches a server's shell to say what it is doing, when its
 // saved server says to.
-func (a *app) teachFar(machine string, sess session.Session) {
+func (a *app) teachFar(machine MachineID, sess session.Session) {
 	for _, h := range a.st.Saved {
-		if h.ID == machine && h.Setup {
+		if MachineID(h.ID) == machine && h.Setup {
 			if typed := shellsetup.Typed(shellsetup.RouteFor(nil)); len(typed) > 0 {
 				_, _ = sess.Write(typed)
 			}

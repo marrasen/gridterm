@@ -47,8 +47,8 @@ func (a *app) notePanes() {
 			a.noticed[p.ID] = num
 			if text != "" {
 				from := "This computer"
-				if p.Machine != "" {
-					from = p.Machine
+				if p.Machine != Local {
+					from = a.nameOf(p.Machine)
 				}
 				from += ": " + p.Title
 				log.Printf("%s: %s", from, text)

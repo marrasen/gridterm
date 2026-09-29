@@ -209,7 +209,7 @@ func (a *app) startAgain(id string) error {
 // address than the pane was opened at, which a saved server edited
 // since leaves it. The new run goes under the old transcript, and the
 // two would otherwise read as one machine.
-func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine string) {
+func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine MachineID) {
 	was, now := a.paneAt[id], a.reached[machine]
 	if was == "" || now == "" || was == now {
 		return
@@ -293,10 +293,10 @@ func (a *app) giveSavedIDs() {
 
 // ClearMachine takes a machine whose connection went off the sidebar,
 // with the ended panes on it.
-type ClearMachine struct{ ID string }
+type ClearMachine struct{ ID MachineID }
 
 // clearMachine takes a machine whose connection went off the sidebar.
-func (a *app) clearMachine(name string) {
+func (a *app) clearMachine(name MachineID) {
 	delete(a.dropped, name)
 	for _, p := range slices.Clone(a.st.Panes) {
 		if p.Machine == name && p.Ended {
@@ -350,6 +350,6 @@ func (a *app) onWindowsOwn(id string) {
 	delete(a.farHost, id)
 	a.setPane(id, func(p *Pane) { p.On = "" })
 	if t := a.terminal(id); t != nil && was != "" {
-		t.Say("It ran on " + a.nameOf(a.machineOf(id)+farSep+was) + ", where it is not open any more: this one is on the window's own machine.")
+		t.Say("It ran on " + a.nameOf(farID(a.machineOf(id), was)) + ", where it is not open any more: this one is on the window's own machine.")
 	}
 }

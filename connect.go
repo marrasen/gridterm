@@ -63,13 +63,14 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	var hops []remote.Config
 	// names are the hops' IDs, the saved servers they are, and empty for
 	// a typed target; shown is what each is called.
-	var names, shown []string
+	var names []MachineID
+	var shown []string
 	name := in.Server
 	if in.Server != "" {
 		if a.book == nil {
 			return fmt.Errorf("kakel: the server list could not be read")
 		}
-		hosts, err := a.book.RouteID(in.Server)
+		hosts, err := a.book.RouteID(string(in.Server))
 		if err != nil {
 			return err
 		}
@@ -79,11 +80,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			if len(last.Identities) > 0 {
 				key = last.Identities[0]
 			}
-			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: last.ID})
+			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: MachineID(last.ID)})
 		}
 		for _, h := range hosts {
 			hops = append(hops, h.Config())
-			names = append(names, h.ID)
+			names = append(names, MachineID(h.ID))
 			shown = append(shown, h.Name)
 		}
 	} else {
@@ -92,7 +93,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			return err
 		}
 		hops = []remote.Config{cfg}
-		names, shown = []string{""}, []string{cfg.Target()}
+		names, shown = []MachineID{Local}, []string{cfg.Target()}
 		// A quick connection, by the ID it has while it is kept.
 		name = in.As
 		if !a.isQuick(name) {
@@ -222,7 +223,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 // askAboutTheOneOnItsWay asks what to do about a server already being
 // connected to: wait for that one, which then does what was asked; give
 // it up and connect again; or drop what was asked.
-func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name string, then func(error)) {
+func (a *app) askAboutTheOneOnItsWay(in ConnectTo, name MachineID, then func(error)) {
 	called := a.nameOf(name)
 	go func() {
 		ans, err := a.ask(a.ctx, Ask{Title: "Already connecting to " + called, Choose: []string{"Wait", "Retry"}, No: "Cancel"})
@@ -294,14 +295,14 @@ type asker struct {
 	a *app
 	// name is the machine being connected to, whose log and dial a
 	// notice belongs to.
-	name string
+	name MachineID
 	// asked says a password was asked for on this connection already,
 	// so asking again means the last one was refused.
 	asked *bool
 }
 
 // newAsker asks the user what one connection to name needs to know.
-func newAsker(a *app, name string) asker { return asker{a: a, name: name, asked: new(bool)} }
+func newAsker(a *app, name MachineID) asker { return asker{a: a, name: name, asked: new(bool)} }
 
 // Passphrase implements [remote.Ask].
 func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
@@ -403,7 +404,7 @@ func (a *app) saveServer(in SaveServer) error {
 	a.st.Saved = a.book.Hosts()
 	// Its files say what goes wrong by its name, the new one.
 	if h, ok := a.book.Lookup(in.Host.Name); ok {
-		if f, ok := a.remoteFS[h.ID].(interface{ Renamed(string) }); ok {
+		if f, ok := a.remoteFS[MachineID(h.ID)].(interface{ Renamed(string) }); ok {
 			f.Renamed(h.Name)
 		}
 	}
@@ -419,12 +420,12 @@ func (a *app) saveServer(in SaveServer) error {
 }
 
 // removeServer forgets the saved server with ID name.
-func (a *app) removeServer(name string) error {
+func (a *app) removeServer(name MachineID) error {
 	if a.book == nil {
 		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
 	called := a.nameOf(name)
-	if err := a.book.RemoveID(name); err != nil {
+	if err := a.book.RemoveID(string(name)); err != nil {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
@@ -482,7 +483,7 @@ const agentMark = " (agent)"
 // index of the first hop to dial after it. With none, it returns nil
 // and 0. A hop whose saved server has been changed since is not gone
 // through: it may be another machine now.
-func (a *app) hopConnected(names []string, hops []remote.Config) (*remote.Conn, int) {
+func (a *app) hopConnected(names []MachineID, hops []remote.Config) (*remote.Conn, int) {
 	for i := len(names) - 2; i >= 0; i-- {
 		n := names[i]
 		if n == "" {
@@ -531,7 +532,7 @@ func dialFrom(ctx context.Context, start *remote.Conn, from int, hops []remote.C
 // keepHops keeps conn, reached by hops, and the connections it goes
 // through: made, the ones its dial made, for the next route to use, and
 // every one under it, counted as used by it.
-func (a *app) keepHops(conn *remote.Conn, names []string, hops []remote.Config, made []*remote.Conn) {
+func (a *app) keepHops(conn *remote.Conn, names []MachineID, hops []remote.Config, made []*remote.Conn) {
 	a.routes[conn] = routeOf(hops)
 	// The hops made are the last ones before the far end.
 	first := len(names) - 1 - len(made)
@@ -606,7 +607,7 @@ func (a *app) letGoOfRiders(c *remote.Conn) {
 // whether there is one. One to a saved server changed since, to another
 // address or another setting for the SSH agent, is to where it was:
 // opening on it is refused, saying to disconnect it first.
-func (a *app) connOf(machine string) (*remote.Conn, bool, error) {
+func (a *app) connOf(machine MachineID) (*remote.Conn, bool, error) {
 	c, ok := a.conns[machine]
 	if !ok {
 		return nil, false, nil
@@ -619,13 +620,13 @@ func (a *app) connOf(machine string) (*remote.Conn, bool, error) {
 
 // savedOtherwise says, as an error, that c, the connection to saved
 // server machine, was reached by another route than the one saved now.
-func (a *app) savedOtherwise(machine string, c *remote.Conn) error {
+func (a *app) savedOtherwise(machine MachineID, c *remote.Conn) error {
 	was := a.routes[c]
 	if a.book == nil || was == "" || a.connIDs[machine] == "" {
 		// Typed, not saved, or from before routes were kept.
 		return nil
 	}
-	hosts, err := a.book.RouteID(machine)
+	hosts, err := a.book.RouteID(string(machine))
 	if err != nil {
 		return nil
 	}

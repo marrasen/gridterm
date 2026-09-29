@@ -94,7 +94,7 @@ func TestAQuickConnectionIsForgottenOnceNothingIsOpenOnIt(t *testing.T) {
 	a.handle(ConnectTo{Target: target})
 	waitFor(t, a, "a shell there", func() bool { answering(); return oneShell(a) })
 	id := a.st.Panes[0].Machine
-	if !strings.HasPrefix(id, "quick-") || a.conns[id] == nil {
+	if !strings.HasPrefix(string(id), "quick-") || a.conns[id] == nil {
 		t.Fatalf("typed, it is kept as %q", id)
 	}
 	if got := a.nameOf(id); got != target {

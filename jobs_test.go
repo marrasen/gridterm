@@ -153,7 +153,7 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	a.book = book
 	desk, _ := book.Lookup("desk")
 	// By its ID, whatever it was called when the work was kept.
-	if got, err := a.machineNow("old name", desk.ID); got != desk.ID || err != nil {
+	if got, err := a.machineNow("old name", desk.ID); got != MachineID(desk.ID) || err != nil {
 		t.Fatalf("kept on desk as old name, it runs on %q, %v", got, err)
 	}
 	// Removed from the list since: refused.
@@ -167,7 +167,7 @@ func TestWorkKeptFromBeforeFindsItsServerByID(t *testing.T) {
 	}
 	first, _ := a.machineNow("me@typed.example", "")
 	again, _ := a.machineNow("me@typed.example", "")
-	if !strings.HasPrefix(first, "quick-") || again != first || a.nameOf(first) != "me@typed.example" {
+	if !strings.HasPrefix(string(first), "quick-") || again != first || a.nameOf(first) != "me@typed.example" {
 		t.Fatalf("kept on a typed address, it runs on %q then %q, called %q", first, again, a.nameOf(first))
 	}
 }
@@ -176,14 +176,16 @@ func TestRepeatPressedAgainWhileItsMachineOpensDoesNothingMore(t *testing.T) {
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
 	a := newApp(w.Client(), &shells{m: map[string]*shell{}})
 	a.ctx = t.Context()
-	// A machine that never answers, so the repeat stays on its way.
-	a.running = []*running{{id: "j1", op: jobs.Op{Kind: jobs.Copy, At: "/", Into: "/", Names: []string{"a"}}, from: "10.255.255.1:1", ended: true}}
+	// A quick connection to a machine that never answers, so the
+	// repeat stays on its way.
+	quick := a.newQuick("10.255.255.1:1", false)
+	a.running = []*running{{id: "j1", op: jobs.Op{Kind: jobs.Copy, At: "/", Into: "/", Names: []string{"a"}}, from: quick, ended: true}}
 	if err := a.repeatJob("j1"); err != nil {
 		t.Fatal(err)
 	}
-	// A quick connection to the address kept, by the ID it has.
-	quick, _ := a.idOf("10.255.255.1:1")
-	if !a.running[0].repeating || !a.dialing[quick] {
+	// The same quick connection, dialled at its address: not one made
+	// for its ID as if that were an address.
+	if !a.running[0].repeating || !a.dialing[quick] || len(a.quick) != 1 {
 		t.Fatalf("repeated, the job is %+v and dialing %v", a.running[0], a.dialing)
 	}
 	a.dialing[quick] = false

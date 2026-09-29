@@ -24,7 +24,8 @@ import (
 // RemoteWindow is a window this one is connected to, as the sidebar
 // shows it.
 type RemoteWindow struct {
-	Name, Addr string
+	Name MachineID
+	Addr string
 	// Open is what it has open, with a screen to work in, less what
 	// this window already shows.
 	Open []serve.Open
@@ -37,13 +38,19 @@ type (
 	// when it is empty. ID is the saved window's, or the quick
 	// connection's it is made again for; with none, it is a quick
 	// connection of its own.
-	ConnectWindow struct{ Addr, KeyFile, ID string }
+	ConnectWindow struct {
+		Addr, KeyFile string
+		ID            MachineID
+	}
 	// DisconnectWindow lets go of a window, by its ID, closing the
 	// panes on it.
-	DisconnectWindow struct{ ID string }
+	DisconnectWindow struct{ ID MachineID }
 	// AttachWindow works in something a window has open, in a pane
 	// here.
-	AttachWindow struct{ Window, ID string }
+	AttachWindow struct {
+		Window MachineID
+		ID     string
+	}
 )
 
 // knownWindowsFile is where the host keys of the windows connected to
@@ -155,7 +162,7 @@ func knownWindows() (string, error) {
 
 // holdWindow keeps a window connected to, following what it has open
 // and noticing when it goes.
-func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) {
+func (a *app) holdWindow(name MachineID, addr, keyFile string, win *serve.Window) {
 	w := &remoteWin{win: win, addr: addr, keyFile: keyFile, bound: map[string]string{}}
 	a.windows[name] = w
 	delete(a.dropped, name)
@@ -192,13 +199,13 @@ func (a *app) holdWindow(name, addr, keyFile string, win *serve.Window) {
 
 // windowGone lets go of a window whose connection has ended. Its panes
 // end with it, and say so.
-func (a *app) windowGone(name string, w *remoteWin, why error) {
+func (a *app) windowGone(name MachineID, w *remoteWin, why error) {
 	if a.windows[name] != w {
 		return
 	}
 	delete(a.windows, name)
 	for key, f := range a.remoteFS {
-		if key == name || strings.HasPrefix(key, name+farSep) {
+		if key.Of(name) {
 			_ = f.Close()
 			delete(a.remoteFS, key)
 			a.forgetFar(key)
@@ -243,7 +250,7 @@ func (a *app) windowGone(name string, w *remoteWin, why error) {
 }
 
 // disconnectWindow lets go of a window.
-func (a *app) disconnectWindow(name string) error {
+func (a *app) disconnectWindow(name MachineID) error {
 	w, ok := a.windows[name]
 	if !ok {
 		return nil
@@ -264,7 +271,7 @@ func (a *app) showWindows() {
 		w.seen = w.win.Opens()
 		for _, o := range w.seen {
 			if o.Key() != "" {
-				a.farNames[name+farSep+o.Key()] = o.Host
+				a.farNames[farID(name, o.Key())] = o.Host
 			}
 		}
 		rw := RemoteWindow{Name: name, Addr: w.addr}
@@ -279,12 +286,12 @@ func (a *app) showWindows() {
 		}
 		out = append(out, rw)
 	}
-	slices.SortFunc(out, func(x, y RemoteWindow) int { return strings.Compare(x.Name, y.Name) })
+	slices.SortFunc(out, func(x, y RemoteWindow) int { return strings.Compare(string(x.Name), string(y.Name)) })
 	a.st.Windows = out
 }
 
 // openOnWindow opens a shell on a window, in a pane here.
-func (a *app) openOnWindow(name, id, title string, at placement, then func(string, error)) error {
+func (a *app) openOnWindow(name MachineID, id, title string, at placement, then func(string, error)) error {
 	w := a.windows[name]
 	a.starting++
 	go func() {
@@ -346,7 +353,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 			a.addPane(Pane{ID: id, Title: open.Label, Machine: in.Window, On: open.Key()}, openShell(sess, a.palette, a.withLinks(a.hooks(id), id, in.Window)), placement{})
 			if open.Key() != "" {
 				a.farHost[id] = open.Key()
-				a.farNames[in.Window+farSep+open.Key()] = open.Host
+				a.farNames[farID(in.Window, open.Key())] = open.Host
 			}
 			w.bound[in.ID] = id
 			a.showWindows()
@@ -357,7 +364,7 @@ func (a *app) attachWindow(in AttachWindow) error {
 
 // giveUp stops a connection being made to machine, and reports
 // whether there was one.
-func (a *app) giveUp(machine string) bool {
+func (a *app) giveUp(machine MachineID) bool {
 	cancel, ok := a.dialCancel[machine]
 	if ok {
 		cancel()
@@ -369,10 +376,10 @@ func (a *app) giveUp(machine string) bool {
 // Disconnect closes the connection to a server or a window. Its panes
 // end, and say so, and can be started again once it is connected
 // again.
-type Disconnect struct{ Machine string }
+type Disconnect struct{ Machine MachineID }
 
 // disconnect closes the connection to machine.
-func (a *app) disconnect(machine string) error {
+func (a *app) disconnect(machine MachineID) error {
 	if a.giveUp(machine) {
 		return nil
 	}

@@ -19,8 +19,9 @@ import (
 // RunCommand runs Line in a pane of its own on Machine, in Dir when
 // given, and keeps it for next time with Keep.
 type RunCommand struct {
-	Machine, Line, Dir string
-	Keep               bool
+	Machine   MachineID
+	Line, Dir string
+	Keep      bool
 	// Beside puts its pane in a split beside that pane, below it with
 	// Vertical, rather than on a stage of its own.
 	Beside   string
@@ -101,7 +102,7 @@ func (s commandStart) fail() {
 // startCommand starts cmd on machine and hands its session to s.then,
 // on the program's goroutine. A saved server not connected is connected
 // to first.
-func (a *app) startCommand(machine string, cmd command, s commandStart) error {
+func (a *app) startCommand(machine MachineID, cmd command, s commandStart) error {
 	line := strings.Join(cmd.argv, " ")
 	if machine == "" {
 		sess, err := a.startLocalSession(cmd.argv, cmd.dir, shellCols, shellRows, false)
@@ -115,7 +116,7 @@ func (a *app) startCommand(machine string, cmd command, s commandStart) error {
 	if err != nil {
 		return err
 	}
-	if _, _, far := strings.Cut(machine, farSep); !ok && !far {
+	if _, _, far := machine.Far(); !ok && !far {
 		// Not connected: connected to first, as a terminal there is.
 		return a.dialAgain(machine, func(err error) {
 			if err != nil {

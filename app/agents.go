@@ -385,10 +385,11 @@ func (a *app) toldAbout(h *handover) (agent.Pane, error) {
 	}, nil
 }
 
-// agentLabel is what the agent calls a pane: its title and where it is.
+// agentLabel is what the agent calls a pane: its title and where it
+// runs, beyond a window for one on a machine a window reaches.
 func (a *app) agentLabel(id string) string {
 	where := "this machine"
-	if m := a.machineOf(id); m != "" {
+	if m := a.filesKey(id); m != "" {
 		where = a.machines.Name(m)
 	}
 	return a.titleOf(id) + " on " + where
@@ -636,9 +637,15 @@ func (w agentWindow) Open(id string) (agent.Pane, error) {
 		if n >= mostOpened {
 			return struct{}{}, fmt.Errorf("you have opened %d panes from this one, which is as many as a hand-over gives: work in the ones you have, or ask the user for another pane", n)
 		}
-		machine := w.a.machineOf(h.pane)
-		if machine != "" && w.a.machines.Get(machine).Conn == nil {
-			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(machine))
+		// Where the pane runs: a server, a kakel window, or a machine
+		// beyond one, which that window opens the new pane on.
+		machine := w.a.filesKey(h.pane)
+		through, _, far := machine.Far()
+		if !far {
+			through = machine
+		}
+		if machine != "" && w.a.machines.Get(machine).Conn == nil && w.a.machines.Get(through).Window == nil {
+			return struct{}{}, fmt.Errorf("this window is not connected to %s any more, and opening connections is the user's to do: ask them to connect to it", w.a.machines.Name(through))
 		}
 		from = h
 		focus := w.a.st.Focus

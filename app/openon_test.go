@@ -7,9 +7,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/marrasen/kakel/agent"
+	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/settings"
 )
 
 // A window connected to another opens a terminal and runs a command on
@@ -241,4 +245,145 @@ func TestAWindowDisconnectsAServerBeyondAnother(t *testing.T) {
 			return n.Title == "Couldn't disconnect srv through "+b.machines.Name(win) && strings.Contains(n.Body, "srv")
 		})
 	})
+}
+
+// asAgentBoth runs f as an agent's calls come, running both windows'
+// sides until it is done: an agent working through b works in a too.
+func asAgentBoth(t *testing.T, a, b *app, f func()) {
+	t.Helper()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f()
+	}()
+	pumpBoth(t, a, b, "the agent's calls", func() bool {
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+// An agent handed a pane that runs on a server beyond a window reads
+// it, types into it, is told where it runs, and opens another there;
+// one handed a pane on the window's own machine opens one there.
+func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
+	_, conn, _ := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	win := b.st.Windows[0].Name
+	b.handle(OpenOn{Machine: machines.FarID(win, "srv")})
+	pumpBoth(t, a, b, "the terminal on the server", func() bool { return len(b.st.Panes) == 2 && len(a.st.Panes) == 3 })
+	onWin, onFar := b.st.Panes[0].ID, b.st.Panes[1].ID
+	pumpBoth(t, a, b, "the server's shell", func() bool { return strings.Contains(b.terminal(onFar).AllText(), "READY") })
+	b.handle(SharePane{Pane: onWin})
+	b.handle(SharePane{Pane: onFar})
+	for _, p := range []string{onWin, onFar} {
+		b.handle(SetAgentMay{Pane: p, May: settings.AgentMay{OpenMore: true, Restart: true}})
+	}
+	t.Cleanup(func() { _ = b.stopSharing() })
+	var c *agent.Client
+	var sh agent.Share
+	var err error
+	asAgentBoth(t, a, b, func() {
+		if c, err = agent.Dial(b.st.Share.Code); err == nil {
+			sh, err = c.Use(b.st.Share.Code)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	byLabel := map[string]agent.Pane{}
+	for _, p := range sh.Panes {
+		byLabel[p.Label] = p
+	}
+	name := b.machines.Name(win)
+	far, ok := byLabel["Terminal 3 on srv through "+name]
+	if !ok {
+		t.Fatalf("the agent is told of %+v", sh.Panes)
+	}
+
+	// It types into the server's shell, which echoes, and reads it back.
+	asAgentBoth(t, a, b, func() { err = c.Send(far.ID, "hello-far", []string{"Enter"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	var look agent.Look
+	pumpBoth(t, a, b, "the echo", func() bool { return strings.Contains(b.terminal(onFar).AllText(), "hello-far") })
+	asAgentBoth(t, a, b, func() { look, err = c.Read(far.ID, 0) })
+	if err != nil || !strings.Contains(look.Screen, "hello-far") {
+		t.Fatalf("it read %q, %v", look.Screen, err)
+	}
+
+	// Ended, it starts again there, on the server.
+	asAgentBoth(t, a, b, func() { err = c.Send(far.ID, "bye\n", nil) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the server's shell to end", func() bool { return b.terminal(onFar).Exited() })
+	var again agent.Pane
+	asAgentBoth(t, a, b, func() { again, err = c.Restart(far.ID) })
+	if err != nil || again.Ended {
+		t.Fatalf("restarted, it is %+v, %v", again, err)
+	}
+	pumpBoth(t, a, b, "the server's shell again", func() bool {
+		return !b.terminal(onFar).Exited() && strings.Count(b.terminal(onFar).AllText(), "READY") > 0
+	})
+	if b.farHost[onFar] != "srv" {
+		t.Fatalf("restarted, it runs on %q", b.farHost[onFar])
+	}
+
+	// It asks the user to type something there, and hears that they did.
+	answered := make(chan bool, 1)
+	go func() {
+		ok, err := c.Secret(far.ID, "the sudo password", 10*time.Second)
+		answered <- ok && err == nil
+	}()
+	pumpBoth(t, a, b, "the ask on the pane", func() bool { return b.terminal(onFar).AskedForASecret() })
+	_, _ = b.terminal(onFar).HandleKey(input.Event{Kind: input.Text, Rune: 'Q', NormalText: true})
+	_, _ = b.terminal(onFar).HandleKey(input.Event{Kind: input.KeyPress, Key: input.KeyEnter})
+	var typed bool
+	pumpBoth(t, a, b, "the answer", func() bool {
+		select {
+		case typed = <-answered:
+			return true
+		default:
+			return false
+		}
+	})
+	if !typed {
+		t.Fatal("the user typed, and the agent was told they did not")
+	}
+	pumpBoth(t, a, b, "what was typed, on the server", func() bool { return strings.Contains(a.terminal(a.st.Panes[2].ID).AllText(), "Q") })
+
+	// Another pane there, on the server, and on the window's machine.
+	var opened agent.Pane
+	asAgentBoth(t, a, b, func() { opened, err = c.Open(far.ID) })
+	if err != nil || opened.Label != "Terminal 4 on srv through "+name {
+		t.Fatalf("opened %+v, %v", opened, err)
+	}
+	if p := b.st.Panes[len(b.st.Panes)-1]; p.On != "srv" || !slices.ContainsFunc(a.st.Panes, func(q Pane) bool { return q.Machine == "srv" && q.ID != a.st.Panes[2].ID }) {
+		t.Fatalf("the new pane is %+v here, and there are %+v", p, a.st.Panes)
+	}
+	own, ok := byLabel["Terminal 2 on "+name]
+	if !ok {
+		t.Fatalf("the agent is told of %+v", sh.Panes)
+	}
+	// What a command it typed on the window's machine printed.
+	asAgentBoth(t, a, b, func() { err = c.Send(own.ID, "echo out-$((6*7))", []string{"Enter"}) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the command's output", func() bool { return strings.Contains(b.terminal(onWin).AllText(), "out-42") })
+	asAgentBoth(t, a, b, func() { look, err = c.Output(own.ID, 0) })
+	if err != nil || !strings.Contains(look.Screen, "out-42") {
+		t.Fatalf("its output read %q, %v", look.Screen, err)
+	}
+	asAgentBoth(t, a, b, func() { opened, err = c.Open(own.ID) })
+	if err != nil || opened.Label != "Terminal 5 on "+name {
+		t.Fatalf("opened on the window %+v, %v", opened, err)
+	}
 }

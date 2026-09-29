@@ -14,6 +14,7 @@ import (
 	"github.com/marrasen/kakel/input"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
+	"github.com/marrasen/kakel/screen"
 	"github.com/marrasen/kakel/serve"
 	"github.com/marrasen/kakel/settings"
 )
@@ -465,4 +466,36 @@ func TestAWindowsSavedFoldersReachTheOther(t *testing.T) {
 	pumpBoth(t, a, b, "the folders", func() bool {
 		return len(b.st.Windows) == 1 && slices.Equal(b.st.Windows[0].Folders["srv"], []string{"/var/log", "/srv/app"})
 	})
+}
+
+// A localhost link in a pane on a server beyond a window opens here,
+// through a tunnel that window carries to the server.
+func TestALocalhostLinkBeyondAWindowOpensThroughIt(t *testing.T) {
+	_, conn, echo := tunnelApp(t)
+	a, b := connectedWindows(t)
+	a.machines.At("srv").Conn = conn
+	win := b.st.Windows[0].Name
+	far := machines.FarID(win, "srv")
+	b.handle(OpenOn{Machine: far})
+	pumpBoth(t, a, b, "the terminal on the server", func() bool { return len(b.st.Panes) == 2 })
+	onFar := b.st.Panes[1].ID
+	opened := make(chan string, 1)
+	was := openInBrowser
+	openInBrowser = func(at string) error { opened <- at; return nil }
+	t.Cleanup(func() { openInBrowser = was })
+	_, port, _ := strings.Cut(echo, ":")
+	// As the pane's own link hook follows it, a click on the link.
+	b.withLinks(screen.Hooks{}, onFar, win).Link("http://localhost:" + port + "/app")
+	var got string
+	pumpBoth(t, a, b, "the browser", func() bool {
+		select {
+		case got = <-opened:
+			return true
+		default:
+			return false
+		}
+	})
+	if len(b.st.Tunnels) != 1 || b.st.Tunnels[0].Machine != far || strings.Contains(got, ":"+port+"/") || !strings.HasSuffix(got, "/app") {
+		t.Fatalf("opened %q over tunnels %+v", got, b.st.Tunnels)
+	}
 }

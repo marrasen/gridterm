@@ -37,7 +37,9 @@ func (a *app) withLinks(h screen.Hooks, id string, machine machines.ID) screen.H
 	}
 	h.Link = func(at string) {
 		post(func() {
-			if err := a.openLink(machine, at); err != nil {
+			// Where the pane runs as the link is followed: beyond its
+			// window, for one on a machine a window reaches.
+			if err := a.openLink(a.filesKey(id), at); err != nil {
 				a.failed("Couldn't open "+at, err.Error())
 			}
 		})
@@ -70,10 +72,18 @@ func (a *app) openLink(machine machines.ID, at string) error {
 		// browser here reaches it.
 		return openInBrowser(at)
 	}
-	if _, ok, err := a.connOf(machine); err != nil {
-		return err
-	} else if !ok {
-		return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", a.machines.Name(machine), at)
+	// Through a kakel window, that window carries the tunnel; otherwise
+	// the connection does.
+	through, _, far := machine.Far()
+	if !far {
+		through = machine
+	}
+	if a.machines.Get(through).Window == nil {
+		if _, ok, err := a.connOf(machine); err != nil {
+			return err
+		} else if !ok {
+			return fmt.Errorf("this window is not connected to %s any more, so its %s cannot be reached", a.machines.Name(machine), at)
+		}
 	}
 	local, err := a.tunnelTo(machine, target)
 	if err != nil {

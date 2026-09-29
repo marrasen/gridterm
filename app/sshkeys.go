@@ -90,9 +90,12 @@ func (a *app) keyWritten(key remote.NewKey, savedPassphrase bool) {
 		if err := a.settings.KeepKey(key.Path, mostKeptKeys); err != nil {
 			a.failed("Key created, but not added to the list", err.Error())
 		}
+		// Offered for the next server from now on, not from the next run.
+		a.st.KeyFiles = a.settings.Keys()
 	}
 	var b strings.Builder
 	b.WriteString("Private key: " + key.Path + "\nPublic key: " + key.Pub + "\n\n")
+	b.WriteString("Its public key line:\n" + key.Line + "\n\n")
 	if savedPassphrase {
 		b.WriteString("The passphrase is kept in the secrets.\n\n")
 	}

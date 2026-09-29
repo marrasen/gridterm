@@ -3,16 +3,24 @@ package app
 import (
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	"golang.org/x/crypto/ssh"
 
 	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/settings"
 )
 
 func TestANewKeyIsWrittenAndSaysHowToInstallIt(t *testing.T) {
 	a, _ := secretsApp(t)
+	set, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.settings = set
 	at := filepath.Join(t.TempDir(), "made_ed25519")
 	a.handle(MakeKey{Path: at, Comment: "me@here", Passphrase: "typed one"})
 	if _, err := os.Stat(at + ".pub"); err != nil {
@@ -25,6 +33,15 @@ func TestANewKeyIsWrittenAndSaysHowToInstallIt(t *testing.T) {
 	waitFor(t, a, "the steps", func() bool { return len(a.st.Asks) == 1 })
 	if a.st.Asks[0].Yes != "Copy Public Key" {
 		t.Fatalf("the steps offer %q", a.st.Asks[0].Yes)
+	}
+	// The line to install is shown, not only copied.
+	pub, _ := os.ReadFile(at + ".pub")
+	if !strings.Contains(a.st.Asks[0].Text, strings.TrimSpace(string(pub))) {
+		t.Fatalf("the steps do not show the public key line: %q", a.st.Asks[0].Text)
+	}
+	// And the key is offered for the next server at once.
+	if !slices.Contains(a.st.KeyFiles, at) {
+		t.Fatalf("made, the kept keys are %v", a.st.KeyFiles)
 	}
 }
 

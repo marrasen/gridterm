@@ -397,6 +397,11 @@ func (a *app) saveServer(in SaveServer) error {
 	if a.book == nil {
 		return fmt.Errorf("kakel: the saved servers could not be read")
 	}
+	// The key it had, to keep the one it has only when that changed.
+	var hadKey string
+	if old, ok := a.book.Lookup(in.Under); ok && in.Under != "" && len(old.Identities) > 0 {
+		hadKey = old.Identities[0]
+	}
 	// Everything open on it goes by its ID, so a new name is only a
 	// new name.
 	if err := a.book.Put(in.Host, in.Under); err != nil {
@@ -409,8 +414,10 @@ func (a *app) saveServer(in SaveServer) error {
 			f.Renamed(h.Name)
 		}
 	}
-	// Its key is kept, to be offered for the next server.
-	if len(in.Host.Identities) > 0 && a.settings != nil {
+	// Its key is kept, to be offered for the next server: a key chosen
+	// now, not one it had and was saved with again untouched, which
+	// would move to the front of the list for nothing.
+	if len(in.Host.Identities) > 0 && in.Host.Identities[0] != hadKey && a.settings != nil {
 		if err := a.settings.KeepKey(in.Host.Identities[0], mostKeptKeys); err != nil {
 			a.failed("Server saved, but its key was not kept", err.Error())
 		}

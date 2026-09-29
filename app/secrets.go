@@ -7,6 +7,7 @@ import (
 	"log"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -120,7 +121,10 @@ func (a *app) withSecrets(what string, then func(*secrets.Vault) error) {
 		return
 	}
 	run := func() {
-		if err := then(v); err != nil {
+		switch err := then(v); {
+		case errors.Is(err, secrets.ErrNoSuchItem):
+			a.failed(what, "That secret has been removed from somewhere else.")
+		case err != nil:
 			a.failed(what, err.Error())
 		}
 		a.showVault()
@@ -142,16 +146,14 @@ func (a *app) offerAVault(then func()) {
 	keys := a.knownKeys()
 	if len(keys) == 0 {
 		a.events <- func() {
-			a.notify("No key to lock the secrets with", "An ed25519 key is needed. Make one with ssh-keygen -t ed25519.", "")
+			a.notify("No key to lock the secrets with", "An ed25519 key is needed. Choose New SSH Key… to make one.", "")
 		}
 		return
 	}
 	q := Ask{Title: "No secrets yet", Text: keys[0] + " will open them.", Yes: "Create"}
 	if len(keys) > 1 {
 		q = Ask{Title: "No secrets yet", Text: "Choose the key that opens them. It is the only one until you add another."}
-		for _, k := range keys {
-			q.Choose = append(q.Choose, filepath.Base(k))
-		}
+		q.Choose = keyChoices(nil, keys)
 	}
 	ans, err := a.ask(a.ctx, q)
 	if err != nil || !ans.Yes {
@@ -160,6 +162,7 @@ func (a *app) offerAVault(then func()) {
 	keyFile := keys[0]
 	if len(keys) > 1 {
 		i := slices.Index(q.Choose, ans.Answers[len(ans.Answers)-1])
+		// q.Choose names each key once, so the pick is the one chosen.
 		if i < 0 {
 			return
 		}
@@ -374,12 +377,52 @@ func (a *app) putSecret(in PutSecret) {
 			it = items[i]
 			it.Name, it.User = in.Name, in.User
 			if in.Value == "" {
-				_, err := v.PutDetails(it)
-				return err
+				if _, err := v.PutDetails(it); err != nil {
+					return err
+				}
+				a.worked(it.Name+" changed", "", "")
+				return nil
 			}
 		}
-		_, err := v.Put(it, in.Value)
-		return err
+		if _, err := v.Put(it, in.Value); err != nil {
+			return err
+		}
+		if in.ID != "" {
+			a.worked(it.Name+" changed", "", "")
+		} else {
+			a.worked(it.Name+" saved", "", "")
+		}
+		return nil
+	})
+}
+
+// removeSecrets takes secrets out of the vault, and says what went. One
+// already gone, removed from somewhere else, is as good as removed: the
+// rest go all the same.
+func (a *app) removeSecrets(what string, ids []string) {
+	a.withSecrets(what, func(v *secrets.Vault) error {
+		items, err := v.Items()
+		if err != nil {
+			return err
+		}
+		var gone []string
+		for _, id := range ids {
+			name := ""
+			if i := slices.IndexFunc(items, func(it secrets.Item) bool { return it.ID == id }); i >= 0 {
+				name = items[i].Name
+			}
+			if err := v.Remove(id); err != nil && !errors.Is(err, secrets.ErrNoSuchItem) {
+				return err
+			}
+			gone = append(gone, name)
+		}
+		switch {
+		case len(gone) == 1 && gone[0] != "":
+			a.worked(gone[0]+" removed", "", "")
+		case len(gone) > 1:
+			a.worked(strconv.Itoa(len(gone))+" secrets removed", "", "")
+		}
+		return nil
 	})
 }
 
@@ -502,13 +545,20 @@ func (a *app) addSecretsKey() {
 			have[s.KeyFile] = true
 		}
 		var spare []string
+		opening := 0
 		for _, k := range a.knownKeys() {
 			if !have[k] {
 				spare = append(spare, k)
+			} else {
+				opening++
 			}
 		}
 		if len(spare) == 0 {
-			a.notify("No key to add", "Every ed25519 key in ~/.ssh opens the secrets already. A key from another machine has to be copied here first.", "")
+			if opening == 0 {
+				a.notify("No key to add", "No other ed25519 key is on this machine. Choose New SSH Key… to make one.", "")
+			} else {
+				a.notify("No key to add", "Every ed25519 key this window knows of opens the secrets already. A key from another machine has to be copied here first.", "")
+			}
 			return nil
 		}
 		go a.chooseKeyToAdd(v, spare)
@@ -519,10 +569,7 @@ func (a *app) addSecretsKey() {
 // chooseKeyToAdd asks which of spare to add, warns about it when
 // there is reason to, and adds it. It runs on a goroutine of its own.
 func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
-	q := Ask{Title: "Add Secrets Key", Text: "Choose the key that opens the secrets too, such as another machine's."}
-	for _, k := range spare {
-		q.Choose = append(q.Choose, filepath.Base(k))
-	}
+	q := Ask{Title: "Add Secrets Key", Text: "Choose the key that opens the secrets too, such as another machine's.", Choose: keyChoices(v, spare)}
 	ans, err := a.ask(a.ctx, q)
 	if err != nil || !ans.Yes {
 		return
@@ -552,6 +599,30 @@ func (a *app) chooseKeyToAdd(v *secrets.Vault, spare []string) {
 		}
 		a.showVault()
 	}
+}
+
+// keyChoices names key files to choose between, each once: by its file's
+// name, or its whole path where two share a name, and noting a key
+// whose passphrase the secrets keep, when v says so.
+func keyChoices(v *secrets.Vault, keys []string) []string {
+	names := map[string]int{}
+	for _, k := range keys {
+		names[filepath.Base(k)]++
+	}
+	var out []string
+	for _, k := range keys {
+		label := filepath.Base(k)
+		if names[label] > 1 {
+			label = k
+		}
+		if v != nil {
+			if _, err := v.PassphraseFor(k); err == nil {
+				label += " (its passphrase is in the secrets)"
+			}
+		}
+		out = append(out, label)
+	}
+	return out
 }
 
 // removeSecretsKey stops a key opening the secrets. The last way in

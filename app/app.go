@@ -1042,16 +1042,9 @@ func (a *app) handle(in gunim.Intent) {
 	case PutSecret:
 		a.putSecret(in)
 	case RemoveSecret:
-		a.withSecrets("Couldn't remove the secret", func(v *secrets.Vault) error { return v.Remove(in.ID) })
+		a.removeSecrets("Couldn't remove the secret", []string{in.ID})
 	case RemoveSecrets:
-		a.withSecrets("Couldn't remove the secrets", func(v *secrets.Vault) error {
-			for _, id := range in.IDs {
-				if err := v.Remove(id); err != nil {
-					return err
-				}
-			}
-			return nil
-		})
+		a.removeSecrets("Couldn't remove the secrets", in.IDs)
 	case CopySecret:
 		a.copySecret(in.ID)
 	case TypeSecret:

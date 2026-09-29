@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -343,5 +344,48 @@ func TestSeveralSecretsAreRemovedAtOnce(t *testing.T) {
 	a.handle(RemoveSecrets{IDs: ids})
 	if len(a.st.Secrets.Items) != 1 {
 		t.Fatalf("two removed, %d are left", len(a.st.Secrets.Items))
+	}
+}
+
+// Saving, changing and removing a secret each say so; one removed from
+// somewhere else is said as that; removing several carries on past one
+// already gone.
+func TestWhatIsDoneToASecretIsSaid(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	said := func(title string) bool {
+		return slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == title })
+	}
+	a.handle(PutSecret{Name: "db", Kind: secrets.Password, Value: "hunter2"})
+	a.handle(PutSecret{Name: "web", Kind: secrets.Password, Value: "swordfish"})
+	a.handle(PutSecret{Name: "mail", Kind: secrets.Password, Value: "letmein"})
+	if !said("db saved") {
+		t.Fatalf("saved, it said %+v", a.st.Notices)
+	}
+	items := a.st.Secrets.Items
+	a.handle(PutSecret{ID: items[0].ID, Name: "database", User: "admin", Kind: secrets.Password})
+	if !said("database changed") {
+		t.Fatalf("changed, it said %+v", a.st.Notices)
+	}
+	a.handle(RemoveSecret{ID: items[1].ID})
+	if !said(items[1].Name + " removed") {
+		t.Fatalf("removed, it said %+v", a.st.Notices)
+	}
+	a.handle(CopySecret{ID: items[1].ID})
+	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Body == "That secret has been removed from somewhere else." }) {
+		t.Fatalf("copying one gone, it said %+v", a.st.Notices)
+	}
+	a.handle(RemoveSecrets{IDs: []string{items[1].ID, items[0].ID, items[2].ID}})
+	if len(a.st.Secrets.Items) != 0 || !said("3 secrets removed") {
+		t.Fatalf("removing three, one gone already, leaves %+v and said %+v", a.st.Secrets.Items, a.st.Notices)
+	}
+}
+
+// Keys to choose between are told apart where two share a file's name.
+func TestKeysToChooseAreToldApart(t *testing.T) {
+	got := keyChoices(nil, []string{"/home/me/.ssh/id_ed25519", "/home/me/work/id_ed25519", "/home/me/.ssh/deploy"})
+	want := []string{"/home/me/.ssh/id_ed25519", "/home/me/work/id_ed25519", "deploy"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("the choices are %q", got)
 	}
 }

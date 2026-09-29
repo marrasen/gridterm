@@ -170,3 +170,27 @@ func TestTheShortcutsFileMovesAKey(t *testing.T) {
 		t.Fatalf("read, the changes are %+v", c)
 	}
 }
+
+// Saving a server again with its key untouched keeps nothing: the key
+// is not moved to the front of the list for nothing. A new key is.
+func TestSavingAServerWithItsKeyUntouchedKeepsNothing(t *testing.T) {
+	a := fontApp(t)
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.book = book
+	margit := remote.Host{Name: "margit", Address: "margit.example", Identities: []string{"/already/there"}}
+	if err := book.Put(margit, ""); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(SaveServer{Host: margit, Under: "margit"})
+	if len(a.st.KeyFiles) != 0 {
+		t.Fatalf("saved untouched, the kept keys are %v", a.st.KeyFiles)
+	}
+	margit.Identities = []string{"/k/new_ed25519"}
+	a.handle(SaveServer{Host: margit, Under: "margit"})
+	if !slices.Equal(a.st.KeyFiles, []string{"/k/new_ed25519"}) {
+		t.Fatalf("saved with a new key, the kept keys are %v", a.st.KeyFiles)
+	}
+}

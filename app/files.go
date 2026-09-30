@@ -41,9 +41,11 @@ type Browser struct {
 	WentTo  int
 	GoToErr string
 	// Seq counts the listings, so the window knows a new one, and Top
-	// says Path is the top of its filesystem.
-	Seq int
-	Top bool
+	// says Path is the top of its filesystem. Archive says Path is
+	// inside an archive, opened as a folder: read only.
+	Seq     int
+	Top     bool
+	Archive bool
 	// Roots are where the filesystem starts, such as each drive, Sep its
 	// separator, and Listed the folders last listed for Go To.
 	Roots  []string
@@ -486,7 +488,7 @@ func (a *app) browse(in Browse) {
 			}
 			order(entries)
 			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
+				Archive: vfs.InArchive(f, in.Path), Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

@@ -39,7 +39,7 @@ func (j *Job) do(ctx context.Context) error {
 	// round trip per directory to learn something the job never uses,
 	// and would fail on a subtree the user cannot list even though the
 	// rename would have worked.
-	if j.op.Kind == Move && vfs.Same(j.op.From, j.op.To) {
+	if j.op.Kind == Move && j.renames() {
 		items, err := j.named(ctx)
 		if err != nil {
 			return err
@@ -530,12 +530,19 @@ func (j *Job) stream(ctx context.Context, out io.Writer, in io.Reader) error {
 	}
 }
 
+// renames reports whether the job's move is a rename: within one
+// filesystem, and on one volume of it. Between two drives of one
+// machine it is a copy and a delete, as between two machines.
+func (j *Job) renames() bool {
+	return vfs.Same(j.op.From, j.op.To) && vfs.OneVolume(j.op.From, j.op.At, j.op.Into)
+}
+
 // move copies and then takes the original away.
 //
 // On one filesystem a rename does both at once and costs nothing, which
 // is what makes moving a large directory on one machine instant.
 func (j *Job) move(ctx context.Context, items []item) error {
-	if vfs.Same(j.op.From, j.op.To) {
+	if j.renames() {
 		return j.rename(ctx, items)
 	}
 	if err := j.copy(ctx, items); err != nil {

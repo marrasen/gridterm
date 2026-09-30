@@ -351,3 +351,41 @@ func (r refusing) Create(path string, mode fs.FileMode) (io.WriteCloser, error) 
 	}
 	return r.FS.Create(path, mode)
 }
+
+// twoDrives is one machine whose folders are each on a volume of their
+// own, as two drives of one computer are. from records the names
+// renamed away from.
+type twoDrives struct {
+	vfs.FS
+	from *[]string
+}
+
+func (twoDrives) SameVolume(a, b string) bool { return a == b }
+
+func (d twoDrives) Rename(from, to string) error {
+	*d.from = append(*d.from, from)
+	return d.FS.Rename(from, to)
+}
+
+// A move between two drives of one machine copies and deletes: a
+// rename there fails, as the drives are two devices.
+func TestAMoveBetweenTwoDrivesIsNotARename(t *testing.T) {
+	from := local(t)
+	write(t, from.real, "one.txt", "the body")
+	into := t.TempDir()
+	var renamed []string
+	fs := twoDrives{from.fs, &renamed}
+	j := New(1).Start(t.Context(), Op{Kind: Move, From: fs, At: from.at, Names: []string{"one.txt"}, To: fs, Into: into}, Options{})
+	if err := ends(t, j); err != nil {
+		t.Fatalf("the job: %v", err)
+	}
+	for _, r := range renamed {
+		if strings.HasSuffix(r, "one.txt") {
+			t.Errorf("it renamed %s between two drives", r)
+		}
+	}
+	if got := read(t, into, "one.txt"); got != "the body" {
+		t.Fatalf("what was moved holds %q", got)
+	}
+	gone(t, from.real, "one.txt")
+}

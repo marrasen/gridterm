@@ -501,3 +501,19 @@ func (a *archives) Renamed(now string) {
 		under.Renamed(now)
 	}
 }
+
+// SameVolume implements [Volumes], for the filesystem under the
+// archives.
+func (a *archives) SameVolume(x, y string) bool { return OneVolume(a.FS, x, y) }
+
+// InArchive reports whether folder at of f is inside an archive f opens
+// as a folder, where nothing can be written and nothing handed to
+// another program as a file of its own.
+func InArchive(f FS, at string) bool {
+	a, ok := f.(*archives)
+	if !ok {
+		return false
+	}
+	_, _, in := a.split(at)
+	return in
+}

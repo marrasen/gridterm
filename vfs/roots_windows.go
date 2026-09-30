@@ -4,6 +4,7 @@ package vfs
 
 import (
 	"path/filepath"
+	"strings"
 
 	"golang.org/x/sys/windows"
 )
@@ -31,4 +32,10 @@ func localRoots() []string {
 		}
 	}
 	return out
+}
+
+// SameVolume implements [Volumes]: two folders are on one volume when
+// they are on one drive or one share.
+func (l *Local) SameVolume(a, b string) bool {
+	return strings.EqualFold(filepath.VolumeName(a), filepath.VolumeName(b))
 }

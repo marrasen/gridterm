@@ -884,6 +884,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't paste the files"
 	case DropFiles:
 		return "Couldn't take the files dropped"
+	case DropOnFiles:
+		return "Couldn't take the files dropped"
 	case PasteImageAsFile, PasteImage:
 		return "Couldn't paste the image"
 	case SaveServer:
@@ -1295,6 +1297,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.listFolders(in)
 	case AskAction:
 		err = a.askAction(in)
+	case DropOnFiles:
+		err = a.dropOnFiles(in)
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImageAsFile:

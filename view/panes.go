@@ -12,6 +12,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/icon"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/widget"
@@ -34,6 +35,10 @@ type browser struct {
 	id    string
 	path  *widget.Label
 	table *widget.Table
+	// drop takes drags on the table, and plan is the drop it last
+	// worked out.
+	drop  *widget.DropZone
+	plan  app.DropOnFiles
 	col   *widget.Flex
 	st    app.Browser
 	shown int
@@ -88,10 +93,21 @@ func newBrowser(w *Window, id string) *browser {
 		b.list(u)
 	}
 	b.table.SetSorted(0, false)
+	b.table.DragRows = b.dragRows
+	b.drop = widget.NewDropZone(b.table)
+	b.drop.Spot = b.dropSpot
+	b.drop.OnDrop = func(widget.DropSpot, gi.Drop) gunim.Intent { return b.plan }
+	b.drop.OnOpen = func(s widget.DropSpot) gunim.Intent {
+		if s.Key == up {
+			return app.GoUp{Pane: b.id}
+		}
+		k, _ := s.Key.(widget.Key)
+		return app.EnterEntry{Pane: b.id, Name: string(k)}
+	}
 	b.keys = b.newKeys()
 	b.problem = &errLine{b: b, label: widget.NewLabel("")}
 	b.problem.label.Size, b.problem.label.Color, b.problem.label.MaxLines = smallText, widget.ButtonDangerFill, 1
-	b.col = widget.Column(widget.NewPad(b.path), b.problem, b.table, b.keys).Grow(b.table, 1)
+	b.col = widget.Column(widget.NewPad(b.path), b.problem, b.drop, b.keys).Grow(b.drop, 1)
 	b.col.Cross, b.col.Gap = widget.CrossStretch, noGap
 	return b
 }
@@ -461,7 +477,7 @@ func (b *browser) list(u *gunim.UI) {
 // with a dot in front.
 func (b *browser) row(k widget.Key) widget.TableRow {
 	if k == up {
-		return widget.TableRow{Cells: []string{"..", "", ""}, Strong: true}
+		return widget.TableRow{Cells: []string{"..", "", ""}, Strong: true, Icon: icon.FolderUp, IconInk: &fileFolder}
 	}
 	e := b.byName[k]
 	size := ""
@@ -485,7 +501,9 @@ func (b *browser) row(k widget.Key) widget.TableRow {
 	if !e.Mod.IsZero() {
 		when = e.Mod.Format("2006-01-02 15:04")
 	}
-	return widget.TableRow{Cells: []string{name, size, when}, Strong: e.IsDir() && !e.IsLink(), Faint: strings.HasPrefix(e.Name, "."), Accent: e.IsLink()}
+	kind := kindOf(e)
+	return widget.TableRow{Cells: []string{name, size, when}, Strong: e.IsDir() && !e.IsLink(), Faint: strings.HasPrefix(e.Name, "."), Accent: e.IsLink(),
+		Icon: kind.icon, IconInk: kind.ink}
 }
 
 // clipped reports whether a name here is waiting to be pasted.

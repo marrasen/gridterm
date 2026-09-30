@@ -172,6 +172,19 @@ func TestAPaneSlidingInKeepsItsShellAUsableSize(t *testing.T) {
 }
 
 // nextIntent is the next intent the window sends, or fails.
+// nextIntentPast returns the window's next intent other than the
+// keyboard coming into the Servers pane, which a click in it sends
+// first.
+func nextIntentPast(t *testing.T) gunim.Intent {
+	t.Helper()
+	for {
+		in := nextIntent(t)
+		if in != (app.FocusPane{Pane: "ps"}) {
+			return in
+		}
+	}
+}
+
 func nextIntent(t *testing.T) gunim.Intent {
 	t.Helper()
 	select {
@@ -185,7 +198,8 @@ func nextIntent(t *testing.T) gunim.Intent {
 
 func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(twoPanes("p2", nil))
+	st := withServers(twoPanes("p2", nil))
+	publish(st)
 	// Drained: focusing a pane says so.
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -196,6 +210,13 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyL, Mods: gi.ModControl | gi.ModShift})
 	lastWindow.Frame(time.Second / 60)
+	if in := nextIntent(t); in != (app.ShowServers{}) {
+		t.Fatalf("Go to Servers sent %#v", in)
+	}
+	// The program puts the Servers pane in front, and the keyboard goes
+	// to the row of the pane last worked in.
+	st.Focus = "ps"
+	publish(st)
 	focused := func() string {
 		for _, k := range win.list.Keys() {
 			if row, ok := widget.RowOf[*sideRow](win.list, k); ok && row.ring.Target() == 1 {
@@ -205,7 +226,7 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 		return ""
 	}
 	if got := focused(); got != "p2" {
-		t.Fatalf("focusing the sidebar lit %q, want the focused pane's row", got)
+		t.Fatalf("going to the Servers pane lit %q, want the row of the pane last worked in", got)
 	}
 	press(gi.KeyUp)
 	if got := focused(); got != "p1" {
@@ -227,11 +248,11 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	}
 	press(gi.KeyPageUp)
 	press(gi.KeyEnter)
-	if in, ok := nextIntent(t).(app.FocusPane); !ok || in.Pane != "p1" {
+	if in := nextIntentPast(t); in != (app.FocusPane{Pane: "p1"}) {
 		t.Fatalf("Enter sent %#v", in)
 	}
 	press(gi.KeyDelete)
-	if in, ok := nextIntent(t).(app.ClosePane); !ok || in.Pane != "p1" {
+	if in, ok := nextIntentPast(t).(app.ClosePane); !ok || in.Pane != "p1" {
 		t.Fatalf("Delete sent %#v", in)
 	}
 }
@@ -274,8 +295,7 @@ func TestTheTunnelDialogOffersTheTunnelsSavedForTheServer(t *testing.T) {
 
 func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := twoPanes("p2", nil)
-	st.Sidebar, st.SidebarWidth = true, 220
+	st := withServers(twoPanes("p2", nil))
 	publish(st)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
@@ -292,6 +312,10 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
+	// The program answers the keyboard coming into the Servers pane,
+	// which leaves the keyboard in the menu.
+	st.Focus = "ps"
+	publish(st)
 	// Its lines are grouped under headings.
 	if m := row.menu; m == nil || !slices.Contains(m.Captions, 0) || m.Items[0] != "Terminal" || !slices.Contains(m.Items, "Files") {
 		t.Fatalf("this computer's menu is %+v", row.menu)
@@ -300,7 +324,7 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 		lastWindow.Input(gi.KeyPress{Key: k})
 		lastWindow.Frame(time.Second / 60)
 	}
-	if in, ok := nextIntent(t).(app.OpenOn); !ok || in.Machine != "" {
+	if in := nextIntentPast(t); in != (app.OpenOn{}) {
 		t.Fatalf("the first line of this computer's menu sent %#v", in)
 	}
 }
@@ -398,12 +422,11 @@ func TestTheReaderCopiesAndSaves(t *testing.T) {
 	}
 }
 
-// F11 fills the screen with the stage alone: the menu bar, the sidebar
-// and the status line slide away, and come back with F11 again.
+// F11 fills the screen with the stage alone: the menu bar and the
+// status line slide away, and come back with F11 again.
 func TestFullScreenShowsTheStageAlone(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := twoPanes("p2", nil)
-	st.SidebarWidth = 220
 	st.Status = "Connecting…"
 	publish(st)
 	settle := func() {
@@ -413,8 +436,8 @@ func TestFullScreenShowsTheStageAlone(t *testing.T) {
 	}
 	settle()
 	before, ok := lastUI.Bounds(win.stage)
-	if !ok || before.Min.X < 200 || before.Min.Y < 20 {
-		t.Fatalf("before F11 the stage is at %v, want it beside the sidebar and under the menu bar", before)
+	if !ok || before.Min.Y < 20 || before.Max.Y > 590 {
+		t.Fatalf("before F11 the stage is at %v, want it under the menu bar and over the status line", before)
 	}
 
 	win.run("view.fullScreen", lastUI)
@@ -444,10 +467,21 @@ func twoPanes(focus string, jobs []app.Job) app.State {
 		Panes:    []app.Pane{{ID: "p1", Title: "Jobs", Kind: app.KindJobs}, {ID: "p2", Title: "gthome", Kind: app.KindFiles}},
 		Stage:    &app.Box{Pane: focus},
 		Focus:    focus,
-		Sidebar:  true,
 		Jobs:     jobs,
 		Browsers: map[string]app.Browser{"p2": {Path: "/"}},
 	}
+}
+
+// withServers puts the Servers pane, "ps", on stage in st, at the left
+// of what is there, where the sidebar was.
+func withServers(st app.State) app.State {
+	st.Panes = append(slices.Clone(st.Panes), app.Pane{ID: "ps", Title: "Servers", Kind: app.KindServers})
+	if st.Stage == nil {
+		st.Stage = &app.Box{Pane: "ps"}
+		return st
+	}
+	st.Stage = &app.Box{ID: "sidebar", Share: 0.3, A: &app.Box{Pane: "ps"}, B: st.Stage}
+	return st
 }
 
 // sizes records the sizes a shell is given.

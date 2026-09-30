@@ -50,6 +50,17 @@ type Window struct {
 	anim.Group
 	top *widget.Flex
 	bar *widget.Menubar
+	// serversView is the Servers pane, which holds list, the machines
+	// and what is open on them; rows are the list's rows as last
+	// worked out, and lastWorked the pane last worked in here, other
+	// than the Servers pane, whose row is lit.
+	serversView *serversPane
+	rows        []sideItem
+	lastWorked  string
+	// listShown says the list is in the tree, and entering is a pane
+	// the keyboard came into, asked to be the one in front.
+	listShown bool
+	entering  string
 	// tabs is the tab bar, and titleRow the title bar it sits in, after
 	// barBox, which holds the menu button.
 	tabs     *tabBar
@@ -57,14 +68,15 @@ type Window struct {
 	barBox   *widget.Sized
 	// dock is where a tab dragged over the stage would join a split.
 	dock   tabDock
-	outer  *widget.Split
-	side   *panel
 	list   *widget.List
 	stage  *stage
 	status *statusLine
 	shells *screen.Shells
 	keys   *ui.Keymap
 	terms  map[string]*term
+	// termPads hold the terminals, by pane, a little in from the pane's
+	// edges.
+	termPads map[string]*termPad
 	// browsers and readers are the file panes and readers, by pane.
 	browsers map[string]*browser
 	readers  map[string]*reader
@@ -94,19 +106,11 @@ type Window struct {
 	serving app.Serving
 	// bells is the bells as last published, titles whether panes show
 	// their titles, and captions the line over each pane that does.
-	// sidebarShown is whether the sidebar shows, as last published, and
-	// sideWidth the width it has while it does, or 0 while it is hidden.
-	sidebarShown bool
-	// sideOver shows the sidebar in full screen, at sideWanted, the
-	// width it has when shown.
-	sideOver   bool
-	sideWanted float32
-	// stopQuiet cancels the wake for the next sidebar note to go quiet.
+	// stopQuiet cancels the wake for the next row's note to go quiet.
 	stopQuiet func()
-	sideWidth float32
 	// presenting says the window fills the screen with the stage alone:
-	// the menu bar, the sidebar and the status line slide away. barShade
-	// holds the menu bar, to slide it up.
+	// the menu bar and the status line slide away. barShade holds the
+	// menu bar, to slide it up.
 	presenting bool
 	barShade   *shade
 	// savedCommands are the commands kept, and remoteWindows the
@@ -246,6 +250,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		shells:      sh,
 		keys:        keys,
 		terms:       map[string]*term{},
+		termPads:    map[string]*termPad{},
 		browsers:    map[string]*browser{},
 		readers:     map[string]*reader{},
 		choosers:    map[string]*chooser{},
@@ -255,17 +260,11 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 		dropLit:     anim.NewFloat(0),
 	}
 	w.Add(w.dropLit)
-	side := widget.Column(w.list)
-	side.Cross = widget.CrossStretch
 	w.status = newStatusLine()
 	w.onStage = widget.NewThemed(w.stage, widget.Dark())
 	main := widget.Column(w.onStage, w.status).Grow(w.onStage, 1)
 	main.Cross, main.Gap = widget.CrossStretch, noGap
-	w.side = &panel{child: widget.NewScroll(side), least: 220}
-	w.outer = widget.NewSplit(w.side, main)
-	w.outer.Fixed = true
-	w.outer.SetShare(220, nil)
-	w.outer.OnMove = func(v float32) gunim.Intent { return app.SidebarMoved{Width: v} }
+	w.serversView = newServersPane(w)
 	w.bar = widget.NewMenubar()
 	// The menus behind one button, leaving the bar to move the window.
 	w.bar.Compact = true
@@ -328,7 +327,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
 	w.titleRow = bar
 	w.barShade = newShade(bar)
-	w.top = widget.Column(w.barShade, w.outer).Grow(w.outer, 1)
+	w.top = widget.Column(w.barShade, main).Grow(main, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
 	w.palette = &widget.Palette{Placeholder: "Type a command", Pick: func(i int, u *gunim.UI) {
 		if i < len(w.paletteIDs) {
@@ -366,15 +365,6 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "pane.splitRight", "pane.splitDown":
 		w.askSplit(id == "pane.splitDown", u)
 		return true
-	case "sidebar.toggle":
-		if w.presenting {
-			// In full screen the sidebar comes and goes over the stage,
-			// and the window stays full screen.
-			w.sideOver = !w.sideOver
-			w.placeSidebar(u)
-			return true
-		}
-		// Otherwise the program's, as any other.
 	case "palette.open":
 		// Its shortcut again closes it, when the key reaches the window
 		// rather than the palette, which hands it on through its Key.
@@ -451,7 +441,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		row, ok := u.Focused().(*sideRow)
 		switch {
 		case !ok:
-			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the sidebar has the keyboard on."}, u)
+			w.toasts.Show(widget.Toast{Title: "No row selected", Body: "Close Selected Row works on the row the Servers pane has the keyboard on."}, u)
 		case row.closes == nil:
 			w.toasts.Show(widget.Toast{Title: "That row cannot be closed", Body: "A machine's heading goes with Disconnect, from its menu."}, u)
 		default:
@@ -1599,7 +1589,7 @@ func (w *Window) closeSwitcher(back bool, u *gunim.UI) {
 	}
 	u.Remove(w.sw)
 	w.sw = nil
-	if n := w.focusNode(w.focused); n != nil && back {
+	if n := w.focusNode(w.focused, u); n != nil && back {
 		u.Focus(n)
 		return
 	}
@@ -1710,7 +1700,14 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	for _, h := range st.Saved {
 		saved = append(saved, machines.ID(h.ID))
 	}
-	rows := sidebarRows(st.Panes, st.Tunnels, st.Share, st.Windows, saved, w.named, st.Dropped...)
+	all := st.AllPanes
+	if all == nil {
+		// Published by hand, as in a test: this window's alone.
+		all = st.Panes
+	}
+	// The Servers pane lists the rest, not itself.
+	all = slices.DeleteFunc(slices.Clone(all), func(p app.Pane) bool { return p.Kind == app.KindServers })
+	rows := sidebarRows(all, st.Tunnels, st.Share, st.Windows, saved, w.named, st.Dropped...)
 	// The windows connected to this one, under this computer.
 	for i, c := range st.Serving.Clients {
 		at := slices.IndexFunc(rows, func(r sideItem) bool { return r.key == "machine:" }) + 1
@@ -1732,6 +1729,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 	rows = w.markRows(rows, st)
+	rows = windowNotes(rows, st.AllPanes, st.Window)
+	w.rows = rows
 	w.sideOrder = w.sideOrder[:0]
 	for _, r := range rows {
 		// This window's own: a tunnel's row may name a pane in another.
@@ -1739,23 +1738,15 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			w.sideOrder = append(w.sideOrder, r.pane)
 		}
 	}
-	widget.Sync(w.list, u, rows,
-		func(r sideItem) widget.Key { return widget.Key(r.key) },
-		func(r sideItem) *sideRow { return w.newSideRow(r) },
-		func(row *sideRow, r sideItem, u *gunim.UI) { row.set(r) })
-	for _, r := range rows {
-		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(r.key)); ok && !r.heading {
-			row.setActive(r.pane != "" && r.pane == st.Focus, u)
-		}
-	}
-	w.quietNotes(u)
-	if st.Focus != w.revealed {
-		// The sidebar follows the stage: the row of the pane in front
-		// scrolls into view.
-		w.revealed = st.Focus
-		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(st.Focus)); ok {
-			u.Reveal(row)
-		}
+	// The pane last worked in, in whichever window; this window's own
+	// when nothing says.
+	switch {
+	case st.Working != "":
+		w.lastWorked = st.Working
+	case slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.ID == st.Focus && p.Kind != app.KindServers }):
+		w.lastWorked = st.Focus
+	case !slices.ContainsFunc(all, func(p app.Pane) bool { return p.ID == w.lastWorked }):
+		w.lastWorked = ""
 	}
 	w.setSavedTunnels(st.SavedTunnels)
 	w.share = st.Share
@@ -1765,7 +1756,6 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			w.permissionsDialog(st.Share, u)
 		}
 	}
-	w.sidebarShown = st.Sidebar
 	w.termProgram = st.TermProgram
 	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
@@ -1876,6 +1866,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
 	}
+	w.listShown = slices.ContainsFunc(boxLeaves(st.Stage, nil), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
+		u.Presence(w.list) != gunim.Exiting
+	w.showServers(st, u)
 	w.vault = st.Secrets
 	w.noteFocus(st.Focus)
 	if w.walk != nil {
@@ -1929,6 +1922,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 			// Ended, or moved to another window, which draws it from
 			// now on.
 			delete(w.terms, id)
+			delete(w.termPads, id)
 			continue
 		}
 		t.sync()
@@ -1942,19 +1936,19 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	// The pane with the keyboard gets it when it changes, and back when
 	// nothing has it, as when the split it sat in went away around it.
-	if w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) {
+	if w.entering != "" && (st.Focus == w.entering || !slices.ContainsFunc(st.Panes, func(p app.Pane) bool { return p.ID == w.entering })) {
+		if st.Focus == w.entering {
+			w.focused = st.Focus
+		}
+		w.entering = ""
+	}
+	if w.entering == "" && w.sw == nil && w.dialog == nil && (st.Focus != w.focused || u.Focused() == nil) {
 		w.focused = st.Focus
-		if n := w.focusNode(st.Focus); n != nil {
+		if n := w.focusNode(st.Focus, u); n != nil {
 			u.Focus(n)
 		}
 	}
 
-	w.sideWidth, w.sideWanted = 0, st.SidebarWidth
-	if st.Sidebar {
-		w.sideWidth = st.SidebarWidth
-		w.side.least = st.SidebarWidth
-	}
-	w.placeSidebar(u)
 	w.status.set(st.Status, u)
 	w.stageBox = st.Stage
 	w.lastChips = st
@@ -2060,7 +2054,7 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 	case "pane.typeAll":
 		return w.typeAll, true
 	case "sidebar.toggle":
-		return st.Sidebar, true
+		return slices.ContainsFunc(st.AllPanes, func(p app.Pane) bool { return p.Kind == app.KindServers }), true
 	case "pane.titles":
 		return st.PaneTitles, true
 	case "view.fullScreen":
@@ -2160,6 +2154,8 @@ func (w *Window) captionOf(p app.Pane) string {
 // bareNode returns the node that shows pane id, made on first use.
 func (w *Window) bareNode(id string) gunim.Node {
 	switch w.kindOf(id) {
+	case app.KindServers:
+		return w.serversView
 	case app.KindFiles:
 		b, ok := w.browsers[id]
 		if !ok {
@@ -2210,7 +2206,13 @@ func (w *Window) bareNode(id string) gunim.Node {
 		}
 		return c
 	}
-	return w.term(id)
+	t := w.term(id)
+	pad, ok := w.termPads[id]
+	if !ok || pad.term != t {
+		pad = &termPad{term: t}
+		w.termPads[id] = pad
+	}
+	return pad
 }
 
 // entered takes pane id as the one in front, as the keyboard has come
@@ -2223,6 +2225,9 @@ func (w *Window) bareNode(id string) gunim.Node {
 func (w *Window) entered(id string, u *gunim.UI) {
 	if id != "" && w.focused != "" && id != w.focused {
 		u.Send(w, app.FocusPane{Pane: id})
+		// The keyboard is in it already, where it was clicked: the
+		// answer must not move it to the pane's own first node.
+		w.entering = id
 	}
 }
 
@@ -2238,7 +2243,7 @@ func (w *Window) paneOfKind(kind string) string {
 
 // focusNode returns the node in pane id that takes the keyboard, or
 // nil when there is none yet.
-func (w *Window) focusNode(id string) gunim.Node {
+func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	if t, ok := w.terms[id]; ok {
 		return t
 	}
@@ -2250,6 +2255,9 @@ func (w *Window) focusNode(id string) gunim.Node {
 	}
 	if c, ok := w.choosers[id]; ok {
 		return c.first()
+	}
+	if w.kindOf(id) == app.KindServers {
+		return w.serversRow(u)
 	}
 	if w.kindOf(id) == app.KindJobs && w.jobs != nil {
 		return w.jobs.clear
@@ -2316,37 +2324,6 @@ func (s *stage) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gunim.C
 	for k := range kids.All {
 		k.Paint(p)
 	}
-}
-
-// panel fills its space with the sidebar's colour, behind its child.
-// Its child keeps at least the sidebar's width, cut off at the panel's
-// edge, so the sidebar slides away whole as the panel narrows.
-type panel struct {
-	child gunim.Node
-	least float32
-}
-
-// Children implements [gunim.Composite].
-func (p *panel) Children() []gunim.Node { return []gunim.Node{p.child} }
-
-// Layout implements [gunim.Node].
-func (p *panel) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	k := kids.At(0)
-	w := max(c.Max.W, p.least)
-	k.Layout(gunim.Tight(geom.Sz(w, c.Max.H)))
-	// Narrowed, it slides out to the left.
-	k.Place(geom.Pt(c.Max.W-w, 0))
-	return c.Max
-}
-
-// Paint implements [gunim.Node].
-func (p *panel) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	if box.W < 1 {
-		return
-	}
-	defer pt.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
-	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(look.SidebarFill.Get(f.Theme)))
-	kids.At(0).Paint(pt)
 }
 
 // sideItem is one row of the sidebar: a machine's heading, or a pane
@@ -2790,8 +2767,10 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		case e.Key == input.KeyDelete && r.closes != nil:
 			u.Send(r, r.closes)
 		case e.Key == input.KeyEscape:
-			// Back to the pane the keyboard came from.
-			if n := r.w.focusNode(r.w.focused); n != nil {
+			// Back to the pane last worked in, wherever it is.
+			if id := r.w.lastWorked; id != "" && id != r.w.focused {
+				u.Send(r, app.FocusPane{Pane: id})
+			} else if n := r.w.focusNode(r.w.focused, u); n != nil {
 				u.Focus(n)
 			}
 		default:
@@ -2959,18 +2938,19 @@ func (w *Window) focusRowsAway(from string, n int, u *gunim.UI) {
 	}
 }
 
-// focusSidebar gives the keyboard to the sidebar's row for the focused
-// pane, or to its first row, showing the sidebar first.
+// focusSidebar gives the keyboard to the Servers pane's list: to the
+// row of the pane last worked in, or its first row, opening the pane
+// first, or going to it where it is.
 func (w *Window) focusSidebar(u *gunim.UI) {
-	w.present(false, u)
-	if !w.sidebarShown {
-		u.Send(w, app.ToggleSidebar{})
-	}
-	if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(w.focused)); ok {
-		u.Focus(row)
+	if id := w.paneOfKind(app.KindServers); id != "" && id == w.focused {
+		if n := w.serversRow(u); n != nil {
+			u.Focus(n)
+		}
 		return
 	}
-	w.focusRow("", 1, u)
+	// Opened, or brought here from where it is; the keyboard goes to
+	// its list as it comes on stage.
+	u.Send(w, app.ShowServers{})
 }
 
 // machines are the machines panes can open on: this computer, the
@@ -3214,6 +3194,8 @@ func (w *Window) keepDrawings(st app.State, u *gunim.UI) {
 func (w *Window) madeNode(id string) gunim.Node {
 	var n gunim.Node
 	switch w.kindOf(id) {
+	case app.KindServers:
+		n = w.serversView
 	case app.KindFiles:
 		if b, ok := w.browsers[id]; ok {
 			n = b
@@ -3287,31 +3269,15 @@ func (w *Window) present(on bool, u *gunim.UI) {
 	if on == w.presenting {
 		return
 	}
-	w.presenting, w.sideOver = on, false
+	w.presenting = on
 	u.SetFullScreen(on)
 	spring := widget.Settle.Get(u.Theme())
 	w.barShade.show(!on, spring)
 	w.status.hide(on, u)
-	w.placeSidebar(u)
 	if on {
-		w.toasts.Show(widget.Toast{Title: "Full screen", Body: "F11 brings the menus and the sidebar back."}, u)
+		w.toasts.Show(widget.Toast{Title: "Full screen", Body: "F11 brings the menus back."}, u)
 	}
 	u.Invalidate()
-}
-
-// placeSidebar slides the sidebar to its width, or away while it is
-// hidden or the window is presenting.
-func (w *Window) placeSidebar(u *gunim.UI) {
-	width := w.sideWidth
-	switch {
-	case w.presenting && w.sideOver:
-		width = w.sideWanted
-	case w.presenting:
-		width = 0
-	}
-	if w.outer.Share() != width {
-		w.outer.SetShare(width, widget.Settle.Get(u.Theme()))
-	}
 }
 
 // shade holds a strip across the window, such as the menu bar, that

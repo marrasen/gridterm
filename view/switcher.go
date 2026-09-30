@@ -168,6 +168,18 @@ func (w *Window) paintMiniature(p *paint.Painter, f gunim.Frame, id string, r ge
 	return true
 }
 
+// padded is r, a pane's place, less the room round a terminal's cells
+// when pane id is a terminal: where its tile's picture lands.
+func (w *Window) padded(id string, r geom.Rect, u *gunim.UI) geom.Rect {
+	switch w.kindOf(id) {
+	case app.KindTerminal, app.KindLog:
+		// Drawn by a terminal, which bareNode holds in from the edges.
+	default:
+		return r
+	}
+	return r.Inset(geom.Uniform(termPadding.Get(u.Theme())))
+}
+
 // standsAt is where pane id stands on stage now, if it is on stage.
 func (w *Window) standsAt(id string, u *gunim.UI) (geom.Rect, bool) {
 	if term, ok := w.terms[id]; ok {
@@ -421,7 +433,7 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 	if r, ok := placeIn(group, t.id, stage, u); ok {
 		into = r
 	}
-	t.box.Animate(into, widget.Settle.Get(u.Theme()))
+	t.box.Animate(s.w.padded(t.id, into, u), widget.Settle.Get(u.Theme()))
 	for k, o := range s.tiles {
 		if k == i {
 			continue
@@ -429,7 +441,7 @@ func (s *switcher) pick(i int, u *gunim.UI) {
 		if r, ok := placeIn(group, o.id, stage, u); ok {
 			s.mates[o] = true
 			o.ring.Animate(0, widget.Quick.Get(u.Theme()))
-			o.box.Animate(r, widget.Settle.Get(u.Theme()))
+			o.box.Animate(s.w.padded(o.id, r, u), widget.Settle.Get(u.Theme()))
 		}
 	}
 	// The rest fade as it grows, shrinking a little where they sit, so

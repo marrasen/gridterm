@@ -148,7 +148,7 @@ func (a *app) startCommand(machine machines.ID, cmd command, s commandStart) err
 			if a.machines.Get(machine).Conn == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), "The connection was made under another name. Open a terminal on it from the sidebar.")
+				a.failed("Couldn't run "+line+" on "+a.machines.Name(machine), "The connection was made under another name. Open a terminal on it from the Servers pane.")
 				s.fail()
 				return
 			}

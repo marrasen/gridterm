@@ -76,7 +76,7 @@ var commands = []struct{ id, title string }{
 	{"tab.close", "Close Tab"},
 	{"view.switcher", "All Panes"},
 	{"pane.rename", "Rename Pane"},
-	{"sidebar.toggle", "Sidebar"},
+	{"sidebar.toggle", "Servers"},
 	{"view.theme", "Choose Theme"},
 	{"font.increase", "Larger Font"},
 	{"font.decrease", "Smaller Font"},
@@ -111,7 +111,7 @@ var commands = []struct{ id, title string }{
 	{"pane.typeAll", "Type in All Panes"},
 	{"conn.command", "Run Command"},
 	{"pane.scrollback", "Find in Scrollback"},
-	{"sidebar.focus", "Focus Sidebar"},
+	{"sidebar.focus", "Go to Servers"},
 	{"sidebar.closeRow", "Close Selected Row"},
 	{"conn.clearFinished", "Clear Finished"},
 	{"server.editThis", "Edit This Server"},
@@ -278,7 +278,7 @@ var menus = []struct {
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
 	}},
 	{"View", []menuItem{
-		{id: "sidebar.toggle", title: "Sidebar"},
+		{id: "sidebar.toggle", title: "Servers"},
 		{id: "pane.titles", title: "Pane Titles"},
 		{id: "view.fullScreen", title: "Full Screen"},
 		{id: "view.pin", title: "Always on Top"},
@@ -293,7 +293,7 @@ var menus = []struct {
 		{id: "pane.splitRight", title: "Right"}, {id: "pane.splitDown", title: "Down"}, {id: "pane.popOut", title: "Pop Out"},
 		{title: "Go To", caption: true},
 		{id: "pane.nextInSidebar", title: "Next"}, {id: "pane.previousInSidebar", title: "Previous"},
-		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Sidebar"},
+		{id: "view.switcher", title: "All Panes…"}, {id: "sidebar.focus", title: "Servers"},
 		{id: "pane.typeAll", title: "Type in All Panes", group: true},
 		{id: "pane.rename", title: "Rename…"},
 		{id: "conn.clearFinished", title: "Clear Finished"},
@@ -387,7 +387,7 @@ var commandAlso = map[string][]string{
 	"tab.moveLeft":          {"reorder", "shift"},
 	"tab.close":             {"every pane in it"},
 	"conn.terminal":         {"pane", "shell", "like this one", "same shell", "same server", "duplicate", "clone", "new tab"},
-	"view.fullScreen":       {"fill", "maximise", "maximize", "hide the sidebar"},
+	"view.fullScreen":       {"fill", "maximise", "maximize", "hide the menus"},
 	"view.pin":              {"pin", "keep on top", "float", "stay on top"},
 	"pane.typeAll":          {"broadcast", "synchronize", "sync panes", "every pane", "same input"},
 	"app.exit":              {"quit", "close this window"},
@@ -411,8 +411,8 @@ var commandAlso = map[string][]string{
 	"shell.termProgram":     {"term_program", "compatibility", "pictures", "images", "calls itself"},
 	"sshkey.make":           {"make", "create", "generate", "keygen", "ed25519"},
 	"sshkey.forget":         {"forget", "kept", "delete", "list", "identity", "clear"},
-	"sidebar.toggle":        {"show", "hide", "toggle", "connections", "panel"},
-	"sidebar.focus":         {"go to the connections", "panel"},
+	"sidebar.toggle":        {"show", "hide", "toggle", "connections", "panel", "sidebar", "machines", "window"},
+	"sidebar.focus":         {"go to the connections", "panel", "focus sidebar", "machines"},
 	"conn.command":          {"here", "program", "execute"},
 	"conn.tunnel":           {"forward", "port", "local", "remote"},
 	"conn.socks":            {"tunnel", "dynamic"},
@@ -486,7 +486,7 @@ func commandIntent(id string) (gunim.Intent, bool) {
 	case "secrets.addKey":
 		return app.AddSecretsKey{}, true
 	case "sidebar.toggle":
-		return app.ToggleSidebar{}, true
+		return app.ToggleServers{}, true
 	case "app.exit":
 		return app.Exit{}, true
 	case "conn.files":

@@ -16,8 +16,8 @@ Kakel comes with:
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | middle click | paste |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size, from 8 to 96 pixels |
-| `Ctrl+Shift+B` | show or hide the sidebar |
-| `Ctrl+Shift+L` | go to the sidebar |
+| `Ctrl+Shift+B` | open or close the Servers pane |
+| `Ctrl+Shift+L` | go to the Servers pane |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+A` | show every pane at once |
 | `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
@@ -68,8 +68,9 @@ the pane is over it. Let it go outside every window and it opens a
 window of its own, where you let it go. A window's only pane stays
 where it is.
 
-Each window has its own panes, its own sidebar and its own pane in
-front: hide the sidebar in one window and it still shows in the others.
+Each window has its own panes and its own pane in front. The Servers
+pane lists the panes of every window, and clicking one in another
+window brings that window to the front.
 The pin in the title bar, before minimize, keeps a window above other
 programs' windows; View › Always on Top does the same. Questions and
 notices show in the window you last worked in. A
@@ -126,7 +127,7 @@ rather than on a key. "Serve This Window…" asks for the port and where
 to listen, and then shows the address and the host key's fingerprint to
 check. "Connect to Window…" asks for the address and the key file to
 offer. Connecting opens nothing over there: what
-that window has open lands on the sidebar under its name, and the plus
+that window has open lands in the Servers pane under its name, and the plus
 on that heading opens a pane on it. The servers that window is
 connected to get headings of their own, and their plus opens things on
 them through it. Nothing listens until you ask it to,

@@ -204,18 +204,3 @@ func TestClosingAPaneBehindRefocusesItsWindow(t *testing.T) {
 		t.Fatalf("the window behind has %q in front, and the one in front %q", one.focus, a.st.Focus)
 	}
 }
-
-// Each window has its own sidebar: hidden in one, it still shows in
-// the other, and each keeps its own width.
-func TestEachWindowHasItsOwnSidebar(t *testing.T) {
-	a, one, two := twoWindowApp(t)
-	a.front(two)
-	a.handle(ToggleSidebar{})
-	a.handle(SidebarMoved{Width: 300})
-	if st := a.stateFor(two, a.st); st.Sidebar || st.SidebarWidth != 300 {
-		t.Fatalf("hidden in the second window, it shows %v at %v", st.Sidebar, st.SidebarWidth)
-	}
-	if st := a.stateFor(one, a.st); !st.Sidebar || st.SidebarWidth != 220 {
-		t.Fatalf("the first window's sidebar shows %v at %v", st.Sidebar, st.SidebarWidth)
-	}
-}

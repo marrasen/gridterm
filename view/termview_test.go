@@ -95,7 +95,14 @@ func TestCtrlOverAStillPointerIsHeard(t *testing.T) {
 	}
 	// With the keyboard elsewhere, the pane under the pointer still
 	// hears it.
-	win.focusRow("", 1, lastUI)
+	st := withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	if err := lastWindow.Client().Publish(app.WindowTopic, st); err != nil {
+		t.Fatal(err)
+	}
+	frames(60)
+	box, _ = lastUI.Bounds(tm)
+	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
+	lastUI.Focus(win.serversRow(lastUI))
 	frames(1)
 	if tm.focused {
 		t.Fatal("the terminal kept the keyboard")

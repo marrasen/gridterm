@@ -24,7 +24,7 @@ func TestAFilePaneShowsLinksAndWhatWaitsToBePasted(t *testing.T) {
 		{Name: "latest", Mode: fs.ModeSymlink, Link: "/srv/www/v2"},
 		{Name: "site.zip", Mode: fs.ModeDir, Size: 2048, Archive: true},
 	}
-	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220,
+	st := app.State{Panes: panes, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/srv", Entries: entries, Seq: 1}, "p2": {Path: "/", Seq: 1}},
 		FileClip: app.FileClip{Key: "", At: "/srv", Names: []string{"notes.txt"}}}
 	publish(st)
@@ -173,6 +173,7 @@ func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
 	if b.problem.label.Text == "" {
 		t.Fatal("a folder that could not be read says nothing")
 	}
+	settle()
 	at, _ := lastUI.Bounds(b.problem)
 	lastWindow.Input(gi.PointerDown{Pos: at.Center(), Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: at.Center(), Button: gi.ButtonPrimary})

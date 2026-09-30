@@ -117,7 +117,7 @@ a layer with no grid at all, over the rows the pane gave it, shrunk to
 fit and centred. Nothing about it is measured in cells.
 
 **A blend can only land between its two ends.** The window works its own
-furniture out from the theme: the menu bar, the sidebar and a dialog are
+furniture out from the theme: the menu bar, the Servers pane and a dialog are
 the theme's background shaded a little towards its foreground. That is
 right for a theme whose two ends are a step apart, and it cannot express
 a dark ground under light furniture, which is what a DOS program looked
@@ -125,7 +125,7 @@ like.
 
 So a theme may write its frame down instead. `themes.Frame` names the
 two colours the furniture is drawn in, a single or double rule, the
-buttons, and the sidebar. `themes.Look` is that block with its colours
+buttons, and the Servers pane. `themes.Look` is that block with its colours
 read. `look.Of` is the one place each furniture colour is decided: it
 reads the look when the theme set one, and derives the colour from the
 theme's two ends when it did not.
@@ -207,7 +207,7 @@ on 2026-09-19. There are two savings worth making and one that is not:
   rate the screen refreshes.
 
 Two things move on their own: the ring round a shared pane and the mark
-on a busy sidebar row. Both glow on one three-second cycle
+on a busy row of the Servers pane. Both glow on one three-second cycle
 (`glowEvery`). While either is showing, the window is drawn again every
 50 ms (`glowStep`); with neither, nothing asks for a frame.
 

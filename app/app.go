@@ -65,9 +65,11 @@ type State struct {
 	Focus  string
 	// Tabs are the window's tabs, in order.
 	Tabs []Tab
-	// Sidebar is whether the sidebar shows, and SidebarWidth how wide.
-	Sidebar      bool
-	SidebarWidth float32
+	// AllPanes are every window's panes, each saying which window it is
+	// in, for the Servers pane to list, and Working the pane last worked
+	// in, in whichever window, whose row it lights.
+	AllPanes []Pane
+	Working  string
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -228,10 +230,13 @@ const (
 	NoticeFailed
 )
 
-// Pane is one pane, as the sidebar lists it.
+// Pane is one pane, as the Servers pane lists it.
 type Pane struct {
 	ID    string
 	Title string
+	// Window numbers the window it is in, among kakel's own; it is set
+	// in AllPanes alone.
+	Window int
 	// Machine is the server the pane's shell runs on, "" for this
 	// computer.
 	Machine machines.ID
@@ -379,16 +384,11 @@ type (
 	// PopOut takes the focused pane out of its split, onto a stage of
 	// its own.
 	PopOut struct{}
-	// ToggleSidebar shows or hides the sidebar of the window it is sent
-	// from.
-	ToggleSidebar struct{}
 	// SplitMoved says where the pointer left a split's divider.
 	SplitMoved struct {
 		Split string
 		Share float32
 	}
-	// SidebarMoved says how wide the pointer left the sidebar.
-	SidebarMoved struct{ Width float32 }
 	// Exit closes the window, and every shell in it, after asking while
 	// anything is open.
 	Exit struct{}
@@ -522,6 +522,8 @@ type app struct {
 	// groupFocus the pane in each group that last had the keyboard.
 	tabOrder   []int
 	groupFocus map[int]string
+	// work is the window last worked in, other than a tool window.
+	work *ownWin
 	// next numbers the panes, and nextGroup the groups.
 	next      int
 	nextGroup int
@@ -654,7 +656,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 	a := &app{
 		c:            c,
 		shells:       sh,
-		st:           State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
+		st:           State{FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
 		groups:       map[int]*Box{},
 		groupFocus:   map[int]string{},
 		groupOf:      map[string]int{},
@@ -778,7 +780,7 @@ func (a *app) run(ctx context.Context) error {
 				continue
 			}
 			a.front(in.w)
-			a.handle(in.env.Intent)
+			a.handleFrom(in.env.Intent)
 		case <-a.wake:
 			a.st.Output++
 		case f := <-a.events:
@@ -950,6 +952,12 @@ func (a *app) publish() {
 	}
 	st := a.st
 	st.Panes = slices.Clone(a.st.Panes)
+	st.AllPanes = a.allPanes()
+	a.noteWork()
+	st.Working = ""
+	if a.work != nil && !a.work.gone {
+		st.Working = a.focusIn(a.work)
+	}
 	st.Notices = slices.Clone(a.st.Notices)
 	st.Asks = slices.Clone(a.st.Asks)
 	st.Saved = slices.Clone(a.st.Saved)
@@ -993,7 +1001,7 @@ func clearOpening(b *Box) {
 }
 
 func (a *app) handle(in gunim.Intent) {
-	if a.needsFiles(in) || a.handleTab(in) {
+	if a.needsFiles(in) || a.handleTab(in) || a.handleServers(in) {
 		return
 	}
 	var err error
@@ -1014,7 +1022,7 @@ func (a *app) handle(in gunim.Intent) {
 		a.closePane(id)
 	case FocusPane:
 		if a.has(in.Pane) {
-			a.focus(in.Pane)
+			a.focusRaised(in.Pane)
 		}
 	case WindowFocused:
 		// In front already, as it asked.
@@ -1028,13 +1036,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.nextPane(in.Back)
 	case PopOut:
 		a.popOut()
-	case ToggleSidebar:
-		// In the window it was asked in, which is the one in front.
-		a.cur.noSidebar = !a.cur.noSidebar
 	case SplitMoved:
 		setShare(a.groups[a.groupOf[a.st.Focus]], in.Split, in.Share)
-	case SidebarMoved:
-		a.cur.sidebarWidth = in.Width
 	case Exit:
 		a.askToQuit()
 	case RenamePane:
@@ -1473,7 +1476,7 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 			if a.machines.Get(machine).Conn == nil && a.machines.Get(machine).Window == nil {
 				// Connected, but by another name than this one: said,
 				// rather than connected to again and again.
-				err := errors.New("the connection was made under another name. Open a terminal on it from the sidebar")
+				err := errors.New("the connection was made under another name. Open a terminal on it from the Servers pane")
 				a.failed("Couldn't open a shell on "+a.machines.Name(machine), words.UpperFirst(err.Error())+".")
 				then("", err)
 				return

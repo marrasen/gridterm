@@ -205,17 +205,17 @@ func FontCommandID(family string) string {
 	return "font.use." + strings.ToLower(strings.ReplaceAll(family, " ", "-"))
 }
 
-// openCols and openRows are the terminal a new window opens with, beside
-// the sidebar: 100 by 32 for the whole window, less its sidebar and bar.
+// openCols and openRows are the terminal a new window opens with.
 const openCols, openRows = 80, 30
 
-// frameW and frameH are the window around the terminal: the divider
-// beside the sidebar, and the menu bar and the pane's title above.
-const frameW, frameH = 6, 52
+// frameW and frameH are the window around the terminal: the room
+// round its cells, twice the default of the view's kakel.term.padding,
+// and the title bar and the pane's title above.
+const frameW, frameH = 12, 64
 
-// firstSize is how big a new window opens: room for the sidebar and a
-// terminal of openCols by openRows at font size, in Go Mono.
-func firstSize(size float32, sidebar float32) geom.Size {
+// firstSize is how big a new window opens: room for a terminal of
+// openCols by openRows at font size, in Go Mono.
+func firstSize(size float32) geom.Size {
 	face := text.GoMono(false, false)
 	ascent, descent, gap := face.Metrics(size)
 	_, advance, ok := face.Glyph('M', size)
@@ -224,5 +224,5 @@ func firstSize(size float32, sidebar float32) geom.Size {
 	}
 	w := float32(math.Round(float64(advance)))
 	h := float32(math.Round(float64(ascent + descent + gap)))
-	return geom.Sz(sidebar+frameW+openCols*w, frameH+openRows*h)
+	return geom.Sz(frameW+openCols*w, frameH+openRows*h)
 }

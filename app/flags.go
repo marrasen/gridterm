@@ -289,7 +289,7 @@ func (o Options) WindowSize() geom.Size {
 			}
 		}
 	}
-	return firstSize(size, 220)
+	return firstSize(size)
 }
 
 // CaptureLog keeps what kakel logs for the window log to show, and

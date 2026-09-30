@@ -254,6 +254,7 @@ var kindIcons = map[string]*icon.Icon{
 	"command":  icon.SquareChevronRight,
 	"terminal": icon.SquareTerminal,
 	"split":    icon.Columns2,
+	"servers":  icon.Server,
 }
 
 // paintIcon draws the little image for a kind of row in r.
@@ -279,7 +280,11 @@ func drawIcon(p *paint.Painter, ic *icon.Icon, r geom.Rect, c color.NRGBA, thick
 // under way under the machine it works on.
 func (w *Window) markRows(rows []sideItem, st app.State) []sideItem {
 	panes := map[string]app.Pane{}
-	for _, p := range st.Panes {
+	all := st.AllPanes
+	if all == nil {
+		all = st.Panes
+	}
+	for _, p := range all {
 		panes[p.ID] = p
 	}
 	tunnels := map[string]app.Tunnel{}
@@ -413,6 +418,10 @@ func paneKindIcon(p app.Pane) string {
 // anyBreathing reports whether a row's mark is moving now, for the
 // window to keep drawing while it does.
 func (w *Window) anyBreathing(now time.Time) bool {
+	if !w.listShown {
+		// Out of the tree, the list keeps the rows it had last.
+		return false
+	}
 	for _, k := range w.list.Keys() {
 		if row, ok := widget.RowOf[*sideRow](w.list, k); ok && row.marks.live != nil && row.marks.live(now) == meter.Active {
 			return true

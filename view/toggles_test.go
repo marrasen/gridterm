@@ -45,29 +45,19 @@ func TestTheSwitcherShortcutClosesItAgain(t *testing.T) {
 	}
 }
 
-// In full screen, the sidebar's shortcut brings the sidebar over the
-// stage and takes it away again, and the window stays full screen.
-func TestTheSidebarComesBackInFullScreen(t *testing.T) {
+// The sidebar's shortcut opens and closes the Servers pane, in full
+// screen too.
+func TestTheSidebarShortcutTogglesServers(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Sidebar: false, SidebarWidth: 220, Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
 	win.present(true, lastUI)
-	win.run("sidebar.toggle", lastUI)
-	if !win.presenting || win.outer.Share() != 220 {
-		t.Fatalf("in full screen, the sidebar is %v wide, presenting %v", win.outer.Share(), win.presenting)
-	}
-	win.run("sidebar.toggle", lastUI)
-	if !win.presenting || win.outer.Share() != 0 {
-		t.Fatalf("toggled again, the sidebar is %v wide", win.outer.Share())
-	}
-	// Out of full screen, it is the program's to show or hide.
-	win.present(false, lastUI)
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
 	win.run("sidebar.toggle", lastUI)
-	if in := nextIntent(t); in != (app.ToggleSidebar{}) {
-		t.Fatalf("out of full screen, the shortcut sent %#v", in)
+	if in := nextIntent(t); in != (app.ToggleServers{}) || !win.presenting {
+		t.Fatalf("the shortcut sent %#v, full screen %v", in, win.presenting)
 	}
 }
 
@@ -75,8 +65,8 @@ func TestTheSidebarComesBackInFullScreen(t *testing.T) {
 // so rather than doing nothing.
 func TestCloseSelectedRowSaysWhyItDidNothing(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Sidebar: true, SidebarWidth: 220, Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
-		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}})
+	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "a", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}))
 	was := win.toasts.Len()
 	win.run("sidebar.closeRow", lastUI)
 	if win.toasts.Len() != was+1 {
@@ -147,16 +137,16 @@ func TestThePaletteTicksASwitchThatIsOn(t *testing.T) {
 				return win.palette.Items[i].Checked
 			}
 		}
-		t.Fatal("no Show Sidebar in the palette")
+		t.Fatal("no Servers in the palette")
 		return false
 	}
-	publish(app.State{Sidebar: true, SidebarWidth: 220})
+	publish(app.State{AllPanes: []app.Pane{{ID: "ps", Kind: app.KindServers}}})
 	if !ticked() {
-		t.Fatal("with the sidebar showing, the palette leaves it unticked")
+		t.Fatal("with the Servers pane open, the palette leaves it unticked")
 	}
-	publish(app.State{Sidebar: false, SidebarWidth: 220})
+	publish(app.State{})
 	if ticked() {
-		t.Fatal("with the sidebar hidden, the palette ticks it")
+		t.Fatal("with the Servers pane closed, the palette ticks it")
 	}
 }
 
@@ -320,7 +310,7 @@ func TestTheCursorHidesWhileTheWindowIsInactive(t *testing.T) {
 // menu while it does, and the title bar has the pin for it.
 func TestAlwaysOnTopPinsTheWindow(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Sidebar: true, SidebarWidth: 220})
+	publish(app.State{})
 	win.run("view.pin", lastUI)
 	if !lastUI.Pinned() || !lastWindow.Offscreen().Pinned() {
 		t.Fatal("Always on Top left the window among the others")
@@ -390,7 +380,7 @@ func TestTheThemePickerPreviewsWhatItIsOn(t *testing.T) {
 // its fields.
 func TestATallDialogFitsTheWindowAndScrolls(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Sidebar: true, SidebarWidth: 220})
+	publish(app.State{})
 	form := widget.NewForm()
 	for range 40 {
 		form.Add("Field", widget.NewTextField())

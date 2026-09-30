@@ -27,7 +27,7 @@ func TestANewWindowOpensOnATerminalOf80By30(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", Sidebar: true, SidebarWidth: 220, FontSize: defaultSize, PaneTitles: true}
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1", FontSize: defaultSize, PaneTitles: true}
 	for range 10 {
 		publish(st)
 	}

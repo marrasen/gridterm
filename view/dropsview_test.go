@@ -20,7 +20,7 @@ func TestADropGoesToTheTerminalUnderItOrTheFocusedOne(t *testing.T) {
 	quiet := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}}
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
-	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	publish(withServers(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}))
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -39,6 +39,6 @@ func TestADropGoesToTheTerminalUnderItOrTheFocusedOne(t *testing.T) {
 		t.Fatalf("dropped on the terminal, it went to %q", in.Pane)
 	}
 	if in := drop(geom.Pt(20, 200)); in.Pane != "" {
-		t.Fatalf("dropped on the sidebar, it went to %q, want the focused pane", in.Pane)
+		t.Fatalf("dropped on the Servers pane, it went to %q, want the focused pane", in.Pane)
 	}
 }

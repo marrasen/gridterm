@@ -26,7 +26,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	win, _, publish := windowStage(t)
 	busy := meter.New()
 	busy.Moved(10, 0, time.Now())
-	st := app.State{Sidebar: true, SidebarWidth: 220, Connected: []machines.ID{"srv"},
+	st := app.State{Connected: []machines.ID{"srv"},
 		Panes: []app.Pane{
 			{ID: "p1", Title: "Terminal 1"},
 			{ID: "p2", Title: "docs", Kind: app.KindFiles},
@@ -43,7 +43,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 		Focus:    "p2",
 		Browsers: map[string]app.Browser{"p2": {Path: "/", Seq: 1}},
 	}
-	publish(st)
+	publish(withServers(st))
 	row := func(key string) *sideRow {
 		t.Helper()
 		r, ok := widget.RowOf[*sideRow](win.list, widget.Key(key))
@@ -85,7 +85,7 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	lastWindow.Input(gi.PointerDown{Pos: p, Button: gi.ButtonPrimary, Clicks: 1})
 	lastWindow.Input(gi.PointerUp{Pos: p, Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
-	if in, ok := nextIntent(t).(app.ClosePane); !ok || in.Pane != "p2" {
+	if in := nextIntentPast(t); in != (app.ClosePane{Pane: "p2"}) {
 		t.Fatalf("the cross sent %#v", in)
 	}
 }
@@ -96,7 +96,7 @@ func TestSharingShowsChipsAndOpensThePermissions(t *testing.T) {
 	sh.Set("p1", screen.Open(sessiontest.New(), vt.DefaultPalette(), quiet))
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"}
-	publish(st)
+	publish(withServers(st))
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -109,7 +109,7 @@ func TestSharingShowsChipsAndOpensThePermissions(t *testing.T) {
 	}
 	st.Share = app.Share{Code: "ABC", Panes: []app.SharedPane{{Pane: "p1"}}}
 	st.Serving = app.Serving{On: true, Clients: []app.ServedClient{{Name: "laptop", From: "10.0.0.2"}}}
-	publish(st)
+	publish(withServers(st))
 	if win.dialog == nil {
 		t.Fatal("shared, the pane's permissions did not open")
 	}
@@ -160,10 +160,10 @@ func TestTheSecretsHeadingNamesTheTerminalWaiting(t *testing.T) {
 // under its own row, and in who is connected.
 func TestATunnelThroughThisWindowHasARow(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Sidebar: true, SidebarWidth: 220, Serving: app.Serving{On: true,
+	st := app.State{Serving: app.Serving{On: true,
 		Clients: []app.ServedClient{{Name: "laptop", From: "10.0.0.2"}},
 		Tunnels: []app.ServedTunnel{{Client: "laptop", From: "10.0.0.2", Label: ":8080 → db:5432", On: "db"}}}}
-	publish(st)
+	publish(withServers(st))
 	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("client:laptop:0:tunnel:0"))
 	if !ok || row.title.Text != ":8080 → db:5432" || row.note.Text != "for laptop, on db" {
 		t.Fatalf("the tunnel's row is %v", ok)
@@ -205,9 +205,9 @@ func TestAMachineOverThereHasAHeadingWithNothingOpenOnIt(t *testing.T) {
 // brings it out again; a note that says something new is up again.
 func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 	win, _, publish := windowStage(t)
-	st := app.State{Sidebar: true, SidebarWidth: 220, Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFiles, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
+	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFiles, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
-	publish(st)
+	publish(withServers(st))
 	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("p1"))
 	if !ok || row.note.Text != "42%" {
 		t.Fatalf("the note is %q", row.note.Text)
@@ -223,7 +223,7 @@ func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 	}
 	row.Handle(gi.PointerLeave{}, lastUI)
 	st.Panes[0].Note = "43%"
-	publish(st)
+	publish(withServers(st))
 	if row.note.Text != "43%" {
 		t.Fatalf("said anew, the note is %q", row.note.Text)
 	}

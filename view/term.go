@@ -19,6 +19,7 @@ import (
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
+	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/grid"
@@ -693,4 +694,33 @@ func (t *term) Cursor(p geom.Point) gi.Cursor {
 		return gi.CursorHand
 	}
 	return gi.CursorArrow
+}
+
+// termPadding is the room between a terminal's cells and its pane's
+// edges, in the terminal's background.
+var termPadding = theme.Length("kakel.term.padding", 6)
+
+// termPad holds a terminal a little in from its pane's edges, the room
+// filled with the terminal's background, so the text is clear of the
+// window's edge.
+type termPad struct {
+	term *term
+}
+
+// Children implements [gunim.Composite].
+func (p *termPad) Children() []gunim.Node { return []gunim.Node{p.term} }
+
+// Layout implements [gunim.Node].
+func (p *termPad) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	pad := termPadding.Get(f.Theme)
+	k := kids.At(0)
+	k.Layout(gunim.Tight(geom.Sz(max(0, c.Max.W-2*pad), max(0, c.Max.H-2*pad))))
+	k.Place(geom.Pt(pad, pad))
+	return c.Max
+}
+
+// Paint implements [gunim.Node].
+func (p *termPad) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(look.TermBackground.Get(f.Theme)))
+	kids.At(0).Paint(pt)
 }

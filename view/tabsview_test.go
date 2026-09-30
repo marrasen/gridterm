@@ -8,6 +8,7 @@ import (
 
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/widget"
 )
 
 // twoTabs is a window with two tabs, p1's in front, and p2's.
@@ -223,5 +224,44 @@ func TestManyTabsKeepTheBarUsable(t *testing.T) {
 	click(icon, gi.ButtonPrimary)
 	if in, ok := nextIntent(t).(app.ShowTab); !ok || in.Group != 13 {
 		t.Fatalf("a click on a narrow tab sent %#v", in)
+	}
+}
+
+// Out of the tree, the Servers pane's list keeps no frames coming for a
+// row it had last, and Escape in the list goes back to the pane last
+// worked in.
+func TestTheServersListRestsOffStage(t *testing.T) {
+	win, _, publish := windowStage(t)
+	st := withServers(twoPanes("p2", nil))
+	st.Focus = "ps"
+	st.Working = "p2"
+	publish(st)
+	drain()
+	if !win.listShown || lastUI.Focused() == nil {
+		t.Fatal("on stage, the list is not shown or has no keyboard")
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEscape})
+	lastWindow.Frame(time.Second / 60)
+	if in := nextIntent(t); in != (app.FocusPane{Pane: "p2"}) {
+		t.Fatalf("Escape sent %#v", in)
+	}
+	publish(twoPanes("p2", nil))
+	if win.listShown || win.anyBreathing(time.Now()) {
+		t.Fatal("off stage, the list is taken as shown")
+	}
+}
+
+// In a narrow pane the Servers pane's buttons keep to their icons, and
+// stay inside it.
+func TestTheServersButtonsFitANarrowPane(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(300, 400))
+	publish(withServers(app.State{}))
+	settle()
+	pane, _ := lastUI.Bounds(win.serversView)
+	for _, b := range []*widget.Button{win.serversView.quick, win.serversView.add, win.serversView.attach} {
+		r, _ := lastUI.Bounds(b)
+		if r.Min.X < pane.Min.X || r.Max.X > pane.Max.X || b.Label != "" || b.Tooltip == "" {
+			t.Fatalf("a button is at %v in a pane at %v, labelled %q", r, pane, b.Label)
+		}
 	}
 }

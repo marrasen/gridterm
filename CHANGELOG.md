@@ -11,6 +11,14 @@ change how something behaves.
 
 ### Changed
 
+**The Servers pane replaces the sidebar.** Every machine, with what is
+open on it in every window, is now listed in a pane of its own.
+`Ctrl+Shift+L` opens it in a tab or goes to it, and `Ctrl+Shift+B`
+opens or closes it. Drag its tab out to keep it in a window of its own.
+A click on a pane in another window brings that window to the front.
+Quick Connect and Add Server are along its top. The stage takes the
+whole window, and a terminal's text sits a little in from its edges.
+
 **Servers are known by an ID, not their name.** Everything open on a
 saved server, its connection, panes, files, log and tunnels, goes by the
 ID the server list gave it. Renaming a server is saving its new name:

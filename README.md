@@ -49,8 +49,8 @@ kakel -list-fonts              # the monospace families installed
 With `-ssh` the window opens first and connects in a pane, so it asks
 about an unknown host key in a dialog and keeps the account of how the
 machine was reached. A new pane or split opens on that machine too, and
-its row on the sidebar offers the rest: files, a command, a tunnel and
-the account.
+its heading in the Servers pane offers the rest: files, a command, a
+tunnel and the account.
 
 Text is drawn in Go Mono, compiled into the binary, until you pick an
 installed family with `-font-family` or from the Font menu, which
@@ -112,8 +112,8 @@ kakel comes with:
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | `Ctrl+Alt+V` | paste an image as a file, and type its path |
 | `Ctrl+=` / `Ctrl+-` / `Ctrl+0` | font size |
-| `Ctrl+Shift+B` | show or hide the sidebar |
-| `Ctrl+Shift+L` | go to the sidebar |
+| `Ctrl+Shift+B` | open or close the Servers pane |
+| `Ctrl+Shift+L` | go to the Servers pane |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+G` | go to a directory, in a file pane |
 | `Ctrl+Shift+H` | every command and shortcut |

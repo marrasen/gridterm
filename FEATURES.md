@@ -19,7 +19,8 @@ The whole list. The [README](README.md) has the short version.
   window with `Ctrl+Shift+N`.
 - **One kakel window working in another.** A window can serve itself
   on a port you opt into, and another window on another machine can take
-  it over: its sidebar appears under that window's name, and a pane
+  it over: what it has open appears in the Servers pane under that
+  window's name, and a pane
   opened there is drawn here. Key authentication only, from a list of
   keys you write; there is no password and no way past an unknown host
   key but saying yes to its fingerprint, and a host key that changed is a
@@ -87,7 +88,7 @@ The whole list. The [README](README.md) has the short version.
   off.
 - **A file manager with as many panes as you want.** One manager for the
   window, and a pane added to it from the plus on any machine in the
-  sidebar: this machine, a server, or five of each with kakel in the
+  Servers pane: this machine, a server, or five of each with kakel in the
   middle. Each pane says which machine it is on above the directory it
   is showing. Tab moves to the next pane and Shift+Tab back, Enter
   descends, Backspace goes up and Space marks, the way a two-pane browser
@@ -190,22 +191,22 @@ The whole list. The [README](README.md) has the short version.
   every remote forward, because where the far machine really binds it is
   the far machine's decision. The panel shows what each is carrying: how
   many streams, how fast, and how many failed.
-- **A sidebar instead of a row of tabs.** It is open when the window
-  opens, and it is how everything is reached: every terminal, file pane,
-  tunnel and transfer, under the machine it is on with this one at the
-  top. Every saved server is on it whether or not anything is connected,
-  and every machine carries a plus that drops a menu of what can be
-  opened there. A row's hand-drawn kind icon is coloured for what it is
+- **A Servers pane.** `Ctrl+Shift+L` opens it in a tab of its own, or
+  goes to it where it is; drag its tab out to give it a window of its
+  own. It lists every terminal, file pane, tunnel and transfer, in every
+  window, under the machine it is on with this one at the top. A click
+  on a row in another window brings that window to the front. Every
+  saved server is on it whether or not anything is connected, and every
+  machine carries a plus that drops a menu of what can be opened there.
+  Quick Connect and Add Server are along its top. A row's hand-drawn kind icon is coloured for what it is
   doing — green for open, brightening and dimming while bytes are going
   past, grey once it has finished — and a machine's own heading carries a
-  dot in the same colours, as does a row in a sidebar dragged too narrow
-  to draw an icon. The bar follows whatever pane is in front, so the
-  sidebar is the list of what is open and says which one you are looking
-  at. A server not saved is connected to with Quick Connect on the
-  Servers menu, and listed, marked "quick", while anything is open on
-  it. Nothing polls: the row is worked out afresh each frame from when
-  the last byte went by, so an idle sidebar redraws nothing at all.
-  `Ctrl+Shift+B` hides it and shows it again.
+  dot in the same colours, as does a row in a pane too narrow to draw an
+  icon. The row of the pane last worked in is lit. A server not saved
+  is connected to with Quick Connect, and listed, marked "quick", while
+  anything is open on it. Nothing polls: the row is worked out afresh
+  each frame from when the last byte went by, so an idle list redraws
+  nothing at all. `Ctrl+Shift+B` opens and closes it.
 - **Servers are saved.** A machine you add gets a line on the Servers
   menu and an entry in the palette, kept in a JSON file under the OS
   configuration directory. It holds no secret and never will. A list
@@ -310,7 +311,7 @@ install and no profile to edit.
   starts the shell and applies its own answer.
 
 A program can say things of its own through the same channel. A
-message (OSC 9) goes on the pane's row in the sidebar, into the
+message (OSC 9) goes on the pane's row in the Servers pane, into the
 window's log, and up as a Windows notification, so one that arrives
 while you are looking elsewhere is still seen. How far along it is
 (OSC 9;4) goes on the row.

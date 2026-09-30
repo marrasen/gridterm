@@ -33,8 +33,8 @@ const File = "running.json"
 // took it: one on its way out does not, and the kakel handing it over
 // then runs as the one.
 type Handover struct {
-	Args []string `json:"args"`
-	Dir  string   `json:"dir"`
+	Args []string   `json:"args"`
+	Dir  string     `json:"dir"`
 	Take func(bool) `json:"-"`
 }
 
@@ -141,7 +141,7 @@ func Listen(ctx context.Context, dir string) (handovers <-chan Handover, stop fu
 		stop()
 	}()
 	go func() {
-			for {
+		for {
 			conn, err := l.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {

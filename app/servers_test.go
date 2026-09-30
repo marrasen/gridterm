@@ -3,6 +3,7 @@ package app
 import (
 	"testing"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/kakel/screen"
@@ -102,7 +103,7 @@ func toolWindows(t *testing.T) (a *app, work, tool *ownWin, raised func() int) {
 // takes no pane.
 func TestAToolWindowActsInTheWindowWorkedIn(t *testing.T) {
 	a, work, tool, raised := toolWindows(t)
-	a.handleFrom(ShowJobs{})
+	a.handle(ShowJobs{})
 	if a.winOf[a.paneOfKindHere(KindJobs)] != work.id || a.cur != work || raised() != 1 {
 		t.Fatalf("the jobs are in window %d, window %d in front, raised %d times", a.winOf[a.paneOfKindHere(KindJobs)], a.cur.id, raised())
 	}
@@ -110,7 +111,7 @@ func TestAToolWindowActsInTheWindowWorkedIn(t *testing.T) {
 		t.Fatal("the window worked in closed, or the tool window took a pane")
 	}
 	a.front(tool)
-	a.handleFrom(ShowTab{Group: a.groupOf[a.serversPane()]})
+	a.handle(ShowTab{Group: a.groupOf[a.serversPane()]})
 	if a.cur != tool {
 		t.Fatal("a tab intent of the tool window acted elsewhere")
 	}
@@ -148,5 +149,56 @@ func TestAToolWindowClosesWithoutAsking(t *testing.T) {
 	a.closeWindow(tool)
 	if !tool.gone || len(a.st.Asks) != 0 || a.serversPane() != "" {
 		t.Fatalf("gone %v, %d questions, the Servers pane %q", tool.gone, len(a.st.Asks), a.serversPane())
+	}
+}
+
+// Open Servers Window opens the Servers pane in a window of its own,
+// and Move Tab to New Window moves the tab in front.
+func TestServersAndTabsGetWindowsOfTheirOwn(t *testing.T) {
+	a, one, _ := twoWindowApp(t)
+	a.next = 100
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		return gunimtest.New(t, s, nil).Client(), nil, nil
+	}
+	a.front(one)
+	a.handle(ToolWindow{Kind: KindServers})
+	waitFor(t, a, "the Servers window", func() bool { return len(a.wins) == 3 })
+	if id := a.serversPane(); !a.isTool(a.ownerOf(id)) {
+		t.Fatalf("the Servers pane is in window %d with %d panes", a.ownerOf(id).id, len(a.panesIn(a.ownerOf(id))))
+	}
+	a.front(one)
+	a.focus("p1")
+	a.handle(TabToNewWindow{})
+	waitFor(t, a, "the tab's window", func() bool { return len(a.wins) == 4 })
+	if a.winOf["p1"] == one.id || a.winOf["p2"] != one.id {
+		t.Fatalf("p1 is in window %d, p2 in %d", a.winOf["p1"], a.winOf["p2"])
+	}
+}
+
+// A split asked for in a tool window splits the pane worked in, in its
+// window, and a pane arriving by itself later raises nothing.
+func TestAToolWindowSplitsWhereTheUserWorks(t *testing.T) {
+	a, work, tool, raised := toolWindows(t)
+	a.handleFrom(ChooseSplit{})
+	if !a.isTool(tool) || a.cur != work || raised() != 1 {
+		t.Fatalf("the tool window holds %d panes, window %d in front, raised %d times", len(a.panesIn(tool)), a.cur.id, raised())
+	}
+	if b := a.groups[a.groupOf["p1"]]; b == nil || b.Pane != "" {
+		t.Fatalf("p1's group is %+v, want a split", b)
+	}
+	a.front(tool)
+	a.addPane(Pane{ID: "late", Kind: KindFiles}, nil, Placement{})
+	if raised() != 1 || a.winOf["late"] != work.id || !a.isTool(tool) {
+		t.Fatalf("a pane arriving by itself raised the window %d times, and is in window %d", raised(), a.winOf["late"])
+	}
+}
+
+// Copying a secret, or anything else that opens no pane, stays with the
+// tool window.
+func TestAToolWindowKeepsWhatOpensNothing(t *testing.T) {
+	a, _, tool, raised := toolWindows(t)
+	a.handleFrom(FontSize{Step: 1})
+	if a.cur != tool || raised() != 0 {
+		t.Fatalf("window %d in front, raised %d times", a.cur.id, raised())
 	}
 }

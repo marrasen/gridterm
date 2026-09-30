@@ -76,6 +76,13 @@ The whole list. The [README](README.md) has the short version.
   another kakel window's bar to move it there, splits and all. Drop it
   on a pane to join that pane in a split, on the side it is nearest.
   Let it go outside every window and it opens a window of its own.
+- **Tool windows.** View › Open Servers Window and Secrets › Open
+  Secrets Window give those panes a window of their own. Tab › Tab to
+  New Window does it for the tab in front. In a window that holds only
+  the Servers pane or the secrets, a pane you open opens in the window
+  you last worked in, and that window comes to the front. A pane you ask
+  for again is shown where it is. A secret you type goes to the terminal
+  you last used, in whichever window.
 - **Splits that ask in place.** Split Right and Split Down split at
   once, and the new half offers what goes there: `+ Terminal`, one
   button for each shell here and each machine, `+ Command…`, and small

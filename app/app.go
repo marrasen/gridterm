@@ -522,8 +522,10 @@ type app struct {
 	// groupFocus the pane in each group that last had the keyboard.
 	tabOrder   []int
 	groupFocus map[int]string
-	// work is the window last worked in, other than a tool window.
-	work *ownWin
+	// work is the window last worked in, other than a tool window, and
+	// fromTool says an intent from a tool window is being handled.
+	work     *ownWin
+	fromTool bool
 	// next numbers the panes, and nextGroup the groups.
 	next      int
 	nextGroup int
@@ -1125,7 +1127,7 @@ func (a *app) handle(in gunim.Intent) {
 	case ShowTunnel:
 		a.showTunnel(in.ID)
 	case ShowSecrets:
-		a.showSecretsPane()
+		a.showSecretsPane(func(string) {})
 	case UnlockSecrets:
 		a.withSecrets("Couldn't open the secrets", func(*secrets.Vault) error { return nil })
 	case LockSecrets:
@@ -1550,6 +1552,10 @@ func (a *app) addPane(p Pane, sh *screen.Shell, at Placement) {
 	}
 	if w := a.ownerOf(at.Instead); w != nil && !w.gone {
 		a.front(w)
+	}
+	if a.ownerOf(at.Beside) == nil && a.ownerOf(at.Instead) == nil {
+		// Asked for in a tool window: in the window worked in.
+		a.workFor(p.Kind)
 	}
 	a.st.Panes = append(a.st.Panes, p)
 	if p.Kind != KindChooser && p.Kind != KindLog {

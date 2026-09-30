@@ -59,7 +59,7 @@ type (
 	CloseTab struct{ Group int }
 	// TabToNewWindow moves a tab into a window of its own, opened with
 	// its top left corner at At, in the space of the window the intent
-	// came from, and Size large.
+	// came from, and Size large. Group 0 is the tab in front.
 	TabToNewWindow struct {
 		Group int
 		At    geom.Point
@@ -336,6 +336,9 @@ func (a *app) dockTab(in DockTab) {
 
 // tabToNewWindow opens a window at in.At and moves a tab into it.
 func (a *app) tabToNewWindow(in TabToNewWindow) {
+	if in.Group == 0 {
+		in.Group = a.groupOf[a.st.Focus]
+	}
 	from := a.groupWin(in.Group)
 	if from == nil || !a.movable(in.Group) {
 		return

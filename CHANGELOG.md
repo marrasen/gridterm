@@ -38,6 +38,13 @@ keys.
 
 ### Added
 
+**Tool windows.** Open Servers Window and Open Secrets Window give those
+panes a window of their own, and Move Tab to New Window does it for any
+tab. A pane opened from such a window opens in the window last worked
+in, which comes to the front. Asked for again, the Servers pane or the
+secrets are shown where they are rather than pulled into the window
+asking.
+
 **Tabs.** A window holds tabs, each a pane or a split, and the tab bar
 shows in the title bar once there are two. Drag a tab to reorder it, onto
 another window to move it there, onto a pane to split beside it, or out

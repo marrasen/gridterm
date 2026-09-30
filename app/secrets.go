@@ -349,17 +349,22 @@ func secretKey(k secrets.KeySlot) SecretKey {
 
 // showSecretsPane opens the secrets pane, or goes to it, once the
 // vault is open.
-func (a *app) showSecretsPane() {
+func (a *app) showSecretsPane(then func(id string)) {
 	a.withSecrets("Couldn't open the secrets", func(*secrets.Vault) error {
+		// A tool pane, shown where it is: in a window of its own, that
+		// window comes to the front.
 		for _, p := range a.st.Panes {
-			if p.Kind == KindSecrets {
-				a.bringHere(p.ID)
+			if p.Kind == KindSecrets && !a.closing[p.ID] {
+				a.focusRaised(p.ID)
+				then(p.ID)
 				return nil
 			}
 		}
 		a.next++
-		a.addPane(Pane{ID: "p" + itoa(a.next), Title: "Secrets", Kind: KindSecrets}, nil, Placement{})
+		id := "p" + itoa(a.next)
+		a.addPane(Pane{ID: id, Title: "Secrets", Kind: KindSecrets}, nil, Placement{})
 		a.watchVault()
+		then(id)
 		return nil
 	})
 }
@@ -501,7 +506,7 @@ func (a *app) typeSecret(id string) {
 			value += "\r"
 		}
 		sh.T.Paste(value)
-		a.focus(a.lastTerminal)
+		a.focusRaised(a.lastTerminal)
 	})
 }
 

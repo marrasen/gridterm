@@ -437,6 +437,18 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "sidebar.focus":
 		w.focusSidebar(u)
 		return true
+	case "tab.newWindow", "servers.window", "secrets.window":
+		// A little down and to the right of this window, as large.
+		at, size := geom.Pt(40, 40), w.size
+		switch id {
+		case "servers.window":
+			u.Send(w, app.ToolWindow{Kind: app.KindServers, At: at, Size: size})
+		case "secrets.window":
+			u.Send(w, app.ToolWindow{Kind: app.KindSecrets, At: at, Size: size})
+		default:
+			u.Send(w, app.TabToNewWindow{At: at, Size: size})
+		}
+		return true
 	case "sidebar.closeRow":
 		row, ok := u.Focused().(*sideRow)
 		switch {
@@ -2025,6 +2037,11 @@ func (w *Window) applies(id string) bool {
 		return w.focused != ""
 	case "sshkey.forget":
 		return len(w.keyFiles) > 0
+	case "tab.next", "tab.previous", "tab.moveLeft", "tab.moveRight", "tab.newWindow":
+		// A window's only tab has nowhere to go; it is its window.
+		return len(w.tabs.tabs) > 1
+	case "tab.close":
+		return w.focused != ""
 	}
 	return true
 }

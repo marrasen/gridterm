@@ -16,6 +16,7 @@ import (
 
 	"golang.org/x/crypto/ssh"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 
@@ -412,5 +413,33 @@ func TestKeysToChooseAreToldApart(t *testing.T) {
 	want := []string{"/home/me/.ssh/id_ed25519", "/home/me/work/id_ed25519", "deploy"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("the choices are %q", got)
+	}
+}
+
+// Open Secrets Window gives the secrets a window of their own; asked
+// for again from another window, they stay there, and that window comes
+// to the front.
+func TestTheSecretsGetAWindowOfTheirOwn(t *testing.T) {
+	a, _ := secretsApp(t)
+	a.next = 100
+	a.addPane(Pane{ID: "p1", Kind: KindFiles}, nil, Placement{})
+	startVault(t, a)
+	first := a.cur
+	var opened *gunim.Window
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		opened = gunimtest.New(t, s, nil)
+		return opened.Client(), nil, nil
+	}
+	a.handle(ToolWindow{Kind: KindSecrets, Size: geom.Sz(400, 300)})
+	waitFor(t, a, "the window for the secrets", func() bool { return len(a.wins) == 2 })
+	id := a.st.Focus
+	own := a.ownerOf(id)
+	if a.kindOfPane(id) != KindSecrets || own == first || len(a.panesIn(own)) != 1 {
+		t.Fatalf("the secrets are %q in window %d with %d panes", id, own.id, len(a.panesIn(own)))
+	}
+	a.front(first)
+	a.handle(ShowSecrets{})
+	if a.ownerOf(id) != own || a.cur != own || opened.Offscreen().Raised() != 1 {
+		t.Fatalf("asked for again, the secrets are in window %d, window %d in front, raised %d times", a.ownerOf(id).id, a.cur.id, opened.Offscreen().Raised())
 	}
 }

@@ -271,8 +271,8 @@ func (a *app) closeWindow(w *ownWin) {
 		a.askToQuit()
 		return
 	}
-	// The Servers pane has nothing to lose, and is not asked about.
-	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return p.Kind == KindServers })
+	// The tool panes have nothing to lose, and are not asked about.
+	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return isToolKind(p.Kind) })
 	if len(panes) == 0 {
 		for _, p := range a.panesIn(w) {
 			a.remove(p.ID)
@@ -391,6 +391,11 @@ func (a *app) stateFor(w *ownWin, st State) State {
 // it there from another window first, for a pane asked for again: the
 // jobs, a log, the help.
 func (a *app) bringHere(id string) {
+	if a.isTool(a.cur) {
+		// Asked for in a tool window: shown where it is.
+		a.focusRaised(id)
+		return
+	}
 	if w := a.ownerOf(id); w != nil && w != a.cur {
 		a.moveToWindow(id, a.cur)
 	}

@@ -773,10 +773,12 @@ func (a *app) run(ctx context.Context) error {
 	if err := a.applyOptions(); err != nil {
 		return err
 	}
-	a.openFirstOrSay()
 	a.takeLauncherKey()
 	if a.opts.launcher {
+		// Started for the launcher alone: no terminal with it.
 		a.openLauncher()
+	} else {
+		a.openFirstOrSay()
 	}
 	a.publish()
 	if a.opts.shot != "" {
@@ -1012,7 +1014,8 @@ func (a *app) leaveIfEmpty() {
 // way, and so leaves: nothing connecting, no window or shell opening,
 // and not kept open, as after the first pane failed.
 func (a *app) emptyAndIdle() bool {
-	return len(a.st.Panes) == 0 && len(a.st.Asks) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
+	return len(a.st.Panes) == 0 && len(a.st.Asks) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty &&
+		a.launch.c == nil && !a.launch.opening
 }
 
 func (a *app) publish() {

@@ -178,14 +178,19 @@ and a pick reaches kakel.
 ## The launcher's key
 
 Under X11, kakel takes Ctrl+Alt+K from every program for its launcher,
-with XGrabKey. Keys with Super do not work there: Cinnamon and GNOME
-take the keyboard while Super is held, so another program never sees
-the rest. Options › Launcher Key… picks another.
+with XGrabKey. That key then no longer reaches other programs, such as
+Emacs's C-M-k. Under Cinnamon and GNOME, keys with Super do not work:
+they take the keyboard while Super is held, so another program never
+sees the rest. Other window managers, such as XFCE's or i3, let them
+through. Options › Launcher Key… picks another.
 
 Under Wayland no program may take a key from the others, so kakel takes
 none. Bind `kakel -launcher` to a key in the desktop's keyboard
-settings instead; it opens the launcher in the kakel running. A
-GlobalShortcuts portal, where a desktop has one, is not used yet.
+settings instead. It opens the launcher in the kakel running, or starts
+kakel with the launcher alone. This has not been tried under Wayland,
+where the desktop may keep a window it did not expect from coming to
+the front. A GlobalShortcuts portal, where a desktop has one, is not
+used yet.
 
 ## Driving it without a person
 

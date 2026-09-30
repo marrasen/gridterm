@@ -105,6 +105,7 @@ func run() error {
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen}, Handovers: handovers,
+			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey,
 		})
 	})
 	if errors.Is(err, driver.ErrNoDriver) {
@@ -163,6 +164,42 @@ func (ws *ownWindows) openFrom(from *gunim.Window, at geom.Point, size geom.Size
 	}
 	w, c, err := ws.open(o)
 	return c, w, err
+}
+
+// openLauncher opens the launcher's window, over the others in the
+// middle of the main display, with its view mounted.
+func (ws *ownWindows) openLauncher() (gunim.Client, error) {
+	o := gunim.WindowOptions{Title: app.ProgramName, Size: view.LauncherSize, Icons: appicon.Images(), Pinned: true, TitleBar: view.NoTitleBar()}
+	if mons := ws.app.Monitors(); len(mons) > 0 {
+		m := mons[0]
+		area := m.WorkArea
+		if area.Empty() {
+			area = m.Bounds
+		}
+		scale := m.CoordsPerLogical
+		if scale <= 0 {
+			scale = 1
+		}
+		w, h := view.LauncherSize.W*scale, view.LauncherSize.H*scale
+		c := area.Center()
+		// A third of the way down, as a search box sits.
+		o.Place = &driver.Placement{Bounds: geom.Rc(c.X-w/2, area.Min.Y+(area.Size().H-h)/3, w, h)}
+	}
+	w, err := ws.app.NewWindow(o)
+	if err != nil {
+		return gunim.Client{}, fmt.Errorf("kakel: %w", err)
+	}
+	ws.mu.Lock()
+	all := ws.all
+	ws.mu.Unlock()
+	look.Register(w, all)
+	gunim.RegisterView(w, "launcher", func(app.LaunchState) *view.Launcher { return view.NewLauncher() },
+		func(l *view.Launcher, st app.LaunchState, u *gunim.UI) { l.Update(st, u) })
+	c := w.Client()
+	if err := c.Mount(gunim.Root, "launcher", "launcher", app.LaunchState{}, app.LauncherTopic); err != nil {
+		return gunim.Client{}, err
+	}
+	return c, nil
 }
 
 // registerThemes names all to every window, and to those opened later.

@@ -78,6 +78,8 @@ type State struct {
 	// InTray says kakel is to show its icon in the system tray, and run
 	// on there once its last window closes, where there is a tray.
 	InTray bool
+	// LauncherKey is the launcher's key, as written.
+	LauncherKey string
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -934,6 +936,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't take the files dropped"
 	case DropOnFiles:
 		return "Couldn't take the files dropped"
+	case SetLauncherKey:
+		return "Couldn't change the launcher's key"
 	case PasteImageAsFile, PasteImage:
 		return "Couldn't paste the image"
 	case SaveServer:
@@ -1026,6 +1030,7 @@ func (a *app) publish() {
 		a.publishLauncher()
 	}
 	st.InTray = a.trayWanted()
+	st.LauncherKey = a.launcherKey()
 	st.Working = ""
 	if a.work != nil && !a.work.gone {
 		st.Working = a.focusIn(a.work)
@@ -1381,6 +1386,10 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.reloadServers()
 	case ClearFinished:
 		a.clearFinished()
+	case OpenLauncher:
+		a.openLauncher()
+	case SetLauncherKey:
+		err = a.setLauncherKey(in.Key)
 	case ToggleTray:
 		if a.settings != nil {
 			if err := a.settings.PutTray(!a.settings.Tray()); err != nil {

@@ -53,7 +53,7 @@ func TestKakelShowsItselfInTheTray(t *testing.T) {
 		t.Fatalf("shown %d times, in the tray %v, staying %v", len(f.shown), a.inTray(), f.stay)
 	}
 	got := titles(f.shown[0].Items)
-	if len(got) < 5 || got[0] != "Servers" || got[2] != "This computer" || got[len(got)-1] != "Quit kakel" {
+	if len(got) < 5 || got[0] != "Servers" || got[3] != "This computer" || got[len(got)-1] != "Quit kakel" {
 		t.Fatalf("the menu is %v", got)
 	}
 	a.leaveTray()

@@ -38,6 +38,12 @@ keys.
 
 ### Added
 
+**A launcher on Shift+Win+K.** From any program on Windows, the key opens
+a small window that finds a machine as you type; Enter opens a terminal
+there, or what was opened there last, and Tab lists the rest. Options ›
+Launcher Key… changes the key. Open Launcher does the same from the
+Servers menu and the tray. Linux and macOS have no global key yet.
+
 **kakel in the tray, one at a time.** An icon in the system tray lists
 this computer and the saved servers, each with what can be opened on it,
 and works with no window open. Closing the last window leaves kakel

@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/app"
+	"github.com/marrasen/kakel/winkeys"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/machines"
 
@@ -196,6 +198,31 @@ func (w *Window) termProgramDialog(u *gunim.UI) {
 		Add("TERM_PROGRAM", called).Add("Known", known)
 	d.SetButtons("Save", "Cancel")
 	d.OnAccept = func() gunim.Intent { return app.SetTermProgram{Called: called.Text()} }
+	d.Dismiss = app.DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// launcherKeyDialog asks for the launcher's key.
+func (w *Window) launcherKeyDialog(u *gunim.UI) {
+	key := widget.NewTextField()
+	key.SetText(w.launcherKey)
+	key.Placeholder = app.DefaultLauncherKey
+	d := widget.NewDialog("Launcher Key")
+	d.Body = widget.NewForm().
+		Add("", widget.NewLabel("The launcher opens on this key from any program. Write it as a shortcut is, such as shift+super+k, where super is the Windows key. Blank uses shift+super+k, and none takes no key.")).
+		Add("Key", key)
+	d.SetButtons("Save", "Cancel")
+	d.Check = func() string {
+		k := strings.TrimSpace(key.Text())
+		if k == "" || k == "none" {
+			return ""
+		}
+		if _, err := winkeys.Parse(k); err != nil {
+			return words.UpperFirst(err.Error()) + "."
+		}
+		return ""
+	}
+	d.OnAccept = func() gunim.Intent { return app.SetLauncherKey{Key: key.Text()} }
 	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }

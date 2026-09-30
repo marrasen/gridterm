@@ -163,6 +163,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	}
 	items := []gunim.TrayItem{
 		{Title: "Servers", ID: act(func() { a.toTray(a.showServers) }), Default: true},
+		{Title: "Open Launcher", ID: act(a.openLauncher)},
 		{Separator: true},
 		machine(machines.Local, "This computer"),
 	}

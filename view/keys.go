@@ -131,6 +131,8 @@ var commands = []struct{ id, title string }{
 	{"help.files", "File Locations"},
 	{"app.about", "About kakel"},
 	{"app.tray", "Tray Icon"},
+	{"app.launcher", "Open Launcher"},
+	{"app.launcherKey", "Launcher Key"},
 	{"sshkey.make", "New SSH Key"},
 	{"sshkey.lock", "Lock SSH Keys"},
 	{"sshkey.forget", "Remove Saved Key"},
@@ -257,6 +259,8 @@ var commandIcons = map[string]*icon.Icon{
 	"view.log":               icon.ScrollText,
 	"app.about":              icon.Info,
 	"app.tray":               icon.PanelBottom,
+	"app.launcher":           icon.Search,
+	"app.launcherKey":        icon.Keyboard,
 	"server.connect":         icon.Plug,
 	"server.add":             icon.Plus,
 	"secrets.pane":           icon.Vault,
@@ -360,6 +364,7 @@ var menus = []struct {
 		{id: "view.themesReload", title: "Themes"}, {id: "shortcuts.reload", title: "Shortcuts"},
 		{id: "server.reload", title: "Server List"},
 		{id: "app.tray", title: "Tray Icon", group: true},
+		{id: "app.launcherKey", title: "Launcher Key…"},
 		{id: "help.files", title: "File Locations…", group: true},
 	}},
 	// The Font menu is made from the families found here.
@@ -411,6 +416,8 @@ var commandAlso = map[string][]string{
 	"app.exit":              {"quit", "close this window"},
 	"app.about":             {"version"},
 	"app.tray":              {"system tray", "notification area", "keep running", "background", "close to tray"},
+	"app.launcher":          {"find a machine", "search", "quick", "connect", "global", "hot key"},
+	"app.launcherKey":       {"global shortcut", "hot key", "shift+win+k", "change"},
 	"shell.default":         {"pane"},
 	"server.connect":        {"ssh", "host", "machine"},
 	"server.add":            {"new", "save"},
@@ -495,6 +502,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.CloseTab{}, true
 	case "app.tray":
 		return app.ToggleTray{}, true
+	case "app.launcher":
+		return app.OpenLauncher{}, true
 	case "pane.nextInSidebar":
 		return app.NextPane{}, true
 	case "pane.previousInSidebar":

@@ -124,8 +124,10 @@ type Window struct {
 	// as last published.
 	shellChoices []app.ShellChoice
 	chosenShell  string
-	// termProgram is what new shells are told the terminal is called.
+	// termProgram is what new shells are told the terminal is called,
+	// and launcherKey the launcher's key, as last published.
 	termProgram string
+	launcherKey string
 	// connected are the servers connected to, as last published.
 	connected []machines.ID
 	// help is the list of commands, once opened, and shortcutsRead
@@ -445,6 +447,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 			b.setIcons(!b.icons, u)
 			w.tickSwitch(id, b.icons)
 		}
+		return true
+	case "app.launcherKey":
+		w.launcherKeyDialog(u)
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -1005,10 +1010,10 @@ func (w *Window) servers(saved []remote.Host) {
 		}
 		m.Breaks = []int{len(m.Items)}
 	}
-	m.Items = append(m.Items, "Quick Connect…", "Add Server…", "Reload Server List")
-	m.Hints = append(m.Hints, hint("server.connect"), "", "")
-	m.Icons = append(m.Icons, icon.Plug, icon.Plus, icon.RefreshCw)
-	w.serverIDs = append(w.serverIDs, "server.connect", "server.add", "server.reload")
+	m.Items = append(m.Items, "Quick Connect…", "Open Launcher", "Add Server…", "Reload Server List")
+	m.Hints = append(m.Hints, hint("server.connect"), "", "", "")
+	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.RefreshCw)
+	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.reload")
 	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
 		// The three lines always there first.
 		n := len(m.Items)
@@ -1778,6 +1783,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		}
 	}
 	w.termProgram = st.TermProgram
+	w.launcherKey = st.LauncherKey
 	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead

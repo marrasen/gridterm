@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/winkeys"
@@ -54,7 +55,39 @@ type (
 	// CloseLauncher closes the launcher, as Escape does, or a click
 	// elsewhere.
 	CloseLauncher struct{}
+	// OpenLauncher opens the launcher, as its key does.
+	OpenLauncher struct{}
+	// SetLauncherKey makes Key the launcher's, written as a shortcut
+	// is, "none" for none, or "" for the one kakel comes with.
+	SetLauncherKey struct{ Key string }
 )
+
+// setLauncherKey keeps the launcher's key, and takes it.
+func (a *app) setLauncherKey(key string) error {
+	key = strings.TrimSpace(key)
+	if key != "" && key != "none" {
+		if _, err := winkeys.Parse(key); err != nil {
+			return err
+		}
+	}
+	if a.settings != nil {
+		if err := a.settings.PutLauncherKey(key); err != nil {
+			return err
+		}
+	}
+	a.takeLauncherKey()
+	return nil
+}
+
+// launcherKey is the launcher's key, as written.
+func (a *app) launcherKey() string {
+	if a.settings != nil {
+		if k := a.settings.LauncherKey(); k != "" {
+			return k
+		}
+	}
+	return DefaultLauncherKey
+}
 
 // LauncherOpener opens the launcher's window, with its view mounted.
 type LauncherOpener func() (gunim.Client, error)
@@ -82,12 +115,7 @@ func (a *app) takeLauncherKey() {
 		a.launch.release()
 		a.launch.release = nil
 	}
-	written := DefaultLauncherKey
-	if a.settings != nil {
-		if k := a.settings.LauncherKey(); k != "" {
-			written = k
-		}
-	}
+	written := a.launcherKey()
 	if written == "none" {
 		return
 	}
@@ -132,6 +160,7 @@ func (a *app) openLauncher() {
 			}
 			a.launch.c = &c
 			a.launch.opened++
+			_ = c.SetTheme(a.st.Theme)
 			a.publishLauncher()
 			c.ToFront()
 			go func() {

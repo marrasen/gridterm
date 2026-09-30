@@ -105,6 +105,7 @@ kakel comes with:
 | `Ctrl+Shift+D` / `Ctrl+Shift+E` | split right / split down |
 | `Ctrl+Shift+W` | close the pane |
 | `Ctrl+Tab` / `Ctrl+Shift+Tab` | the next / previous pane |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
 | `Ctrl+Shift+A` | show every pane at once, and pick one |
 | `Ctrl+Shift+K` | the command palette |
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |

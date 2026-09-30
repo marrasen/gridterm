@@ -48,8 +48,15 @@ var (
 // Window is the view the program's state drives.
 type Window struct {
 	anim.Group
-	top    *widget.Flex
-	bar    *widget.Menubar
+	top *widget.Flex
+	bar *widget.Menubar
+	// tabs is the tab bar, and titleRow the title bar it sits in, after
+	// barBox, which holds the menu button.
+	tabs     *tabBar
+	titleRow *widget.Flex
+	barBox   *widget.Sized
+	// dock is where a tab dragged over the stage would join a split.
+	dock   tabDock
 	outer  *widget.Split
 	side   *panel
 	list   *widget.List
@@ -315,8 +322,11 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	// The pin before minimize keeps the window above the others.
 	controls := widget.NewWindowControls()
 	controls.Pin = true
-	bar := widget.Row(newAppMark(), w.bar, w.chips, controls).Grow(w.bar, 1)
+	w.tabs = newTabBar(w)
+	w.barBox = widget.NewSized(w.bar, 0, 0)
+	bar := widget.Row(newAppMark(), w.barBox, w.tabs, w.chips, controls).Grow(w.barBox, 1)
 	bar.Cross, bar.Gap = widget.CrossStretch, noGap
+	w.titleRow = bar
 	w.barShade = newShade(bar)
 	w.top = widget.Column(w.barShade, w.outer).Grow(w.outer, 1)
 	w.top.Cross, w.top.Gap = widget.CrossStretch, noGap
@@ -617,6 +627,7 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 		k.Paint(p)
 	}
 	w.paintDropLit(p, f, box)
+	w.paintDock(p, f)
 }
 
 // openDialog shows d over the window, with the keyboard, until it
@@ -720,6 +731,13 @@ func (w *Window) showTitle(st app.State, u *gunim.UI) {
 	if title != w.title {
 		w.title = title
 		u.SetTitle(title)
+		u.Invalidate()
+	}
+	// The tab bar names the panes while it shows.
+	if w.tabs.shown() {
+		pane = ""
+	}
+	if w.bar.Subtitle != pane {
 		w.bar.Subtitle = pane
 		u.Invalidate()
 	}
@@ -1603,7 +1621,7 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 		w.zoom(s, u)
 		return true
 	}
-	if w.paneDrop(e, u) {
+	if w.paneDrop(e, u) || w.tabDrop(e, u) {
 		return true
 	}
 	if d, ok := e.(input.Drop); ok && len(d.Paths) > 0 {
@@ -1878,6 +1896,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.glow(u)
 	w.keepDrawings(st, u)
+	w.showTabs(st, u)
 	w.showTitle(st, u)
 	if id := w.afterUnlock; id != "" && st.Secrets.Open {
 		w.run(id, u)

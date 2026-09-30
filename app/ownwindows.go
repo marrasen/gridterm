@@ -206,7 +206,11 @@ func (a *app) moveToWindow(id string, w *ownWin) {
 		return
 	}
 	i := slices.IndexFunc(a.st.Panes, func(p Pane) bool { return p.ID == id })
+	after := a.tabAfter(id)
 	next := a.take(id)
+	if next == "" {
+		next = after
+	}
 	a.winOf[id] = w.id
 	a.refocus(from, id, next, i)
 	a.place(id, Placement{})
@@ -224,6 +228,21 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) {
 		// already.
 		return
 	}
+	a.openWindowThen(in.At, in.Size, func(w *ownWin) bool {
+		from := a.ownerOf(in.Pane)
+		if from == nil || a.closing[in.Pane] || len(a.panesIn(from)) == 1 {
+			return false
+		}
+		a.moveToWindow(in.Pane, w)
+		return true
+	})
+}
+
+// openWindowThen opens a window at at, size large, in the space of the
+// window in front, and once it is open hands it to then, and puts it in
+// front. When then says there is nothing for it after all, the window
+// closes again.
+func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin) bool) {
 	if a.openWindow == nil {
 		a.failed("Couldn't open another window", "This kakel can't open windows.")
 		return
@@ -231,7 +250,7 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) {
 	open, gw := a.openWindow, a.cur.gw
 	a.opening++
 	go func() {
-		c, nw, err := open(gw, in.At, in.Size)
+		c, nw, err := open(gw, at, size)
 		a.events <- func() {
 			a.opening--
 			if err != nil {
@@ -241,8 +260,9 @@ func (a *app) paneToNewWindow(in PaneToNewWindow) {
 			w := a.addWindow(c, nw)
 			a.serveWin(w)
 			_ = c.SetTheme(a.st.Theme)
-			if a.ownerOf(in.Pane) != nil {
-				a.moveToWindow(in.Pane, w)
+			if !then(w) {
+				a.letWindowGo(w)
+				return
 			}
 			a.front(w)
 		}
@@ -354,6 +374,7 @@ func (a *app) stateFor(w *ownWin, st State) State {
 	if st.Focus != "" {
 		st.Stage = a.groups[a.groupOf[st.Focus]].clone()
 	}
+	st.Tabs = a.tabsOf(w)
 	st.Groups = map[string]*Box{}
 	byGroup := map[int]*Box{}
 	for _, p := range st.Panes {

@@ -21,7 +21,20 @@ menu, with the same shortcut. A server connected to by typing its
 address gets an ID of its own, is listed marked "quick", and is
 forgotten once it is not connected and nothing is open on it.
 
+**Ctrl+PageDown and Ctrl+PageUp go to the next and previous tab.** They
+used to go to the next and previous pane in the sidebar. Next Pane and
+Previous Pane are still on the Pane menu and in the palette, with no
+shortcut. A shortcuts file written before this change still binds them
+to Ctrl+PageDown and Ctrl+PageUp. Delete those two lines to get the tab
+keys.
+
 ### Added
+
+**Tabs.** A window holds tabs, each a pane or a split, and the tab bar
+shows in the title bar once there are two. Drag a tab to reorder it, onto
+another window to move it there, onto a pane to split beside it, or out
+of every window to open a window of its own. Ctrl+Shift+PageDown and
+Ctrl+Shift+PageUp move the tab in front.
 
 **The menus behind one button.** The title bar reads kakel's icon, a
 menu button, "kakel" and the pane in front. The button lists the menus,

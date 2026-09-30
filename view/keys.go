@@ -21,24 +21,26 @@ import (
 func Shortcuts() *ui.Keymap {
 	keys := ui.NewKeymap()
 	keys.MustBind(map[ui.Chord]string{
-		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:   "pane.splitRight",
-		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:   "pane.splitDown",
-		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:   "pane.popOut",
-		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:   "pane.close",
-		{Key: input.KeyTab, Mods: input.ModCtrl}:                  "pane.next",
-		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}: "pane.previous",
-		{Key: input.KeyPageDown, Mods: input.ModCtrl}:             "pane.nextInSidebar",
-		{Key: input.KeyPageUp, Mods: input.ModCtrl}:               "pane.previousInSidebar",
-		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:   "conn.terminal",
-		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:   "sidebar.toggle",
-		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:   "edit.paste",
-		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}:     "edit.pasteImage",
-		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:   "edit.copy",
-		{Key: input.KeyInsert, Mods: input.ModCtrl}:               "edit.copy",
-		{Key: input.KeyInsert, Mods: input.ModShift}:              "edit.paste",
-		{Key: input.KeyPageUp, Mods: input.ModShift}:              "view.scrollUp",
-		{Key: input.KeyPageDown, Mods: input.ModShift}:            "view.scrollDown",
-		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:   "palette.open",
+		{Key: input.KeyD, Mods: input.ModCtrl | input.ModShift}:        "pane.splitRight",
+		{Key: input.KeyE, Mods: input.ModCtrl | input.ModShift}:        "pane.splitDown",
+		{Key: input.KeyU, Mods: input.ModCtrl | input.ModShift}:        "pane.popOut",
+		{Key: input.KeyW, Mods: input.ModCtrl | input.ModShift}:        "pane.close",
+		{Key: input.KeyTab, Mods: input.ModCtrl}:                       "pane.next",
+		{Key: input.KeyTab, Mods: input.ModCtrl | input.ModShift}:      "pane.previous",
+		{Key: input.KeyPageDown, Mods: input.ModCtrl}:                  "tab.next",
+		{Key: input.KeyPageUp, Mods: input.ModCtrl}:                    "tab.previous",
+		{Key: input.KeyPageDown, Mods: input.ModCtrl | input.ModShift}: "tab.moveRight",
+		{Key: input.KeyPageUp, Mods: input.ModCtrl | input.ModShift}:   "tab.moveLeft",
+		{Key: input.KeyT, Mods: input.ModCtrl | input.ModShift}:        "conn.terminal",
+		{Key: input.KeyB, Mods: input.ModCtrl | input.ModShift}:        "sidebar.toggle",
+		{Key: input.KeyV, Mods: input.ModCtrl | input.ModShift}:        "edit.paste",
+		{Key: input.KeyV, Mods: input.ModCtrl | input.ModAlt}:          "edit.pasteImage",
+		{Key: input.KeyC, Mods: input.ModCtrl | input.ModShift}:        "edit.copy",
+		{Key: input.KeyInsert, Mods: input.ModCtrl}:                    "edit.copy",
+		{Key: input.KeyInsert, Mods: input.ModShift}:                   "edit.paste",
+		{Key: input.KeyPageUp, Mods: input.ModShift}:                   "view.scrollUp",
+		{Key: input.KeyPageDown, Mods: input.ModShift}:                 "view.scrollDown",
+		{Key: input.KeyK, Mods: input.ModCtrl | input.ModShift}:        "palette.open",
 		{Key: input.KeyF10}: "menu.open",
 		{Key: input.KeyF11}: "view.fullScreen",
 		{Key: input.KeyL, Mods: input.ModCtrl | input.ModShift}:      "sidebar.focus",
@@ -67,6 +69,11 @@ var commands = []struct{ id, title string }{
 	{"pane.previous", "Previous Recent Pane"},
 	{"pane.nextInSidebar", "Next Pane"},
 	{"pane.previousInSidebar", "Previous Pane"},
+	{"tab.next", "Next Tab"},
+	{"tab.previous", "Previous Tab"},
+	{"tab.moveRight", "Move Tab Right"},
+	{"tab.moveLeft", "Move Tab Left"},
+	{"tab.close", "Close Tab"},
 	{"view.switcher", "All Panes"},
 	{"pane.rename", "Rename Pane"},
 	{"sidebar.toggle", "Sidebar"},
@@ -177,6 +184,11 @@ var commandIcons = map[string]*icon.Icon{
 	"pane.previous":          icon.Undo2,
 	"pane.titles":            icon.PanelTop,
 	"pane.nextInSidebar":     icon.ArrowDown,
+	"tab.next":               icon.ArrowRight,
+	"tab.previous":           icon.ArrowLeft,
+	"tab.close":              icon.X,
+	"tab.moveLeft":           icon.ChevronsLeft,
+	"tab.moveRight":          icon.ChevronsRight,
 	"pane.previousInSidebar": icon.ArrowUp,
 	"view.switcher":          icon.LayoutGrid,
 	"pane.rename":            icon.Pencil,
@@ -286,6 +298,15 @@ var menus = []struct {
 		{id: "pane.rename", title: "Rename…"},
 		{id: "conn.clearFinished", title: "Clear Finished"},
 	}},
+	{"Tab", []menuItem{
+		{id: "conn.terminal", title: "New Tab"},
+		{title: "Go To", caption: true},
+		{id: "tab.next", title: "Next"}, {id: "tab.previous", title: "Previous"},
+		{title: "Move", caption: true},
+		{id: "tab.moveLeft", title: "Left"}, {id: "tab.moveRight", title: "Right"},
+		{id: "pane.popOut", title: "Pane to New Tab"},
+		{id: "tab.close", title: "Close Tab", group: true},
+	}},
 	{"Machine", []menuItem{
 		{title: "Open Here", caption: true},
 		{id: "conn.terminal", title: "Terminal"}, {id: "conn.command", title: "Command…"},
@@ -359,13 +380,18 @@ var commandAlso = map[string][]string{
 	"view.scrollDown":       {"forward", "scrollback"},
 	"pane.splitRight":       {"vertical"},
 	"pane.splitDown":        {"horizontal"},
-	"pane.popOut":           {"unsplit", "detach", "take out of its split"},
+	"pane.popOut":           {"unsplit", "detach", "take out of its split", "new tab", "tab"},
+	"tab.next":              {"switch", "right"},
+	"tab.previous":          {"switch", "left"},
+	"tab.moveRight":         {"reorder", "shift"},
+	"tab.moveLeft":          {"reorder", "shift"},
+	"tab.close":             {"every pane in it"},
+	"conn.terminal":         {"pane", "shell", "like this one", "same shell", "same server", "duplicate", "clone", "new tab"},
 	"view.fullScreen":       {"fill", "maximise", "maximize", "hide the sidebar"},
 	"view.pin":              {"pin", "keep on top", "float", "stay on top"},
 	"pane.typeAll":          {"broadcast", "synchronize", "sync panes", "every pane", "same input"},
 	"app.exit":              {"quit", "close this window"},
 	"app.about":             {"version"},
-	"conn.terminal":         {"pane", "shell", "like this one", "same shell", "same server", "duplicate", "clone"},
 	"shell.default":         {"pane"},
 	"server.connect":        {"ssh", "host", "machine"},
 	"server.add":            {"new", "save"},
@@ -437,6 +463,16 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ClosePane{}, true
 	case "edit.pasteImage":
 		return app.PasteImageAsFile{}, true
+	case "tab.next":
+		return app.NextTab{}, true
+	case "tab.previous":
+		return app.NextTab{Back: true}, true
+	case "tab.moveRight":
+		return app.ShiftTab{}, true
+	case "tab.moveLeft":
+		return app.ShiftTab{Back: true}, true
+	case "tab.close":
+		return app.CloseTab{}, true
 	case "pane.nextInSidebar":
 		return app.NextPane{}, true
 	case "pane.previousInSidebar":

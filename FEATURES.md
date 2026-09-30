@@ -66,6 +66,15 @@ The whole list. The [README](README.md) has the short version.
   of the first, so no local port is opened for it and nothing else on
   the machine can use it. Closing the one in the middle closes what
   rides on it.
+- **Tabs.** Each window holds tabs, and each tab a pane or a split. New
+  Terminal opens one, and the tab bar shows in the title bar once there
+  are two. Click a tab to show it. Middle-click it, or click its ×, to
+  close it. Ctrl+PageDown and Ctrl+PageUp go to the next and the
+  previous tab, and Ctrl+Shift+PageDown and Ctrl+Shift+PageUp move the
+  tab in front. Drag a tab along the bar to move it. Drag it onto
+  another kakel window's bar to move it there, splits and all. Drop it
+  on a pane to join that pane in a split, on the side it is nearest.
+  Let it go outside every window and it opens a window of its own.
 - **Splits that ask in place.** Split Right and Split Down split at
   once, and the new half offers what goes there: `+ Terminal`, one
   button for each shell here and each machine, `+ Command…`, and small

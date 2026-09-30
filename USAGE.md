@@ -20,6 +20,8 @@ Kakel comes with:
 | `Ctrl+Shift+L` | go to the sidebar |
 | `Ctrl+Shift+N` | connect to a server |
 | `Ctrl+Shift+A` | show every pane at once |
+| `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
+| `Ctrl+Shift+PageDown` / `Ctrl+Shift+PageUp` | move the tab right / left |
 | `F11` | fill the screen with the panes |
 
 These are the ones you need most. "Shortcuts and Commands" on the Help

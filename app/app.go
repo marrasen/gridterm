@@ -63,6 +63,8 @@ type State struct {
 	// pane into its place and its neighbours into theirs.
 	Groups map[string]*Box
 	Focus  string
+	// Tabs are the window's tabs, in order.
+	Tabs []Tab
 	// Sidebar is whether the sidebar shows, and SidebarWidth how wide.
 	Sidebar      bool
 	SidebarWidth float32
@@ -516,6 +518,10 @@ type app struct {
 	// group.
 	groups  map[int]*Box
 	groupOf map[string]int
+	// tabOrder is the order of the tabs, every window's together, and
+	// groupFocus the pane in each group that last had the keyboard.
+	tabOrder   []int
+	groupFocus map[int]string
 	// next numbers the panes, and nextGroup the groups.
 	next      int
 	nextGroup int
@@ -650,6 +656,7 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		shells:       sh,
 		st:           State{Sidebar: true, SidebarWidth: 220, FontSize: defaultFontSize, Fonts: []string{bundledFamily, dosFamily}},
 		groups:       map[int]*Box{},
+		groupFocus:   map[int]string{},
 		groupOf:      map[string]int{},
 		ring:         remote.NewRing(),
 		replies:      map[uint64]chan AskAnswered{},
@@ -934,6 +941,7 @@ func (a *app) emptyAndIdle() bool {
 
 func (a *app) publish() {
 	a.forgetUnused()
+	a.noteTabFocus()
 	a.st.Machines = a.machines.Infos()
 	a.notePanes()
 	a.st.FileClip = FileClip{}
@@ -985,7 +993,7 @@ func clearOpening(b *Box) {
 }
 
 func (a *app) handle(in gunim.Intent) {
-	if a.needsFiles(in) {
+	if a.needsFiles(in) || a.handleTab(in) {
 		return
 	}
 	var err error
@@ -1564,6 +1572,7 @@ func (a *app) place(id string, at Placement) {
 		// In the chooser's place, which goes, as picked in it.
 		a.groups[g] = a.groups[g].replace(at.Instead, &Box{Pane: id})
 		a.groupOf[id] = g
+		a.sameWindow(id, at.Instead)
 		delete(a.groupOf, at.Instead)
 		a.dropChooser(at.Instead)
 		return
@@ -1580,8 +1589,18 @@ func (a *app) place(id string, at Placement) {
 			A: &Box{Pane: at.Beside}, B: &Box{Pane: id},
 		}
 		a.groups[g] = a.groups[g].replace(at.Beside, box)
+		a.sameWindow(id, at.Beside)
 	}
 	a.groupOf[id] = g
+}
+
+// sameWindow puts pane id in the window of the pane it joins in a
+// split, other: a group's panes are in one window, which may not be the
+// one in front by the time a pane asked for arrives.
+func (a *app) sameWindow(id, other string) {
+	if n, ok := a.winOf[other]; ok {
+		a.winOf[id] = n
+	}
 }
 
 // machineOf returns the machine a pane is on, "" for this one.
@@ -1809,7 +1828,11 @@ func (a *app) remove(id string) {
 	if a.agents.by[id] != nil {
 		_ = a.unsharePane(id)
 	}
+	after := a.tabAfter(id)
 	next := a.take(id)
+	if next == "" {
+		next = after
+	}
 	a.refocus(a.ownerOf(id), id, next, i)
 	a.st.Panes = slices.Delete(a.st.Panes, i, i+1)
 	delete(a.winOf, id)

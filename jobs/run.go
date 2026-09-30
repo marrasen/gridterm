@@ -45,7 +45,22 @@ func (j *Job) do(ctx context.Context) error {
 			return err
 		}
 		j.countAll(items)
-		return j.rename(ctx, items)
+		err = j.rename(ctx, items)
+		var cd *crossDevice
+		if !errors.As(err, &cd) {
+			return err
+		}
+		// On another device after all, as under a mount point or a
+		// junction: what is left is copied, and then taken away.
+		left := items[cd.at:]
+		j.update(func(p *Progress) {
+			for _, it := range left {
+				p.Files--
+				p.Bytes -= it.e.Size
+			}
+		})
+		j.op.Names = j.op.Names[cd.at:]
+		j.noRename = true
 	}
 
 	// Everything else is worked out first, so the panel can say how far
@@ -534,8 +549,19 @@ func (j *Job) stream(ctx context.Context, out io.Writer, in io.Reader) error {
 // filesystem, and on one volume of it. Between two drives of one
 // machine it is a copy and a delete, as between two machines.
 func (j *Job) renames() bool {
-	return vfs.Same(j.op.From, j.op.To) && vfs.OneVolume(j.op.From, j.op.At, j.op.Into)
+	return !j.noRename && vfs.Same(j.op.From, j.op.To) && vfs.OneVolume(j.op.From, j.op.At, j.op.Into)
 }
+
+// crossDevice is a rename that failed as its two ends are on two
+// devices, at the item numbered at, which a move then copies and
+// deletes.
+type crossDevice struct {
+	at  int
+	err error
+}
+
+func (c *crossDevice) Error() string { return c.err.Error() }
+func (c *crossDevice) Unwrap() error { return c.err }
 
 // move copies and then takes the original away.
 //
@@ -568,7 +594,7 @@ func (j *Job) move(ctx context.Context, items []item) error {
 
 // rename moves names on one filesystem.
 func (j *Job) rename(ctx context.Context, items []item) error {
-	for _, it := range items {
+	for i, it := range items {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
@@ -611,6 +637,9 @@ func (j *Job) rename(ctx context.Context, items []item) error {
 		}
 
 		if err := j.op.From.Rename(it.from, to); err != nil {
+			if acrossDevices(err) {
+				return &crossDevice{at: i, err: err}
+			}
 			return err
 		}
 		// Everything inside it went with it, so all of it is done.

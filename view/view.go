@@ -61,6 +61,9 @@ type Window struct {
 	// the keyboard came into, asked to be the one in front.
 	listShown bool
 	entering  string
+	// thumbsMade is how many thumbnails had been made, as last
+	// published.
+	thumbsMade uint64
 	// tabs is the tab bar, and titleRow the title bar it sits in, after
 	// barBox, which holds the menu button.
 	tabs     *tabBar
@@ -436,6 +439,12 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "sidebar.focus":
 		w.focusSidebar(u)
+		return true
+	case "files.icons":
+		if b, ok := w.browsers[w.focused]; ok {
+			b.setIcons(!b.icons, u)
+			w.tickSwitch(id, b.icons)
+		}
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -1878,6 +1887,11 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	if w.secrets != nil && u.Presence(w.secrets) != gunim.Exiting {
 		w.secrets.show(st.Secrets, u)
 	}
+	if st.ThumbsMade != w.thumbsMade {
+		// Thumbnails have arrived for the icon views to draw.
+		w.thumbsMade = st.ThumbsMade
+		u.Invalidate()
+	}
 	w.listShown = slices.ContainsFunc(boxLeaves(st.Stage, nil), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
 		u.Presence(w.list) != gunim.Exiting
 	w.showServers(st, u)
@@ -2023,7 +2037,7 @@ func (w *Window) applies(id string) bool {
 	case "pane.scrollback":
 		k := w.kindOf(w.focused)
 		return w.focused != "" && (k == app.KindTerminal || k == app.KindLog)
-	case "files.goTo":
+	case "files.goTo", "files.icons":
 		_, ok := w.browsers[w.focused]
 		return ok
 	case "edit.copy", "edit.paste":
@@ -2080,6 +2094,9 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return u.Pinned(), true
 	case "shell.setup":
 		return st.ShellSetup, true
+	case "files.icons":
+		b, ok := w.browsers[st.Focus]
+		return ok && b.icons, true
 	}
 	return false, false
 }
@@ -2265,7 +2282,7 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 		return t
 	}
 	if b, ok := w.browsers[id]; ok {
-		return b.table
+		return b.focusable()
 	}
 	if r, ok := w.readers[id]; ok {
 		return r

@@ -360,7 +360,7 @@ type twoDrives struct {
 	from *[]string
 }
 
-func (twoDrives) SameVolume(a, b string) bool { return a == b }
+func (twoDrives) VolumeOf(at string) string { return at }
 
 func (d twoDrives) Rename(from, to string) error {
 	*d.from = append(*d.from, from)

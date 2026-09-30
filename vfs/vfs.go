@@ -172,20 +172,26 @@ func Same(a, b FS) bool {
 	return a.Place() == b.Place()
 }
 
-// A Volumes is a filesystem that can say whether two of its folders are
-// on one volume: one disk, drive or share, where a rename between them
+// A Volumes is a filesystem that can say which volume a folder of it is
+// on: one disk, drive or share, where a rename between two folders
 // works. One that cannot say keeps everything on one.
 type Volumes interface {
-	SameVolume(a, b string) bool
+	VolumeOf(at string) string
+}
+
+// VolumeOf names the volume folder at of f is on, "" for a filesystem
+// that keeps everything on one, or a folder it cannot say for.
+func VolumeOf(f FS, at string) string {
+	if v, ok := f.(Volumes); ok {
+		return v.VolumeOf(at)
+	}
+	return ""
 }
 
 // OneVolume reports whether folders a and b of f are on one volume, so
 // a move between them is a rename rather than a copy and a delete.
 func OneVolume(f FS, a, b string) bool {
-	if v, ok := f.(Volumes); ok {
-		return v.SameVolume(a, b)
-	}
-	return true
+	return VolumeOf(f, a) == VolumeOf(f, b)
 }
 
 // Join puts the parts of a path together with the filesystem's own

@@ -502,9 +502,14 @@ func (a *archives) Renamed(now string) {
 	}
 }
 
-// SameVolume implements [Volumes], for the filesystem under the
-// archives.
-func (a *archives) SameVolume(x, y string) bool { return OneVolume(a.FS, x, y) }
+// VolumeOf implements [Volumes]: a folder inside an archive is on a
+// volume of its own, read only; the rest are on the filesystem's own.
+func (a *archives) VolumeOf(at string) string {
+	if outer, _, in := a.split(at); in {
+		return "archive:" + outer
+	}
+	return VolumeOf(a.FS, at)
+}
 
 // InArchive reports whether folder at of f is inside an archive f opens
 // as a folder, where nothing can be written and nothing handed to

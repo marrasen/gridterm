@@ -34,8 +34,8 @@ func localRoots() []string {
 	return out
 }
 
-// SameVolume implements [Volumes]: two folders are on one volume when
-// they are on one drive or one share.
-func (l *Local) SameVolume(a, b string) bool {
-	return strings.EqualFold(filepath.VolumeName(a), filepath.VolumeName(b))
+// VolumeOf implements [Volumes]: a folder's volume is its drive, or
+// its share.
+func (l *Local) VolumeOf(at string) string {
+	return strings.ToUpper(filepath.VolumeName(at))
 }

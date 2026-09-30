@@ -46,6 +46,9 @@ type Browser struct {
 	Seq     int
 	Top     bool
 	Archive bool
+	// Volume names the volume Path is on, as a disk or a drive, for a
+	// drop to move within one and copy between two.
+	Volume string
 	// Roots are where the filesystem starts, such as each drive, Sep its
 	// separator, and Listed the folders last listed for Go To.
 	Roots  []string
@@ -488,7 +491,7 @@ func (a *app) browse(in Browse) {
 			}
 			order(entries)
 			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Archive: vfs.InArchive(f, in.Path), Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
+				Archive: vfs.InArchive(f, in.Path), Volume: vfs.VolumeOf(f, in.Path), Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

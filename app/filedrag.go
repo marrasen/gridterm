@@ -33,9 +33,12 @@ type FileDrag struct {
 	Dirs  []bool
 	// Sep is the separator of the machine's paths, and Local says they
 	// are files on this computer, outside an archive, which another
-	// program can be given.
-	Sep   string
-	Local bool
+	// program can be given. Volume is the volume At is on, and Archive
+	// says it is inside an archive, where nothing can be taken away.
+	Sep     string
+	Local   bool
+	Volume  string
+	Archive bool
 }
 
 // ExportFiles implements gunim's FileExporter: files on this computer
@@ -103,7 +106,7 @@ func (a *app) dropOnFiles(in DropOnFiles) error {
 	if from == nil {
 		return errors.New("the files they were dragged from are no longer reachable")
 	}
-	if vfs.Same(from, to) && d.At == in.Into {
+	if vfs.Same(from, to) && samePathOn(from, d.At, in.Into) {
 		// Dropped where they are: nothing to do.
 		return nil
 	}
@@ -114,9 +117,11 @@ func (a *app) dropOnFiles(in DropOnFiles) error {
 	if in.Copy {
 		kind, verb = jobs.Copy, "Copying"
 	}
-	if kind == jobs.Move && a.clip != nil && a.clip.machine == d.Machine && a.clip.at == d.At {
-		// What was cut from there has gone somewhere else now.
+	if c := a.clip; kind == jobs.Move && c != nil && c.kind == jobs.Move && c.machine == d.Machine && c.at == d.At &&
+		slices.ContainsFunc(c.names, func(n string) bool { return slices.Contains(d.Names, n) }) {
+		// What was cut has gone somewhere else now.
 		a.clip = nil
+		a.say("clip", "")
 	}
 	op := jobs.Op{Kind: kind, From: from, At: d.At, Names: slices.Clone(d.Names), To: to, Into: in.Into}
 	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, countNames(d.Names), vfs.Base(to, in.Into)), d.Machine, toKey)
@@ -136,5 +141,16 @@ func countNames(names []string) string {
 func underDir(f vfs.FS, dir, at string) bool {
 	sep := string(f.Sep())
 	dir = strings.TrimSuffix(dir, sep)
-	return at == dir || strings.HasPrefix(at, dir+sep)
+	return samePathOn(f, at, dir) || len(at) > len(dir) && samePathOn(f, at[:len(dir)], dir) && strings.HasPrefix(at[len(dir):], sep)
+}
+
+// samePathOn reports whether two paths of f are one: letter case aside
+// where paths are Windows'.
+func samePathOn(f vfs.FS, x, y string) bool {
+	sep := string(f.Sep())
+	x, y = strings.TrimSuffix(x, sep), strings.TrimSuffix(y, sep)
+	if sep == "\\" {
+		return strings.EqualFold(x, y)
+	}
+	return x == y
 }

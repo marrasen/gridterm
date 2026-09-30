@@ -101,3 +101,79 @@ func TestAFilePaneRefusesADropThatDoesNothing(t *testing.T) {
 		t.Fatal("a file in an archive may leave kakel")
 	}
 }
+
+// Ctrl+2 shows the folder as icons, with the cursor where it was, and
+// what is picked, dragged and dropped on works on the tiles; Ctrl+1
+// goes back.
+func TestTheIconViewWorksAsTheTableDoes(t *testing.T) {
+	b := filePaneStage(t, app.Browser{})
+	b.table.SetCursor("a.txt", lastUI)
+	b.setIcons(true, lastUI)
+	settle()
+	if k, ok := b.cursor(); !ok || k != "a.txt" || lastUI.Focused() != b.grid {
+		t.Fatalf("in icons, the cursor is on %q, the keyboard on %T", k, lastUI.Focused())
+	}
+	if got := b.picked(); len(got) != 1 || got[0] != "a.txt" {
+		t.Fatalf("in icons, the names picked are %v", got)
+	}
+	i := b.indexOf("docs")
+	at := b.grid.TileRect(i).Center()
+	spot, ok := b.dropSpot(gi.Drop{Pos: at, Data: app.FileDrag{Pane: "p9", At: "/home", Names: []string{"x"}}}, lastUI)
+	if !ok || !spot.Opens || b.plan.Into != "/srv/docs" {
+		t.Fatalf("over the docs tile, the spot is %+v and the plan %+v", spot, b.plan)
+	}
+	b.setIcons(false, lastUI)
+	if k, _ := b.table.Cursor(); k != "a.txt" || lastUI.Focused() != b.table {
+		t.Fatalf("back in details, the cursor is on %q", k)
+	}
+}
+
+// The icon view asks for the thumbnails of the pictures in view that
+// are not made yet.
+func TestTheIconViewAsksForThumbnails(t *testing.T) {
+	b := filePaneStage(t, app.Browser{})
+	b.st.Entries = append(b.st.Entries, vfs.Entry{Name: "cat.png", Size: 10})
+	b.list(lastUI)
+	in, ok := b.wantThumbs(0, len(b.order)).(app.NeedThumbs)
+	if !ok || len(in.Names) != 1 || in.Names[0] != "cat.png" {
+		t.Fatalf("the icon view asked for %#v", in)
+	}
+}
+
+// Files from another program dropped on a file pane that cannot take
+// them are not handed on to another pane: the pane says why.
+func TestARefusedDropFromAnotherProgramStaysWithThePane(t *testing.T) {
+	b := filePaneStage(t, app.Browser{Path: "/srv/x.zip", Archive: true})
+	drain()
+	box, _ := lastUI.Bounds(b.drop)
+	was := b.w.toasts.Len()
+	lastWindow.Input(gi.Drop{Pos: box.Center(), Paths: []string{"/tmp/y"}})
+	settle()
+	select {
+	case env := <-lastWindow.Client().Intents():
+		t.Fatalf("the drop sent %#v", env.Intent)
+	default:
+	}
+	if b.w.toasts.Len() != was+1 {
+		t.Fatal("the pane did not say why it took nothing")
+	}
+}
+
+// Between two volumes of one machine, and out of an archive, a drop
+// copies; moving out of an archive is refused.
+func TestADropBetweenVolumesCopies(t *testing.T) {
+	b := filePaneStage(t, app.Browser{Volume: "D:"})
+	at := rowPoint(t, b, "a.txt")
+	b.dropSpot(gi.Drop{Pos: at, Data: app.FileDrag{Pane: "p9", At: "C:\\x", Names: []string{"y"}, Volume: "C:"}}, lastUI)
+	if !b.plan.Copy {
+		t.Fatal("between two drives, the drop moves")
+	}
+	b.dropSpot(gi.Drop{Pos: at, Data: app.FileDrag{Pane: "p9", At: "/srv/x.zip", Names: []string{"y"}, Volume: "D:", Archive: true}}, lastUI)
+	if !b.plan.Copy {
+		t.Fatal("out of an archive, the drop moves")
+	}
+	spot, _ := b.dropSpot(gi.Drop{Pos: at, Mods: gi.ModShift, Data: app.FileDrag{Pane: "p9", At: "/srv/x.zip", Names: []string{"y"}, Volume: "D:", Archive: true}}, lastUI)
+	if !spot.Refused {
+		t.Fatal("a move out of an archive was taken")
+	}
+}

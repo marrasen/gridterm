@@ -112,6 +112,17 @@ The whole list. The [README](README.md) has the short version.
   key. A directory is never read on the goroutine that draws, so a slow
   machine cannot stop the window, and a read that fails leaves the
   listing that worked on screen with the reason beside it.
+- **Files shown and moved as in a file manager.** Each file shows its
+  kind as a coloured icon. Ctrl+2, or Machine › Icon View, shows the
+  folder as tiles, a picture as a thumbnail of itself, made in the
+  background from wherever the file is; Ctrl+1 goes back to the details.
+  Drag files from one file pane to another, in any of kakel's windows:
+  between two folders of one disk they move, and anywhere else they
+  copy, and Ctrl copies and Shift moves. The card under the pointer says
+  which, or why the drop would do nothing, and a folder a drag rests on
+  springs open. Files dragged in from Explorer or another program are
+  copied in, onto a server too, and files on this computer drag out to
+  another program.
 - **Zip files walked into like folders.** A `.zip`, `.jar`, `.whl`,
   `.xpi`, `.crx` or `.vsix` opens with Enter as a folder, on any machine,
   and its row says "archive" beside its size. It is read only: copy a

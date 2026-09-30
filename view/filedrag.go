@@ -38,6 +38,7 @@ func (b *browser) dragRows(keys []widget.Key, at geom.Point) (any, gunim.Node, g
 		return nil, nil, geom.Point{}
 	}
 	d.Local = d.Machine == "" && !b.st.Archive
+	d.Volume, d.Archive = b.st.Volume, b.st.Archive
 	card := newFileCard(b, d)
 	g := widget.NewDragGhost(card, geom.Pt(16, 12))
 	if n := len(d.Names); n > 1 {
@@ -89,16 +90,17 @@ func (b *browser) dropSpot(d gi.Drop, u *gunim.UI) (widget.DropSpot, bool) {
 	if !rows && (d.Data != nil || len(d.Paths) == 0) {
 		return widget.DropSpot{}, false
 	}
-	box, ok := u.Bounds(b.table)
+	box, ok := u.Bounds(b.drop)
 	if !ok {
 		return widget.DropSpot{}, false
 	}
-	head := b.table.Header()
+	head := float32(0)
+	if !b.icons {
+		head = b.table.Header()
+	}
 	spot := widget.DropSpot{Key: dropKey, Rect: geom.Rc(0, head, box.Size().W, max(0, box.Size().H-head))}
 	into, name := b.st.Path, ""
-	if k, ok := b.table.RowAt(d.Pos); ok {
-		r, _ := b.table.RowRect(k)
-		r = geom.Rc(4, r.Min.Y+1, r.Size().W-8, r.Size().H-2)
+	if k, r, ok := b.spotAt(d.Pos); ok {
 		switch e, isEntry := b.byName[k]; {
 		case k == up && !b.st.Top:
 			into = b.parent(b.st.Path)
@@ -114,7 +116,10 @@ func (b *browser) dropSpot(d gi.Drop, u *gunim.UI) (widget.DropSpot, bool) {
 	plan := app.DropOnFiles{Pane: b.id, Into: into, Paths: d.Paths, Copy: true}
 	if rows {
 		plan.Paths, plan.Drag = nil, drag
-		plan.Copy = drag.Machine != here
+		// Moved within one volume, and copied between two, as between
+		// two drives, or out of an archive; a folder dropped into is on
+		// the volume of the folder shown.
+		plan.Copy = drag.Machine != here || drag.Volume != b.st.Volume || drag.Archive
 		switch {
 		case d.Mods.Has(gi.ModControl):
 			plan.Copy = true
@@ -140,6 +145,24 @@ func (b *browser) dropSpot(d gi.Drop, u *gunim.UI) (widget.DropSpot, bool) {
 	return spot, true
 }
 
+// spotAt is the row, or the tile, at p, in the pane's view's space,
+// and where it is.
+func (b *browser) spotAt(p geom.Point) (widget.Key, geom.Rect, bool) {
+	if b.icons {
+		i := b.grid.TileAt(p)
+		if i < 0 || i >= len(b.order) {
+			return "", geom.Rect{}, false
+		}
+		return b.order[i], b.grid.TileRect(i), true
+	}
+	k, ok := b.table.RowAt(p)
+	if !ok {
+		return "", geom.Rect{}, false
+	}
+	r, _ := b.table.RowRect(k)
+	return k, geom.Rc(4, r.Min.Y+1, r.Size().W-8, r.Size().H-2), true
+}
+
 // refuse says why a drop would do nothing, or "" when it would do what
 // it says.
 func (b *browser) refuse(plan app.DropOnFiles, drag app.FileDrag, rows bool, here machines.ID) string {
@@ -150,18 +173,30 @@ func (b *browser) refuse(plan app.DropOnFiles, drag app.FileDrag, rows bool, her
 		return "Inside an archive, which is read only"
 	case !rows:
 		return ""
-	case drag.Machine == here && drag.At == plan.Into:
+	case drag.Machine == here && b.samePath(drag.At, plan.Into):
 		return "Already here"
+	case drag.Archive && !plan.Copy:
+		return "Can't move out of an archive, which is read only"
 	}
 	if drag.Machine == here {
 		for _, n := range drag.Names {
 			dir := b.joined(drag.At, n)
-			if plan.Into == dir || strings.HasPrefix(plan.Into, strings.TrimSuffix(dir, b.sep())+b.sep()) {
+			if b.samePath(plan.Into, dir) || len(plan.Into) > len(dir) && b.samePath(plan.Into[:len(dir)], dir) && strings.HasPrefix(plan.Into[len(dir):], b.sep()) {
 				return "Cannot go inside itself"
 			}
 		}
 	}
 	return ""
+}
+
+// samePath reports whether two paths of the pane's machine are one:
+// letter case aside where paths are Windows'.
+func (b *browser) samePath(x, y string) bool {
+	x, y = strings.TrimSuffix(x, b.sep()), strings.TrimSuffix(y, b.sep())
+	if b.sep() == "\\" {
+		return strings.EqualFold(x, y)
+	}
+	return x == y
 }
 
 // baseOf is the last name of path, or path itself at a root.

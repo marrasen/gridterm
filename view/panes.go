@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
@@ -37,11 +38,19 @@ type browser struct {
 	table *widget.Table
 	// drop takes drags on the table, and plan is the drop it last
 	// worked out.
-	drop  *widget.DropZone
-	plan  app.DropOnFiles
-	col   *widget.Flex
-	st    app.Browser
-	shown int
+	drop *widget.DropZone
+	plan app.DropOnFiles
+	// grid is the icon view, shown while icons is set, and order the
+	// rows' keys as both views list them. typed is what has been typed
+	// at the icons to find one, typedAt when the last of it was.
+	grid    *widget.TileGrid
+	icons   bool
+	order   []widget.Key
+	typed   string
+	typedAt time.Time
+	col     *widget.Flex
+	st      app.Browser
+	shown   int
 	// at is the folder the rows show, and left how each folder left was
 	// left, to show it so going back to it.
 	at   string
@@ -94,7 +103,8 @@ func newBrowser(w *Window, id string) *browser {
 	}
 	b.table.SetSorted(0, false)
 	b.table.DragRows = b.dragRows
-	b.drop = widget.NewDropZone(b.table)
+	b.newGrid()
+	b.drop = widget.NewDropZone(&filesBody{b: b})
 	b.drop.Spot = b.dropSpot
 	b.drop.OnDrop = func(widget.DropSpot, gi.Drop) gunim.Intent { return b.plan }
 	b.drop.OnOpen = func(s widget.DropSpot) gunim.Intent {
@@ -139,6 +149,32 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	case gi.FocusEntered:
 		b.w.entered(b.id, u)
 		return false
+	case gi.Drop:
+		// Files from another program that the list did not take, as
+		// dropped on the path over it, or refused: into the folder
+		// shown, or said why not, never handed on to another pane.
+		if len(e.Paths) == 0 {
+			return false
+		}
+		why := ""
+		switch {
+		case b.st.Archive:
+			why = "This folder is inside an archive, which is read only."
+		case b.st.Seq == 0 || b.st.Err != "":
+			why = "This folder couldn't be read."
+		}
+		if why != "" {
+			b.w.toasts.Show(widget.Toast{Title: "Couldn't take the files dropped", Body: why, Kind: widget.ToastError}, u)
+			return true
+		}
+		u.Send(b, app.DropOnFiles{Pane: b.id, Into: b.st.Path, Paths: e.Paths, Copy: true})
+		return true
+	case gi.TextInput:
+		if b.icons {
+			b.typeAt(e, u)
+			return true
+		}
+		return false
 	case gi.HistoryStep:
 		// A mouse's side buttons, and a keyboard's Browser Back and
 		// Forward, go back and forward through the folders been
@@ -165,6 +201,10 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	}
 	ctrl := k.Mods == gi.ModControl
 	switch {
+	case ctrl && (k.Key == gi.Key1 || k.Key == gi.Key2):
+		// Details, or icons, as in gunim's file manager.
+		b.setIcons(k.Key == gi.Key2, u)
+		return true
 	case k.Key == gi.KeyBackspace && k.Mods == 0:
 		u.Send(b, app.GoUp{Pane: b.id})
 	case k.Key == gi.KeyF5 && k.Mods == 0, k.Key == gi.KeyC && ctrl:
@@ -181,7 +221,7 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 		b.askFolder(u)
 	case k.Key == gi.KeyF3 && k.Mods == 0, k.Key == gi.KeyF4 && k.Mods == 0:
 		// A link is read through, wherever it goes; a folder is Enter's.
-		if c, ok := b.table.Cursor(); ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink()) {
+		if c, ok := b.cursor(); ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink()) {
 			u.Send(b, app.ViewFile{Pane: b.id, Name: string(c), Follow: k.Key == gi.KeyF4})
 		}
 	case k.Key == gi.KeyG && ctrl:
@@ -199,7 +239,7 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	default:
 		return false
 	}
-	b.table.ClearMarks()
+	b.clearPicked(u)
 	return true
 }
 
@@ -207,11 +247,11 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 // something here.
 func (b *browser) newKeys() *keyBar {
 	onRow := func() bool {
-		c, ok := b.table.Cursor()
+		c, ok := b.cursor()
 		return ok && c != up
 	}
 	onFile := func() bool {
-		c, ok := b.table.Cursor()
+		c, ok := b.cursor()
 		return ok && c != up && !(b.byName[c].IsDir() && !b.byName[c].IsLink())
 	}
 	somePicked := func() bool { return len(b.picked()) > 0 }
@@ -235,13 +275,13 @@ func (b *browser) newKeys() *keyBar {
 // picked returns the marked names, or the one under the cursor.
 func (b *browser) picked() []string {
 	var out []string
-	for _, k := range b.table.Marked() {
+	for _, k := range b.pickedKeys() {
 		if k != up {
 			out = append(out, string(k))
 		}
 	}
 	if len(out) == 0 {
-		if k, ok := b.table.Cursor(); ok && k != up {
+		if k, ok := b.cursor(); ok && k != up {
 			out = []string{string(k)}
 		}
 	}
@@ -273,7 +313,7 @@ func (b *browser) confirmDelete(u *gunim.UI) {
 }
 
 func (b *browser) askRename(u *gunim.UI) {
-	k, ok := b.table.Cursor()
+	k, ok := b.cursor()
 	if !ok || k == up {
 		return
 	}
@@ -395,7 +435,7 @@ func (b *browser) show(st app.Browser, u *gunim.UI) {
 		if b.left == nil {
 			b.left = map[string]leftAs{}
 		}
-		key, _ := b.table.Cursor()
+		key, _ := b.cursor()
 		b.left[b.at] = leftAs{offset: b.table.Offset(), key: key}
 		if !b.travel {
 			b.back, b.forward = append(b.back, b.at), nil
@@ -428,6 +468,11 @@ func (b *browser) show(st app.Browser, u *gunim.UI) {
 		b.table.JumpTo(land, u)
 	case st.Land != "":
 		b.table.SetCursor(land, u)
+	}
+	if b.icons && (moved || st.Land != "") {
+		i := b.indexOf(land)
+		b.grid.SetSelected([][2]int{{i, i + 1}}, i, u)
+		b.grid.ShowTile(i, u)
 	}
 }
 
@@ -469,6 +514,8 @@ func (b *browser) list(u *gunim.UI) {
 		b.byName[k] = e
 	}
 	b.table.SetKeys(keys, u)
+	b.order = keys
+	b.grid.SetLen(len(keys), u)
 }
 
 // row is what the table shows for an entry: folders strong, links in

@@ -34,6 +34,7 @@ import (
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
 
@@ -70,6 +71,9 @@ type State struct {
 	// in, in whichever window, whose row it lights.
 	AllPanes []Pane
 	Working  string
+	// ThumbsMade counts the thumbnails made, for the icon views to draw
+	// again as they arrive.
+	ThumbsMade uint64
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -522,6 +526,11 @@ type app struct {
 	// groupFocus the pane in each group that last had the keyboard.
 	tabOrder   []int
 	groupFocus map[int]string
+	// thumbQueue are the thumbnails waiting to be made, thumbWanted
+	// those waiting or being made, and thumbWorking how many are.
+	thumbQueue   []thumbJob
+	thumbWanted  map[files.ThumbKey]bool
+	thumbWorking int
 	// work is the window last worked in, other than a tool window, and
 	// fromTool says an intent from a tool window is being handled.
 	work     *ownWin
@@ -1299,6 +1308,8 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.askAction(in)
 	case DropOnFiles:
 		err = a.dropOnFiles(in)
+	case NeedThumbs:
+		a.needThumbs(in)
 	case DropFiles:
 		err = a.dropFiles(in)
 	case PasteImageAsFile:

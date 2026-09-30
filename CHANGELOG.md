@@ -38,6 +38,14 @@ keys.
 
 ### Added
 
+**File panes work as a file manager does.** Files show their kind as an
+icon, and Icon View (Ctrl+2) shows a folder as tiles with thumbnails of
+its pictures. Files drag between file panes in any window, moving on one
+disk and copying elsewhere, and a folder a drag rests on springs open.
+Files drag in from other programs, and files on this computer drag out
+to them. A move between two drives now copies and deletes, where it used
+to fail.
+
 **Tool windows.** Open Servers Window and Open Secrets Window give those
 panes a window of their own, and Move Tab to New Window does it for any
 tab. A pane opened from such a window opens in the window last worked

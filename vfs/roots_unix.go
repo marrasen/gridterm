@@ -4,6 +4,7 @@ package vfs
 
 import (
 	"os"
+	"strconv"
 	"syscall"
 )
 
@@ -11,16 +12,17 @@ import (
 // hangs off it, so there is nothing to ask the machine.
 func localRoots() []string { return []string{"/"} }
 
-// SameVolume implements [Volumes]: two folders are on one volume when
-// they are on one device. One that cannot be looked at is taken to be,
-// and a rename that fails says why.
-func (l *Local) SameVolume(a, b string) bool {
-	sa, errA := os.Stat(a)
-	sb, errB := os.Stat(b)
-	if errA != nil || errB != nil {
-		return true
+// VolumeOf implements [Volumes]: a folder's volume is the device it is
+// on. One that cannot be looked at says none, which is taken for any,
+// and a rename that fails then says why.
+func (l *Local) VolumeOf(at string) string {
+	fi, err := os.Stat(at)
+	if err != nil {
+		return ""
 	}
-	da, okA := sa.Sys().(*syscall.Stat_t)
-	db, okB := sb.Sys().(*syscall.Stat_t)
-	return !okA || !okB || da.Dev == db.Dev
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return ""
+	}
+	return strconv.FormatUint(uint64(st.Dev), 10)
 }

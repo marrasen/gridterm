@@ -132,6 +132,10 @@ type Job struct {
 	// ran is finished by the goroutine that ran it.
 	finished sync.Once
 
+	// noRename says a move found its ends on two devices, and copies
+	// and deletes what is left.
+	noRename bool
+
 	mu sync.Mutex
 	p  Progress
 

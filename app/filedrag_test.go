@@ -1,6 +1,9 @@
 package app
 
 import (
+	"bytes"
+	"image"
+	"image/png"
 	"os"
 	"path/filepath"
 	"testing"
@@ -8,6 +11,8 @@ import (
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/ui/files"
+	"github.com/marrasen/kakel/vfs"
 )
 
 // twoFolders is a program with two file panes on this computer, p1 on
@@ -78,5 +83,30 @@ func TestOnlyLocalFilesDragOut(t *testing.T) {
 	}
 	if _, err := (FileDrag{At: "/srv", Names: []string{"a"}, Sep: "/", Machine: "srv"}).ExportFiles(); err == nil {
 		t.Fatal("a file on a server was dragged out")
+	}
+}
+
+// A picture's thumbnail is made in the background and kept for the
+// windows, and the count of those made goes up.
+func TestAThumbnailIsMade(t *testing.T) {
+	a, from, _ := twoFolders(t)
+	pic := image.NewRGBA(image.Rect(0, 0, 400, 200))
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, pic); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(from, "p.png"), buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fi, _ := os.Stat(filepath.Join(from, "p.png"))
+	a.setBrowser("p1", Browser{Path: from, Seq: 2, Entries: []vfs.Entry{{Name: "p.png", Size: fi.Size(), Mod: fi.ModTime()}}})
+	a.handle(NeedThumbs{Pane: "p1", Names: []string{"p.png"}})
+	waitFor(t, a, "the thumbnail", func() bool { return a.st.ThumbsMade == 1 })
+	th, ok := files.Thumbnails.Get(files.ThumbKey{Path: filepath.Join(from, "p.png"), Mod: fi.ModTime(), Size: fi.Size()})
+	if !ok || th.Image == nil {
+		t.Fatalf("the thumbnail is %+v", th)
+	}
+	if w, h := th.Image.Size(); w != files.ThumbSide || h != files.ThumbSide/2 {
+		t.Fatalf("the thumbnail is %d by %d", w, h)
 	}
 }

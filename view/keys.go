@@ -130,6 +130,7 @@ var commands = []struct{ id, title string }{
 	{"view.themesReload", "Reload Themes"},
 	{"help.files", "File Locations"},
 	{"app.about", "About kakel"},
+	{"app.tray", "Tray Icon"},
 	{"sshkey.make", "New SSH Key"},
 	{"sshkey.lock", "Lock SSH Keys"},
 	{"sshkey.forget", "Remove Saved Key"},
@@ -255,6 +256,7 @@ var commandIcons = map[string]*icon.Icon{
 	"help.shortcuts":         icon.Keyboard,
 	"view.log":               icon.ScrollText,
 	"app.about":              icon.Info,
+	"app.tray":               icon.PanelBottom,
 	"server.connect":         icon.Plug,
 	"server.add":             icon.Plus,
 	"secrets.pane":           icon.Vault,
@@ -357,6 +359,7 @@ var menus = []struct {
 		{title: "Read Again", caption: true},
 		{id: "view.themesReload", title: "Themes"}, {id: "shortcuts.reload", title: "Shortcuts"},
 		{id: "server.reload", title: "Server List"},
+		{id: "app.tray", title: "Tray Icon", group: true},
 		{id: "help.files", title: "File Locations…", group: true},
 	}},
 	// The Font menu is made from the families found here.
@@ -407,6 +410,7 @@ var commandAlso = map[string][]string{
 	"pane.typeAll":          {"broadcast", "synchronize", "sync panes", "every pane", "same input"},
 	"app.exit":              {"quit", "close this window"},
 	"app.about":             {"version"},
+	"app.tray":              {"system tray", "notification area", "keep running", "background", "close to tray"},
 	"shell.default":         {"pane"},
 	"server.connect":        {"ssh", "host", "machine"},
 	"server.add":            {"new", "save"},
@@ -489,6 +493,8 @@ func commandIntent(id string) (gunim.Intent, bool) {
 		return app.ShiftTab{Back: true}, true
 	case "tab.close":
 		return app.CloseTab{}, true
+	case "app.tray":
+		return app.ToggleTray{}, true
 	case "pane.nextInSidebar":
 		return app.NextPane{}, true
 	case "pane.previousInSidebar":

@@ -34,6 +34,7 @@ import (
 	"github.com/marrasen/kakel/secrets"
 	"github.com/marrasen/kakel/settings"
 	shellfind "github.com/marrasen/kakel/shells"
+	"github.com/marrasen/kakel/single"
 	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vfs"
 	"github.com/marrasen/kakel/vt"
@@ -74,6 +75,9 @@ type State struct {
 	// ThumbsMade counts the thumbnails made, for the icon views to draw
 	// again as they arrive.
 	ThumbsMade uint64
+	// InTray says kakel shows its icon in the system tray, and runs on
+	// there once its last window closes.
+	InTray bool
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -643,8 +647,16 @@ type app struct {
 	// following the readers with a follow loop running.
 	reads     map[string]readSpec
 	following map[string]bool
-	// nextShell is the command the next terminal here starts, once.
+	// nextShell is the command the next terminal here starts, once,
+	// and nextDir the folder the next local one starts in.
 	nextShell []string
+	nextDir   string
+	// traySet shows kakel's icon in the tray, tray is the icon as shown,
+	// and handovers are the command lines kakels started meanwhile hand
+	// this one.
+	traySet   Tray
+	tray      trayState
+	handovers <-chan single.Handover
 	// found are the shells on this machine, once scanned says they have
 	// been looked for; shellGoneSaid says the kept shell was found gone,
 	// which is said once a run.
@@ -776,12 +788,14 @@ func (a *app) run(ctx context.Context) error {
 			}
 			a.takeSecretBack()
 			a.hangUp()
+			a.leaveTray()
 			return nil
 		case in := <-a.intents:
 			if in.closed {
 				a.windowClosed(in.w)
-				if len(a.wins) == 0 {
+				if len(a.wins) == 0 && !a.inTray() {
 					a.closeAll()
+					a.leaveTray()
 					return a.c.Err()
 				}
 				break
@@ -792,6 +806,10 @@ func (a *app) run(ctx context.Context) error {
 			}
 			a.front(in.w)
 			a.handleFrom(in.env.Intent)
+		case h := <-a.handovers:
+			if !a.gone {
+				a.handover(h)
+			}
 		case <-a.wake:
 			a.st.Output++
 		case f := <-a.events:
@@ -799,10 +817,14 @@ func (a *app) run(ctx context.Context) error {
 		}
 		// Empty, and connecting to nothing that would open a pane: the
 		// window leaves, and the last one takes the program with it.
-		if a.emptyAndIdle() {
-			a.leave()
-		}
+		a.leaveIfEmpty()
 		a.leaveEmpty()
+		if a.gone && len(a.liveWins()) == 0 && len(a.wins) == 0 {
+			// Leaving with no window to wait for, as from the tray.
+			a.closeAll()
+			a.leaveTray()
+			return nil
+		}
 		if a.gone {
 			continue
 		}
@@ -947,6 +969,21 @@ func (a *app) openFirstOrSay() {
 	}
 }
 
+// leaveIfEmpty ends the program once it is empty and idle, or in the
+// tray lets its windows go and stays.
+func (a *app) leaveIfEmpty() {
+	if !a.emptyAndIdle() {
+		return
+	}
+	if !a.inTray() {
+		a.leave()
+		return
+	}
+	for _, w := range a.liveWins() {
+		a.letWindowGo(w)
+	}
+}
+
 // emptyAndIdle reports whether the program has no pane and none on its
 // way, and so leaves: nothing connecting, no window or shell opening,
 // and not kept open, as after the first pane failed.
@@ -967,6 +1004,10 @@ func (a *app) publish() {
 	st.Panes = slices.Clone(a.st.Panes)
 	st.AllPanes = a.allPanes()
 	a.noteWork()
+	if !a.gone {
+		a.showTray()
+	}
+	st.InTray = a.tray.on
 	st.Working = ""
 	if a.work != nil && !a.work.gone {
 		st.Working = a.focusIn(a.work)
@@ -1322,6 +1363,13 @@ func (a *app) handle(in gunim.Intent) {
 		err = a.reloadServers()
 	case ClearFinished:
 		a.clearFinished()
+	case ToggleTray:
+		if a.settings != nil {
+			if err := a.settings.PutTray(!a.settings.Tray()); err != nil {
+				a.failed("Couldn't keep the tray for next time", err.Error())
+			}
+		}
+		a.showTray()
 	case TogglePaneTitles:
 		a.st.PaneTitles = !a.st.PaneTitles
 		if a.settings != nil {
@@ -1514,7 +1562,11 @@ func (a *app) openThen(machine machines.ID, at Placement, then func(id string, e
 		if argv == nil {
 			argv = a.localShell()
 		}
-		sess, err := a.startLocalSession(argv, a.dirHere(), screen.Cols, screen.Rows, true)
+		dir := a.dirHere()
+		if a.nextDir != "" {
+			dir = a.nextDir
+		}
+		sess, err := a.startLocalSession(argv, dir, screen.Cols, screen.Rows, true)
 		if err != nil {
 			return fmt.Errorf("kakel: start the shell: %w", err)
 		}
@@ -1975,6 +2027,10 @@ type Config struct {
 	Themes         []look.Themed
 	ThemeTrouble   error
 	RegisterThemes func([]look.Themed)
+	// Tray shows kakel in the system tray, and Handovers are the command
+	// lines kakels started later hand this one; either may be unset.
+	Tray      Tray
+	Handovers <-chan single.Handover
 }
 
 // Start runs the program side until its last window closes.
@@ -1986,6 +2042,8 @@ func Start(ctx context.Context, cfg Config) error {
 	a.themes = cfg.Themes
 	a.themeTrouble = cfg.ThemeTrouble
 	a.registerThemes = cfg.RegisterThemes
+	a.traySet = cfg.Tray
+	a.handovers = cfg.Handovers
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)
 }

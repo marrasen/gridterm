@@ -2097,6 +2097,8 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 	case "files.icons":
 		b, ok := w.browsers[st.Focus]
 		return ok && b.icons, true
+	case "app.tray":
+		return st.InTray, true
 	}
 	return false, false
 }

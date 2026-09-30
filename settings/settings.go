@@ -76,6 +76,9 @@ type stored struct {
 
 	// PaneTitles turns on the line above each pane naming it.
 	PaneTitles *bool `json:"paneTitles,omitempty"`
+	// NoTray keeps kakel out of the system tray: closing its last
+	// window ends it, as it did before it had a tray icon.
+	NoTray *bool `json:"noTray,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -811,6 +814,31 @@ func (s *Settings) putKeys(edit func([]string) []string) error {
 // dropKey is the key files with one left out.
 func dropKey(have []string, path string) []string {
 	return slices.DeleteFunc(have, func(at string) bool { return at == path })
+}
+
+// Tray reports whether kakel shows a tray icon and keeps running there
+// once its last window closes, which it does until told not to.
+func (s *Settings) Tray() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.NoTray == nil || !*s.have.NoTray
+}
+
+// PutTray turns the tray icon on or off, and saves.
+func (s *Settings) PutTray(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	off := !on
+	s.have.NoTray = &off
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // PaneTitles reports whether each pane shows a line naming it.

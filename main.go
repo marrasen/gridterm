@@ -31,6 +31,8 @@ import (
 	"github.com/marrasen/gunim/geom"
 
 	"github.com/marrasen/kakel/appicon"
+	"github.com/marrasen/kakel/settings"
+	"github.com/marrasen/kakel/single"
 )
 
 func main() {
@@ -64,6 +66,23 @@ func run() error {
 		defer pprof.StopCPUProfile()
 	}
 
+	// One kakel for the user: one already running is handed the
+	// command line, and opens a window for it.
+	var handovers <-chan single.Handover
+	if opts.OneOfMany() {
+		if dir, err := settings.Dir(); err == nil {
+			cwd, _ := os.Getwd()
+			if taken, err := single.Hand(dir, single.Handover{Args: os.Args[1:], Dir: cwd}); taken {
+				return nil
+			} else if err != nil {
+				log.Print(err)
+			}
+			if handovers, err = single.Listen(ctx, dir); err != nil {
+				log.Printf("kakel runs alone: %v", err)
+			}
+		}
+	}
+
 	app.CaptureLog()
 	err = gunim.Main(ctx, func(a *gunim.App) error {
 		sh := screen.NewShells()
@@ -80,6 +99,7 @@ func run() error {
 		return app.Start(ctx, app.Config{
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
+			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen}, Handovers: handovers,
 		})
 	})
 	if errors.Is(err, driver.ErrNoDriver) {

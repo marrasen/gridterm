@@ -242,7 +242,11 @@ func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin)
 		a.failed("Couldn't open another window", "This kakel can't open windows.")
 		return
 	}
-	open, gw := a.openWindow, a.cur.gw
+	var gw *gunim.Window
+	if a.cur != nil && !a.cur.gone {
+		gw = a.cur.gw
+	}
+	open := a.openWindow
 	a.opening++
 	go func() {
 		c, nw, err := open(gw, at, size)
@@ -267,7 +271,7 @@ func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin)
 // closeWindow closes w, after asking while it holds panes. The last
 // window asks as Exit does.
 func (a *app) closeWindow(w *ownWin) {
-	if len(a.liveWins()) <= 1 {
+	if len(a.liveWins()) <= 1 && !a.inTray() {
 		a.askToQuit()
 		return
 	}

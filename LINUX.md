@@ -164,6 +164,17 @@ is paste there.
 - **Anything else a Linux user expects a terminal to do.** The shortcuts
   have not been looked at against what a Linux terminal usually binds.
 
+## The tray icon
+
+kakel's tray icon is a StatusNotifierItem, over D-Bus. Cinnamon, KDE,
+XFCE with its status notifier plugin, and most other panels show it.
+Stock GNOME does not: it needs the AppIndicator extension. With no tray
+to show the icon in, kakel runs as it did before it had one, and
+closing its last window ends it. Options › Tray Icon turns it off.
+
+It was tried on Cinnamon 6 over X11: the icon shows, its menu opens,
+and a pick reaches kakel.
+
 ## Driving it without a person
 
 `kakel -shot` runs a script of steps and writes PNGs, which is how the

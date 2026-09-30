@@ -38,6 +38,15 @@ keys.
 
 ### Added
 
+**kakel in the tray, one at a time.** An icon in the system tray lists
+this computer and the saved servers, each with what can be opened on it,
+and works with no window open. Closing the last window leaves kakel
+running there, until Exit or Quit kakel. A kakel started meanwhile hands
+its command line to the one running, which opens a window for it; set
+`KAKEL_ALONE=1` to start one of its own. Options › Tray Icon turns the
+tray off. On Windows the icon is new code that has not yet been run on
+Windows itself.
+
 **File panes work as a file manager does.** Files show their kind as an
 icon, and Icon View (Ctrl+2) shows a folder as tiles with thumbnails of
 its pictures. Files drag between file panes in any window, moving on one

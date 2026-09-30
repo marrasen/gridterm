@@ -226,6 +226,11 @@ func (a *app) openFirst() error {
 	return a.open("", Placement{})
 }
 
+// OneOfMany reports whether this kakel is one to hand its command line
+// to a kakel already running: not one driving itself for screenshots,
+// nor one told to run alone with KAKEL_ALONE=1.
+func (o Options) OneOfMany() bool { return o.shot == "" && os.Getenv("KAKEL_ALONE") != "1" }
+
 // ProgramName is what the window is called, before the focused
 // terminal's title.
 const ProgramName = "kakel"

@@ -76,6 +76,16 @@ The whole list. The [README](README.md) has the short version.
   another kakel window's bar to move it there, splits and all. Drop it
   on a pane to join that pane in a split, on the side it is nearest.
   Let it go outside every window and it opens a window of its own.
+- **In the tray, and one kakel at a time.** kakel shows an icon in the
+  system tray, whose menu lists this computer and every saved server,
+  each with Terminal, Files and the rest, and Servers, New Window,
+  Secrets and Quit kakel. They work with no window open. Closing the
+  last window leaves kakel running there; Exit, or Quit kakel, ends it.
+  Starting kakel again, from a shortcut or a shell, hands its command
+  line to the kakel running, which opens a window for it in the folder
+  it was started from. `KAKEL_ALONE=1` starts one of its own. Options ›
+  Tray Icon turns the tray off, and with it kakel ends with its last
+  window, as before.
 - **Tool windows.** View › Open Servers Window and Secrets › Open
   Secrets Window give those panes a window of their own. Tab › Tab to
   New Window does it for the tab in front. In a window that holds only

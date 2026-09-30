@@ -156,11 +156,15 @@ func listOf(what []string) string {
 // keepWindowPlace writes down where the window in front is, and how
 // big, and whether it is maximized, for the next start to open it
 // there. A minimized one is kept as it was before.
-func (a *app) keepWindowPlace() {
-	if a.settings == nil || a.cur == nil || a.cur.gw == nil {
+func (a *app) keepWindowPlace() { a.keepPlaceOf(a.cur) }
+
+// keepPlaceOf keeps where w is, for the next window opened with none
+// open.
+func (a *app) keepPlaceOf(w *ownWin) {
+	if a.settings == nil || w == nil || w.gw == nil {
 		return
 	}
-	p, ok := a.cur.gw.Placement()
+	p, ok := w.gw.Placement()
 	if !ok || p.Bounds.Empty() {
 		return
 	}

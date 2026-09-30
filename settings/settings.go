@@ -79,6 +79,9 @@ type stored struct {
 	// NoTray keeps kakel out of the system tray: closing its last
 	// window ends it, as it did before it had a tray icon.
 	NoTray *bool `json:"noTray,omitempty"`
+	// LauncherKey is the key, from any program, that opens the
+	// launcher, as a shortcut is written; "none" takes none.
+	LauncherKey string `json:"launcherKey,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -822,6 +825,30 @@ func (s *Settings) Tray() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.have.NoTray == nil || !*s.have.NoTray
+}
+
+// LauncherKey is the launcher's key as written in the settings, or ""
+// for the one kakel comes with.
+func (s *Settings) LauncherKey() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.LauncherKey
+}
+
+// PutLauncherKey keeps the launcher's key, and saves.
+func (s *Settings) PutLauncherKey(key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.LauncherKey = key
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // PutTray turns the tray icon on or off, and saves.

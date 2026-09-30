@@ -20,6 +20,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 )
 
@@ -28,10 +29,13 @@ import (
 const File = "running.json"
 
 // Handover is a command line handed to the one running: the arguments,
-// and the folder it was started in.
+// and the folder it was started in. Take says whether the one running
+// took it: one on its way out does not, and the kakel handing it over
+// then runs as the one.
 type Handover struct {
 	Args []string `json:"args"`
 	Dir  string   `json:"dir"`
+	Take func(bool) `json:"-"`
 }
 
 // wire is what a handover sends: the handover, and the token.
@@ -59,7 +63,9 @@ func Hand(dir string, h Handover) (bool, error) {
 		return false, nil
 	}
 	var r running
-	if json.Unmarshal(raw, &r) != nil || r.Addr == "" {
+	if json.Unmarshal(raw, &r) != nil || r.Addr == "" || !alive(r.PID) {
+		// Left by a kakel that ended without taking it with it: whatever
+		// listens on that port now is not kakel.
 		return false, nil
 	}
 	conn, err := net.DialTimeout("tcp", r.Addr, handTime)
@@ -84,50 +90,58 @@ func Hand(dir string, h Handover) (bool, error) {
 }
 
 // Listen makes this the kakel running for dir, and sends what later
-// ones hand it on the channel, until ctx ends. The file goes when it
-// does, unless another has written it since.
-func Listen(ctx context.Context, dir string) (<-chan Handover, error) {
+// ones hand it on the channel, each to be answered with Take, until
+// stop is called or ctx ends. stop takes the file away, unless another
+// has written it since, before it returns.
+func Listen(ctx context.Context, dir string) (handovers <-chan Handover, stop func(), err error) {
 	token := make([]byte, 32)
 	if _, err := rand.Read(token); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	r := running{Addr: l.Addr().String(), Token: hex.EncodeToString(token), PID: os.Getpid()}
 	raw, err := json.Marshal(r)
 	if err != nil {
 		_ = l.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	path := filepath.Join(dir, File)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		_ = l.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	// Written whole, then moved into place, so a kakel starting reads
 	// all of it or none.
 	part := path + ".part"
 	if err := os.WriteFile(part, raw, 0o600); err != nil {
 		_ = l.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	if err := os.Rename(part, path); err != nil {
 		_ = l.Close()
-		return nil, err
+		return nil, nil, err
 	}
-	out := make(chan Handover, 4)
+	out := make(chan Handover)
+	ctx, cancel := context.WithCancel(ctx)
+	var once sync.Once
+	stop = func() {
+		once.Do(func() {
+			cancel()
+			_ = l.Close()
+			if now, err := os.ReadFile(path); err == nil && string(now) == string(raw) {
+				_ = os.Remove(path)
+			}
+		})
+	}
 	go func() {
 		<-ctx.Done()
-		_ = l.Close()
-		if now, err := os.ReadFile(path); err == nil && string(now) == string(raw) {
-			_ = os.Remove(path)
-		}
+		stop()
 	}()
 	go func() {
-		defer close(out)
-		for {
+			for {
 			conn, err := l.Accept()
 			if err != nil {
 				if errors.Is(err, net.ErrClosed) {
@@ -138,7 +152,7 @@ func Listen(ctx context.Context, dir string) (<-chan Handover, error) {
 			go serve(ctx, conn, r.Token, out)
 		}
 	}()
-	return out, nil
+	return out, stop, nil
 }
 
 // serve takes one handover, carrying the token, and answers it.
@@ -153,9 +167,20 @@ func serve(ctx context.Context, conn net.Conn, token string, out chan<- Handover
 	if json.Unmarshal(line, &w) != nil || subtle.ConstantTimeCompare([]byte(w.Token), []byte(token)) != 1 {
 		return
 	}
+	// Answered once the one running has taken it, or not: never before.
+	taken := make(chan bool, 1)
+	h := w.Handover
+	h.Take = func(ok bool) { taken <- ok }
 	select {
-	case out <- w.Handover:
-		_, _ = conn.Write([]byte("ok\n"))
+	case out <- h:
+	case <-ctx.Done():
+		return
+	}
+	select {
+	case ok := <-taken:
+		if ok {
+			_, _ = conn.Write([]byte("ok\n"))
+		}
 	case <-ctx.Done():
 	}
 }

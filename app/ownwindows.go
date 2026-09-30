@@ -319,6 +319,10 @@ func (a *app) letWindowGo(w *ownWin) {
 	if w.gone {
 		return
 	}
+	if live := a.liveWins(); len(live) == 1 && live[0] == w {
+		// The last one, going into the tray: where it was is kept.
+		a.keepPlaceOf(w)
+	}
 	w.gone = true
 	w.c.Leave()
 	a.windowLeft(w)

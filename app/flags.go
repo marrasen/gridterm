@@ -218,7 +218,8 @@ func (a *app) openFirst() error {
 			}
 		})
 	case strings.TrimSpace(a.opts.command) != "":
-		if err := a.runCommand(RunCommand{Line: a.opts.command}); err != nil {
+		// In the folder a command line handed over was started in.
+		if err := a.runCommand(RunCommand{Line: a.opts.command, Dir: a.nextDir}); err != nil {
 			return fmt.Errorf("-e %q: %w", a.opts.command, err)
 		}
 		return nil
@@ -230,6 +231,10 @@ func (a *app) openFirst() error {
 // to a kakel already running: not one driving itself for screenshots,
 // nor one told to run alone with KAKEL_ALONE=1.
 func (o Options) OneOfMany() bool { return o.shot == "" && os.Getenv("KAKEL_ALONE") != "1" }
+
+// Trays reports whether this kakel shows itself in the tray: one of
+// many does, and one driving itself for screenshots does not.
+func (o Options) Trays() bool { return o.shot == "" }
 
 // ProgramName is what the window is called, before the focused
 // terminal's title.

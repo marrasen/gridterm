@@ -75,8 +75,8 @@ type State struct {
 	// ThumbsMade counts the thumbnails made, for the icon views to draw
 	// again as they arrive.
 	ThumbsMade uint64
-	// InTray says kakel shows its icon in the system tray, and runs on
-	// there once its last window closes.
+	// InTray says kakel is to show its icon in the system tray, and run
+	// on there once its last window closes, where there is a tray.
 	InTray bool
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
@@ -657,6 +657,11 @@ type app struct {
 	traySet   Tray
 	tray      trayState
 	handovers <-chan single.Handover
+	// openLaunch opens the launcher's window, hotKeys takes its key from
+	// every program, and launch is the launcher as it is.
+	openLaunch LauncherOpener
+	hotKeys    HotKeys
+	launch     launchState
 	// found are the shells on this machine, once scanned says they have
 	// been looked for; shellGoneSaid says the kept shell was found gone,
 	// which is said once a run.
@@ -767,6 +772,7 @@ func (a *app) run(ctx context.Context) error {
 		return err
 	}
 	a.openFirstOrSay()
+	a.takeLauncherKey()
 	a.publish()
 	if a.opts.shot != "" {
 		list, err := parseShot(a.opts.shot)
@@ -806,8 +812,18 @@ func (a *app) run(ctx context.Context) error {
 			}
 			a.front(in.w)
 			a.handleFrom(in.env.Intent)
-		case h := <-a.handovers:
-			if !a.gone {
+		case h, ok := <-a.handovers:
+			if !ok {
+				a.handovers = nil
+				break
+			}
+			// Said not taken on the way out, so the kakel handing it over
+			// runs as the one.
+			take := !a.gone
+			if h.Take != nil {
+				h.Take(take)
+			}
+			if take {
 				a.handover(h)
 			}
 		case <-a.wake:
@@ -817,6 +833,7 @@ func (a *app) run(ctx context.Context) error {
 		}
 		// Empty, and connecting to nothing that would open a pane: the
 		// window leaves, and the last one takes the program with it.
+		a.rehome()
 		a.leaveIfEmpty()
 		a.leaveEmpty()
 		if a.gone && len(a.liveWins()) == 0 && len(a.wins) == 0 {
@@ -988,7 +1005,7 @@ func (a *app) leaveIfEmpty() {
 // way, and so leaves: nothing connecting, no window or shell opening,
 // and not kept open, as after the first pane failed.
 func (a *app) emptyAndIdle() bool {
-	return len(a.st.Panes) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
+	return len(a.st.Panes) == 0 && len(a.st.Asks) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty
 }
 
 func (a *app) publish() {
@@ -1006,8 +1023,9 @@ func (a *app) publish() {
 	a.noteWork()
 	if !a.gone {
 		a.showTray()
+		a.publishLauncher()
 	}
-	st.InTray = a.tray.on
+	st.InTray = a.trayWanted()
 	st.Working = ""
 	if a.work != nil && !a.work.gone {
 		st.Working = a.focusIn(a.work)
@@ -2031,6 +2049,10 @@ type Config struct {
 	// lines kakels started later hand this one; either may be unset.
 	Tray      Tray
 	Handovers <-chan single.Handover
+	// OpenLauncher opens the launcher's window, and HotKeys takes its key
+	// from every program; either may be unset.
+	OpenLauncher LauncherOpener
+	HotKeys      HotKeys
 }
 
 // Start runs the program side until its last window closes.
@@ -2044,6 +2066,8 @@ func Start(ctx context.Context, cfg Config) error {
 	a.registerThemes = cfg.RegisterThemes
 	a.traySet = cfg.Tray
 	a.handovers = cfg.Handovers
+	a.openLaunch = cfg.OpenLauncher
+	a.hotKeys = cfg.HotKeys
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)
 }

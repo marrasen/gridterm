@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -89,22 +90,68 @@ func TestInTheTrayTheLastWindowOnlyCloses(t *testing.T) {
 	f := &fakeTray{}
 	a.traySet = f.tray()
 	a.publish()
-	a.closeWindow(two)
-	if len(a.st.Asks) == 0 || a.st.Asks[0].Title != "Close this window?" {
-		t.Fatalf("closing the last window but one asked %+v", a.st.Asks)
-	}
-	a.st.Asks = nil
 	for _, p := range a.panesIn(two) {
 		a.remove(p.ID)
 	}
 	a.letWindowGo(two)
 	a.front(one)
+	a.closeWindow(one)
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) > 0 })
+	if q := a.st.Asks[len(a.st.Asks)-1]; q.Title != "Close this window?" {
+		t.Fatalf("closing the last window asked %q", q.Title)
+	}
+	a.st.Asks = nil
 	for _, p := range a.panesIn(one) {
 		a.remove(p.ID)
 	}
 	a.leaveIfEmpty()
 	if a.gone || !one.gone {
 		t.Fatalf("empty in the tray, kakel left %v, its window stayed %v", a.gone, !one.gone)
+	}
+}
+
+// A pane that arrives after the last window closed in the tray, as a
+// shell once its server answers, gets a window of its own, as does a
+// question.
+func TestAPaneWithNoWindowGetsOne(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.traySet = (&fakeTray{}).tray()
+	a.publish()
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		return gunimtest.New(t, s, nil).Client(), nil, nil
+	}
+	for _, w := range []*ownWin{one, two} {
+		for _, p := range a.panesIn(w) {
+			a.remove(p.ID)
+		}
+		a.letWindowGo(w)
+	}
+	a.addPane(Pane{ID: "late", Kind: KindFiles}, nil, Placement{})
+	a.rehome()
+	waitFor(t, a, "a window for it", func() bool { a.rehome(); return a.ownerOf("late") != nil && !a.ownerOf("late").gone })
+	if w := a.ownerOf("late"); a.focusIn(w) != "late" {
+		t.Fatalf("the new window has %q in front", a.focusIn(w))
+	}
+}
+
+// A tray that refuses is not asked again and again, and says so once.
+func TestATrayThatRefusesIsAskedOnce(t *testing.T) {
+	a, _, _ := twoWindowApp(t)
+	f := &fakeTray{err: errors.New("the taskbar is not up")}
+	a.traySet = f.tray()
+	calls := 0
+	a.traySet.Set = func(gunim.Tray) error { calls++; return f.err }
+	for range 5 {
+		a.publish()
+	}
+	failed := 0
+	for _, n := range a.st.Notices {
+		if n.Title == "Couldn't show kakel in the tray" {
+			failed++
+		}
+	}
+	if calls != 1 || failed != 1 {
+		t.Fatalf("the tray was asked %d times and the failure said %d times", calls, failed)
 	}
 }
 
@@ -116,7 +163,8 @@ func TestAHandoverOpensAWindow(t *testing.T) {
 	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
-	a.handover(single.Handover{Args: []string{"-e", "true"}, Dir: t.TempDir()})
+	dir := t.TempDir()
+	a.handover(single.Handover{Args: []string{"-e", "true"}, Dir: dir})
 	select {
 	case f := <-a.events:
 		f()
@@ -128,5 +176,8 @@ func TestAHandoverOpensAWindow(t *testing.T) {
 	}
 	if a.opts.command != "" {
 		t.Fatal("the command handed over stayed in kakel's own options")
+	}
+	if c := a.commands[a.panesIn(a.cur)[0].ID]; c.dir != dir {
+		t.Fatalf("the command runs in %q, want %q, where it was started", c.dir, dir)
 	}
 }

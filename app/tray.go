@@ -42,6 +42,11 @@ type trayState struct {
 	on      bool
 	actions map[int]func()
 	was     string
+	// gen numbers the menus made, in the high bits of their lines' IDs,
+	// so a pick from a menu since replaced does nothing. failed is the
+	// menu the tray last refused, not offered again until it changes.
+	gen    int
+	failed string
 }
 
 // inTray reports whether kakel runs on in the tray once its last window
@@ -50,7 +55,7 @@ func (a *app) inTray() bool { return a.tray.on && !a.gone }
 
 // trayWanted reports whether the settings want the tray.
 func (a *app) trayWanted() bool {
-	return a.traySet.Set != nil && (a.settings == nil || a.settings.Tray())
+	return a.traySet.Set != nil && a.opts.Trays() && (a.settings == nil || a.settings.Tray())
 }
 
 // showTray shows the tray icon, made again when what its menu lists has
@@ -65,28 +70,40 @@ func (a *app) showTray() {
 		return
 	}
 	sig := a.traySig()
-	if a.tray.on && sig == a.tray.was {
+	if a.tray.on && sig == a.tray.was || !a.tray.on && sig == a.tray.failed && a.tray.failed != "" {
 		return
 	}
-	items, actions := a.trayMenu()
+	gen := a.tray.gen + 1
+	items, actions := a.trayMenu(gen)
 	pick := func(id int) {
 		a.events <- func() {
-			if f := a.tray.actions[id]; f != nil {
+			if f := a.tray.actions[id]; f != nil && !a.gone {
 				f()
 			}
 		}
 	}
-	click := func() { a.events <- func() { a.toTray(a.showServers) } }
+	click := func() {
+		a.events <- func() {
+			if !a.gone {
+				a.toTray(a.showServers)
+			}
+		}
+	}
 	err := a.traySet.Set(gunim.Tray{Icon: trayIcons(), Tooltip: ProgramName, Items: items, OnPick: pick, OnClick: click})
 	if err != nil {
-		if !errors.Is(err, gunim.ErrNoTray) {
+		// Said once, and not tried again until the menu changes: a
+		// tray that refused refuses again, and a window flooded with
+		// notices is worse than a missing icon.
+		if !errors.Is(err, gunim.ErrNoTray) && a.tray.failed == "" {
 			a.failed("Couldn't show kakel in the tray", err.Error())
 		}
-		a.tray = trayState{}
-		a.traySet.StayOpen(false)
+		if a.tray.on {
+			a.traySet.StayOpen(false)
+		}
+		a.tray = trayState{gen: gen, failed: sig}
 		return
 	}
-	a.tray = trayState{on: true, actions: actions, was: sig}
+	a.tray = trayState{on: true, actions: actions, was: sig, gen: gen}
 	a.traySet.StayOpen(true)
 }
 
@@ -109,6 +126,9 @@ func (a *app) traySig() string {
 	sig.WriteString("\x01")
 	for _, h := range a.st.Saved {
 		sig.WriteString(h.ID + "\x00" + h.Name + "\x00")
+		if h.Window {
+			sig.WriteString("window\x00")
+		}
 	}
 	sig.WriteString("\x01")
 	for _, m := range a.machines.Connected() {
@@ -118,9 +138,9 @@ func (a *app) traySig() string {
 }
 
 // trayMenu is the tray icon's menu, and what each of its lines does.
-func (a *app) trayMenu() ([]gunim.TrayItem, map[int]func()) {
+func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	actions := map[int]func(){}
-	next := 0
+	next := gen << 16
 	act := func(f func()) int {
 		next++
 		actions[next] = f
@@ -166,7 +186,7 @@ func (a *app) trayMenu() ([]gunim.TrayItem, map[int]func()) {
 		gunim.TrayItem{Title: "Secrets", ID: act(func() { a.toTray(func() { a.showSecretsPane(func(string) {}) }) })},
 		gunim.TrayItem{Separator: true},
 		gunim.TrayItem{Title: "Quit kakel", ID: act(func() {
-			if len(a.liveWins()) == 0 {
+			if len(a.whatIsOpen()) == 0 {
 				// Nothing open to ask about.
 				a.exitNow()
 				return
@@ -177,8 +197,14 @@ func (a *app) trayMenu() ([]gunim.TrayItem, map[int]func()) {
 	return items, actions
 }
 
-// leaveTray takes the icon out of the tray, as kakel ends.
+// leaveTray takes the icon out of the tray, as kakel ends, and lets the
+// launcher's key and window go.
 func (a *app) leaveTray() {
+	a.closeLauncher()
+	if a.launch.release != nil {
+		a.launch.release()
+		a.launch.release = nil
+	}
 	if a.tray.on {
 		_ = a.traySet.Set(gunim.Tray{})
 		a.traySet.StayOpen(false)
@@ -212,8 +238,64 @@ func (a *app) newWindow(f func()) {
 		a.front(w)
 		w.c.ToFront()
 		f()
+		if len(a.panesIn(w)) == 0 && !a.onTheirWay() {
+			// Nothing opened: the window stays, with what f said,
+			// until something does.
+			a.stayEmpty = true
+		}
 		return true
 	})
+}
+
+// onTheirWay reports whether a pane is on its way, as a shell while its
+// server answers.
+func (a *app) onTheirWay() bool { return len(a.machines.Dialing()) > 0 || a.starting > 0 }
+
+// rehome puts what belongs to no window any more, as a pane that
+// arrived after its window closed in the tray, or a question for it,
+// into the window in front, opening one when none is open.
+func (a *app) rehome() {
+	if a.gone {
+		return
+	}
+	var lost []string
+	for _, p := range a.st.Panes {
+		if w := a.ownerOf(p.ID); (w == nil || w.gone) && !a.closing[p.ID] {
+			lost = append(lost, p.ID)
+		}
+	}
+	asks := false
+	for _, q := range a.st.Asks {
+		if w := a.winByID(q.win); w == nil || w.gone {
+			asks = true
+		}
+	}
+	if len(lost) == 0 && !asks {
+		return
+	}
+	live := a.liveWins()
+	if len(live) == 0 {
+		if a.opening == 0 {
+			a.newWindow(func() {})
+		}
+		return
+	}
+	w := a.cur
+	if w == nil || w.gone {
+		w = live[0]
+		a.front(w)
+	}
+	for _, id := range lost {
+		a.winOf[id] = w.id
+	}
+	for i := range a.st.Asks {
+		if o := a.winByID(a.st.Asks[i].win); o == nil || o.gone {
+			a.st.Asks[i].win = w.id
+		}
+	}
+	if len(lost) > 0 && a.focusIn(w) == "" {
+		a.setFocusIn(w, lost[0])
+	}
 }
 
 // handover opens a window for the command line a kakel started

@@ -77,8 +77,13 @@ func run() error {
 			} else if err != nil {
 				log.Print(err)
 			}
-			if handovers, err = single.Listen(ctx, dir); err != nil {
+			var stop func()
+			if handovers, stop, err = single.Listen(ctx, dir); err != nil {
 				log.Printf("kakel runs alone: %v", err)
+			} else {
+				// Gone before the process is, so the next kakel does not
+				// find it.
+				defer stop()
 			}
 		}
 	}
@@ -87,7 +92,7 @@ func run() error {
 	err = gunim.Main(ctx, func(a *gunim.App) error {
 		sh := screen.NewShells()
 		all, trouble := look.LoadSaying()
-		ws := &ownWindows{app: a, sh: sh, all: all}
+		ws := &ownWindows{app: a, sh: sh, all: all, place: opts.WindowPlace}
 		// Where it was as it last closed, or else sized for the font.
 		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace()})
 		if err != nil {
@@ -117,6 +122,9 @@ type ownWindows struct {
 	mu  sync.Mutex
 	all []look.Themed
 	win []*gunim.Window
+	// place is where the last window was as it closed, for one opened
+	// with none open.
+	place func() *driver.Placement
 }
 
 // open opens a window with o's size and place.
@@ -148,7 +156,12 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 // openFrom opens a window size large, its top left corner at at in
 // from's space.
 func (ws *ownWindows) openFrom(from *gunim.Window, at geom.Point, size geom.Size) (gunim.Client, *gunim.Window, error) {
-	w, c, err := ws.open(gunim.WindowOptions{Size: size, Parent: from, Anchor: at})
+	o := gunim.WindowOptions{Size: size, Parent: from, Anchor: at}
+	if from == nil && ws.place != nil {
+		// With none open, as from the tray: where the last one was.
+		o.Place = ws.place()
+	}
+	w, c, err := ws.open(o)
 	return c, w, err
 }
 

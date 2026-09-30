@@ -108,7 +108,7 @@ kakel comes with:
 | `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
 | `Ctrl+Shift+A` | show every pane at once, and pick one |
 | `Ctrl+Shift+K` | the command palette |
-| `Shift+Win+K` | the launcher, from any program (Windows) |
+| `Shift+Win+K` (Windows), `Ctrl+Alt+K` (Linux) | the launcher, from any program |
 | `Shift+PageUp` / `Shift+PageDown` | scroll the scrollback |
 | `Ctrl+Shift+C` / `Ctrl+Shift+V` | copy and paste |
 | `Ctrl+Alt+V` | paste an image as a file, and type its path |

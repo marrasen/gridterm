@@ -304,6 +304,10 @@ func (a *app) rehome() {
 // the folder it was started in.
 func (a *app) handover(h single.Handover) {
 	o, err := ParseOptions(h.Args)
+	if err == nil && o.launcher {
+		a.openLauncher()
+		return
+	}
 	if err != nil {
 		a.newWindow(func() {
 			a.failed("Couldn't read the command line", err.Error())

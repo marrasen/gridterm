@@ -38,6 +38,9 @@ type Options struct {
 	asMCP      bool
 	stats      bool
 	shot       string
+	// launcher opens the launcher, in the kakel running when there is
+	// one, for a key the desktop binds where kakel can take none.
+	launcher bool
 	// sizeSet says -font-size was given, which the size kept from last
 	// time does not overrule.
 	sizeSet bool
@@ -67,6 +70,9 @@ func ParseOptions(args []string) (Options, error) {
 			" on standard input and output, instead of opening a window")
 	fs.BoolVar(&o.stats, "stats", os.Getenv("KAKEL_STATS") == "1",
 		"say each second how many frames were drawn, on standard error")
+	fs.BoolVar(&o.launcher, "launcher", false,
+		"open the launcher, in the kakel already running if there is one;"+
+			" bind this to a key where kakel cannot take one itself, as under Wayland")
 	fs.StringVar(&o.shot, "shot", "",
 		"drive the window through a script and write PNGs, then exit;"+
 			" steps are wait:<ms> until:<text> key:<chord> type:<text>"+

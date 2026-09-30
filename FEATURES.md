@@ -86,14 +86,17 @@ The whole list. The [README](README.md) has the short version.
   it was started from. `KAKEL_ALONE=1` starts one of its own. Options ›
   Tray Icon turns the tray off, and with it kakel ends with its last
   window, as before.
-- **A launcher from any program.** On Windows, Shift+Win+K opens a
-  small window over everything that finds a machine by its name as you
-  type. Enter opens what you opened there last, a terminal at first, in
-  the window you last worked in; Tab lists the rest, as Files and the
-  Connection Log, and Escape goes back and then closes it. Options ›
-  Launcher Key… sets another key, or none; kakel says so if another
-  program has it. Open Launcher, on the Servers menu and the tray's,
-  opens it anywhere.
+- **A launcher from any program.** Shift+Win+K on Windows, and
+  Ctrl+Alt+K on Linux under X11, opens a small window over everything
+  that finds a machine by its name as you type. Enter opens what you
+  opened there last since kakel started, a terminal at first, in the
+  window you last worked in; Tab lists the rest, as Files and, while
+  connected, the Connection Log, and Escape goes back and then closes
+  it. Options › Launcher Key… sets another key with Ctrl, Alt or Win in
+  it, or none; kakel says so if another program has it. Open Launcher,
+  on the Servers menu and the tray's, opens it anywhere, and so does
+  `kakel -launcher`, for a key bound in the desktop's own settings
+  where kakel can take none, as under Wayland.
 - **Tool windows.** View › Open Servers Window and Secrets › Open
   Secrets Window give those panes a window of their own. Tab › Tab to
   New Window does it for the tab in front. In a window that holds only

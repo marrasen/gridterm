@@ -1015,9 +1015,9 @@ func (w *Window) servers(saved []remote.Host) {
 	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.RefreshCw)
 	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.reload")
 	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
-		// The three lines always there first.
+		// The four lines always there first.
 		n := len(m.Items)
-		w.bar.Menus[i] = withAccessKeys(m, n-3, n-2, n-1)
+		w.bar.Menus[i] = withAccessKeys(m, n-4, n-3, n-2, n-1)
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {

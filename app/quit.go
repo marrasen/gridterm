@@ -55,6 +55,7 @@ func (a *app) leave() {
 		return
 	}
 	a.gone = true
+	a.closeLauncher()
 	a.keepWindowPlace()
 	for _, w := range a.wins {
 		if !w.gone {

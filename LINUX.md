@@ -175,6 +175,18 @@ closing its last window ends it. Options › Tray Icon turns it off.
 It was tried on Cinnamon 6 over X11: the icon shows, its menu opens,
 and a pick reaches kakel.
 
+## The launcher's key
+
+Under X11, kakel takes Ctrl+Alt+K from every program for its launcher,
+with XGrabKey. Keys with Super do not work there: Cinnamon and GNOME
+take the keyboard while Super is held, so another program never sees
+the rest. Options › Launcher Key… picks another.
+
+Under Wayland no program may take a key from the others, so kakel takes
+none. Bind `kakel -launcher` to a key in the desktop's keyboard
+settings instead; it opens the launcher in the kakel running. A
+GlobalShortcuts portal, where a desktop has one, is not used yet.
+
 ## Driving it without a person
 
 `kakel -shot` runs a script of steps and writes PNGs, which is how the

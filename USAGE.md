@@ -19,7 +19,7 @@ Kakel comes with:
 | `Ctrl+Shift+B` | open or close the Servers pane |
 | `Ctrl+Shift+L` | go to the Servers pane |
 | `Ctrl+Shift+N` | connect to a server |
-| `Shift+Win+K` | the launcher, from any program, on Windows |
+| `Shift+Win+K` on Windows, `Ctrl+Alt+K` on Linux | the launcher, from any program |
 | `Ctrl+Shift+A` | show every pane at once |
 | `Ctrl+PageDown` / `Ctrl+PageUp` | the next / previous tab |
 | `Ctrl+Shift+PageDown` / `Ctrl+Shift+PageUp` | move the tab right / left |

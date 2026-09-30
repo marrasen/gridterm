@@ -1,8 +1,11 @@
 package view
 
 import (
+	"slices"
+
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
+	"github.com/marrasen/kakel/machines"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
@@ -39,6 +42,7 @@ type Launcher struct {
 	// the line lit, and first the first line shown.
 	opened      uint64
 	machine     int
+	machineID   machines.ID
 	found       []int
 	hot, first  int
 	runs        []text.Run
@@ -53,7 +57,8 @@ type Launcher struct {
 func NewLauncher() *Launcher {
 	l := &Launcher{field: widget.NewTextField(), machine: -1}
 	l.field.Placeholder = "Type a machine's name"
-	l.field.OnEdit = func(string, *gunim.UI) { l.find() }
+	// What is typed lights the best of what it finds.
+	l.field.OnEdit = func(string, *gunim.UI) { l.hot, l.first = 0, 0; l.find() }
 	return l
 }
 
@@ -89,10 +94,12 @@ func (l *Launcher) titles() []match.Item {
 	return out
 }
 
-// find lists what the field finds.
+// find lists what the field finds, in the things of the machine
+// listed, found again by its ID, as the machines may come in another
+// order.
 func (l *Launcher) find() {
-	if l.machine >= len(l.st.Machines) {
-		l.machine = -1
+	if l.machine >= 0 {
+		l.machine = slices.IndexFunc(l.st.Machines, func(m app.LaunchMachine) bool { return m.ID == l.machineID })
 	}
 	l.found = l.found[:0]
 	for _, f := range match.Rank(l.titles(), l.field.Text()) {
@@ -200,15 +207,24 @@ func (l *Launcher) Handle(e input.Event, u *gunim.UI) bool {
 		return false
 	case input.PointerDown:
 		k := int((e.Pos.Y - l.listTop) / launcherRow)
-		if e.Pos.Y < l.listTop || k < 0 || l.first+k >= len(l.found) {
+		if e.Button != input.ButtonPrimary || e.Pos.Y < l.listTop || k >= launcherRows || l.first+k >= len(l.found) {
 			return false
 		}
 		l.hot = l.first + k
 		l.runs = nil
 		u.Invalidate()
-		if e.Clicks >= 1 {
-			l.pick(u)
+		l.pick(u)
+		return true
+	case input.Scroll:
+		// A line at a notch, the list staying within what it found.
+		step := 1
+		if e.Delta.Y > 0 {
+			step = -1
 		}
+		l.first = min(max(l.first+step, 0), max(len(l.found)-launcherRows, 0))
+		l.hot = min(max(l.hot, l.first), l.first+launcherRows-1)
+		l.runs = nil
+		u.Invalidate()
 		return true
 	case input.KeyPress:
 		return l.key(e, u)
@@ -231,6 +247,7 @@ func (l *Launcher) key(e input.KeyPress, u *gunim.UI) bool {
 			return e.Key == input.KeyTab
 		}
 		l.machine, l.hot = l.found[l.hot], 0
+		l.machineID = l.st.Machines[l.machine].ID
 		l.field.SetText("")
 		l.find()
 	case input.KeyLeft, input.KeyEscape:

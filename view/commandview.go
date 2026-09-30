@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/app"
-	"github.com/marrasen/kakel/winkeys"
 	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/machines"
@@ -209,15 +208,15 @@ func (w *Window) launcherKeyDialog(u *gunim.UI) {
 	key.Placeholder = app.DefaultLauncherKey
 	d := widget.NewDialog("Launcher Key")
 	d.Body = widget.NewForm().
-		Add("", widget.NewLabel("The launcher opens on this key from any program. Write it as a shortcut is, such as shift+super+k, where super is the Windows key. Blank uses shift+super+k, and none takes no key.")).
+		Add("", widget.NewLabel("Opens the launcher from any program. Super is the Windows key; none takes no key.")).
 		Add("Key", key)
 	d.SetButtons("Save", "Cancel")
 	d.Check = func() string {
 		k := strings.TrimSpace(key.Text())
-		if k == "" || k == "none" {
+		if k == "" || strings.EqualFold(k, "none") {
 			return ""
 		}
-		if _, err := winkeys.Parse(k); err != nil {
+		if _, err := app.LauncherHotKey(k); err != nil {
 			return words.UpperFirst(err.Error()) + "."
 		}
 		return ""

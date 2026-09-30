@@ -7,6 +7,7 @@ import (
 	"github.com/marrasen/kakel/app"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
 	gi "github.com/marrasen/gunim/input"
 )
@@ -83,5 +84,44 @@ func TestTheLauncherOffersTheRest(t *testing.T) {
 	press(gi.KeyEscape)
 	if in := next(t, w); in != (app.CloseLauncher{}) {
 		t.Fatalf("Escape sent %#v", in)
+	}
+}
+
+// Typing lights the best of what it finds, wherever the light was.
+func TestTypingLightsTheBestMatch(t *testing.T) {
+	_, w := launcherStage(t)
+	w.Input(gi.KeyPress{Key: gi.KeyDown})
+	w.Input(gi.KeyPress{Key: gi.KeyDown})
+	w.Input(gi.TextInput{Text: "p"})
+	w.Input(gi.KeyPress{Key: gi.KeyEnter})
+	w.Frame(time.Second / 60)
+	if in := next(t, w); in != (app.Launch{Machine: "a", Action: "terminal"}) {
+		t.Fatalf("Enter sent %#v", in)
+	}
+}
+
+// A machine's things stay that machine's as the machines come in
+// another order, and a right click picks nothing.
+func TestTheLauncherKeepsItsMachine(t *testing.T) {
+	l, w := launcherStage(t)
+	w.Input(gi.KeyPress{Key: gi.KeyDown})
+	w.Input(gi.KeyPress{Key: gi.KeyTab})
+	st := l.st
+	st.Machines = []app.LaunchMachine{st.Machines[0], st.Machines[2], st.Machines[1]}
+	if err := w.Client().Publish(app.LauncherTopic, st); err != nil {
+		t.Fatal(err)
+	}
+	w.Frame(time.Second / 60)
+	w.Input(gi.KeyPress{Key: gi.KeyEnter})
+	w.Frame(time.Second / 60)
+	if in := next(t, w); in != (app.Launch{Machine: "a", Action: "terminal"}) {
+		t.Fatalf("Enter sent %#v", in)
+	}
+	w.Input(gi.PointerDown{Pos: geom.Pt(100, l.listTop+5), Button: gi.ButtonSecondary})
+	w.Frame(time.Second / 60)
+	select {
+	case env := <-w.Client().Intents():
+		t.Fatalf("a right click sent %#v", env.Intent)
+	case <-time.After(50 * time.Millisecond):
 	}
 }

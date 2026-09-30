@@ -172,6 +172,11 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 	o := gunim.WindowOptions{Title: app.ProgramName, Size: view.LauncherSize, Icons: appicon.Images(), Pinned: true, TitleBar: view.NoTitleBar()}
 	if mons := ws.app.Monitors(); len(mons) > 0 {
 		m := mons[0]
+		for _, o := range mons {
+			if o.Primary {
+				m = o
+			}
+		}
 		area := m.WorkArea
 		if area.Empty() {
 			area = m.Bounds
@@ -197,6 +202,7 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 		func(l *view.Launcher, st app.LaunchState, u *gunim.UI) { l.Update(st, u) })
 	c := w.Client()
 	if err := c.Mount(gunim.Root, "launcher", "launcher", app.LaunchState{}, app.LauncherTopic); err != nil {
+		c.Close()
 		return gunim.Client{}, err
 	}
 	return c, nil

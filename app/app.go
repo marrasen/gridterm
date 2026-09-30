@@ -775,6 +775,9 @@ func (a *app) run(ctx context.Context) error {
 	}
 	a.openFirstOrSay()
 	a.takeLauncherKey()
+	if a.opts.launcher {
+		a.openLauncher()
+	}
 	a.publish()
 	if a.opts.shot != "" {
 		list, err := parseShot(a.opts.shot)

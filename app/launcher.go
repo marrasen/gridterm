@@ -2,6 +2,7 @@ package app
 
 import (
 	"errors"
+	"runtime"
 	"slices"
 	"strings"
 
@@ -9,10 +10,11 @@ import (
 	"github.com/marrasen/kakel/winkeys"
 
 	"github.com/marrasen/gunim"
+	gi "github.com/marrasen/gunim/input"
 )
 
-// The launcher: a key that works from any program, Shift+Win+K unless
-// the settings say another, opens a small window over everything that
+// The launcher: a key that works from any program, Shift+Win+K on
+// Windows and Ctrl+Alt+K elsewhere unless the settings say another, opens a small window over everything that
 // finds a machine by its name as it is typed. Enter opens what was
 // opened there last, a terminal at first, in the window last worked in
 // or a new one; Tab shows the rest of what can be opened there.
@@ -20,8 +22,11 @@ import (
 // LauncherTopic is the key the launcher's state is published under.
 const LauncherTopic = "launcher"
 
-// DefaultLauncherKey is the launcher's key when the settings name none.
-const DefaultLauncherKey = "shift+super+k"
+// DefaultLauncherKey is the launcher's key when the settings name none:
+// Shift+Win+K on Windows, and Ctrl+Alt+K elsewhere, where the window
+// manager keeps the keys with Super for itself, as Cinnamon and GNOME
+// do.
+var DefaultLauncherKey = map[bool]string{true: "shift+super+k", false: "ctrl+alt+k"}[runtime.GOOS == "windows"]
 
 // LaunchState is what the launcher shows: the machines, and a count of
 // the times it was opened, for it to start afresh each time.
@@ -62,20 +67,33 @@ type (
 	SetLauncherKey struct{ Key string }
 )
 
-// setLauncherKey keeps the launcher's key, and takes it.
+// setLauncherKey takes the launcher's key, and keeps it once it has:
+// one that cannot be taken leaves the one held before as it was.
 func (a *app) setLauncherKey(key string) error {
 	key = strings.TrimSpace(key)
-	if key != "" && key != "none" {
-		if _, err := winkeys.Parse(key); err != nil {
+	switch {
+	case isNone(key):
+		key = "none"
+		a.letLauncherKeyGo()
+	default:
+		written := key
+		if written == "" {
+			written = DefaultLauncherKey
+		}
+		k, err := LauncherHotKey(written)
+		if err != nil {
 			return err
+		}
+		held := a.launch.release != nil && a.launch.key == k
+		if a.hotKeys != nil && a.opts.OneOfMany() && !held {
+			if err := a.takeKey(k); err != nil {
+				return err
+			}
 		}
 	}
 	if a.settings != nil {
-		if err := a.settings.PutLauncherKey(key); err != nil {
-			return err
-		}
+		return a.settings.PutLauncherKey(key)
 	}
-	a.takeLauncherKey()
 	return nil
 }
 
@@ -102,41 +120,80 @@ type launchState struct {
 	opening bool
 	opened  uint64
 	release func()
+	key     gunim.HotKey
 	last    map[machines.ID]string
 }
 
 // takeLauncherKey takes the launcher's key from every program, and says
-// so when another program has it.
+// so when another program has it. A kakel of its own, as for
+// screenshots, leaves it to the one running.
 func (a *app) takeLauncherKey() {
-	if a.hotKeys == nil {
+	if a.hotKeys == nil || !a.opts.OneOfMany() {
 		return
-	}
-	if a.launch.release != nil {
-		a.launch.release()
-		a.launch.release = nil
 	}
 	written := a.launcherKey()
-	if written == "none" {
+	if isNone(written) {
+		a.letLauncherKeyGo()
 		return
 	}
-	press, err := winkeys.Parse(written)
+	k, err := LauncherHotKey(written)
 	if err != nil {
 		a.failed("Couldn't read the launcher's key", err.Error())
 		return
 	}
-	release, err := a.hotKeys(gunim.HotKey{Key: press.Key, Mods: press.Mods}, func() {
-		a.events <- a.openLauncher
-	})
+	a.letLauncherKeyGo()
+	if err := a.takeKey(k); err != nil {
+		a.failed("Couldn't take "+written+" for the launcher", err.Error())
+	}
+}
+
+// takeKey takes k for the launcher, which the key held before gives
+// way to once it has.
+func (a *app) takeKey(k gunim.HotKey) error {
+	release, err := a.hotKeys(k, func() { a.events <- a.openLauncher })
 	switch {
 	case errors.Is(err, gunim.ErrNoHotKeys):
+		return nil
 	case errors.Is(err, gunim.ErrHotKeyTaken):
-		a.failed("Couldn't take "+written+" for the launcher",
-			"Another program has it. Choose another key with Options › Launcher Key.")
+		return errors.New("another program has it. Choose another key with Options › Launcher Key")
 	case err != nil:
-		a.failed("Couldn't take "+written+" for the launcher", err.Error())
-	default:
-		a.launch.release = release
+		return err
 	}
+	a.letLauncherKeyGo()
+	a.launch.release, a.launch.key = release, k
+	return nil
+}
+
+// letLauncherKeyGo lets the launcher's key go.
+func (a *app) letLauncherKeyGo() {
+	if a.launch.release != nil {
+		a.launch.release()
+		a.launch.release = nil
+	}
+}
+
+// isNone reports whether a key written is none.
+func isNone(written string) bool { return strings.EqualFold(strings.TrimSpace(written), "none") }
+
+// LauncherHotKey reads a launcher's key as written, refusing one a
+// launcher cannot take: one with no Ctrl, Alt or Win, which would take
+// a letter from typing everywhere, or a key no platform lends.
+func LauncherHotKey(written string) (gunim.HotKey, error) {
+	press, err := winkeys.Parse(strings.TrimSpace(written))
+	if err != nil {
+		return gunim.HotKey{}, err
+	}
+	if press.Mods&(gi.ModControl|gi.ModAlt|gi.ModSuper) == 0 {
+		return gunim.HotKey{}, errors.New("the key needs Ctrl, Alt or Win with it, or it would be taken from typing everywhere")
+	}
+	k := press.Key
+	switch {
+	case k >= gi.KeyA && k <= gi.KeyZ, k >= gi.Key0 && k <= gi.Key9, k >= gi.KeyF1 && k <= gi.KeyF12,
+		k == gi.KeySpace, k == gi.KeyEnter, k == gi.KeyEscape, k == gi.KeyTab:
+	default:
+		return gunim.HotKey{}, errors.New("that key cannot be taken from every program; use a letter, a digit, F1 to F12, Space, Enter, Escape or Tab")
+	}
+	return gunim.HotKey{Key: k, Mods: press.Mods}, nil
 }
 
 // openLauncher opens the launcher, or brings it to the front.
@@ -158,6 +215,10 @@ func (a *app) openLauncher() {
 				a.failed("Couldn't open the launcher", err.Error())
 				return
 			}
+			if a.gone {
+				c.Close()
+				return
+			}
 			a.launch.c = &c
 			a.launch.opened++
 			_ = c.SetTheme(a.st.Theme)
@@ -165,7 +226,12 @@ func (a *app) openLauncher() {
 			c.ToFront()
 			go func() {
 				for env := range c.Intents() {
-					a.events <- func() { a.handleLaunch(env.Intent) }
+					a.events <- func() {
+						// Only this launcher's, not a closed one's late word.
+						if a.launch.c != nil && *a.launch.c == c {
+							a.handleLaunch(env.Intent)
+						}
+					}
 				}
 				a.events <- func() {
 					if a.launch.c != nil && *a.launch.c == c {
@@ -196,7 +262,11 @@ func (a *app) launchMachines() []LaunchMachine {
 			}
 			return out
 		}
-		return append(out, LaunchAction{ID: "log", Title: "Connection Log"})
+		if slices.Contains(a.machines.Connected(), m) {
+			// A log is of a connection: there is none to show before.
+			out = append(out, LaunchAction{ID: "log", Title: "Connection Log"})
+		}
+		return out
 	}
 	withDefault := func(lm LaunchMachine) LaunchMachine {
 		lm.Actions = actions(lm.ID)
@@ -228,6 +298,10 @@ func (a *app) launchMachines() []LaunchMachine {
 
 // handleLaunch carries out what the launcher asks.
 func (a *app) handleLaunch(in gunim.Intent) {
+	if a.gone {
+		a.closeLauncher()
+		return
+	}
 	switch in := in.(type) {
 	case CloseLauncher:
 		a.closeLauncher()

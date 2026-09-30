@@ -117,11 +117,17 @@ func (a *app) dropOnFiles(in DropOnFiles) error {
 	if in.Copy {
 		kind, verb = jobs.Copy, "Copying"
 	}
-	if c := a.clip; kind == jobs.Move && c != nil && c.kind == jobs.Move && c.machine == d.Machine && c.at == d.At &&
-		slices.ContainsFunc(c.names, func(n string) bool { return slices.Contains(d.Names, n) }) {
-		// What was cut has gone somewhere else now.
-		a.clip = nil
-		a.say("clip", "")
+	if c := a.clip; kind == jobs.Move && c != nil && c.kind == jobs.Move && c.machine == d.Machine && samePathOn(from, c.at, d.At) {
+		// What was cut and moved here has gone somewhere else now; the
+		// rest is still waiting to be pasted.
+		left := slices.DeleteFunc(slices.Clone(c.names), func(n string) bool { return slices.Contains(d.Names, n) })
+		if len(left) < len(c.names) {
+			c.names = left
+			if len(left) == 0 {
+				a.clip = nil
+				a.say("clip", "")
+			}
+		}
 	}
 	op := jobs.Op{Kind: kind, From: from, At: d.At, Names: slices.Clone(d.Names), To: to, Into: in.Into}
 	a.followOn(op, fmt.Sprintf("%s %s to %s", verb, countNames(d.Names), vfs.Base(to, in.Into)), d.Machine, toKey)

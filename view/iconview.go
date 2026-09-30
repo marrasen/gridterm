@@ -69,7 +69,15 @@ func (b *browser) newGrid() {
 		}
 		return app.GoUp{Pane: b.id}
 	}
-	g.OnView = func(first, count int) gunim.Intent { return b.wantThumbs(first, count) }
+	g.OnView = func(first, count int) gunim.Intent {
+		// Kept, to ask again for a folder listed in the same place;
+		// hidden, the grid asks for nothing.
+		b.inView = [2]int{first, count}
+		if !b.icons {
+			return nil
+		}
+		return b.wantThumbs(first, count)
+	}
 	g.DragTiles = func(sel [][2]int, at geom.Point) (any, gunim.Node, geom.Point) {
 		return b.dragRows(b.keysIn(sel), at)
 	}
@@ -138,23 +146,49 @@ func (b *browser) setIcons(on bool, u *gunim.UI) {
 	picked := b.pickedKeys()
 	b.icons = on
 	if on {
-		var runs [][2]int
-		for i, k := range b.order {
-			for _, p := range picked {
-				if p == k {
-					runs = append(runs, [2]int{i, i + 1})
-				}
-			}
-		}
-		at := b.indexOf(cursor)
-		b.grid.SetSelected(runs, at, u)
-		b.grid.ShowTile(at, u)
+		b.selectTiles(picked, cursor, u)
+		b.grid.ShowTile(b.indexOf(cursor), u)
 		u.Focus(b.grid)
+		b.askThumbs(u)
 	} else {
 		b.table.SetCursor(cursor, u)
+		// What was picked among the tiles, and nothing else.
+		b.table.SetMarked(picked)
 		u.Focus(b.table)
 	}
+	b.w.tickSwitch("files.icons", on)
 	u.Invalidate()
+}
+
+// selectTiles selects the tiles of keys, with the keyboard on cursor's.
+func (b *browser) selectTiles(keys []widget.Key, cursor widget.Key, u *gunim.UI) {
+	want := make(map[widget.Key]bool, len(keys))
+	for _, k := range keys {
+		want[k] = true
+	}
+	var runs [][2]int
+	for i, k := range b.order {
+		if !want[k] {
+			continue
+		}
+		if n := len(runs); n > 0 && runs[n-1][1] == i {
+			runs[n-1][1] = i + 1
+		} else {
+			runs = append(runs, [2]int{i, i + 1})
+		}
+	}
+	b.grid.SetSelected(runs, b.indexOf(cursor), u)
+}
+
+// askThumbs asks for the thumbnails of the tiles in view, as a folder
+// is listed, or the icons come back.
+func (b *browser) askThumbs(u *gunim.UI) {
+	if !b.icons {
+		return
+	}
+	if in := b.wantThumbs(b.inView[0], max(b.inView[1], 1)); in != nil {
+		u.Send(b, in)
+	}
 }
 
 // indexOf is where key k is among the pane's rows, 0 when it is not.

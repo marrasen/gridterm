@@ -1,6 +1,9 @@
 package app
 
 import (
+	"errors"
+	"slices"
+
 	"github.com/marrasen/kakel/ui/files"
 	"github.com/marrasen/kakel/vfs"
 
@@ -28,11 +31,13 @@ const mostThumbWork = 3
 // a slow link.
 const mostThumbBytes = 16 << 20
 
-// thumbJob is a thumbnail to make: its key, and the file.
+// thumbJob is a thumbnail to make: its key, and the file, for the file
+// pane Pane showing folder Dir.
 type thumbJob struct {
-	key  files.ThumbKey
-	from vfs.FS
-	at   string
+	key       files.ThumbKey
+	from      vfs.FS
+	at        string
+	pane, dir string
 }
 
 // needThumbs queues the thumbnails asked for that are neither made nor
@@ -44,6 +49,15 @@ func (a *app) needThumbs(in NeedThumbs) {
 		return
 	}
 	machine := string(a.filesKey(in.Pane))
+	// What the pane asked for before and is not being made yet goes:
+	// it asks for what it shows now, which may be another folder.
+	a.thumbQueue = slices.DeleteFunc(a.thumbQueue, func(j thumbJob) bool {
+		if j.pane == in.Pane {
+			delete(a.thumbWanted, j.key)
+			return true
+		}
+		return false
+	})
 	for _, name := range in.Names {
 		i := -1
 		for k, e := range b.Entries {
@@ -52,7 +66,8 @@ func (a *app) needThumbs(in NeedThumbs) {
 				break
 			}
 		}
-		if i < 0 || !files.IsImage(name) || b.Entries[i].IsDir() || b.Entries[i].Size > mostThumbBytes {
+		// A plain file alone: a pipe called x.png would hang the read.
+		if i < 0 || !files.IsImage(name) || !b.Entries[i].Mode.IsRegular() {
 			continue
 		}
 		e := b.Entries[i]
@@ -60,13 +75,25 @@ func (a *app) needThumbs(in NeedThumbs) {
 		if _, done := files.Thumbnails.Get(k); done || a.thumbWanted[k] {
 			continue
 		}
+		if e.Size > mostThumbBytes {
+			// Kept as none, so it is not asked for again.
+			files.Thumbnails.Put(k, files.Thumb{Err: "too big for a thumbnail"})
+			continue
+		}
 		if a.thumbWanted == nil {
 			a.thumbWanted = map[files.ThumbKey]bool{}
 		}
 		a.thumbWanted[k] = true
-		a.thumbQueue = append(a.thumbQueue, thumbJob{key: k, from: f, at: k.Path})
+		a.thumbQueue = append(a.thumbQueue, thumbJob{key: k, from: f, at: k.Path, pane: in.Pane, dir: b.Path})
 	}
 	a.pumpThumbs()
+}
+
+// stale reports whether a thumbnail waiting is no longer wanted: its
+// pane has closed, or shows another folder.
+func (a *app) stale(j thumbJob) bool {
+	b, ok := a.st.Browsers[j.pane]
+	return !ok || b.Path != j.dir || a.filesOf(j.pane) != j.from
 }
 
 // pumpThumbs starts making thumbnails while there are some to make and
@@ -75,15 +102,23 @@ func (a *app) pumpThumbs() {
 	for a.thumbWorking < mostThumbWork && len(a.thumbQueue) > 0 {
 		j := a.thumbQueue[len(a.thumbQueue)-1]
 		a.thumbQueue = a.thumbQueue[:len(a.thumbQueue)-1]
+		if a.stale(j) {
+			delete(a.thumbWanted, j.key)
+			continue
+		}
 		a.thumbWorking++
 		go func() {
-			th := files.Thumb{}
-			if pic, err := files.ReadImage(j.from, j.at, 4*files.ThumbSide); err != nil {
-				th.Err = err.Error()
-			} else {
-				th.Image = paint.NewImageFit(pic.Img, files.ThumbSide, files.ThumbSide)
+			pic, err := files.ReadImage(j.from, j.at, 4*files.ThumbSide)
+			var bad files.BadImage
+			switch {
+			case err == nil:
+				files.Thumbnails.Put(j.key, files.Thumb{Image: paint.NewImageFit(pic.Img, files.ThumbSide, files.ThumbSide)})
+			case errors.As(err, &bad):
+				// Kept as none: reading it again says the same.
+				files.Thumbnails.Put(j.key, files.Thumb{Err: err.Error()})
+			default:
+				// Not kept: a connection that dropped may be back.
 			}
-			files.Thumbnails.Put(j.key, th)
 			a.events <- func() {
 				a.thumbWorking--
 				delete(a.thumbWanted, j.key)

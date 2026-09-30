@@ -133,8 +133,10 @@ type Job struct {
 	finished sync.Once
 
 	// noRename says a move found its ends on two devices, and copies
-	// and deletes what is left.
-	noRename bool
+	// and deletes what is left, and skippedBefore how many the renames
+	// before that skipped.
+	noRename      bool
+	skippedBefore int
 
 	mu sync.Mutex
 	p  Progress

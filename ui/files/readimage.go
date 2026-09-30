@@ -89,33 +89,41 @@ func ReadImageWatched(f vfs.FS, at string, side int, watch func(read int64)) (pi
 		return Pic{}, err
 	}
 	if len(raw) > MostImageBytes {
-		return Pic{}, fmt.Errorf("the file is over %d bytes, which is more than this shows", MostImageBytes)
+		return Pic{}, BadImage{fmt.Errorf("the file is over %d bytes, which is more than this shows", MostImageBytes)}
 	}
 
 	cfg, _, err := image.DecodeConfig(bytes.NewReader(raw))
 	if err != nil {
-		return Pic{}, fmt.Errorf("work out what kind of image this is: %w", err)
+		return Pic{}, BadImage{fmt.Errorf("work out what kind of image this is: %w", err)}
 	}
 	if cfg.Width <= 0 || cfg.Height <= 0 {
 		// A BMP of nought by nought decodes without complaint, and asking
 		// for a texture that size brings the window down.
-		return Pic{}, fmt.Errorf("the image is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)
+		return Pic{}, BadImage{fmt.Errorf("the image is %d by %d, so there is nothing to show", cfg.Width, cfg.Height)}
 	}
 	if n := int64(cfg.Width) * int64(cfg.Height); n > MostImagePixels {
-		return Pic{}, fmt.Errorf("the image is %d by %d, which is more than this shows", cfg.Width, cfg.Height)
+		return Pic{}, BadImage{fmt.Errorf("the image is %d by %d, which is more than this shows", cfg.Width, cfg.Height)}
 	}
 
 	img, kind, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return Pic{}, fmt.Errorf("decode the image: %w", err)
+		return Pic{}, BadImage{fmt.Errorf("decode the image: %w", err)}
 	}
 	b := img.Bounds()
 	if b.Empty() {
 		// The header said one thing and the pixels another.
-		return Pic{}, errors.New("the image has no pixels in it")
+		return Pic{}, BadImage{errors.New("the image has no pixels in it")}
 	}
 	return Pic{Img: fitImage(img, side), Kind: kind, Was: image.Pt(b.Dx(), b.Dy())}, nil
 }
+
+// BadImage is an image file that was read, and is not one that can be
+// shown: of no kind known, too big, or broken. Reading it again gives
+// the same answer, which a file that could not be read may not.
+type BadImage struct{ Err error }
+
+func (b BadImage) Error() string { return b.Err.Error() }
+func (b BadImage) Unwrap() error { return b.Err }
 
 // fitImage shrinks an image bigger than side either way, keeping its
 // shape, and leaves a smaller one alone.

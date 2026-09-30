@@ -45,6 +45,7 @@ type browser struct {
 	// at the icons to find one, typedAt when the last of it was.
 	grid    *widget.TileGrid
 	icons   bool
+	inView  [2]int
 	order   []widget.Key
 	typed   string
 	typedAt time.Time
@@ -513,9 +514,19 @@ func (b *browser) list(u *gunim.UI) {
 		keys = append(keys, k)
 		b.byName[k] = e
 	}
+	// The tiles keep what is selected by name, as the rows do their
+	// marks: a file arriving must not move them onto its neighbour.
+	sel, cur := b.pickedKeys(), widget.Key("")
+	if b.icons {
+		cur, _ = b.cursor()
+	}
 	b.table.SetKeys(keys, u)
 	b.order = keys
 	b.grid.SetLen(len(keys), u)
+	if b.icons {
+		b.selectTiles(sel, cur, u)
+		b.askThumbs(u)
+	}
 }
 
 // row is what the table shows for an entry: folders strong, links in

@@ -474,6 +474,9 @@ func (a *app) browse(in Browse) {
 	asked := a.listing[in.Pane]
 	go func() {
 		entries, err := f.ReadDir(in.Path)
+		// Asked here, off the program's goroutine: a disk that hangs
+		// hangs this listing, not every window.
+		archive, volume := vfs.InArchive(f, in.Path), vfs.VolumeOf(f, in.Path)
 		a.events <- func() {
 			if a.listing[in.Pane] != asked {
 				// A later listing was asked for: this one is old news.
@@ -491,7 +494,7 @@ func (a *app) browse(in Browse) {
 			}
 			order(entries)
 			a.setBrowser(in.Pane, Browser{Path: in.Path, Entries: entries, Land: in.Land, Seq: b.Seq + 1, Top: vfs.IsTop(f, in.Path),
-				Archive: vfs.InArchive(f, in.Path), Volume: vfs.VolumeOf(f, in.Path), Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
+				Archive: archive, Volume: volume, Roots: f.Roots(), Sep: sepOf(f), Listed: b.Listed, WentTo: max(b.WentTo, in.GoTo)})
 			a.retitleAs(in.Pane, vfs.Base(f, in.Path))
 		}
 	}()

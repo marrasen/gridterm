@@ -177,3 +177,33 @@ func TestADropBetweenVolumesCopies(t *testing.T) {
 		t.Fatal("a move out of an archive was taken")
 	}
 }
+
+// Back in details, the rows marked are the tiles that were picked, and
+// no others from before.
+func TestDetailsGetTheTilesPicked(t *testing.T) {
+	b := filePaneStage(t, app.Browser{})
+	b.table.SetMarked([]widget.Key{"docs"})
+	b.setIcons(true, lastUI)
+	b.selectTiles([]widget.Key{"a.txt"}, "a.txt", lastUI)
+	b.setIcons(false, lastUI)
+	if got := b.picked(); len(got) != 1 || got[0] != "a.txt" {
+		t.Fatalf("back in details, the names picked are %v", got)
+	}
+}
+
+// A file arriving in the folder leaves the tiles picked on their names,
+// and the new listing asks for its thumbnails.
+func TestTheTilesKeepTheirNamesAsTheFolderChanges(t *testing.T) {
+	b := filePaneStage(t, app.Browser{})
+	b.setIcons(true, lastUI)
+	b.selectTiles([]widget.Key{"a.txt"}, "a.txt", lastUI)
+	drain()
+	b.st.Entries = append([]vfs.Entry{{Name: "0.png", Mode: 0, Size: 5}}, b.st.Entries...)
+	b.list(lastUI)
+	if got := b.picked(); len(got) != 1 || got[0] != "a.txt" {
+		t.Fatalf("after a file arrived, the names picked are %v", got)
+	}
+	if in, ok := nextIntent(t).(app.NeedThumbs); !ok || len(in.Names) != 1 || in.Names[0] != "0.png" {
+		t.Fatalf("the new listing asked for %#v", in)
+	}
+}

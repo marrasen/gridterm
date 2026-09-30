@@ -44,6 +44,13 @@ func (j *Job) do(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		if j.mounted(items) {
+			// One of them is a volume of its own, as a folder a disk is
+			// mounted on: none is renamed, and everything is copied
+			// and then taken away, before a question is asked twice.
+			j.noRename = true
+			return j.do(ctx)
+		}
 		j.countAll(items)
 		err = j.rename(ctx, items)
 		var cd *crossDevice
@@ -61,6 +68,9 @@ func (j *Job) do(ctx context.Context) error {
 		})
 		j.op.Names = j.op.Names[cd.at:]
 		j.noRename = true
+		// What the renames skipped stays where it was, and is not what
+		// the copy after them left alone.
+		j.skippedBefore = j.Progress().Skipped
 	}
 
 	// Everything else is worked out first, so the panel can say how far
@@ -552,6 +562,18 @@ func (j *Job) renames() bool {
 	return !j.noRename && vfs.Same(j.op.From, j.op.To) && vfs.OneVolume(j.op.From, j.op.At, j.op.Into)
 }
 
+// mounted reports whether one of the items is a volume of its own, on
+// another than the folder it goes into, so renaming it would fail.
+func (j *Job) mounted(items []item) bool {
+	into := vfs.VolumeOf(j.op.From, j.op.Into)
+	for _, it := range items {
+		if it.e.IsDir() && vfs.VolumeOf(j.op.From, it.from) != into {
+			return true
+		}
+	}
+	return false
+}
+
 // crossDevice is a rename that failed as its two ends are on two
 // devices, at the item numbered at, which a move then copies and
 // deletes.
@@ -576,10 +598,10 @@ func (j *Job) move(ctx context.Context, items []item) error {
 	}
 	// Only what was really copied goes. Anything the user chose to skip
 	// is still only in one place.
-	if j.Progress().Skipped > 0 {
+	if n := j.Progress().Skipped - j.skippedBefore; n > 0 {
 		return fmt.Errorf(
 			"jobs: %d of them were left alone, so the originals stay where they are",
-			j.Progress().Skipped)
+			n)
 	}
 	if err := j.remove(ctx, items); err != nil {
 		// The copy finished, so everything is on the other machine. Some

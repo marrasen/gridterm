@@ -251,6 +251,7 @@ func TestTheSideButtonsGoBackAndForward(t *testing.T) {
 	box, _ := lastUI.Bounds(win.browsers["p1"])
 	side := func(b gi.Button) app.Browse {
 		t.Helper()
+		lastWindow.Input(gi.PointerMove{Pos: box.Center()})
 		lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: b, Clicks: 1})
 		lastWindow.Input(gi.PointerUp{Pos: box.Center(), Button: b})
 		lastWindow.Frame(time.Second / 60)

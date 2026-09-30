@@ -123,21 +123,16 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 	case gi.FocusEntered:
 		b.w.entered(b.id, u)
 		return false
-	case gi.PointerDown:
-		// A mouse's side buttons go back and forward through the folders
-		// been through, as in a browser.
-		switch e.Button {
-		case gi.ButtonBack:
-			b.goBack(u)
-			return true
-		case gi.ButtonForward:
+	case gi.HistoryStep:
+		// A mouse's side buttons, and a keyboard's Browser Back and
+		// Forward, go back and forward through the folders been
+		// through, as in a browser.
+		if e.Forward {
 			b.goForward(u)
-			return true
-		case gi.ButtonPrimary, gi.ButtonSecondary, gi.ButtonMiddle:
+		} else {
+			b.goBack(u)
 		}
-		return false
-	case gi.PointerUp:
-		return e.Button == gi.ButtonBack || e.Button == gi.ButtonForward
+		return true
 	}
 	k, ok := e.(gi.KeyPress)
 	if !ok {

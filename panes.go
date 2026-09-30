@@ -108,22 +108,15 @@ func (b *browser) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 // F7 or Ctrl+V pastes here; F8 or Delete deletes, after asking; F2
 // renames; F9 makes a folder.
 func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
-	switch e := e.(type) {
-	case gi.PointerDown:
-		// A mouse's side buttons go back and forward through the folders
-		// been through, as in a browser.
-		switch e.Button {
-		case gi.ButtonBack:
-			b.goBack(u)
-			return true
-		case gi.ButtonForward:
+	// A mouse's side buttons, and the Browser Back and Forward keys, go back and forward through the folders been
+	// through, as in a browser.
+	if h, ok := e.(gi.HistoryStep); ok {
+		if h.Forward {
 			b.goForward(u)
-			return true
-		case gi.ButtonPrimary, gi.ButtonSecondary, gi.ButtonMiddle:
+		} else {
+			b.goBack(u)
 		}
-		return false
-	case gi.PointerUp:
-		return e.Button == gi.ButtonBack || e.Button == gi.ButtonForward
+		return true
 	}
 	k, ok := e.(gi.KeyPress)
 	if !ok {

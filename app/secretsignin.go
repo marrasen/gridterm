@@ -2,10 +2,14 @@ package app
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
+	"log"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/marrasen/kakel/secrets"
 )
@@ -180,6 +184,8 @@ func (a *app) keepSignIns(k *signIns) {
 		return
 	}
 	keep := func() {
+		// What the secrets hold now, for the next connection to know.
+		defer a.showVault()
 		for _, in := range list {
 			said, err := keepSignIn(v, in)
 			if err != nil {
@@ -299,4 +305,92 @@ func keepSignIn(v *secrets.Vault, in signIn) (string, error) {
 		return "", err
 	}
 	return it.Name + " saved in the secrets", nil
+}
+
+// hintOf is the hash a login or a key file is hinted by: what the
+// settings keep of what the secrets keep, naming neither. kind is
+// "login" or "key".
+func hintOf(kind, what string) string {
+	if kind == "login" {
+		if user, host, ok := strings.Cut(what, "@"); ok {
+			what = user + "@" + strings.ToLower(host)
+		}
+	}
+	sum := sha256.Sum256([]byte("kakel " + kind + " " + what))
+	return hex.EncodeToString(sum[:12])
+}
+
+// noteSecretHints keeps the hints of the logins and key files items
+// sign in with, when they are not the ones kept already.
+func (a *app) noteSecretHints(items []secrets.Item) {
+	if a.settings == nil {
+		return
+	}
+	var hints []string
+	for _, it := range items {
+		if it.File != "" {
+			hints = append(hints, hintOf("key", it.File))
+		}
+		for _, l := range it.Logins {
+			hints = append(hints, hintOf("login", l))
+		}
+	}
+	slices.Sort(hints)
+	hints = slices.Compact(hints)
+	if had, known := a.settings.SecretHints(); known && slices.Equal(hints, had) {
+		return
+	}
+	if err := a.settings.PutSecretHints(hints); err != nil {
+		log.Printf("couldn't keep which sign-ins the secrets hold: %v", err)
+	}
+}
+
+// unlockFor opens the secrets, asking, when they are locked and hold a
+// secret for hint, and reports whether they are open now. why says what
+// they are wanted for. Declined, or nothing held, it reports false and
+// the question for the key or the password goes on as before.
+func (q asker) unlockFor(ctx context.Context, hint, why string) bool {
+	if q.kept == nil {
+		return false
+	}
+	got := make(chan *secrets.Vault, 1)
+	select {
+	case q.a.events <- func() { got <- q.a.lockedHolding(hint) }:
+	case <-ctx.Done():
+		return false
+	}
+	var v *secrets.Vault
+	select {
+	case v = <-got:
+	case <-ctx.Done():
+		return false
+	}
+	if v == nil {
+		return false
+	}
+	if err := q.a.openVault(v, why); err != nil {
+		return false
+	}
+	q.inHand(ctx, func() string { q.a.showVault(); return "" })
+	return true
+}
+
+// lockedHolding is the secrets, when they are locked, won't open without
+// asking, and hold a secret for hint, or may: before kakel has once seen
+// inside them, as after an update, any might. Nil otherwise.
+func (a *app) lockedHolding(hint string) *secrets.Vault {
+	if a.settings == nil {
+		return nil
+	}
+	if hints, known := a.settings.SecretHints(); known && !slices.Contains(hints, hint) {
+		return nil
+	}
+	v, err := a.vault()
+	if err != nil || !v.Exists() || !v.Locked() {
+		return nil
+	}
+	if v.Unlock(a.ring.Signers()) == nil {
+		return nil
+	}
+	return v
 }

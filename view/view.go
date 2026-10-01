@@ -2304,6 +2304,9 @@ func (w *Window) bareNode(id string) gunim.Node {
 	case app.KindTunnel:
 		p, ok := w.tunnelPanes[id]
 		if !ok {
+			if w.shellGone(id) {
+				return blankPane{}
+			}
 			p = newTunnelPane(w.term(id))
 			w.tunnelPanes[id] = p
 		}
@@ -2322,6 +2325,9 @@ func (w *Window) bareNode(id string) gunim.Node {
 			w.choosers[id] = c
 		}
 		return c
+	}
+	if w.shellGone(id) {
+		return blankPane{}
 	}
 	t := w.term(id)
 	pad, ok := w.termPads[id]
@@ -2390,6 +2396,27 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 	}
 	return nil
 }
+
+// shellGone reports whether pane id has no shell to show, nor a
+// terminal made already. The state the window shows may be older than
+// the shells: a pane closed since, as a connection's when the
+// connection is given up, still names one that has gone.
+func (w *Window) shellGone(id string) bool {
+	_, made := w.terms[id]
+	return !made && w.shells.Get(id) == nil
+}
+
+// blankPane stands in for a pane that has nothing to show yet, or any
+// more: it takes its room and draws nothing.
+type blankPane struct{}
+
+// Layout implements [gunim.Node].
+func (blankPane) Layout(c gunim.Constraints, _ gunim.Frame, _ gunim.Children) geom.Size {
+	return c.Max
+}
+
+// Paint implements [gunim.Node].
+func (blankPane) Paint(*paint.Painter, gunim.Frame, geom.Size, gunim.Children) {}
 
 func (w *Window) term(id string) *term {
 	if t, ok := w.terms[id]; ok {

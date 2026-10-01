@@ -243,3 +243,15 @@ func TestLosingTheKeyboardEndsAPressAndTheLinksLight(t *testing.T) {
 		t.Fatalf("away, held %v, modifiers %v, link %q", tm.held, tm.hoverMods, tm.sh.T.HoveredLink())
 	}
 }
+
+// A terminal pane whose shell has gone by the time the window shows it,
+// as a connection's closed when the connection is given up, is drawn
+// blank rather than crashing the window.
+func TestAPaneWhoseShellHasGoneIsBlank(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
+	publish(app.State{Panes: []app.Pane{{ID: "p9", Title: "gone"}}, Stage: &app.Box{Pane: "p9"}, Focus: "p9"})
+	frames(2)
+	if _, ok := win.terms["p9"]; ok {
+		t.Fatal("a terminal was made for a pane with no shell")
+	}
+}

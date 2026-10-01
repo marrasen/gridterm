@@ -332,6 +332,15 @@ type asker struct {
 	// asker whose answers are kept nowhere, as the one unlocking the
 	// secrets themselves.
 	kept *signIns
+	// why says on a passphrase's question what it is wanted for, when
+	// that is not the connection the question is about.
+	why string
+}
+
+// saying is q, saying why on its passphrase questions.
+func (q asker) saying(why string) asker {
+	q.why = why
+	return q
 }
 
 // newAsker asks the user what one connection to name needs to know.
@@ -362,8 +371,18 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 		case <-ctx.Done():
 			return "", ctx.Err()
 		}
+		// Kept in the secrets, which are locked: they are asked to open
+		// first, and the passphrase comes from them.
+		if q.unlockFor(ctx, hintOf("key", key.Path), "The secrets hold the passphrase for "+key.Path+".") {
+			if pass := q.inHand(ctx, func() string { return q.a.passphraseInHand(key.Path) }); pass != "" {
+				return pass, nil
+			}
+		}
 	}
 	text := "The key " + key.Path + " is locked with a passphrase."
+	if q.why != "" {
+		text = q.why + " " + text
+	}
 	if key.Wrong > 0 {
 		text = "That passphrase did not open " + key.Path + ". Try again."
 	}
@@ -386,6 +405,11 @@ func (q asker) Password(ctx context.Context, user, host string) (string, error) 
 			*q.asked = true
 			if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
 				return pass, nil
+			}
+			if q.unlockFor(ctx, hintOf("login", login), "The secrets hold the password for "+login+".") {
+				if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
+					return pass, nil
+				}
 			}
 		}
 		*q.asked = true

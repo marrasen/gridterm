@@ -92,6 +92,13 @@ type stored struct {
 	// as a saved server's Folders are on it.
 	StartFolder  string   `json:"startFolder,omitempty"`
 	LocalFolders []string `json:"localFolders,omitempty"`
+	// SecretHints say which logins and key files the secrets keep
+	// something for, as hashes that name none of them, so a connection
+	// knows to ask for the secrets to be unlocked while they are locked.
+	SecretHints []string `json:"secretHints,omitempty"`
+	// SecretHintsKnown says the hints were taken from the secrets once,
+	// so none means the secrets hold no sign-in.
+	SecretHintsKnown bool `json:"secretHintsKnown,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -913,6 +920,32 @@ func (s *Settings) PutLocal(start string, folders []string) error {
 	}
 	before := s.have
 	s.have.StartFolder, s.have.LocalFolders = start, slices.Clone(folders)
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// SecretHints are the hashes of the logins and key files the secrets
+// keep something for, and whether they have been taken from the secrets
+// yet.
+func (s *Settings) SecretHints() ([]string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.SecretHints), s.have.SecretHintsKnown
+}
+
+// PutSecretHints keeps the hashes of the logins and key files the
+// secrets keep something for, and saves.
+func (s *Settings) PutSecretHints(hints []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.SecretHints, s.have.SecretHintsKnown = slices.Clone(hints), true
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

@@ -2,12 +2,14 @@ package app
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"slices"
 	"testing"
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/secrets"
+	"github.com/marrasen/kakel/settings"
 )
 
 // run runs f on a goroutine, as the dial does, and waits for what it
@@ -152,4 +154,59 @@ func TestAPickedSecretForAnotherKeyChangesNothing(t *testing.T) {
 	if got, _ := a.secrets.PassphraseFor("/k/one"); got != "a" {
 		t.Fatalf("the key lost its secret: %q", got)
 	}
+}
+
+// A key whose passphrase the locked secrets hold asks for the secrets to
+// be unlocked, and is unlocked from them, rather than asking for the
+// key's own passphrase.
+func TestLockedSecretsHoldingAKeysPassphraseAreAskedToOpen(t *testing.T) {
+	a, keyFile := secretsApp(t)
+	a.settings = mustSettings(t)
+	startVault(t, a)
+	locked := filepath.Join(filepath.Dir(keyFile), "id_rsa")
+	if _, err := a.secrets.Put(secrets.Item{Name: "rsa", Kind: secrets.Passphrase, File: locked}, "s3cret"); err != nil {
+		t.Fatal(err)
+	}
+	if err := a.secrets.AddPassphrase("correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	a.showVault()
+	if hints, known := a.settings.SecretHints(); !known || !slices.Contains(hints, hintOf("key", locked)) {
+		t.Fatalf("the hints are %v, known %v", hints, known)
+	}
+	a.handle(LockSecrets{})
+	a.ring.Lock()
+	if err := os.Rename(keyFile, keyFile+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	got := make(chan string, 1)
+	go func() {
+		p, _ := newAsker(a, "srv").keeping(&signIns{}).Passphrase(t.Context(), remote.LockedKey{Path: locked})
+		got <- p
+	}()
+	answer(t, a, "Unlock Secrets", true, "correct horse")
+	if p := await(t, a, got); p != "s3cret" {
+		t.Fatalf("the key was unlocked with %q", p)
+	}
+	// A key the secrets hold nothing for asks for its passphrase.
+	a.handle(LockSecrets{})
+	other := filepath.Join(filepath.Dir(keyFile), "id_other")
+	go func() {
+		p, _ := newAsker(a, "srv").keeping(&signIns{}).Passphrase(t.Context(), remote.LockedKey{Path: other})
+		got <- p
+	}()
+	answer(t, a, "Unlock your key", true, "typed", "")
+	if p := await(t, a, got); p != "typed" {
+		t.Fatalf("the other key was unlocked with %q", p)
+	}
+}
+
+// mustSettings is settings of a test's own.
+func mustSettings(t *testing.T) *settings.Settings {
+	t.Helper()
+	s, err := settings.Load(filepath.Join(t.TempDir(), "settings.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
 }

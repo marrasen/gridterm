@@ -32,6 +32,17 @@ user, port, key file and ProxyJump.
 
 ### Fixed
 
+**Locked secrets are asked to open for a connection they hold the
+sign-in for.** A key's passphrase or a server's password saved in the
+secrets was only used when the secrets opened without asking. Now, when
+they are locked and hold it, kakel asks to unlock the secrets first, and
+then signs in with what they hold. kakel remembers which logins and keys
+the secrets hold something for as hashes, which name none of them.
+
+**The window no longer crashes when a pane's shell goes first.** A
+terminal pane closed while the window was still showing it, as a
+connection's is when the connection is given up, crashed the window.
+
 **No windows flash up as kakel starts on Windows.** The release is now
 linked as a windowed program, so Windows gives it no console window to
 close. wsl.exe, which kakel asks for the WSL distributions, and the

@@ -210,45 +210,46 @@ func (a *app) makeVault(signer ssh.Signer, keyFile string) error {
 // when no key of its is here or the one here is refused. It runs on a
 // goroutine of its own.
 func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
-	done := func(err error) {
-		a.events <- func() {
-			switch {
-			case err == nil:
-				then()
-			case errors.Is(err, errDeclined), errors.Is(err, context.Canceled):
-			default:
-				a.failed(what, err.Error())
-			}
+	err := a.openVault(v, "")
+	a.events <- func() {
+		switch {
+		case err == nil:
+			then()
+		case errors.Is(err, errDeclined), errors.Is(err, context.Canceled):
+		default:
+			a.failed(what, err.Error())
 		}
 	}
+}
+
+// openVault unlocks v as unlockVault does, and says how it went. why,
+// when it is not empty, says on each question why the secrets are
+// wanted now. It asks, so it runs off the program's goroutine.
+func (a *app) openVault(v *secrets.Vault, why string) error {
 	keyFile, err := vaultkeys.ToUnlock(v)
 	if err == nil {
 		var signer ssh.Signer
-		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a, ""))
+		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a, "").saying(why))
 		if err == nil {
 			err = v.Unlock([]ssh.Signer{signer})
 		}
 		if err == nil || errors.Is(err, errDeclined) || !v.TakesAPassphrase() {
-			done(err)
-			return
+			return err
 		}
 	} else if !v.TakesAPassphrase() {
-		done(err)
-		return
+		return err
 	}
 	for wrong := 0; ; wrong++ {
-		q := Ask{Title: "Unlock Secrets", Icon: "lock", Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+		q := Ask{Title: "Unlock Secrets", Icon: "lock", Text: why, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
 		if wrong > 0 {
 			q.Text = "That passphrase did not open the secrets. Try again."
 		}
 		ans, err := a.ask(a.ctx, q)
 		if err != nil || !ans.Yes {
-			done(errDeclined)
-			return
+			return errDeclined
 		}
 		if err := v.UnlockWith(ans.Answers[0]); !errors.Is(err, secrets.ErrWrongPassphrase) {
-			done(err)
-			return
+			return err
 		}
 	}
 }
@@ -318,6 +319,7 @@ func (a *app) showVault() {
 	s := Secrets{Exists: v.Exists(), Open: !v.Locked(), Passphrase: v.TakesAPassphrase()}
 	if s.Open {
 		items, _ := v.Items()
+		a.noteSecretHints(items)
 		for _, it := range items {
 			s.Items = append(s.Items, SecretItem{ID: it.ID, Name: it.Name, User: it.User, File: it.File, Kind: it.Kind})
 		}

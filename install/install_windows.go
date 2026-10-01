@@ -110,8 +110,13 @@ func register(exe string, o Options) error {
 // Script Host object: the shell's own way to write one, with no COM
 // written here.
 func shortcut(lnk, exe string) error {
+	// It starts at home: a shell kakel opens starts where kakel did.
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = filepath.Dir(exe)
+	}
 	script := "$s = (New-Object -ComObject WScript.Shell).CreateShortcut(" + quote(lnk) + "); " +
-		"$s.TargetPath = " + quote(exe) + "; $s.WorkingDirectory = " + quote(filepath.Dir(exe)) + "; " +
+		"$s.TargetPath = " + quote(exe) + "; $s.WorkingDirectory = " + quote(home) + "; " +
 		"$s.IconLocation = " + quote(exe+",0") + "; $s.Save()"
 	cmd := powershell(script)
 	cmd.SysProcAttr.CreationFlags = windows.CREATE_NO_WINDOW

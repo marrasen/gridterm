@@ -43,6 +43,10 @@ func Installed(exe string) bool {
 	return samePath(exe, want)
 }
 
+// SamePath reports whether two paths name one file or folder, letter
+// case aside where the system ignores it, and through links.
+func SamePath(a, b string) bool { return samePath(a, b) }
+
 // samePath reports whether two paths name one file, letter case aside
 // where the system ignores it, and through links: the program's own path
 // comes with them resolved.

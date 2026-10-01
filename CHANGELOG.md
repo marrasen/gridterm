@@ -11,6 +11,12 @@ change how something behaves.
 
 ### Fixed
 
+**A bell's rings show on the window that rang, on Windows.** They used
+to show above every window. A window behind another drew its rings over
+the one in front, and over other programs too, so they looked like
+another window's. Now they stay with their own window and go behind
+whatever is in front of it.
+
 **The hand shows over a link with Ctrl held.** The pointer over a
 terminal is the I-beam, and the hand where Ctrl and a click would follow
 a link.

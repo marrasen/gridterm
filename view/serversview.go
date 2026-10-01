@@ -62,12 +62,31 @@ func newServersPane(w *Window) *serversPane {
 // makes it the one in front, and a press on its empty room gives it the
 // keyboard, on the row it would have, as a press in a terminal does.
 func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
-	switch e.(type) {
+	inSearch := u.Focused() == gunim.Node(p.search)
+	switch e := e.(type) {
 	case gi.FocusEntered:
 		p.w.entered(p.w.paneOfKind(app.KindServers), u)
 	case gi.PointerDown:
 		if row := p.w.serversRow(u); row != nil {
 			u.Focus(row)
+			return true
+		}
+	case gi.TextInput:
+		// / finds, from anywhere in the pane.
+		if e.Text == "/" && !inSearch {
+			u.Focus(p.search)
+			return true
+		}
+	case gi.KeyPress:
+		switch {
+		case inSearch && e.Key == gi.KeyDown:
+			if n := p.w.cards.first(); n != nil {
+				u.Focus(n)
+				return true
+			}
+		case inSearch && e.Key == gi.KeyEscape && p.search.Text() != "":
+			p.search.SetText("")
+			p.w.cards.find("", u)
 			return true
 		}
 	}
@@ -90,7 +109,7 @@ func (p *serversPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Chil
 	hs := head.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
 	// The field takes what is left, up to a comfortable width; the
 	// title shows where it still fits beside it.
-	p.headShown = x-gap-pad-hs.W-gap >= 160
+	p.headShown = c.Max.W >= compactBelow && x-gap-pad-hs.W-gap >= 160
 	left := float32(pad)
 	if p.headShown {
 		left += hs.W + 2*gap
@@ -186,7 +205,7 @@ func (w *Window) serversRow(u *gunim.UI) gunim.Node {
 		if !ok {
 			continue
 		}
-		if !row.heading {
+		if row.takesKeys() {
 			return row
 		}
 		if first == nil {

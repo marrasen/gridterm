@@ -238,15 +238,22 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	if got := focused(); got != last {
 		t.Fatalf("End went to %q, want the last row, %q", got, last)
 	}
+	// Home goes to the first card's header, and Down from it to what is
+	// open on it.
 	press(gi.KeyHome)
-	if got := focused(); got != "p1" {
+	if got := focused(); got != "machine:" {
 		t.Fatalf("Home went to %q", got)
+	}
+	press(gi.KeyDown)
+	if got := focused(); got != "p1" {
+		t.Fatalf("Down from the header went to %q", got)
 	}
 	press(gi.KeyPageDown)
 	if got := focused(); got != last {
 		t.Fatalf("PageDown went to %q, want the last row, %q", got, last)
 	}
 	press(gi.KeyPageUp)
+	press(gi.KeyDown)
 	press(gi.KeyEnter)
 	if in := nextIntentPast(t); in != (app.FocusPane{Pane: "p1"}) {
 		t.Fatalf("Enter sent %#v", in)

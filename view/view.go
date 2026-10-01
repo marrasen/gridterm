@@ -2825,7 +2825,11 @@ func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gun
 
 // Focusable implements [gunim.Focusable]: every row but a heading, for
 // working the sidebar from the keyboard.
-func (r *sideRow) Focusable() bool { return !r.heading || r.popup != nil }
+func (r *sideRow) Focusable() bool { return r.takesKeys() || r.popup != nil }
+
+// takesKeys reports whether the keyboard goes to the row as it moves
+// along the list: every row but a plain heading, a card's header too.
+func (r *sideRow) takesKeys() bool { return !r.heading || r.card != nil }
 
 // activate does what a click on the row does.
 func (r *sideRow) activate(u *gunim.UI) {
@@ -2882,6 +2886,8 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 				step = -1
 			}
 			r.w.focusRow(r.key, step, u)
+		case e.Key == input.KeyLeft, e.Key == input.KeyRight:
+			r.w.cards.stepCard(r.key, e.Key == input.KeyRight, u)
 		case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
 			// A page of rows.
 			step := sidebarPage
@@ -3037,7 +3043,7 @@ func (w *Window) focusRow(from string, step int, u *gunim.UI) {
 		at, step = -1, 1
 	}
 	for i := at + step; i >= 0 && i < len(keys); i += step {
-		if row, ok := w.cards.row(keys[i]); ok && !row.heading {
+		if row, ok := w.cards.row(keys[i]); ok && row.takesKeys() {
 			u.Focus(row)
 			return
 		}
@@ -3059,7 +3065,7 @@ func (w *Window) focusRowsAway(from string, n int, u *gunim.UI) {
 	}
 	var last *sideRow
 	for i := at + step; i >= 0 && i < len(keys) && n > 0; i += step {
-		if row, ok := w.cards.row(keys[i]); ok && !row.heading {
+		if row, ok := w.cards.row(keys[i]); ok && row.takesKeys() {
 			last = row
 			n--
 		}

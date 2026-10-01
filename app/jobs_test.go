@@ -401,3 +401,26 @@ func TestACopyEndingAfterAFailedListingListsThePaneAgain(t *testing.T) {
 		t.Fatalf("listed again, the pane is at %q and says %q", b.Path, b.Err)
 	}
 }
+
+// A folder that can't be opened is said in a notice, which the Window
+// Log keeps, and echoed as a problem from the pane's window.
+func TestAFolderThatCannotBeOpenedIsSaid(t *testing.T) {
+	a, _ := agentApp(t)
+	was := t.TempDir()
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	problems := a.pingsIn(a.ownerOf(pane)).Problems
+	gone := filepath.Join(was, "not-there")
+	a.browse(Browse{Pane: pane, Path: gone})
+	waitFor(t, a, "the failure", func() bool { return a.st.Browsers[pane].Err != "" })
+	n := a.st.Notices[len(a.st.Notices)-1]
+	if n.Kind != NoticeFailed || n.Title != "Couldn't open "+gone || n.Body == "" {
+		t.Fatalf("the notice is %+v", n)
+	}
+	if got := a.pingsIn(a.ownerOf(pane)).Problems; got != problems+1 {
+		t.Fatalf("the window counted %d problems, want %d", got, problems+1)
+	}
+}

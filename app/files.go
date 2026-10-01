@@ -487,7 +487,13 @@ func (a *app) browse(in Browse) {
 			if err != nil {
 				b.Err = err.Error()
 				if in.GoTo != 0 {
+					// Go To asks again, saying why, in its own dialog.
 					b.WentTo, b.GoToErr = in.GoTo, err.Error()
+				} else {
+					// Said in a notice, kept in the Window Log, and
+					// echoed from the pane's own window.
+					a.failed("Couldn't open "+in.Path, err.Error())
+					a.pingsIn(a.ownerOf(in.Pane)).Problems++
 				}
 				a.setBrowser(in.Pane, b)
 				return

@@ -11,6 +11,22 @@ change how something behaves.
 
 ### Fixed
 
+**The hand shows over a link with Ctrl held.** The pointer over a
+terminal is the I-beam, and the hand where Ctrl and a click would follow
+a link.
+
+**A link's address no longer sticks after a Ctrl+click.** A browser the
+click opened took the button's release, and the link stayed lit, its
+address shown at the foot of the pane, until the next click.
+
+**A delete's question shows which button Enter presses.** It opens on
+Cancel, with its ring showing, and the arrow keys move between the
+buttons.
+
+**A folder that can't be opened is said in a notice.** It sends a red
+echo, as a delete sends a green one, and the Window Log keeps it. The
+line under the path that said "Click for why" is gone.
+
 **Select text in the scrollback.** A selection stays on its text as the
 view scrolls and as output moves it up, rather than on the rows of the
 screen. A drag held past a pane's top or bottom scrolls toward it, faster

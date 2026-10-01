@@ -68,8 +68,7 @@ type browser struct {
 	descending bool
 	// keys is the bar of keys at the foot, and problem the line under
 	// the path saying a folder could not be read.
-	keys    *keyBar
-	problem *errLine
+	keys *keyBar
 	// goTo is Go To's field while it is open, and asked the folder whose
 	// names were last asked for, to complete from. goingTo is what Go To
 	// went to, until the program says how that went, goToAsk its number,
@@ -116,9 +115,7 @@ func newBrowser(w *Window, id string) *browser {
 		return app.EnterEntry{Pane: b.id, Name: string(k)}
 	}
 	b.keys = b.newKeys()
-	b.problem = &errLine{b: b, label: widget.NewLabel("")}
-	b.problem.label.Size, b.problem.label.Color, b.problem.label.MaxLines = smallText, widget.ButtonDangerFill, 1
-	b.col = widget.Column(widget.NewPad(b.path), b.problem, b.drop, b.keys).Grow(b.drop, 1)
+	b.col = widget.Column(widget.NewPad(b.path), b.drop, b.keys).Grow(b.drop, 1)
 	b.col.Cross, b.col.Gap = widget.CrossStretch, noGap
 	return b
 }
@@ -413,10 +410,6 @@ func (b *browser) show(st app.Browser, u *gunim.UI) {
 	b.wentTo(st, u)
 	listed := st.Listed.Dir != b.st.Listed.Dir || !slices.Equal(st.Listed.Folders, b.st.Listed.Folders)
 	b.st = st
-	b.problem.label.SetText("")
-	if st.Err != "" {
-		b.problem.label.SetText("Couldn't read this folder. Click for why.")
-	}
 	if listed && b.goTo != nil {
 		b.complete(b.goTo.Text(), u)
 	}

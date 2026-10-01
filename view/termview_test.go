@@ -198,3 +198,48 @@ func TestATinyPaneResizesItsShellOnceSettled(t *testing.T) {
 		t.Fatalf("settled, the shell is %dx%d, want %dx%d", size.Cols, size.Rows, cols, rows)
 	}
 }
+
+// The pointer over a terminal is the I-beam, and a hand over a link
+// while Ctrl is down.
+func TestTheHandShowsOverALinkWithCtrl(t *testing.T) {
+	win, sh, publish := windowStageOf(t, geom.Sz(900, 600))
+	linked := screen.Hooks{Output: func() {}, Title: func(string) {}, Exit: func() {}, Clipboard: func(string) {}, Link: func(string) {}}
+	sh.Set("p1", screen.Open(sessiontest.NewPrinted([]byte("https://example.com/a")), vt.DefaultPalette(), linked))
+	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
+	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
+	tm := win.terms["p1"]
+	frames(30)
+	box, _ := lastUI.Bounds(tm.cells)
+	cell := tm.cells.CellSize()
+	at := box.Min.Add(geom.Pt(cell.W*3, cell.H/2))
+	lastWindow.Input(gi.PointerMove{Pos: at})
+	frames(2)
+	if got := lastWindow.Offscreen().Cursor(); got != gi.CursorText {
+		t.Fatalf("over the text the pointer is %v, want the I-beam", got)
+	}
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
+	frames(2)
+	if got := lastWindow.Offscreen().Cursor(); got != gi.CursorHand {
+		t.Fatalf("over a link with Ctrl down the pointer is %v, want the hand", got)
+	}
+}
+
+// A press that another program took the release of, as a browser a
+// Ctrl+click opened does, ends as the window loses the keyboard, and no
+// link stays lit or named.
+func TestLosingTheKeyboardEndsAPressAndTheLinksLight(t *testing.T) {
+	_, tm := termStage(t, geom.Sz(900, 600))
+	box, _ := lastUI.Bounds(tm)
+	lastWindow.Input(gi.PointerMove{Pos: box.Center()})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyLeftControl})
+	lastWindow.Input(gi.PointerDown{Pos: box.Center(), Button: gi.ButtonPrimary, Clicks: 1, Mods: gi.ModControl})
+	frames(1)
+	if tm.held == input.MouseNone || tm.hoverMods == 0 {
+		t.Fatalf("pressed with Ctrl, held %v, modifiers %v", tm.held, tm.hoverMods)
+	}
+	lastWindow.Input(gi.WindowFocusLost{})
+	frames(1)
+	if tm.held != input.MouseNone || tm.hoverMods != 0 || tm.sh.T.HoveredLink() != "" {
+		t.Fatalf("away, held %v, modifiers %v, link %q", tm.held, tm.hoverMods, tm.sh.T.HoveredLink())
+	}
+}

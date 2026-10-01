@@ -117,6 +117,17 @@ func (t *term) setAway(away bool, u *gunim.UI) {
 	if !away {
 		t.blinkAgain()
 		t.blink(u)
+	} else {
+		// Another program took the keyboard, as a browser a Ctrl+click
+		// opened does on the press: the release, and Ctrl coming up,
+		// go to it. The press ends here, and no link stays lit or
+		// named at the foot of the pane.
+		if t.held != input.MouseNone {
+			t.held, t.edge = input.MouseNone, 0
+			t.sh.T.CancelGesture()
+		}
+		t.hoverMods = 0
+		t.sh.T.SetHover(t.at.X, t.at.Y, 0)
 	}
 	t.sync()
 	u.Invalidate()
@@ -175,6 +186,9 @@ func (t *term) lookAgain(u *gunim.UI) {
 
 func newTerm(id string, sh *screen.Shell, keys *ui.Keymap) *term {
 	g := widget.NewCellGrid()
+	// The terminal names the pointer's shape over its cells: a hand
+	// over a link Ctrl and a click would follow.
+	g.Pointer = func(geom.Point) gi.Cursor { return gi.CursorInherit }
 	g.Size = 15
 	g.Background = look.TermBackground
 	t := &term{id: id, keys: keys, sh: sh, cells: g, settle: anim.NewFloat(0)}
@@ -756,13 +770,13 @@ func (t *term) scroll(e gi.Scroll, u *gunim.UI) {
 }
 
 // Cursor implements [gunim.CursorShaper]: a hand over a link that a
-// click would follow, and otherwise the arrow.
+// click would follow, and otherwise the I-beam, over text.
 func (t *term) Cursor(p geom.Point) gi.Cursor {
 	at := t.cellAt(p)
 	if _, on := t.sh.T.CursorAt(at.X, at.Y, t.hoverMods); on {
 		return gi.CursorHand
 	}
-	return gi.CursorArrow
+	return gi.CursorText
 }
 
 // termPadding is the room between a terminal's cells and its pane's

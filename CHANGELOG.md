@@ -11,6 +11,10 @@ change how something behaves.
 
 ### Fixed
 
+**Tabs open and close in motion.** A new tab grows in where it lands,
+a closed one shrinks away, and the tabs beside it and the + slide into
+place. They used to appear and vanish at once.
+
 **Ctrl+wheel zooms when it should on Linux.** Under X11 a scroll just
 after pressing Ctrl scrolled instead of zooming, and Ctrl stayed held
 for the wheel after it was let go, so scrolling zoomed. kakel now asks

@@ -3,6 +3,7 @@ package view
 import (
 	"slices"
 	"strconv"
+	"time"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
@@ -15,6 +16,7 @@ import (
 	"github.com/marrasen/gunim/input"
 	"github.com/marrasen/gunim/paint"
 	"github.com/marrasen/gunim/text"
+	"github.com/marrasen/gunim/theme"
 	"github.com/marrasen/gunim/widget"
 )
 
@@ -63,9 +65,45 @@ type tabBar struct {
 	// landing is where a tab dragged over the bar would land: before the
 	// tab at that index, len(tabs) for last, and -1 while none is over.
 	landing int
+	// moves are how the tabs move, by group: boxes is where the layout
+	// puts them, and a tab slides there, grows in as it opens, and
+	// shrinks away as it closes, in gone. arriving are the groups new
+	// on the bar, which grow in rather than appear; plusAt is where the
+	// + is drawn, sliding after the tabs.
+	moves    map[int]*tabMove
+	arriving map[int]bool
+	gone     []tabGone
+	plusAt   *anim.Rect
 }
 
-func newTabBar(w *Window) *tabBar { return &tabBar{w: w, hot: -1, pressed: -1, landing: -1} }
+// tabMove is how a tab moves on the bar: its box, sliding to where the
+// layout puts it, and how far it is open, 0 to 1, which its look fades
+// with.
+type tabMove struct {
+	box  *anim.Rect
+	open *anim.Float
+}
+
+// step advances the tab's motion, and reports whether it moves still.
+func (m *tabMove) step(dt time.Duration) bool {
+	moving := m.box.Step(dt)
+	return m.open.Step(dt) || moving
+}
+
+// tabGone is a closed tab, drawn as it was while it shrinks away.
+type tabGone struct {
+	*tabMove
+	tab         app.Tab
+	title, more text.Run
+	kind        string
+}
+
+// tabSlide is how the tabs slide, open and close.
+var tabSlide = anim.Spring{Response: 0.28, Damping: 1}
+
+func newTabBar(w *Window) *tabBar {
+	return &tabBar{w: w, hot: -1, pressed: -1, landing: -1, moves: map[int]*tabMove{}, arriving: map[int]bool{}}
+}
 
 // The tabs' measures: the room each side of a title, the widest and
 // narrowest tab, the room a tab's icon and × take, and the gap between
@@ -114,6 +152,7 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 			b.pressed = -1
 		}
 	}
+	b.tabsMoved(tabs)
 	b.tabs, b.front = tabs, front
 	if !slices.Equal(titles, b.shaped) || size != b.shapedSize {
 		b.shaped, b.shapedSize = titles, size
@@ -129,6 +168,105 @@ func (b *tabBar) show(tabs []app.Tab, focus string, u *gunim.UI) {
 		b.hot, b.pressed, b.landing, b.crossHot, b.plusPressed = -1, -1, -1, false, false
 	}
 	u.Invalidate()
+}
+
+// tabsMoved notes what changes on the bar as it comes to show tabs: a
+// tab gone shrinks away where it was, and one new grows in where it
+// lands. A bar coming to show, or going, moves nothing but the tab new
+// on it: its first tabs, as the window opens, are simply there.
+func (b *tabBar) tabsMoved(tabs []app.Tab) {
+	in := func(tabs []app.Tab, g int) bool {
+		return slices.ContainsFunc(tabs, func(t app.Tab) bool { return t.Group == g })
+	}
+	if len(tabs) < 2 {
+		// Hidden, it shows nothing moving.
+		clear(b.moves)
+		clear(b.arriving)
+		b.gone, b.plusAt = nil, nil
+		return
+	}
+	for i, t := range b.tabs {
+		m := b.moves[t.Group]
+		if m == nil || in(tabs, t.Group) {
+			continue
+		}
+		delete(b.moves, t.Group)
+		g := tabGone{tabMove: m, tab: t, kind: b.w.tabKind(t)}
+		if i < len(b.titles) {
+			g.title, g.more = b.titles[i], b.more[i]
+		}
+		r := m.box.Value()
+		m.box.Animate(geom.Rc(r.Min.X, r.Min.Y, 0, r.Size().H), tabSlide)
+		m.open.Animate(0, tabSlide)
+		b.gone = append(b.gone, g)
+	}
+	if len(b.tabs) > 0 {
+		for _, t := range tabs {
+			if !in(b.tabs, t.Group) {
+				b.arriving[t.Group] = true
+			}
+		}
+	}
+}
+
+// Step implements [gunim.Animator]: the tabs sliding, opening and
+// closing.
+func (b *tabBar) Step(dt time.Duration) bool {
+	moving := b.Group.Step(dt)
+	for _, m := range b.moves {
+		if m.step(dt) {
+			moving = true
+		}
+	}
+	if b.plusAt != nil && b.plusAt.Step(dt) {
+		moving = true
+	}
+	kept := b.gone[:0]
+	for _, g := range b.gone {
+		if g.step(dt) {
+			moving = true
+			kept = append(kept, g)
+		}
+	}
+	clear(b.gone[len(kept):])
+	b.gone = kept
+	return moving
+}
+
+// moveTabs starts each tab toward where the layout put it, a tab new
+// on the bar from nothing where it lands, and reports whether any is
+// moving.
+func (b *tabBar) moveTabs() bool {
+	moving := false
+	for i, t := range b.tabs {
+		r := b.boxes[i]
+		m := b.moves[t.Group]
+		if m == nil {
+			m = &tabMove{box: anim.NewRect(r), open: anim.NewFloat(1)}
+			if b.arriving[t.Group] {
+				m.box.Jump(geom.Rc(r.Min.X, r.Min.Y, 0, r.Size().H))
+				m.open.Jump(0)
+			}
+			b.moves[t.Group] = m
+		}
+		delete(b.arriving, t.Group)
+		m.box.Animate(r, tabSlide)
+		m.open.Animate(1, tabSlide)
+		moving = moving || m.box.Active() || m.open.Active()
+	}
+	if b.plusAt == nil {
+		b.plusAt = anim.NewRect(b.plus)
+	}
+	b.plusAt.Animate(b.plus, tabSlide)
+	return moving || b.plusAt.Active() || len(b.gone) > 0
+}
+
+// drawnAt is where tab i is drawn, and how far it is open.
+func (b *tabBar) drawnAt(i int) (geom.Rect, float32) {
+	if m := b.moves[b.tabs[i].Group]; m != nil {
+		return m.box.Value(), m.open.Value()
+	}
+	return b.boxes[i], 1
 }
 
 // tabTitle is what tab t says: the title of the pane in it that last
@@ -189,6 +327,9 @@ func (b *tabBar) Layout(c gunim.Constraints, f gunim.Frame, _ gunim.Children) ge
 	}
 	b.plus = geom.Rc(x+2, (h-24)/2, 24, 24)
 	b.end = x + tabPlus
+	if b.moveTabs() {
+		f.RedrawAt(f.Now)
+	}
 	return c.Constrain(geom.Sz(max(c.Max.W, b.end), h))
 }
 
@@ -199,59 +340,18 @@ func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.C
 	}
 	th := f.Theme
 	p.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(widget.MenubarFill.Get(th)))
-	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
+	for _, g := range b.gone {
+		b.paintTab(p, th, g.tab, g.title, g.more, g.kind, g.box.Value(), g.open.Value(), tabLook{})
+	}
 	for i, t := range b.tabs {
-		r := b.boxes[i]
-		lifted := t.Group == b.carried
-		radius := look.RowRadius.Get(th)
-		switch {
-		case t.Group == b.front:
-			p.RRect(r, radius, paint.Solid(look.RowActive.Get(th)))
-		case i == b.hot && b.carried == 0:
-			p.RRect(r, radius, paint.Solid(look.RowHover.Get(th)))
-		}
-		c := faint
-		if t.Group == b.front {
-			c = ink
-		}
-		if lifted {
-			c.A /= 3
-		}
-		mid := r.Min.Y + r.Size().H/2
-		if r.Size().W < tabPad+tabIcon+6 {
-			// Too narrow for its title: its icon alone, in the middle,
-			// where it fits.
-			if r.Size().W >= tabIcon+4 {
-				paintIcon(p, b.w.tabKind(t), geom.Rc(r.Center().X-tabIcon/2, mid-tabIcon/2, tabIcon, tabIcon), c)
-			}
-			continue
-		}
-		paintIcon(p, b.w.tabKind(t), geom.Rc(r.Min.X+tabPad, mid-tabIcon/2, tabIcon, tabIcon), c)
-		x := r.Min.X + tabPad + tabIcon + 6
-		stop := r.Max.X - tabPad
-		if b.crossShown(i) {
-			stop -= tabCross
-		}
-		if m := b.more[i]; m.Advance > 0 {
-			mc := faint
-			mc.A = uint8(float32(mc.A) * 0.8)
-			m.Paint(p, geom.Pt(stop-m.Advance, mid-m.Height()/2), mc)
-			stop -= m.Advance + 6
-		}
-		if stop > x {
-			run := b.titles[i]
-			func() {
-				defer p.Layer(paint.LayerOpts{Bounds: geom.Rc(x, r.Min.Y, stop-x, r.Size().H), Opacity: 1, Clip: true})()
-				run.Paint(p, geom.Pt(x, mid-run.Height()/2), c)
-			}()
-		}
-		if b.crossShown(i) {
-			cc := faint
-			if i == b.hot && b.crossHot {
-				cc = ink
-			}
-			paintCross(p, b.crossOf(i), cc)
-		}
+		r, open := b.drawnAt(i)
+		b.paintTab(p, th, t, b.titles[i], b.more[i], b.w.tabKind(t), r, open, tabLook{
+			front:    t.Group == b.front,
+			hot:      i == b.hot && b.carried == 0,
+			lifted:   t.Group == b.carried,
+			cross:    b.crossShown(i),
+			crossLit: i == b.hot && b.crossHot,
+		})
 	}
 	if b.landing >= 0 && len(b.boxes) > 0 && b.landing <= len(b.boxes) {
 		x := b.boxes[len(b.boxes)-1].Max.X + tabGap/2
@@ -260,12 +360,81 @@ func (b *tabBar) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, _ gunim.C
 		}
 		p.RRect(geom.Rc(x-1.5, 6, 3, box.H-10), 1.5, paint.Solid(switcherRing.Get(th)))
 	}
-	drawIcon(p, icon.Plus, b.plus.Inset(geom.Uniform(4)), faint, 1.5)
+	plus := b.plus
+	if b.plusAt != nil {
+		plus = b.plusAt.Value()
+	}
+	drawIcon(p, icon.Plus, plus.Inset(geom.Uniform(4)), look.Faint.Get(th), 1.5)
+}
+
+// tabLook is how a tab is drawn: in front, under the pointer, dragged
+// away, with its × showing, and with the pointer on the ×.
+type tabLook struct{ front, hot, lifted, cross, crossLit bool }
+
+// paintTab draws tab t in r, open as far as open says.
+func (b *tabBar) paintTab(p *paint.Painter, th *theme.Live, t app.Tab, title, more text.Run, kind string, r geom.Rect, open float32, l tabLook) {
+	if r.Size().W <= 0 || open <= 0 {
+		return
+	}
+	if open < 1 {
+		defer p.Layer(paint.LayerOpts{Bounds: r, Opacity: min(open, 1)})()
+	}
+	ink, faint := widget.Ink.Get(th), look.Faint.Get(th)
+	radius := look.RowRadius.Get(th)
+	switch {
+	case l.front:
+		p.RRect(r, radius, paint.Solid(look.RowActive.Get(th)))
+	case l.hot:
+		p.RRect(r, radius, paint.Solid(look.RowHover.Get(th)))
+	}
+	c := faint
+	if l.front {
+		c = ink
+	}
+	if l.lifted {
+		c.A /= 3
+	}
+	mid := r.Min.Y + r.Size().H/2
+	if r.Size().W < tabPad+tabIcon+6 {
+		// Too narrow for its title: its icon alone, in the middle,
+		// where it fits.
+		if r.Size().W >= tabIcon+4 {
+			paintIcon(p, kind, geom.Rc(r.Center().X-tabIcon/2, mid-tabIcon/2, tabIcon, tabIcon), c)
+		}
+		return
+	}
+	paintIcon(p, kind, geom.Rc(r.Min.X+tabPad, mid-tabIcon/2, tabIcon, tabIcon), c)
+	x := r.Min.X + tabPad + tabIcon + 6
+	stop := r.Max.X - tabPad
+	if l.cross {
+		stop -= tabCross
+	}
+	if more.Advance > 0 {
+		mc := faint
+		mc.A = uint8(float32(mc.A) * 0.8)
+		more.Paint(p, geom.Pt(stop-more.Advance, mid-more.Height()/2), mc)
+		stop -= more.Advance + 6
+	}
+	if stop > x {
+		func() {
+			defer p.Layer(paint.LayerOpts{Bounds: geom.Rc(x, r.Min.Y, stop-x, r.Size().H), Opacity: 1, Clip: true})()
+			title.Paint(p, geom.Pt(x, mid-title.Height()/2), c)
+		}()
+	}
+	if l.cross {
+		cc := faint
+		if l.crossLit {
+			cc = ink
+		}
+		paintCross(p, crossIn(r), cc)
+	}
 }
 
 // crossOf is where tab i's × is.
-func (b *tabBar) crossOf(i int) geom.Rect {
-	r := b.boxes[i]
+func (b *tabBar) crossOf(i int) geom.Rect { return crossIn(b.boxes[i]) }
+
+// crossIn is where the × of a tab in r is.
+func crossIn(r geom.Rect) geom.Rect {
 	const s = 10
 	return geom.Rc(r.Max.X-tabPad-s+2, r.Min.Y+(r.Size().H-s)/2, s, s)
 }

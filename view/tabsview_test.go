@@ -265,3 +265,60 @@ func TestTheServersButtonsFitANarrowPane(t *testing.T) {
 		}
 	}
 }
+
+// threeTabs is twoTabs with a third tab, p3's, last.
+func threeTabs() app.State {
+	st := twoTabs()
+	b3 := &app.Box{Pane: "p3"}
+	st.Panes = append(st.Panes, app.Pane{ID: "p3", Title: "Files", Kind: app.KindJobs})
+	st.Groups["p3"] = b3
+	st.Tabs = append(st.Tabs, app.Tab{Group: 3, Pane: "p3", Panes: 1})
+	return st
+}
+
+// A tab opened grows in where it lands, and one closed shrinks away
+// while the tabs after it slide into its place. The window's first
+// tabs are simply there.
+func TestTabsOpenAndCloseInMotion(t *testing.T) {
+	win, _, publish := windowStage(t)
+	publish(twoTabs())
+	settle()
+	b := win.tabs
+	if r, open := b.drawnAt(1); r != b.boxes[1] || open != 1 {
+		t.Fatalf("a first tab is drawn at %v, %v open, not where it is", r, open)
+	}
+	publish(threeTabs())
+	lastWindow.Frame(time.Second / 60)
+	lastWindow.Frame(time.Second / 60)
+	r, open := b.drawnAt(2)
+	if r.Size().W >= b.boxes[2].Size().W || open >= 1 || r.Min.X != b.boxes[2].Min.X {
+		t.Fatalf("an opened tab starts at %v, %v open, want narrower than %v", r, open, b.boxes[2])
+	}
+	settle()
+	if r, open := b.drawnAt(2); r != b.boxes[2] || open != 1 {
+		t.Fatalf("settled, the opened tab is at %v, %v open, want %v", r, open, b.boxes[2])
+	}
+	// The middle tab closes: it shrinks where it was, and the last
+	// slides left into its place.
+	was := b.boxes[2]
+	st := threeTabs()
+	st.Panes = append(st.Panes[:1], st.Panes[2])
+	st.Tabs = append(st.Tabs[:1], st.Tabs[2])
+	delete(st.Groups, "p2")
+	publish(st)
+	lastWindow.Frame(time.Second / 60)
+	lastWindow.Frame(time.Second / 60)
+	if len(b.gone) != 1 || b.gone[0].tab.Group != 2 {
+		t.Fatalf("closing, the bar draws %d gone tabs", len(b.gone))
+	}
+	if r, _ := b.drawnAt(1); r.Min.X <= b.boxes[1].Min.X || r.Min.X >= was.Min.X {
+		t.Fatalf("the last tab is at %v, want between %v and %v", r, was, b.boxes[1])
+	}
+	settle()
+	if len(b.gone) != 0 {
+		t.Fatalf("settled, %d closed tabs are still drawn", len(b.gone))
+	}
+	if r, _ := b.drawnAt(1); r != b.boxes[1] {
+		t.Fatalf("settled, the last tab is at %v, want %v", r, b.boxes[1])
+	}
+}

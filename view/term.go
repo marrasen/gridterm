@@ -509,7 +509,7 @@ func (t *term) cellSpace(p geom.Point) geom.Point {
 // is, and 0 over them.
 func (t *term) rowsPast(p geom.Point) int {
 	h := t.cells.CellSize().H
-	_, rows := t.cells.Fit()
+	_, rows := t.cells.GridSize()
 	if h <= 0 {
 		return 0
 	}
@@ -528,7 +528,7 @@ func (t *term) rowsPast(p geom.Point) int {
 // past, for as long as it is held there.
 func (t *term) Step(dt time.Duration) bool {
 	moving := t.Group.Step(dt)
-	if t.edge == 0 || t.held != input.MouseLeft {
+	if t.edge == 0 || t.held != input.MouseLeft || !t.sh.T.Selecting() {
 		t.edge, t.edgeLines = 0, 0
 		return moving
 	}
@@ -542,9 +542,13 @@ func (t *term) Step(dt time.Duration) bool {
 	t.edgeLines -= float64(lines)
 	if lines > 0 {
 		if t.edge < 0 {
-			t.sh.T.DragScroll(lines)
-		} else {
-			t.sh.T.DragScroll(-lines)
+			lines = -lines
+		}
+		if !t.sh.T.DragScroll(-lines) {
+			// At the oldest line, or the live screen: nothing to scroll
+			// toward. The next move past the edge starts it again.
+			t.edgeLines = 0
+			return moving
 		}
 		t.sync()
 	}
@@ -599,6 +603,11 @@ func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 	t.edge = 0
 	if t.held == input.MouseLeft && t.sh.T.Selecting() {
 		t.edge = t.rowsPast(e.Pos)
+		if t.edge != 0 {
+			// Past the edge the cell under the pointer stays the edge's,
+			// so a frame is asked for here for the view to scroll.
+			u.Invalidate()
+		}
 	}
 	if at == t.at {
 		return t.held != input.MouseNone

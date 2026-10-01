@@ -251,6 +251,10 @@ type Terminal struct {
 	// for the wheel to carry the selection along as it scrolls.
 	sel   grid.Selection
 	selAt grid.Point
+	// drawnTop is the line at the top row of the view as last drawn,
+	// which is what the pointer points at: output arriving moves the
+	// view's top on before the next draw shows it.
+	drawnTop int
 
 	// hoverLink is the address the pointer is over while ctrl is held,
 	// and hoverRow with hoverFrom and hoverTo are the stretch of the
@@ -885,9 +889,9 @@ func (t *Terminal) draw(v grid.View) {
 	if t.pending.Swap(false) {
 		t.mu.Lock()
 		t.term.Render(t.g)
-		top := t.term.Screen().ViewTop()
+		t.drawnTop = t.term.Screen().ViewTop()
 		t.mu.Unlock()
-		t.showSelection(top)
+		t.showSelection(t.drawnTop)
 	}
 	// Copying cell by cell rather than handing the emulator the view
 	// keeps the grid's damage tracking: an unchanged cell is not written,
@@ -1111,6 +1115,12 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 	}
 	mode, onAlt := t.mouseMode()
 	if mode.Enabled() && !ev.Mods.Has(input.ModShift) {
+		if ev.Kind == input.MouseRelease && ev.Button == input.MouseLeft {
+			// A selection begun with Shift ends here, Shift let go
+			// first: the program has the release, and nothing selects
+			// on after it.
+			t.selecting = false
+		}
 		if t.reportable(ev) {
 			t.send(input.EncodeMouse(ev, mode, nil))
 		}
@@ -1137,7 +1147,7 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 		if t.selecting {
 			// The pointer is still on its row of the view, which shows
 			// another line now: the selection follows it there.
-			t.selectTo(t.selAt)
+			t.selectTo(t.selAt, t.viewTop())
 		}
 		return true, nil
 
@@ -1160,16 +1170,15 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		t.selecting = true
-		top := t.viewTop()
-		at := grid.Point{X: ev.Col, Y: top + ev.Row}
+		at := grid.Point{X: ev.Col, Y: t.drawnTop + ev.Row}
 		t.selAt = grid.Point{X: ev.Col, Y: ev.Row}
 		t.sel = grid.Selection{Anchor: at, Cursor: at, Active: true, Block: ev.Mods.Has(input.ModAlt)}
-		t.showSelection(top)
+		t.showSelection(t.drawnTop)
 	case input.MouseMove:
 		if !t.selecting {
 			return false, nil
 		}
-		t.selectTo(grid.Point{X: ev.Col, Y: ev.Row})
+		t.selectTo(grid.Point{X: ev.Col, Y: ev.Row}, t.drawnTop)
 	case input.MouseRelease:
 		t.selecting = false
 		// A click that never moved is a click, not an empty selection
@@ -1481,12 +1490,17 @@ func (t *Terminal) SelectAll() {
 func (t *Terminal) Selecting() bool { return t.selecting }
 
 // DragScroll moves the view n lines back into history, as ScrollView
-// does, carrying a selection being dragged along with the pointer.
-func (t *Terminal) DragScroll(n int) {
+// does, carrying a selection being dragged along with the pointer. It
+// reports whether the view moved: at the oldest line or the live screen
+// it can't.
+func (t *Terminal) DragScroll(n int) bool {
+	was := t.viewTop()
 	t.ScrollView(n)
+	top := t.viewTop()
 	if t.selecting {
-		t.selectTo(t.selAt)
+		t.selectTo(t.selAt, top)
 	}
+	return top != was
 }
 
 // ClearSelection takes the selection away.
@@ -1502,10 +1516,10 @@ func (t *Terminal) viewTop() int {
 	return t.term.Screen().ViewTop()
 }
 
-// selectTo moves the selection's moving end to cell at of the view.
-func (t *Terminal) selectTo(at grid.Point) {
+// selectTo moves the selection's moving end to cell at of a view whose
+// top row is line top.
+func (t *Terminal) selectTo(at grid.Point, top int) {
 	t.selAt = at
-	top := t.viewTop()
 	t.sel.Cursor = grid.Point{X: at.X, Y: top + at.Y}
 	t.showSelection(top)
 }

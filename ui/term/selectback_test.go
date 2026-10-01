@@ -67,9 +67,12 @@ func TestASelectionReachesIntoHistory(t *testing.T) {
 		mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseWheelUp})
 	}
 	mouseTo(t, term, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 0, Row: 0})
-	got := term.SelectionText()
-	if !strings.HasPrefix(got, "line ") || !strings.HasSuffix(got, "line 9") || strings.Count(got, "\n") < 6 {
-		t.Fatalf("selected %q, want from a line in history to line 9", got)
+	var all []string
+	for i := range 10 {
+		all = append(all, fmt.Sprintf("line %d", i))
+	}
+	if got := term.SelectionText(); got != strings.Join(all, "\n") {
+		t.Fatalf("selected %q, want line 0 to line 9", got)
 	}
 	// Back at the live screen, a drag held past the top edge, as the
 	// window scrolls for it, goes on to the oldest line.
@@ -99,5 +102,24 @@ func TestSelectAllTakesTheScrollback(t *testing.T) {
 	}
 	if copied != strings.Join(want, "\n") {
 		t.Fatalf("copied %q", copied)
+	}
+}
+
+// A selection begun with Shift over a program that has the mouse ends
+// when the button comes up with Shift let go first, though the program
+// has the release.
+func TestAShiftSelectionEndsWithAReleaseToTheProgram(t *testing.T) {
+	term, f := newTestTerm(t, 20, 4, Config{WriteClipboard: func(string) {}})
+	numbered(t, term, f, 10)
+	f.feed(t, term, "\x1b[?1000h")
+	draw(term, 20, 4)
+	mouseTo(t, term, input.MouseEvent{Kind: input.MousePress, Button: input.MouseLeft, Row: 1, Mods: input.ModShift})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseMove, Button: input.MouseLeft, Col: 5, Row: 1, Mods: input.ModShift})
+	mouseTo(t, term, input.MouseEvent{Kind: input.MouseRelease, Button: input.MouseLeft, Col: 5, Row: 1})
+	if term.Selecting() {
+		t.Fatal("let go, the terminal still selects")
+	}
+	if got := term.SelectionText(); got != "line 7" {
+		t.Fatalf("the selection reads %q", got)
 	}
 }

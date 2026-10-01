@@ -11,6 +11,11 @@ change how something behaves.
 
 ### Fixed
 
+**Ctrl+wheel zooms when it should on Linux.** Under X11 a scroll just
+after pressing Ctrl scrolled instead of zooming, and Ctrl stayed held
+for the wheel after it was let go, so scrolling zoomed. kakel now asks
+the system what is held as the wheel turns.
+
 **A bell echoes from its own window.** A bell, or a long command
 finishing, in a pane of a window behind sent its echo from the window in
 front. Each window now counts its own, and asks for attention itself.

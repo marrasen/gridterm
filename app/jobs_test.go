@@ -401,3 +401,69 @@ func TestACopyEndingAfterAFailedListingListsThePaneAgain(t *testing.T) {
 		t.Fatalf("listed again, the pane is at %q and says %q", b.Path, b.Err)
 	}
 }
+
+// A folder that can't be opened is said in a notice, which the Window
+// Log keeps, and echoed as a problem from the pane's window.
+func TestAFolderThatCannotBeOpenedIsSaid(t *testing.T) {
+	a, _ := agentApp(t)
+	was := t.TempDir()
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	problems := a.pingsIn(a.ownerOf(pane)).Problems
+	gone := filepath.Join(was, "not-there")
+	a.browse(Browse{Pane: pane, Path: gone})
+	waitFor(t, a, "the failure", func() bool { return a.st.Browsers[pane].Err != "" })
+	n := a.st.Notices[len(a.st.Notices)-1]
+	if n.Kind != NoticeFailed || n.Title != "Couldn't open "+gone || n.Body == "" {
+		t.Fatalf("the notice is %+v", n)
+	}
+	if got := a.pingsIn(a.ownerOf(pane)).Problems; got != problems+1 {
+		t.Fatalf("the window counted %d problems, want %d", got, problems+1)
+	}
+}
+
+// A folder that can't be opened is said once, not again each time a
+// job lists the panes again; and a pane whose first folder fails names
+// it.
+func TestAFailedFolderIsSaidOnce(t *testing.T) {
+	a, _ := agentApp(t)
+	was := t.TempDir()
+	if err := a.filesOn("", was); err != nil {
+		t.Fatal(err)
+	}
+	pane := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the folder", func() bool { return a.st.Browsers[pane].Seq > 0 })
+	sub := filepath.Join(was, "sub")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a.browse(Browse{Pane: pane, Path: sub})
+	waitFor(t, a, "the sub folder", func() bool { return a.st.Browsers[pane].Path == sub })
+	if err := os.Remove(sub); err != nil {
+		t.Fatal(err)
+	}
+	a.browse(Browse{Pane: pane, Path: sub})
+	waitFor(t, a, "the failure", func() bool { return a.st.Browsers[pane].Err != "" })
+	notices, problems := len(a.st.Notices), a.pingsIn(a.ownerOf(pane)).Problems
+	for range 3 {
+		a.relistOn(jobs.Op{Kind: jobs.Copy, From: vfs.NewLocal(), To: vfs.NewLocal(), Into: was})
+		pumpFor(a, 30*time.Millisecond)
+	}
+	if len(a.st.Notices) != notices || a.pingsIn(a.ownerOf(pane)).Problems != problems {
+		t.Fatalf("listed again, it said so %d more times", len(a.st.Notices)-notices)
+	}
+
+	// A pane opened at a folder that isn't there names it.
+	gone := filepath.Join(was, "gone")
+	if err := a.filesOn("", gone); err != nil {
+		t.Fatal(err)
+	}
+	other := a.st.Panes[len(a.st.Panes)-1].ID
+	waitFor(t, a, "the failure", func() bool { return a.st.Browsers[other].Err != "" })
+	if got := a.st.Browsers[other].Path; got != gone {
+		t.Fatalf("the pane names %q, want %q", got, gone)
+	}
+}

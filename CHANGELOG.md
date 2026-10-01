@@ -17,6 +17,24 @@ the one in front, and over other programs too, so they looked like
 another window's. Now they stay with their own window and go behind
 whatever is in front of it.
 
+**The hand shows over a link with Ctrl held.** The pointer over a
+terminal is the I-beam, and the hand where Ctrl and a click would follow
+a link.
+
+**A link's address no longer sticks after a Ctrl+click.** A browser the
+click opened took the button's release, and the link stayed lit, its
+address shown at the foot of the pane, until the next click.
+
+**A delete's question shows which button Enter presses.** It opens on
+Cancel, with its ring showing, and the arrow keys move between the
+buttons.
+
+**A folder that can't be opened is said in a notice.** It sends a red
+echo, as a delete sends a green one, and the Window Log keeps it. The
+line under the path that said "Click for why" is gone. Failures the
+window finds itself, such as files dropped where they can't go, are
+kept in the Window Log too, with the same red echo.
+
 **Select text in the scrollback.** A selection stays on its text as the
 view scrolls and as output moves it up, rather than on the rows of the
 screen. A drag held past a pane's top or bottom scrolls toward it, faster

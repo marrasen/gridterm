@@ -159,7 +159,7 @@ func TestTheKeyBarPressesItsKeys(t *testing.T) {
 	}
 }
 
-func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
+func TestAFolderThatCannotBeReadShowsItsPath(t *testing.T) {
 	win, _, publish := windowStage(t)
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "/", Kind: app.KindFiles}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/root"}}}
@@ -168,18 +168,11 @@ func TestAFolderThatCannotBeReadSaysSoAndWhy(t *testing.T) {
 	if b.path.Text != "Reading /root…" {
 		t.Fatalf("before the first read, the path says %q", b.path.Text)
 	}
+	// Why is said in a notice; the path stops saying it is reading.
 	st.Browsers = map[string]app.Browser{"p1": {Path: "/root", Err: "open /root: permission denied"}}
 	publish(st)
-	if b.problem.label.Text == "" {
-		t.Fatal("a folder that could not be read says nothing")
-	}
-	settle()
-	at, _ := lastUI.Bounds(b.problem)
-	lastWindow.Input(gi.PointerDown{Pos: at.Center(), Button: gi.ButtonPrimary, Clicks: 1})
-	lastWindow.Input(gi.PointerUp{Pos: at.Center(), Button: gi.ButtonPrimary})
-	lastWindow.Frame(time.Second / 60)
-	if win.dialog == nil {
-		t.Fatal("a click on the line did not say why")
+	if b.path.Text != "/root" {
+		t.Fatalf("a folder that could not be read says %q", b.path.Text)
 	}
 }
 

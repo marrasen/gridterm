@@ -128,6 +128,9 @@ type (
 		Pane, Path, Land string
 		// GoTo is the Go To it answers, and 0 for none.
 		GoTo int
+		// Again says the folder is listed again by itself, as a job
+		// ending does: one that fails is not said again.
+		Again bool
 	}
 	// ReadFile opens path in a reader beside the file pane, following
 	// it as it grows with Follow.
@@ -486,8 +489,21 @@ func (a *app) browse(in Browse) {
 			b := a.st.Browsers[in.Pane]
 			if err != nil {
 				b.Err = err.Error()
-				if in.GoTo != 0 {
+				if b.Path == "" {
+					// Its first folder: named, though nothing is listed.
+					b.Path = in.Path
+				}
+				switch {
+				case in.GoTo != 0:
+					// Go To asks again, saying why, in its own dialog.
 					b.WentTo, b.GoToErr = in.GoTo, err.Error()
+				case in.Again:
+					// Said already, when it was asked for.
+				default:
+					// Said in a notice, kept in the Window Log, and
+					// echoed from the pane's own window.
+					a.failed("Couldn't open "+in.Path, err.Error())
+					a.pingsIn(a.ownerOf(in.Pane)).Problems++
 				}
 				a.setBrowser(in.Pane, b)
 				return

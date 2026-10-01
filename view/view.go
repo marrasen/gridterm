@@ -4,6 +4,7 @@ package view
 
 import (
 	"fmt"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -528,7 +529,7 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "view.pin":
 		if err := u.SetPinned(!u.Pinned()); err != nil {
-			w.toasts.Show(widget.Toast{Title: "Couldn't keep the window on top", Body: err.Error()}, u)
+			w.failed("Couldn't keep the window on top", err.Error(), u)
 		}
 		w.tickSwitch(id, u.Pinned())
 		return true
@@ -3309,6 +3310,15 @@ func (w *Window) madeNode(id string) gunim.Node {
 		}
 	}
 	return n
+}
+
+// failed says something the window itself tried failed, as the
+// program's failures are said: in a toast, with a red echo, and in the
+// Window Log, where it stays once the toast has gone.
+func (w *Window) failed(title, why string, u *gunim.UI) {
+	log.Printf("%s: %s", title, why)
+	w.toasts.Show(widget.Toast{Title: title, Body: why, Kind: widget.ToastError}, u)
+	w.echo.Ping(u, widget.EchoProblem)
 }
 
 // echoFor sends an echo out past the window's edges for each count in

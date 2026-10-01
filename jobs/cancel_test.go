@@ -490,3 +490,35 @@ func TestAJobThatCannotRunSaysSoStraightAway(t *testing.T) {
 		t.Error("it never ended")
 	}
 }
+
+// A move between this machine and a server that is this machine, into
+// the folder the items are in, is refused: it would copy each onto
+// itself, then delete it as moved. Into another folder, it moves.
+func TestAMoveOntoItsOwnFolderReachedAnotherWayIsRefused(t *testing.T) {
+	far := slowFar(t, 0)
+	here := vfs.NewLocal()
+	if err := os.WriteFile(filepath.Join(far.real, "a.txt"), []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	j := New(1).Start(t.Context(), Op{Kind: Move, From: here, At: far.real, Names: []string{"a.txt"}, To: far.fs, Into: far.at}, Options{})
+	if err := ends(t, j); err == nil || !strings.Contains(err.Error(), "reached another way") {
+		t.Fatalf("the move onto itself ended with %v", err)
+	}
+	if b, err := os.ReadFile(filepath.Join(far.real, "a.txt")); err != nil || string(b) != "keep me" {
+		t.Fatalf("the file is %q, %v", b, err)
+	}
+	if entries, _ := os.ReadDir(far.real); len(entries) != 1 {
+		t.Fatalf("the folder holds %d items", len(entries))
+	}
+	sub := filepath.Join(far.real, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	j = New(1).Start(t.Context(), Op{Kind: Move, From: here, At: far.real, Names: []string{"a.txt"}, To: far.fs, Into: filepath.ToSlash(sub)}, Options{})
+	if err := ends(t, j); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(sub, "a.txt")); err != nil {
+		t.Fatal(err)
+	}
+}

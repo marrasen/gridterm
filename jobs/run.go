@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -31,6 +32,9 @@ type item struct {
 // do runs the job and returns why it stopped.
 func (j *Job) do(ctx context.Context) error {
 	if err := j.op.check(); err != nil {
+		return err
+	}
+	if err := j.op.notOntoItself(); err != nil {
 		return err
 	}
 
@@ -160,6 +164,30 @@ func (o Op) check() error {
 	}
 	if vfs.Same(o.From, o.To) && o.At == o.Into {
 		return errors.New("jobs: that is where it already is")
+	}
+	return nil
+}
+
+// notOntoItself refuses a move between two filesystems that are one
+// folder: the same machine reached two ways, as this computer and as a
+// server that is this computer. Copied onto itself, an item would then
+// be deleted as moved. A file made in the folder moved into, and looked
+// for in the folder moved from, tells.
+func (o Op) notOntoItself() error {
+	if o.Kind != Move || vfs.Same(o.From, o.To) {
+		return nil
+	}
+	probe := ".kakel-probe-" + strconv.FormatInt(time.Now().UnixNano(), 36)
+	w, err := o.To.Create(vfs.Join(o.To, o.Into, probe), 0o600)
+	if err != nil {
+		// Nothing can be put there: the move fails there, and says why.
+		return nil
+	}
+	_ = w.Close()
+	_, seen := o.From.Stat(vfs.Join(o.From, o.At, probe))
+	_ = o.To.Remove(vfs.Join(o.To, o.Into, probe))
+	if seen == nil {
+		return fmt.Errorf("jobs: %s is the folder the items are in, reached another way", o.Into)
 	}
 	return nil
 }

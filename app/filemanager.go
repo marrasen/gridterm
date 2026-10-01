@@ -7,8 +7,10 @@ import (
 	"strings"
 
 	"github.com/marrasen/kakel/conf"
+	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/vfs"
+	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/gunim/filemanager"
 )
@@ -97,6 +99,7 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 	w, err := a.files.Open(filemanager.Options{
 		FS: fsys, Dir: path, Name: "Files", PrefsPath: fileManagerPrefs(),
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
+		Transfer: a.transferFiles,
 	})
 	if err != nil {
 		return err
@@ -241,6 +244,70 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string) {
 		if err := a.withFiles(m, func(f vfs.FS) { w.Show(a.fmFor(m, f), path) }); err != nil {
 			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
 		}
+	}
+}
+
+// transferFiles copies or moves items between machines, as file
+// manager window w asks, as kakel's copy jobs: their progress, a way to
+// stop them, and any question they ask are in kakel's window, and w
+// says so. It runs on a goroutine of its own.
+func (a *app) transferFiles(w *filemanager.Window, t filemanager.Transfer) {
+	select {
+	case a.events <- func() { a.transfer(w, t) }:
+	case <-a.ctx.Done():
+	}
+}
+
+// transfer starts the jobs t asks for, one for each folder the items
+// are in, opening the files of both machines first, connecting where
+// it must. w, when not nil, is told how it went.
+func (a *app) transfer(w *filemanager.Window, t filemanager.Transfer) {
+	if len(t.Paths) == 0 || t.Into == "" {
+		return
+	}
+	from, to := machineOfFS(t.FromFS), machineOfFS(t.ToFS)
+	kind, verb, failed := jobs.Copy, "Copying", "Couldn't copy the files"
+	if t.Move {
+		kind, verb, failed = jobs.Move, "Moving", "Couldn't move the files"
+	}
+	fail := func(err error) {
+		a.failed(failed, err.Error())
+		if w != nil {
+			w.Notify(failed, words.UpperFirst(err.Error())+".", "warning")
+		}
+	}
+	// A connection that fails later says why in kakel's window.
+	unreached := func() {
+		if w != nil {
+			w.Notify(failed, "A machine could not be reached. kakel's window says why.", "warning")
+		}
+	}
+	err := a.withFilesOr(from, func(ff vfs.FS) {
+		// The items by the folder they are in, in the order they came.
+		var ats []string
+		names := map[string][]string{}
+		for _, p := range t.Paths {
+			at := vfs.Dir(ff, p)
+			if _, ok := names[at]; !ok {
+				ats = append(ats, at)
+			}
+			names[at] = append(names[at], vfs.Base(ff, p))
+		}
+		if err := a.withFilesOr(to, func(tf vfs.FS) {
+			for _, at := range ats {
+				op := jobs.Op{Kind: kind, From: ff, At: at, Names: names[at], To: tf, Into: t.Into}
+				a.followOn(op, verb+" "+words.Count(len(names[at]), "item")+" to "+vfs.Base(tf, t.Into), from, to)
+			}
+			if w != nil {
+				w.Notify(verb+" "+words.Count(len(t.Paths), "item")+" to "+vfs.Base(tf, t.Into),
+					"kakel's window shows how it goes, and can stop it.", "info")
+			}
+		}, unreached); err != nil {
+			fail(err)
+		}
+	}, unreached)
+	if err != nil {
+		fail(err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -273,5 +274,69 @@ func TestAServersFilesOpenInAWindow(t *testing.T) {
 	a.notePlaces()
 	if p := place(); p.FS != serverFS+"s1"+gone {
 		t.Fatalf("with its files gone, the server's place is %+v", p)
+	}
+}
+
+// Items a file manager window sends between machines go as one of
+// kakel's copy jobs: copied, or moved, into the folder asked for.
+func TestATransferBetweenMachinesRunsAsAJob(t *testing.T) {
+	a, _ := agentApp(t)
+	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
+	a.st.Connected = []machines.ID{"s1"}
+	a.machines.At("s1").Files = sftpHere(t)
+	here, there := t.TempDir(), t.TempDir()
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if err := os.WriteFile(filepath.Join(here, name), []byte(name), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	into := onServer(there)
+	// Through the door a window uses: on a goroutine of its own.
+	go a.transferFiles(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "s1", Into: into})
+	(<-a.events)()
+	a.transfer(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "b.txt")}, ToFS: serverFS + "s1", Into: into, Move: true})
+	if len(a.running) != 2 || a.running[0].from != machines.Local || a.running[0].to != "s1" {
+		t.Fatalf("the jobs are %+v", a.running)
+	}
+	waitFor(t, a, "both copied", func() bool {
+		_, errA := os.Stat(filepath.Join(there, "a.txt"))
+		_, errB := os.Stat(filepath.Join(there, "b.txt"))
+		_, gone := os.Stat(filepath.Join(here, "b.txt"))
+		return errA == nil && errB == nil && os.IsNotExist(gone)
+	})
+	if _, err := os.Stat(filepath.Join(here, "a.txt")); err != nil {
+		t.Fatalf("the copy took the original away: %v", err)
+	}
+
+	// Back from the server, from two folders at once: a job for each.
+	sub := filepath.Join(there, "sub")
+	if err := os.Mkdir(sub, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sub, "c.txt"), []byte("c"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	back := t.TempDir()
+	a.transfer(nil, filemanager.Transfer{FromFS: serverFS + "s1", Paths: []string{into + "/a.txt", onServer(sub) + "/c.txt"}, ToFS: "", Into: back})
+	if len(a.running) != 4 || a.running[2].from != "s1" || a.running[3].to != machines.Local {
+		t.Fatalf("the jobs back are %+v", a.running[2:])
+	}
+	waitFor(t, a, "both copied back", func() bool {
+		_, errA := os.Stat(filepath.Join(back, "a.txt"))
+		_, errC := os.Stat(filepath.Join(back, "c.txt"))
+		return errA == nil && errC == nil
+	})
+}
+
+// A transfer to a machine kakel can't reach starts nothing, and says so.
+func TestATransferToNowhereSaysSo(t *testing.T) {
+	a, _ := agentApp(t)
+	here := t.TempDir()
+	a.transfer(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "nowhere", Into: "/tmp"})
+	if len(a.running) != 0 {
+		t.Fatalf("the jobs are %+v", a.running)
+	}
+	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't copy the files" }) {
+		t.Fatalf("it said %+v", a.st.Notices)
 	}
 }

@@ -1100,6 +1100,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	}
 	w.ask, w.askID = d, id
 	w.openDialog(d, u)
+	// A question can come while another window is in front, as a file
+	// manager window's copy asks whether to replace: the taskbar says.
+	u.RequestAttention()
 }
 
 // servers fills the Servers menu and the palette: the window's own

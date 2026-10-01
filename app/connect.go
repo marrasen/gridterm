@@ -55,6 +55,10 @@ type Ask struct {
 	// Preformatted shows Text as it was written, in the fixed-width
 	// face, to be selected: a secret, not a sentence.
 	Preformatted bool
+	// Saved names saved secrets to answer with instead of typing, in a
+	// list under the fields. Its answer comes last: the index of the
+	// one picked, or -1 for none.
+	Saved []string
 	// win is the window it is asked in.
 	win int
 	// Icon is the Lucide name of the icon before the title, one of
@@ -142,8 +146,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	logLine(acct, "", "connecting to "+called)
 	logPane := a.watchDial(name)
 	began := time.Now()
+	kept := &signIns{}
 	for i := range hops {
-		hops[i].Ask = newAsker(a, name)
+		hops[i].Ask = newAsker(a, name).keeping(kept)
 		hops[i].Ring = a.ring
 		hops[i].Saying = func(what string) { logLine(acct, "", what) }
 		hops[i].Wrong = func(what string) { logLine(acct, badly, what) }
@@ -197,6 +202,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			m.Dropped = false
 			m.Reached = hops[len(hops)-1].Target()
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
+			a.keepSignIns(kept)
 			log.Printf("connected to %s", oneLine(a.machines.Name(name)))
 			a.done()
 			go func() {
@@ -319,10 +325,21 @@ type asker struct {
 	// asked says a password was asked for on this connection already,
 	// so asking again means the last one was refused.
 	asked *bool
+	// kept is what the user typed or picked to sign in with on this
+	// connection, kept in the secrets once it connects. Nil for an
+	// asker whose answers are kept nowhere, as the one unlocking the
+	// secrets themselves.
+	kept *signIns
 }
 
 // newAsker asks the user what one connection to name needs to know.
 func newAsker(a *app, name machines.ID) asker { return asker{a: a, name: name, asked: new(bool)} }
+
+// keeping is q, keeping what is typed or picked in kept.
+func (q asker) keeping(kept *signIns) asker {
+	q.kept = kept
+	return q
+}
 
 // Passphrase implements [remote.Ask].
 func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, error) {
@@ -348,29 +365,31 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 	if key.Wrong > 0 {
 		text = "That passphrase did not open " + key.Path + ". Try again."
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: "Unlock your key", Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"})
-	if err != nil {
-		return "", err
-	}
-	return ans.Answers[0], nil
+	q2 := Ask{Title: "Unlock your key", Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+	return q.askSecret(ctx, q2, "Save this passphrase in the secrets", signIn{file: key.Path})
 }
 
 // Password implements [remote.Ask].
 func (q asker) Password(ctx context.Context, user, host string) (string, error) {
 	// Asked again, the last one was refused, and the question says so
 	// rather than opening again with no word of why.
+	login := user + "@" + host
 	text := ""
 	if q.asked != nil {
 		if *q.asked {
 			text = "Invalid password."
+		} else if q.kept != nil {
+			// The one the secrets keep for this login, the first time
+			// round. Refused, the question that follows says so.
+			*q.asked = true
+			if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
+				return pass, nil
+			}
 		}
 		*q.asked = true
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: "Sign in to " + user + "@" + host, Icon: "log-in", Text: text, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"})
-	if err != nil {
-		return "", err
-	}
-	return ans.Answers[0], nil
+	ask := Ask{Title: "Sign in to " + login, Icon: "log-in", Text: text, Prompts: []string{"Password"}, Secret: []bool{true}, Yes: "Sign in"}
+	return q.askSecret(ctx, ask, "Save this password in the secrets", signIn{login: login, user: user})
 }
 
 // Question implements [remote.Ask]. The server's own words are shown as

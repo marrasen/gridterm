@@ -41,10 +41,16 @@ type Item struct {
 	Kind Kind   `json:"kind"`
 	User string `json:"user,omitempty"`
 
-	// File is the private key file a Passphrase opens, and empty for
-	// every other kind. It is what PassphraseFor matches on, so
-	// renaming the item leaves the key still unlocking.
+	// File is the private key file the secret opens: a Passphrase's
+	// always, and any other secret the user chose to unlock a key with.
+	// It is what PassphraseFor matches on, so renaming the item leaves
+	// the key still unlocking. A file has one secret at most.
 	File string `json:"file,omitempty"`
+
+	// Logins are where the secret signs in, each user@host as the
+	// sign-in question names it. They are what PasswordFor matches on;
+	// one password may sign in to several machines.
+	Logins []string `json:"logins,omitempty"`
 
 	// URL is where the secret is used, and Notes is whatever was
 	// written beside it. Both are empty for most.
@@ -541,7 +547,28 @@ func (v *Vault) PassphraseFor(keyFile string) (string, error) {
 	// were never shown.
 	v.refresh()
 	for _, e := range v.items {
-		if e.Kind == Passphrase && e.File == keyFile {
+		if e.File == keyFile {
+			return e.Value, nil
+		}
+	}
+	return "", ErrNoSuchItem
+}
+
+// PasswordFor is the secret that signs in at login, user@host, as the
+// item's Logins name it. ErrNoSuchItem means none does.
+func (v *Vault) PasswordFor(login string) (string, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if v.data == nil {
+		return "", ErrLocked
+	}
+	if login == "" {
+		return "", ErrNoSuchItem
+	}
+	// Another window may have saved it a moment ago.
+	v.refresh()
+	for _, e := range v.items {
+		if slices.ContainsFunc(e.Logins, func(l string) bool { return strings.EqualFold(l, login) }) {
 			return e.Value, nil
 		}
 	}
@@ -646,11 +673,11 @@ func (v *Vault) PutDetails(it Item) (Item, error) {
 // sit in the vault unused and the user would have no way to tell which
 // of the two the key is actually locked with.
 func (v *Vault) onlyPassphraseFor(it Item) error {
-	if it.Kind != Passphrase || it.File == "" {
+	if it.File == "" {
 		return nil
 	}
 	for _, e := range v.items {
-		if e.Kind == Passphrase && e.File == it.File && e.ID != it.ID {
+		if e.File == it.File && e.ID != it.ID {
 			return fmt.Errorf("secrets: %s is already the passphrase for %s",
 				e.Name, it.File)
 		}

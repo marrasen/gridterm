@@ -885,3 +885,31 @@ func TestAVaultCreatedElsewhereIsFound(t *testing.T) {
 		t.Fatalf("unlock the one that looked first: %v", err)
 	}
 }
+
+// A secret signs in where its logins say, whatever its case, and any
+// secret can unlock a key, one secret to a key.
+func TestASecretAnswersForItsLoginsAndItsKey(t *testing.T) {
+	v, _, _ := aVault(t)
+	pw, err := v.Put(Item{Name: "web", Logins: []string{"me@web.example", "me@web2.example"}}, "hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, login := range []string{"me@web.example", "ME@Web2.Example"} {
+		if got, err := v.PasswordFor(login); err != nil || got != "hunter2" {
+			t.Fatalf("PasswordFor(%s) = %q, %v", login, got, err)
+		}
+	}
+	if _, err := v.PasswordFor("you@web.example"); err != ErrNoSuchItem {
+		t.Fatalf("another login gave %v", err)
+	}
+	pw.File = "/home/u/.ssh/id_ed25519"
+	if _, err := v.PutDetails(pw); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := v.PassphraseFor(pw.File); err != nil || got != "hunter2" {
+		t.Fatalf("the key's secret is %q, %v", got, err)
+	}
+	if _, err := v.Put(Item{Name: "another", Kind: Passphrase, File: pw.File}, "x"); err == nil {
+		t.Fatal("a second secret for the same key was taken")
+	}
+}

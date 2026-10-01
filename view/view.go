@@ -5,6 +5,7 @@ package view
 import (
 	"fmt"
 	"log"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -946,6 +947,25 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	var also *widget.Checkbox
 	if q.Also != "" {
 		also = widget.NewCheckbox(q.Also)
+	}
+	// A saved secret to answer with instead: picked, it stands for what
+	// would be typed, and there is nothing typed to keep.
+	var saved *widget.Dropdown
+	if len(q.Saved) > 0 {
+		saved = widget.NewDropdown(append([]string{"None, type it"}, q.Saved...)...)
+		saved.Label = "Saved secret"
+		saved.OnPick(func(i int, u *gunim.UI) {
+			for _, f := range fields {
+				f.Disabled = i > 0
+			}
+			if also != nil {
+				also.Disabled = i > 0
+			}
+			u.Invalidate()
+		})
+		form.Add("Or use", saved)
+	}
+	if also != nil {
 		form.Add("", also)
 	}
 	d := widget.NewDialog(q.Title)
@@ -974,6 +994,9 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 				yes = "yes"
 			}
 			answers = append(answers, yes)
+		}
+		if saved != nil {
+			answers = append(answers, strconv.Itoa(saved.Selected-1))
 		}
 		return app.AskAnswered{ID: id, Yes: true, Answers: answers}
 	}
@@ -1866,7 +1889,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	w.showAsk(st.Asks, u)
-	if !slices.EqualFunc(st.Saved, w.saved, func(a, b remote.Host) bool { return a.ID == b.ID && a.Name == b.Name && a.Address == b.Address }) {
+	// Every field: Edit This Server fills its form from these.
+	if !reflect.DeepEqual(st.Saved, w.saved) {
 		w.servers(st.Saved)
 	}
 

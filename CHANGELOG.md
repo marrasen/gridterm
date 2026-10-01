@@ -11,6 +11,10 @@ change how something behaves.
 
 ### Fixed
 
+**Edit This Server shows what was saved.** The window took in a saved
+server again only when its name or address changed, so an edit to its
+user, port, key or folders showed the old values the next time.
+
 **A bell's rings show on the window that rang, on Windows.** They used
 to show above every window. A window behind another drew its rings over
 the one in front, and over other programs too, so they looked like
@@ -83,6 +87,13 @@ to Ctrl+PageDown and Ctrl+PageUp. Delete those two lines to get the tab
 keys.
 
 ### Added
+
+**Sign in with the secrets.** When kakel asks for a server's password or
+a key's passphrase, it offers your saved secrets to answer with, and a
+box to save what you type. Either is kept once the connection goes
+through, so a password the server refused is never saved. From then on
+that login or key signs in without asking. A saved secret is tried
+first, and if it is refused you are asked, as before.
 
 **This Computer's own settings.** Options › This Computer…, also on the
 This computer menu in the Servers pane, sets the folder new terminals

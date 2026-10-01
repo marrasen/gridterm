@@ -123,6 +123,8 @@ func rowOf(at map[string]int, row []string) (Export, bool) {
 	if e.Kind == Passphrase {
 		e.File = get("file")
 	}
+	// Where it signs in: it is only ever sent to the machines named.
+	e.Logins = strings.Fields(get("logins"))
 	switch {
 	case e.Kind == Note:
 		e.Value = notes

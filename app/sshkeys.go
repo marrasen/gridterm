@@ -68,7 +68,7 @@ func (a *app) makeKey(in MakeKey) error {
 		// for a key that is gone; it stays, but no longer claims the file.
 		items, _ := v.Items()
 		for _, it := range items {
-			if it.Kind == secrets.Passphrase && it.File == at {
+			if it.File == at {
 				it.File = ""
 				if _, err := v.PutDetails(it); err != nil {
 					return err

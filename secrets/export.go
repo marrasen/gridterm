@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
+	"strings"
 )
 
 // Export is one secret on its way out, with its value in it.
@@ -49,10 +50,10 @@ func (v *Vault) Everything() ([]Export, error) {
 // that read a Chrome export read this. Then notes, which is where a
 // note's own text goes.
 //
-// Then kind and file, which are this window's own. They are what lets
+// Then kind, file and logins, which are this window's own. They are what lets
 // kakel read its own export back without losing what it knows, and
 // every importer ignores a column it does not recognise.
-var csvHeader = []string{"name", "url", "username", "password", "notes", "kind", "file"}
+var csvHeader = []string{"name", "url", "username", "password", "notes", "kind", "file", "logins"}
 
 // WriteCSV writes secrets as comma-separated values.
 //
@@ -93,5 +94,5 @@ func csvRow(e Export) []string {
 	if kind == "" {
 		kind = Password
 	}
-	return []string{e.Name, e.URL, e.User, password, notes, string(kind), e.File}
+	return []string{e.Name, e.URL, e.User, password, notes, string(kind), e.File, strings.Join(e.Logins, " ")}
 }

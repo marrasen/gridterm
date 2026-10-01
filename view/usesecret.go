@@ -138,9 +138,19 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 	d.Icon = icon.KeyRound
 	// Wider than a dialog's usual, for the list's two columns.
 	d.Width = pickerWidth + 60
-	d.Body = &pickerBody{find: find, table: table, keys: &keys}
-	d.SetButtons("Type", "Cancel")
+	body := &pickerBody{find: find, table: table, keys: &keys, fill: fill}
+	d.Body = body
+	// Cancel | Copy | Type: Type is the dialog's own button, at the
+	// edge, and the two others stand before it in that order. Escape
+	// still cancels.
+	d.SetButtons("Type", "")
+	d.AddButton("Cancel", func() gunim.Intent { return app.DialogClosed{} })
 	d.AddButton("Copy", picked(func(id string) gunim.Intent { return app.CopySecret{ID: id} }))
+	// The keys: Up and Down pick in the list, Left and Right a button,
+	// wherever the keyboard is, and typing goes on in the field.
+	body.dialog = d
+	find.Keys = func(e input.KeyPress, u *gunim.UI) bool { return body.key(e, u) }
+	d.Keys = func(e input.Event, u *gunim.UI) bool { return body.dialogKey(e, u) }
 	d.Check = func() string {
 		if _, ok := table.Cursor(); !ok {
 			return "No secret is picked."
@@ -162,9 +172,11 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 // the list while the field has the keyboard, so typing and picking go
 // on together.
 type pickerBody struct {
-	find  *widget.TextField
-	table *widget.Table
-	keys  *[]widget.Key
+	find   *widget.TextField
+	table  *widget.Table
+	keys   *[]widget.Key
+	fill   func(*gunim.UI)
+	dialog *widget.Dialog
 }
 
 // Children implements [gunim.Composite].
@@ -208,26 +220,79 @@ func (b *pickerBody) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids gu
 	kids.At(1).Paint(p)
 }
 
-// Handle implements [gunim.Handler]: Up and Down from the field move
-// along the list.
-func (b *pickerBody) Handle(e input.Event, u *gunim.UI) bool {
-	k, ok := e.(input.KeyPress)
-	if !ok || k.Mods != 0 || u.Focused() != gunim.Node(b.find) || (k.Key != input.KeyUp && k.Key != input.KeyDown) {
+// key is the picker's answer to a key, from the field or a button: Up
+// and Down move along the list, Left and Right along the buttons. From
+// the field, Right is Type and Left the one before it.
+func (b *pickerBody) key(k input.KeyPress, u *gunim.UI) bool {
+	if k.Mods != 0 {
 		return false
 	}
+	switch k.Key {
+	case input.KeyUp, input.KeyDown:
+		b.step(k.Key == input.KeyDown, u)
+		return true
+	case input.KeyLeft, input.KeyRight:
+		row := b.dialog.Buttons()
+		at := slices.Index(row, u.Focused())
+		switch {
+		case at < 0 && k.Key == input.KeyRight:
+			at = len(row) - 1
+		case at < 0:
+			at = len(row) - 2
+		case k.Key == input.KeyRight:
+			at = min(at+1, len(row)-1)
+		default:
+			at = max(at-1, 0)
+		}
+		u.Focus(row[at])
+		u.ShowFocusRing()
+		return true
+	}
+	return false
+}
+
+// dialogKey hears what the dialog's buttons leave: the arrows, as from
+// the field, and text or Backspace, which go back to the field so
+// finding goes on.
+func (b *pickerBody) dialogKey(e input.Event, u *gunim.UI) bool {
+	if u.Focused() == gunim.Node(b.find) {
+		return false
+	}
+	switch e := e.(type) {
+	case input.KeyPress:
+		if e.Key == input.KeyBackspace && e.Mods == 0 {
+			text := []rune(b.find.Text())
+			if len(text) > 0 {
+				b.find.SetText(string(text[:len(text)-1]))
+			}
+			u.Focus(b.find)
+			b.fill(u)
+			return true
+		}
+		return b.key(e, u)
+	case input.TextInput:
+		b.find.SetText(b.find.Text() + e.Text)
+		u.Focus(b.find)
+		b.fill(u)
+		return true
+	}
+	return false
+}
+
+// step moves the list's pick one down, or up.
+func (b *pickerBody) step(down bool, u *gunim.UI) {
 	keys := *b.keys
 	if len(keys) == 0 {
-		return true
+		return
 	}
 	at := 0
 	if cur, ok := b.table.Cursor(); ok {
 		at = max(slices.Index(keys, cur), 0)
 	}
-	if k.Key == input.KeyDown {
+	if down {
 		at = min(at+1, len(keys)-1)
 	} else {
 		at = max(at-1, 0)
 	}
 	b.table.SetCursor(keys[at], u)
-	return true
 }

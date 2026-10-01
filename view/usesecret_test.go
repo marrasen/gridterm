@@ -1,14 +1,17 @@
 package view
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
+	"github.com/marrasen/gunim/widget"
 )
 
 // Use Secret asks for locked secrets to open, and lists them once they
@@ -67,5 +70,58 @@ func TestUseSecretPicksAndTypes(t *testing.T) {
 	frames(1)
 	if in := nextIntentPast(t); in != (app.TypeSecret{ID: "b"}) {
 		t.Fatalf("Enter sent %#v", in)
+	}
+}
+
+// Use Secret's buttons stand Cancel, Copy, Type. Left and Right choose
+// among them, from the field too; Up and Down move along the list from a
+// button as from the field; typing on a button goes on in the field.
+func TestUseSecretsKeysWorkTheListAndTheButtons(t *testing.T) {
+	win, _, publish := windowStageOf(t, geom.Sz(900, 600))
+	publish(app.State{Secrets: app.Secrets{Exists: true, Open: true, Items: []app.SecretItem{
+		{ID: "a", Name: "aws"}, {ID: "b", Name: "bank"}, {ID: "c", Name: "cloud"},
+	}}})
+	frames(2)
+	drain()
+	win.run("secrets.use", lastUI)
+	frames(10)
+	body := win.dialog.Body.(*pickerBody)
+	row := win.dialog.Buttons()
+	labels := []string{}
+	for _, n := range row {
+		labels = append(labels, n.(*widget.Button).Label)
+	}
+	if strings.Join(labels, "|") != "Cancel|Copy|Type" {
+		t.Fatalf("the buttons are %v", labels)
+	}
+	press := func(k gi.Key) {
+		lastWindow.Input(gi.KeyPress{Key: k})
+		frames(1)
+	}
+	press(gi.KeyRight)
+	if lastUI.Focused() != row[2] {
+		t.Fatalf("Right from the field went to %v", lastUI.Focused())
+	}
+	press(gi.KeyLeft)
+	if lastUI.Focused() != row[1] {
+		t.Fatalf("Left from Type went to %v", lastUI.Focused())
+	}
+	press(gi.KeyDown)
+	if k, _ := body.table.Cursor(); k != "b" || lastUI.Focused() != row[1] {
+		t.Fatalf("Down on Copy picked %q, the keyboard with %v", k, lastUI.Focused())
+	}
+	press(gi.KeyEnter)
+	if in := nextIntentPast(t); in != (app.CopySecret{ID: "b"}) {
+		t.Fatalf("Enter on Copy sent %#v", in)
+	}
+	// Opened again: typing while a button has the keyboard finds.
+	win.run("secrets.use", lastUI)
+	frames(10)
+	press(gi.KeyRight)
+	lastWindow.Input(gi.TextInput{Text: "cl"})
+	frames(2)
+	body = win.dialog.Body.(*pickerBody)
+	if lastUI.Focused() != gunim.Node(body.find) || body.find.Text() != "cl" || len(*body.keys) != 1 {
+		t.Fatalf("typing on a button left the field saying %q, %d listed", body.find.Text(), len(*body.keys))
 	}
 }

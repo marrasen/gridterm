@@ -260,3 +260,28 @@ func TestLockedSecretsStayLocked(t *testing.T) {
 		t.Fatal("locked, the secrets opened again without asking")
 	}
 }
+
+// A private key already there goes on the saved keys' list; a file
+// that isn't one is refused.
+func TestAnExistingKeyIsAddedToSavedKeys(t *testing.T) {
+	a, keyFile := secretsApp(t)
+	a.settings = mustSettings(t)
+	a.handle(AddSavedKey{Path: keyFile})
+	if !slices.Contains(a.st.KeyFiles, keyFile) {
+		t.Fatalf("the saved keys are %v", a.st.KeyFiles)
+	}
+	if !slices.Contains(KeysHere(), keyFile) {
+		t.Fatalf("the keys here are %v", KeysHere())
+	}
+	not := filepath.Join(t.TempDir(), "notes.txt")
+	if err := os.WriteFile(not, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a.handle(AddSavedKey{Path: not})
+	if slices.Contains(a.st.KeyFiles, not) {
+		t.Fatal("a file that is no key was saved")
+	}
+	if n := a.st.Notices[len(a.st.Notices)-1]; n.Kind != NoticeFailed {
+		t.Fatalf("refusing it said %+v", n)
+	}
+}

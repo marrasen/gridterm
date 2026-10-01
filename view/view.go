@@ -5,6 +5,7 @@ package view
 import (
 	"fmt"
 	"log"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strconv"
@@ -522,6 +523,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "sshkey.forget":
 		w.removeSavedKey(u)
 		return true
+	case "sshkey.add":
+		w.addSavedKey(u)
+		return true
 	case "help.shortcuts":
 		u.Send(w, app.ShowHelp{})
 		return true
@@ -888,7 +892,7 @@ func (w *Window) pickTheme(u *gunim.UI) {
 // server form offers.
 func (w *Window) removeSavedKey(u *gunim.UI) {
 	if len(w.keyFiles) == 0 {
-		w.toasts.Show(widget.Toast{Title: "No saved keys", Body: "A key is saved when it is created here or chosen for a server."}, u)
+		w.toasts.Show(widget.Toast{Title: "No saved keys", Body: "A key is saved when it is created here, chosen for a server, or added with Add Saved Key."}, u)
 		return
 	}
 	p := &widget.Palette{Placeholder: "Saved keys"}
@@ -897,6 +901,40 @@ func (w *Window) removeSavedKey(u *gunim.UI) {
 		p.Items = append(p.Items, widget.PaletteItem{Title: f, Icon: icon.KeyRound})
 	}
 	p.Pick = func(i int, u *gunim.UI) { u.Send(w, app.RemoveSavedKey{Path: files[i]}) }
+	w.keyPicker = p
+	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
+}
+
+// addSavedKey offers the private keys in ~/.ssh that are not saved yet,
+// and a path typed, to put one on the list the server form offers.
+func (w *Window) addSavedKey(u *gunim.UI) {
+	p := &widget.Palette{Placeholder: "A key in ~/.ssh, or the path to one"}
+	var files []string
+	for _, f := range app.KeysHere() {
+		if !slices.Contains(w.keyFiles, f) {
+			files = append(files, f)
+			p.Items = append(p.Items, widget.PaletteItem{Title: filepath.Base(f), Icon: icon.KeyRound, Also: []string{f}})
+		}
+	}
+	// A path typed is offered first, to add a key kept elsewhere.
+	typed := ""
+	p.Typed = func(q string) []widget.PaletteItem {
+		typed = strings.TrimSpace(q)
+		if !strings.ContainsAny(typed, `/\~`) {
+			typed = ""
+			return nil
+		}
+		return []widget.PaletteItem{{Title: "Add " + typed, Icon: icon.FileInput}}
+	}
+	// An index past the keys is the path typed.
+	p.Pick = func(i int, u *gunim.UI) {
+		switch {
+		case i >= 0 && i < len(files):
+			u.Send(w, app.AddSavedKey{Path: files[i]})
+		case i == len(files) && typed != "":
+			u.Send(w, app.AddSavedKey{Path: typed})
+		}
+	}
 	w.keyPicker = p
 	p.Open(w, geom.Rc(0, 48, w.size.W, 0), u)
 }

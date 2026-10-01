@@ -26,6 +26,10 @@ focus, and / goes to the field.
 
 ### Added
 
+**Add Saved Key.** Puts a key you already have on the saved keys, which
+the server form offers: one of the private keys in ~/.ssh, listed, or
+any other, by typing its path. On the SSH Keys menu and the palette.
+
 **Use Secret (Ctrl+Shift+S).** Pick a secret and type it into the
 terminal used last, or copy it, without opening the Secrets pane. The
 secrets for the machine of the pane in front come first, and a field

@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,10 @@ type (
 	// RemoveSavedKey takes a key file off the list of saved ones, leaving
 	// the file where it is.
 	RemoveSavedKey struct{ Path string }
+	// AddSavedKey puts a private key file that is already there on the
+	// list of saved ones, which the server form offers. A leading ~ is
+	// the home folder.
+	AddSavedKey struct{ Path string }
 )
 
 // mostKeptKeys is how many key files are remembered.
@@ -100,6 +105,66 @@ func (a *app) removeSavedKey(path string) error {
 	a.st.KeyFiles = a.settings.Keys()
 	a.worked("Removed "+filepath.Base(path)+" from saved keys", "The key file is still at "+path+".", "")
 	return nil
+}
+
+// addSavedKey puts the private key at path on the saved keys' list.
+func (a *app) addSavedKey(path string) error {
+	if a.settings == nil {
+		return errors.New("the settings could not be read, so the list can't be changed")
+	}
+	path = strings.TrimSpace(path)
+	if path == "~" || strings.HasPrefix(path, "~/") || strings.HasPrefix(path, `~\`) {
+		if home, err := os.UserHomeDir(); err == nil {
+			path = filepath.Join(home, path[1:])
+		}
+	}
+	path = filepath.Clean(path)
+	if !IsPrivateKey(path) {
+		return errors.New(path + " is not a private key file")
+	}
+	if err := a.settings.KeepKey(path, mostKeptKeys); err != nil {
+		return err
+	}
+	a.st.KeyFiles = a.settings.Keys()
+	a.worked("Added "+filepath.Base(path)+" to saved keys", "It is offered for servers from now on.", "")
+	return nil
+}
+
+// IsPrivateKey reports whether the file at path is a private key, as
+// its first line says: OpenSSH's, or PEM's, of any type.
+func IsPrivateKey(path string) bool {
+	f, err := os.Open(path)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = f.Close() }()
+	head := make([]byte, 64)
+	n, _ := io.ReadFull(f, head)
+	first, _, _ := strings.Cut(string(head[:n]), "\n")
+	return strings.HasPrefix(first, "-----BEGIN ") && strings.Contains(first, "PRIVATE KEY")
+}
+
+// KeysHere are the private key files in ~/.ssh, by name.
+func KeysHere() []string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	dir := filepath.Join(home, ".ssh")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() || strings.HasSuffix(e.Name(), ".pub") {
+			continue
+		}
+		if p := filepath.Join(dir, e.Name()); IsPrivateKey(p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // keyWritten keeps a new key's file in the list, and says how to

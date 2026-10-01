@@ -1019,6 +1019,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't create the key"
 	case RemoveSavedKey:
 		return "Couldn't remove the saved key"
+	case AddSavedKey:
+		return "Couldn't add the saved key"
 	case RunSavedCopy, RepeatJob:
 		return "Couldn't copy"
 	}
@@ -1390,6 +1392,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.lockKeys()
 	case RemoveSavedKey:
 		err = a.removeSavedKey(in.Path)
+	case AddSavedKey:
+		err = a.addSavedKey(in.Path)
 	case ShowTyped:
 		err = a.showTyped(in.Pane)
 	case RepeatJob:

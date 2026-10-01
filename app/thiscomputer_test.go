@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"testing"
 )
 
@@ -28,8 +27,8 @@ func TestAShellStartsInTheStartFolder(t *testing.T) {
 			t.Fatalf("from %q with no start folder, a shell starts in %s, want home", from, got)
 		}
 	}
-	a.handle(SaveThisComputer{StartFolder: work, Folders: []string{elsewhere}})
-	if a.st.ThisComputer.StartFolder != work || !slices.Equal(a.st.ThisComputer.Folders, []string{elsewhere}) {
+	a.handle(SaveThisComputer{StartFolder: work})
+	if a.st.ThisComputer.StartFolder != work {
 		t.Fatalf("saved, the state says %+v", a.st.ThisComputer)
 	}
 	for _, from := range []string{"", home, bin} {

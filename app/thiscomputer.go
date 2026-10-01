@@ -10,25 +10,21 @@ import (
 )
 
 // This computer's own settings, as a saved server has its: the folder a
-// new terminal starts in, the shell it runs, and the folders worth
-// opening files at.
+// new terminal starts in, and the shell it runs.
 
 // SaveThisComputer keeps this computer's settings. StartFolder is
 // where a new terminal starts, empty for the home folder, and a leading
 // ~ is the home folder; Shell is the shell a new terminal runs, by the
-// ID the shell list gives it, empty for the user's own; Folders are
-// folders to open files at.
+// ID the shell list gives it, empty for the user's own.
 type SaveThisComputer struct {
 	StartFolder string
 	Shell       string
-	Folders     []string
 }
 
 // ThisComputer is what the windows are told of this computer's
 // settings. The shell is State's ChosenShell.
 type ThisComputer struct {
 	StartFolder string
-	Folders     []string
 }
 
 // showThisComputer tells the windows this computer's settings.
@@ -36,7 +32,7 @@ func (a *app) showThisComputer() {
 	if a.settings == nil {
 		return
 	}
-	a.st.ThisComputer.StartFolder, a.st.ThisComputer.Folders = a.settings.Local()
+	a.st.ThisComputer.StartFolder = a.settings.Local()
 }
 
 // saveThisComputer checks and keeps this computer's settings.
@@ -52,7 +48,7 @@ func (a *app) saveThisComputer(in SaveThisComputer) error {
 		}
 		start = full
 	}
-	if err := a.settings.PutLocal(start, in.Folders); err != nil {
+	if err := a.settings.PutLocal(start); err != nil {
 		return err
 	}
 	a.showThisComputer()
@@ -108,7 +104,7 @@ func (a *app) startDir(cwd string) string {
 		return cwd
 	}
 	if a.settings != nil {
-		if start, _ := a.settings.Local(); start != "" {
+		if start := a.settings.Local(); start != "" {
 			if fi, err := os.Stat(start); err == nil && fi.IsDir() {
 				return start
 			}

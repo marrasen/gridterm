@@ -77,8 +77,9 @@ func TestAShortcutsFileForGridtermIsTaken(t *testing.T) {
 
 func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 	win, _, publish := windowStage(t)
-	publish(app.State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk", Folders: []string{"/srv/www"}}}, Connected: []machines.ID{"d1"},
-		Machines: []machines.Info{{ID: "d1", Name: "My Desk"}}})
+	publish(app.State{Saved: []remote.Host{{ID: "d1", Name: "My Desk", Address: "desk"}}, Connected: []machines.ID{"d1"},
+		Favourites: []app.Favourite{{Machine: "d1", Path: "/srv/www", Name: "Web"}},
+		Machines:   []machines.Info{{ID: "d1", Name: "My Desk"}}})
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
@@ -263,37 +264,21 @@ func TestTheWindowTakesTheShortcutsFile(t *testing.T) {
 	_ = gi.KeyA
 }
 
-// A server saved again with its folders untouched keeps them as they
-// were, one with a comma in its path included.
-func TestAFolderWithACommaSurvivesAnEdit(t *testing.T) {
+// A server saved again keeps the folders saved for it before there were
+// favourites, until they are moved; there is no field for them.
+func TestAServerEditKeepsFoldersNotYetMoved(t *testing.T) {
 	win, _, publish := windowStage(t)
 	srv := remote.Host{ID: "s1", Name: "srv", Address: "srv.example", Folders: []string{"/data/a,b", "/srv"}}
 	publish(app.State{Saved: []remote.Host{srv}})
 	win.serverForm(&srv, lastUI)
 	in, ok := win.dialog.OnAccept().(app.SaveServer)
 	if !ok || !slices.Equal(in.Host.Folders, srv.Folders) {
-		t.Fatalf("saved untouched, the folders are %q", in.Host.Folders)
-	}
-	// Edited, the line would split it in two, and is refused.
-	for _, f := range formOf(win.dialog.Body).Children() {
-		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
-			f.SetText(f.Text() + ",/home")
-		}
-	}
-	if problem := win.dialog.Check(); !strings.Contains(problem, "comma") {
-		t.Fatalf("edited, the folders are refused with %q", problem)
-	}
-	// With that folder taken out, the line is read as it stands.
-	for _, f := range formOf(win.dialog.Body).Children() {
-		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
-			f.SetText("/srv, /home")
-		}
-	}
-	if problem := win.dialog.Check(); problem != "" {
-		t.Fatalf("with the comma folder taken out, the folders are refused with %q", problem)
-	}
-	if in, ok := win.dialog.OnAccept().(app.SaveServer); !ok || !slices.Equal(in.Host.Folders, []string{"/srv", "/home"}) {
 		t.Fatalf("saved, the folders are %q", in.Host.Folders)
+	}
+	for _, f := range formOf(win.dialog.Body).Children() {
+		if f, ok := f.(*widget.TextField); ok && strings.HasPrefix(f.Placeholder, "optional: paths") {
+			t.Fatal("the dialog still has a field for folders")
+		}
 	}
 }
 

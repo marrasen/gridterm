@@ -62,7 +62,7 @@ func TestDisconnectingAFarMachineAsksFirst(t *testing.T) {
 func TestAFarMachineOffersTheFoldersItsWindowSaved(t *testing.T) {
 	win, _, publish := windowStage(t)
 	publish(app.State{Windows: []app.RemoteWindow{{Name: "desk", Folders: map[string][]string{"k1": {"/var/log"}}}}})
-	if got := win.foldersOn(machines.FarID("desk", "k1")); !slices.Equal(got, []string{"/var/log"}) {
+	if got := win.foldersOn(machines.FarID("desk", "k1")); len(got) != 1 || got[0].Path != "/var/log" {
 		t.Fatalf("the far machine offers %q", got)
 	}
 	if got := win.foldersOn(machines.FarID("desk", "k2")); len(got) != 0 {

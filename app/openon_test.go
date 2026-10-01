@@ -481,8 +481,8 @@ func TestAnEndingFromAnotherWindowReadsAsItsOwn(t *testing.T) {
 	}
 }
 
-// The folders a window saved for a server it is connected to reach the
-// window connected to it, to offer under that server's heading.
+// The favourites a window saved on a server it is connected to reach
+// the window connected to it, to offer under that server's heading.
 func TestAWindowsSavedFoldersReachTheOther(t *testing.T) {
 	_, conn, _ := tunnelApp(t)
 	a, b := connectedWindows(t)
@@ -490,11 +490,16 @@ func TestAWindowsSavedFoldersReachTheOther(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := book.Put(remote.Host{Name: "srv", Address: "srv.example", Folders: []string{"/var/log", "/srv/app"}}, ""); err != nil {
+	if err := book.Put(remote.Host{Name: "srv", Address: "srv.example"}, ""); err != nil {
 		t.Fatal(err)
 	}
 	idsAsNames(t, book)
 	a.book = book
+	a.settings = mustSettings(t)
+	if err := a.settings.PutFavourites([]settings.Favourite{{Machine: "srv", Path: "/var/log"}, {Path: "/here"}, {Machine: "srv", Path: "/srv/app"}}); err != nil {
+		t.Fatal(err)
+	}
+	a.showFavourites()
 	a.machines.At("srv").Conn = conn
 	a.publish()
 	pumpBoth(t, a, b, "the folders", func() bool {

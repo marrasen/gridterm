@@ -88,8 +88,8 @@ type stored struct {
 	LauncherKey string `json:"launcherKey,omitempty"`
 	// StartFolder is where a new terminal on this computer starts when
 	// nothing names another folder; empty for the home folder.
-	// LocalFolders are folders on this computer worth opening files at,
-	// as a saved server's Folders are on it.
+	// LocalFolders are folders on this computer that were worth opening
+	// files at, before there were favourites; read once, to move them.
 	StartFolder  string   `json:"startFolder,omitempty"`
 	LocalFolders []string `json:"localFolders,omitempty"`
 	// SecretHints say which logins and key files the secrets keep
@@ -102,6 +102,12 @@ type stored struct {
 	// FilesInWindow says files open in a file manager window of their
 	// own, the user's last choice, rather than in a file pane.
 	FilesInWindow bool `json:"filesInWindow,omitempty"`
+	// Favourites are folders saved on any machine, in the order the user
+	// left them. FavouritesMoved says the folders saved before there
+	// were favourites, LocalFolders and each server's Folders, became
+	// favourites, which happens once.
+	Favourites      []Favourite `json:"favourites,omitempty"`
+	FavouritesMoved bool        `json:"favouritesMoved,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -907,22 +913,22 @@ func (s *Settings) PutLauncherKey(key string) error {
 }
 
 // Local is this computer's settings: the folder a new terminal starts
-// in, empty for home, and the folders worth opening files at.
-func (s *Settings) Local() (start string, folders []string) {
+// in, empty for home.
+func (s *Settings) Local() (start string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.have.StartFolder, slices.Clone(s.have.LocalFolders)
+	return s.have.StartFolder
 }
 
 // PutLocal keeps this computer's settings, and saves.
-func (s *Settings) PutLocal(start string, folders []string) error {
+func (s *Settings) PutLocal(start string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.rereadLocked(); err != nil {
 		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
 	}
 	before := s.have
-	s.have.StartFolder, s.have.LocalFolders = start, slices.Clone(folders)
+	s.have.StartFolder = start
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err
@@ -973,6 +979,73 @@ func (s *Settings) PutFilesInWindow(on bool) error {
 	}
 	before := s.have
 	s.have.FilesInWindow = on
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// Favourite is a folder saved on a machine: Machine is its ID, empty
+// for this computer, and Name the name the user gave it, empty for the
+// folder's own.
+type Favourite struct {
+	Machine string `json:"machine,omitempty"`
+	Path    string `json:"path"`
+	Name    string `json:"name,omitempty"`
+}
+
+// Favourites are the folders saved on any machine, and whether the
+// folders saved before them were moved to them.
+func (s *Settings) Favourites() (favs []Favourite, moved bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return slices.Clone(s.have.Favourites), s.have.FavouritesMoved
+}
+
+// PutFavourites keeps the favourites, and saves.
+func (s *Settings) PutFavourites(favs []Favourite) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Favourites = slices.Clone(favs)
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// MoveFolders makes the folders saved before there were favourites into
+// favourites, once, and saves: this computer's LocalFolders first, then
+// from, the folders pinned before and those of the servers. A folder a favourite already
+// names is left out.
+func (s *Settings) MoveFolders(from []Favourite) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	if s.have.FavouritesMoved {
+		return nil
+	}
+	before := s.have
+	favs := slices.Clone(s.have.Favourites)
+	add := func(f Favourite) {
+		if !slices.ContainsFunc(favs, func(o Favourite) bool { return o.Machine == f.Machine && o.Path == f.Path }) {
+			favs = append(favs, f)
+		}
+	}
+	for _, path := range s.have.LocalFolders {
+		add(Favourite{Path: path})
+	}
+	for _, f := range from {
+		add(f)
+	}
+	s.have.Favourites, s.have.FavouritesMoved, s.have.LocalFolders = favs, true, nil
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

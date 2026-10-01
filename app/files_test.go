@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/marrasen/kakel/screen"
+	"github.com/marrasen/kakel/settings"
 
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/gunimtest"
@@ -188,17 +189,17 @@ func TestARenameOfCaseAloneWritesOverNothing(t *testing.T) {
 	})
 }
 
-// Files on a server with one folder saved open at that folder, however
+// Files on a server with one favourite open at that folder, however
 // they are asked for; with more than one, or none, at home.
 func TestFilesOnAServerWithOneSavedFolderOpenThere(t *testing.T) {
 	a, answering := dialApp(t)
 	there := t.TempDir()
 	h, _ := a.book.Lookup("srv")
-	h.Folders = []string{there}
-	if err := a.book.Put(h, "srv"); err != nil {
+	a.settings = mustSettings(t)
+	if err := a.settings.PutFavourites([]settings.Favourite{{Machine: h.ID, Path: there}}); err != nil {
 		t.Fatal(err)
 	}
-	a.st.Saved = a.book.Hosts()
+	a.showFavourites()
 	a.handle(OpenOn{Machine: "srv"})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
 	a.handle(OpenFiles{})

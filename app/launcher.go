@@ -313,8 +313,8 @@ func (a *app) launchMachines() []LaunchMachine {
 
 // launchThings are what the launcher finds besides the machines: each
 // shell here, files and a terminal on each machine, the files of each
-// WSL distribution, a connection's log, the saved commands, and kakel's
-// own windows.
+// WSL distribution, a connection's log, the favourites, the saved
+// commands, and kakel's own windows.
 func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 	var out []LaunchThing
 	for _, sh := range a.st.Shells {
@@ -335,6 +335,20 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 		if slices.ContainsFunc(m.Actions, func(x LaunchAction) bool { return x.ID == "log" }) {
 			out = append(out, LaunchThing{Title: "Connection Log of " + m.Name, Note: m.Note, Also: []string{"log", "account"}, Kind: "log", Machine: m.ID, Action: "log"})
 		}
+	}
+	for _, f := range a.st.Favourites {
+		where := "This computer"
+		if f.Machine != machines.Local {
+			_, saved := a.machines.Saved(f.Machine)
+			if _, _, far := f.Machine.Far(); !saved && !far {
+				// On a connection not saved, gone once kakel was: it
+				// can't be gone back to.
+				continue
+			}
+			where = a.machines.Name(f.Machine)
+		}
+		out = append(out, LaunchThing{Title: f.Label(), Note: where, Also: []string{f.Path, "favourite", "folder", "files"},
+			Kind: "files", Machine: f.Machine, Action: "files:" + f.Path})
 	}
 	for _, c := range a.st.SavedCommands {
 		where := c.Host

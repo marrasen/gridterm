@@ -565,6 +565,7 @@ func (a *app) removeServer(name machines.ID) error {
 		return err
 	}
 	a.st.Saved = a.book.Hosts()
+	a.forgetFavourites(name)
 	// Named still by what is left of it, until that goes.
 	a.machines.Removed(name, called)
 	// What the window holds under the name goes with it, as the

@@ -451,8 +451,10 @@ func (a *app) openFilesOn(machine machines.ID, f vfs.FS, path string) error {
 	return nil
 }
 
-// savedFolders are the folders saved for machine: a saved server's, or
-// for a machine a window reached, the ones that window saved for it.
+// savedFolders are the folders saved for machine: a server's
+// favourites, or for a machine a window reached, the ones that window
+// saved for it. This computer's favourites are not where its files
+// open, as its folders never were.
 func (a *app) savedFolders(machine machines.ID) []string {
 	if window, key, far := machine.Far(); far {
 		if w := a.machines.Get(window).Window; w != nil {
@@ -460,10 +462,10 @@ func (a *app) savedFolders(machine machines.ID) []string {
 		}
 		return nil
 	}
-	if h, ok := a.machines.Saved(machine); ok {
-		return h.Folders
+	if machine == machines.Local {
+		return nil
 	}
-	return nil
+	return a.favouritesOn(machine)
 }
 
 // browse lists a folder for a file pane, in the background.

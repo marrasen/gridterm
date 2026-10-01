@@ -148,8 +148,11 @@ type State struct {
 	Shells      []ShellChoice
 	ChosenShell string
 	// ThisComputer is this computer's settings: where a new terminal
-	// starts, and the folders to open files at.
+	// starts.
 	ThisComputer ThisComputer
+	// Favourites are the folders saved on any machine, in the user's
+	// order.
+	Favourites []Favourite
 	// ShellSetup says new shells here are taught to say what they are
 	// doing, and TermProgram what they are told the terminal is called,
 	// "" for kakel's own name.
@@ -689,12 +692,13 @@ type app struct {
 	openLaunch LauncherOpener
 	// files opens the file manager's windows, and fileWins are those
 	// open; serverPlaces are the servers as its places list them, read
-	// off the program's goroutine, and fmFiles the machines' files as
-	// it reads them.
+	// off the program's goroutine, fmFiles the machines' files as it
+	// reads them, and fmFavs the favourites its windows share.
 	files        FileWindows
 	fileWins     []*filemanager.Window
 	serverPlaces atomic.Pointer[[]filemanager.Place]
 	fmFiles      map[machines.ID]*fmFS
+	fmFavs       *fmFavourites
 	hotKeys      HotKeys
 	launch       launchState
 	// found are the shells on this machine, once scanned says they have
@@ -800,6 +804,8 @@ func (a *app) run(ctx context.Context) error {
 		go a.offerToServeAgain()
 	}
 	a.loadBook()
+	a.showFavourites()
+	a.moveFolders()
 	if a.themeTrouble != nil {
 		a.failed("Couldn't read all the themes", a.themeTrouble.Error())
 	}
@@ -922,7 +928,7 @@ func (a *app) loadSettings() {
 			a.st.PaneTitles = s.PaneTitles()
 			a.st.SavedCommands = s.Commands()
 			a.st.ChosenShell, _ = s.Shell()
-			a.st.ThisComputer.StartFolder, a.st.ThisComputer.Folders = s.Local()
+			a.st.ThisComputer.StartFolder = s.Local()
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()

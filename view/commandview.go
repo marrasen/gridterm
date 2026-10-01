@@ -8,7 +8,6 @@ import (
 	"github.com/marrasen/kakel/words"
 
 	"github.com/marrasen/kakel/machines"
-	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/widget"
@@ -276,8 +275,8 @@ func (w *Window) updatesDialog(u *gunim.UI) {
 }
 
 // thisComputerDialog edits this computer's settings, as Edit This
-// Server… does a server's: the folder a new terminal starts in, the
-// shell it runs, and the folders to open files at.
+// Server… does a server's: the folder a new terminal starts in, and the
+// shell it runs.
 func (w *Window) thisComputerDialog(u *gunim.UI) {
 	start := widget.NewTextField()
 	start.Placeholder = "your home folder"
@@ -292,24 +291,11 @@ func (w *Window) thisComputerDialog(u *gunim.UI) {
 	if i := slices.Index(ids, w.chosenShell); i > 0 {
 		shell.Selected = i
 	}
-	kept := remote.Host{Folders: w.thisComputer.Folders}.FoldersJoined()
-	folders := widget.NewTextField()
-	folders.Placeholder = "optional: paths to open files at, with commas"
-	folders.SetText(kept)
-	foldersOf := func() []string {
-		// Left as they were, they stay as saved: a folder with a comma
-		// in its path would be split in two by reading the line back.
-		if folders.Text() == kept {
-			return w.thisComputer.Folders
-		}
-		return remote.FoldersFrom(folders.Text())
-	}
 	d := widget.NewDialog("This Computer")
 	d.Body = widget.NewForm().
 		Add("Start in", start).
 		Add("", widget.NewLabel("New terminals start here, unless you started kakel in a folder of your own, or open them from a terminal that is in another folder.")).
-		Add("Shell", shell).
-		Add("Folders", folders)
+		Add("Shell", shell)
 	d.SetButtons("Save", "Cancel")
 	d.Check = func() string {
 		if s := strings.TrimSpace(start.Text()); s != "" {
@@ -317,16 +303,12 @@ func (w *Window) thisComputerDialog(u *gunim.UI) {
 				return words.UpperFirst(err.Error()) + "."
 			}
 		}
-		if folders.Text() != kept && commaFolderKept(w.thisComputer.Folders, folders.Text()) {
-			return "A saved folder has a comma in its path, which this line cannot keep apart. Leave the folders as they were, or take that folder out."
-		}
 		return ""
 	}
 	d.OnAccept = func() gunim.Intent {
 		return app.SaveThisComputer{
 			StartFolder: strings.TrimSpace(start.Text()),
 			Shell:       ids[max(0, min(shell.Selected, len(ids)-1))],
-			Folders:     foldersOf(),
 		}
 	}
 	d.Dismiss = app.DialogClosed{}

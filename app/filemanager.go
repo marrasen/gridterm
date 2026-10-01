@@ -96,7 +96,7 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 	a.notePlaces()
 	w, err := a.files.Open(filemanager.Options{
 		FS: fsys, Dir: path, Name: "Files", PrefsPath: fileManagerPrefs(),
-		Places: a.fileManagerPlaces, Visit: a.visitPlace,
+		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 	})
 	if err != nil {
 		return err
@@ -107,6 +107,21 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 		a.events <- func() { a.fileWins = slices.DeleteFunc(a.fileWins, func(o *filemanager.Window) bool { return o == w }) }
 	}()
 	return nil
+}
+
+// favStore is where the file manager's windows keep their favourites:
+// kakel's settings, one store for every window, so they share them. nil
+// when there are no settings, and the windows keep them as the file
+// manager does by itself.
+func (a *app) favStore() filemanager.FavouriteStore {
+	if a.settings == nil {
+		return nil
+	}
+	if a.fmFavs == nil {
+		a.fmFavs = &fmFavourites{a: a}
+		a.fmFavs.noteNames(a)
+	}
+	return a.fmFavs
 }
 
 // fmFor is m's files, open as f, as the file manager reads them: the
@@ -196,6 +211,9 @@ func (a *app) notePlaces() {
 			}
 		}
 		places = append(places, p)
+	}
+	if a.fmFavs != nil {
+		a.fmFavs.noteNames(a)
 	}
 	if old := a.serverPlaces.Load(); old != nil && slices.Equal(*old, places) {
 		return

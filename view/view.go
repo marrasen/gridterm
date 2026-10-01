@@ -139,6 +139,8 @@ type Window struct {
 	// thisComputer is this computer's settings, as the program keeps
 	// them.
 	thisComputer app.ThisComputer
+	// favourites are the folders saved on any machine.
+	favourites []app.Favourite
 	// useOnOpen is when Use Secret asked the secrets to open, for its
 	// list to come once they are; zero for none asked.
 	useOnOpen time.Time
@@ -1174,7 +1176,7 @@ func (w *Window) servers(saved []remote.Host) {
 			widget.PaletteItem{Title: "Browse Files on " + where, Icon: icon.Folder})
 		w.paletteIDs = append(w.paletteIDs, "conn.terminal."+w.cmdName(m), "conn.files."+w.cmdName(m))
 		for i, f := range w.foldersOn(m) {
-			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f + " on " + where, Icon: icon.Folder})
+			w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: "Browse " + f.Label() + " on " + where, Icon: icon.Folder})
 			w.paletteIDs = append(w.paletteIDs, "conn.files."+w.cmdName(m)+"."+strconv.Itoa(i+1))
 		}
 	}
@@ -1273,7 +1275,7 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 		m, ok := machineNamed(rest[:cut])
 		i, numbered := nth(rest[cut+1:])
 		if folders := w.foldersOn(m); ok && numbered && i < len(folders) {
-			u.Send(w, app.OpenFilesOn{Machine: m, Path: folders[i]})
+			u.Send(w, app.OpenFilesOn{Machine: m, Path: folders[i].Path})
 		}
 	case strings.HasPrefix(id, shellfind.CommandPrefix):
 		for i, sid := range w.shellIDs() {
@@ -1355,8 +1357,6 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 	via.Label = "Through"
 	kind := widget.NewDropdown("Server", remote.WindowKind)
 	kind.Label = "Type"
-	folders := widget.NewTextField()
-	folders.Placeholder = "optional: paths to open files at, with commas"
 	// The key files kept, so one is a pick away rather than a path to
 	// remember.
 	var kept *widget.Dropdown
@@ -1388,7 +1388,6 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		if old.Window {
 			kind.Selected = 1
 		}
-		folders.SetText(old.FoldersJoined())
 		setup.On, forward.On = old.Setup, old.ForwardAgent
 		for i, id := range ids {
 			if id != "" && id == old.Via {
@@ -1426,16 +1425,9 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		}
 		h.Via = ids[max(0, min(via.Selected, len(ids)-1))]
 		h.Window = kind.Selected == 1
-		// Left as they were, they stay as saved: a folder with a comma in
-		// its path would be split in two by reading the line back.
-		// Changed, such a folder is refused, as it would be lost.
-		switch {
-		case old != nil && folders.Text() == old.FoldersJoined():
+		if old != nil {
+			// Folders saved before favourites stay until they are moved.
 			h.Folders = old.Folders
-		case old != nil && commaFolderKept(old.Folders, folders.Text()):
-			return h, "A saved folder has a comma in its path, which this line cannot keep apart. Leave the folders as they were, or take that folder out."
-		default:
-			h.Folders = remote.FoldersFrom(folders.Text())
 		}
 		// A window keeps the agent tick it had, unused, so switching it
 		// back to a server brings it back. Not its route: a window
@@ -1469,7 +1461,7 @@ func (w *Window) serverForm(old *remote.Host, u *gunim.UI) {
 		form.Add("Saved keys", kept)
 	}
 	d := widget.NewDialog(title)
-	d.Body = form.Add("Folders", folders).Add("", setup).Add("", forward)
+	d.Body = form.Add("", setup).Add("", forward)
 	d.SetButtons("Save", "Cancel")
 	if old != nil {
 		d.AddAction("Remove…", func(u *gunim.UI) {
@@ -1551,30 +1543,31 @@ func (w *Window) nextFilePane(id string, back bool) string {
 	return files[(at+step+len(files))%len(files)]
 }
 
-// foldersOn are the folders offered for a machine: the ones saved for
-// it, and on this computer each WSL distribution's, which Windows serves
-// on a share of its own.
-func (w *Window) foldersOn(m machines.ID) []string {
+// foldersOn are the folders offered for a machine: its favourites, the
+// ones a window saved for a machine beyond it, and on this computer
+// each WSL distribution's, which Windows serves on a share of its own.
+func (w *Window) foldersOn(m machines.ID) []app.Favourite {
+	var out []app.Favourite
+	for _, f := range w.favourites {
+		if f.Machine == m {
+			out = append(out, f)
+		}
+	}
 	if window, key, far := m.Far(); far {
 		// Beyond a window: the ones it saved for the machine.
 		for _, rw := range w.remoteWindows {
 			if rw.Name == window {
-				return rw.Folders[key]
+				for _, path := range rw.Folders[key] {
+					out = append(out, app.Favourite{Machine: m, Path: path})
+				}
 			}
 		}
-		return nil
-	}
-	var out []string
-	for _, h := range w.saved {
-		if machines.ID(h.ID) == m {
-			out = append(out, h.Folders...)
-		}
+		return out
 	}
 	if m == "" {
-		out = append(out, w.thisComputer.Folders...)
 		for _, s := range w.shellChoices {
 			if s.Folder != "" {
-				out = append(out, s.Folder)
+				out = append(out, app.Favourite{Path: s.Folder})
 			}
 		}
 	}
@@ -1954,8 +1947,8 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.setSavedCommands(st.SavedCommands)
 	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell ||
-		st.ThisComputer.StartFolder != w.thisComputer.StartFolder || !slices.Equal(st.ThisComputer.Folders, w.thisComputer.Folders) {
-		w.shellChoices, w.chosenShell, w.thisComputer = st.Shells, st.ChosenShell, st.ThisComputer
+		st.ThisComputer.StartFolder != w.thisComputer.StartFolder || !slices.Equal(st.Favourites, w.favourites) {
+		w.shellChoices, w.chosenShell, w.thisComputer, w.favourites = st.Shells, st.ChosenShell, st.ThisComputer, st.Favourites
 		w.servers(w.saved)
 	}
 	w.echoFor(st, u)
@@ -3367,7 +3360,11 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 	heading("Files")
 	add(icon.House, "Home", send(app.OpenFilesOn{Machine: m}))
 	for _, f := range w.foldersOn(m) {
-		add(icon.Folder, f, send(app.OpenFilesOn{Machine: m, Path: f}))
+		ic := icon.Folder
+		if slices.Contains(w.favourites, f) {
+			ic = icon.Star
+		}
+		add(ic, f.Label(), send(app.OpenFilesOn{Machine: m, Path: f.Path}))
 	}
 	// Where they open, kept for the next time.
 	add(icon.AppWindow, "Files in a Window", send(app.OpenFileManager{Machine: m}))
@@ -3592,18 +3589,6 @@ func (s *shade) Paint(p *paint.Painter, _ gunim.Frame, box geom.Size, kids gunim
 	}
 	defer p.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
 	kids.At(0).Paint(p)
-}
-
-// commaFolderKept reports whether the folders line still holds a saved
-// folder with a comma in its path, which reading the line back would
-// split in two. One taken out of the line is no longer in the way.
-func commaFolderKept(saved []string, line string) bool {
-	for _, f := range saved {
-		if !remote.FoldersRoundTrip([]string{f}) && strings.Contains(line, f) {
-			return true
-		}
-	}
-	return false
 }
 
 // setTypeAll turns Type in All Panes on or off: what is typed goes to

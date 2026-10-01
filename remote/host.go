@@ -52,9 +52,9 @@ type Host struct {
 	// xterm-256color.
 	Term string `json:"term,omitempty"`
 
-	// Folders are directories on this machine worth opening a file
-	// browser at. None means the browser opens where it did before, at
-	// whatever the machine calls home.
+	// Folders are directories on this machine that were worth opening
+	// a file browser at, before there were favourites. They are moved to
+	// favourites once, and read for nothing else.
 	Folders []string `json:"folders,omitempty"`
 
 	// Setup says the shell on this machine is taught to say where it
@@ -228,32 +228,6 @@ func (h Host) Validate() error {
 		return fmt.Errorf("the terminal type contains something that cannot be shown")
 	}
 	return nil
-}
-
-// FoldersJoined is the folders as one line, for a field that holds them
-// all. Empty when there are none.
-func (h Host) FoldersJoined() string { return strings.Join(h.Folders, folderSeparator) }
-
-// FoldersFrom reads such a line back. Blanks are dropped, so a trailing
-// separator is not a folder with no path.
-func FoldersFrom(line string) []string {
-	var out []string
-	for path := range strings.SplitSeq(line, folderSeparator) {
-		if path = strings.TrimSpace(path); path != "" {
-			out = append(out, path)
-		}
-	}
-	return out
-}
-
-// folderSeparator parts the folders in one field.
-const folderSeparator = ","
-
-// FoldersRoundTrip reports whether folders survive being written as one
-// line and read back. A path holding the separator, or a space at either
-// end, does not.
-func FoldersRoundTrip(folders []string) bool {
-	return slices.Equal(FoldersFrom(strings.Join(folders, folderSeparator)), folders)
 }
 
 // unprintable reports a character a name has no business holding.

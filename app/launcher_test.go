@@ -146,13 +146,14 @@ func TestALaunchWhileLeavingOpensNothing(t *testing.T) {
 }
 
 // The launcher offers each shell here, WSL's files, files and a
-// terminal on each machine, and kakel's windows; a pick of one opens it
+// terminal on each machine, the favourites, and kakel's windows; a pick of one opens it
 // and is not what Enter opens on the machine next time.
 func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 	a, _, two := twoWindowApp(t)
 	a.next = 100
 	a.noteWork()
 	a.st.Shells = []ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Folder: `\\wsl$\Ubuntu`}}
+	a.st.Favourites = []Favourite{{Path: "/home/me/src", Name: "Code"}}
 	things := a.launchThings(a.launchMachines())
 	titles := map[string]LaunchThing{}
 	for _, th := range things {
@@ -162,6 +163,9 @@ func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 		if _, ok := titles[want]; !ok {
 			t.Fatalf("the launcher offers no %q among %v", want, things)
 		}
+	}
+	if th := titles["Code"]; th.Action != "files:/home/me/src" || th.Note != "This computer" || !slices.Contains(th.Also, "/home/me/src") {
+		t.Fatalf("a favourite is offered as %+v", th)
 	}
 	if th := titles["Ubuntu (WSL)"]; !slices.Contains(th.Also, "wsl") {
 		t.Fatalf("WSL is not found by wsl: %+v", th)

@@ -393,11 +393,13 @@ func (a *app) tellServed() {
 			key = string(id)
 		}
 		snap.Machines = append(snap.Machines, serve.Machine{Key: key, Name: a.machines.Name(id)})
-		if h, ok := a.machines.Saved(id); ok && len(h.Folders) > 0 {
-			if snap.Folders == nil {
-				snap.Folders = map[string][]string{}
+		if h, ok := a.machines.Saved(id); ok {
+			if folders := a.favouritesOn(id); len(folders) > 0 {
+				if snap.Folders == nil {
+					snap.Folders = map[string][]string{}
+				}
+				snap.Folders[h.ID] = folders
 			}
-			snap.Folders[h.ID] = h.Folders
 		}
 	}
 	a.serving.mu.Lock()

@@ -21,10 +21,36 @@ see [Coming from gridterm](#coming-from-gridterm).
 
 ## Install
 
-**Download a build.** The [releases page](https://github.com/marrasen/kakel/releases)
+**One line.** These fetch the newest release, check it against
+`SHA256SUMS`, and install it for you alone, with no administrator.
+
+On Windows, in PowerShell:
+
+```
+irm https://raw.githubusercontent.com/marrasen/kakel/main/install.ps1 | iex
+```
+
+On Linux:
+
+```
+curl -fsSL https://raw.githubusercontent.com/marrasen/kakel/main/install.sh | sh
+```
+
+On Windows kakel goes to `%LOCALAPPDATA%\Programs\kakel`, with a Start
+menu shortcut and an entry under Installed apps, which removes it again.
+On Linux it goes to `~/.local/bin/kakel`, with a desktop file.
+
+**Or download a build.** The [releases page](https://github.com/marrasen/kakel/releases)
 has a zip for Windows and a tarball for Linux, both amd64, with
-`SHA256SUMS` beside them. There is nothing to install: unpack it and run
-it.
+`SHA256SUMS` beside them. Unpack it and run it as it is, or install it
+from Options › Install kakel…, which also offers a desktop shortcut, a
+start with the computer, and automatic updates. `kakel -install` and
+`kakel -uninstall` do the same from a shell.
+
+**Updates.** An installed release looks for a newer one a minute after it
+starts and once a day after. Options › Updates… says what it does then:
+tell you (the default), install it by itself, or nothing. An update is
+put in place for the next start, and kakel offers to restart into it.
 
 **Or with Go.** Every build is pure Go, with no C toolchain on either
 platform:
@@ -44,6 +70,9 @@ kakel -e 'vim /etc/hosts'      # one command
 kakel -font-size 18            # 8 to 96 pixels
 kakel -font-family 'Cascadia Mono'
 kakel -list-fonts              # the monospace families installed
+kakel -tray                    # into the tray, with no window
+kakel -launcher                # the launcher, from a key the desktop binds
+kakel -quit                    # ends the kakel running
 ```
 
 With `-ssh` the window opens first and connects in a pane, so it asks

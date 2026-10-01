@@ -79,6 +79,10 @@ type stored struct {
 	// NoTray keeps kakel out of the system tray: closing its last
 	// window ends it, as it did before it had a tray icon.
 	NoTray *bool `json:"noTray,omitempty"`
+	// Updates says what kakel does with a newer release: "off" looks
+	// for none, "install" fetches it and puts it in place for the next
+	// start, and anything else, as at first, says it is out.
+	Updates string `json:"updates,omitempty"`
 	// LauncherKey is the key, from any program, that opens the
 	// launcher, as a shortcut is written; "none" takes none.
 	LauncherKey string `json:"launcherKey,omitempty"`
@@ -825,6 +829,41 @@ func (s *Settings) Tray() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.have.NoTray == nil || !*s.have.NoTray
+}
+
+// Update choices, as the settings write them.
+const (
+	UpdatesOff     = "off"
+	UpdatesNotify  = "notify"
+	UpdatesInstall = "install"
+)
+
+// Updates is what kakel does with a newer release: UpdatesOff,
+// UpdatesInstall, or UpdatesNotify, which it does until told otherwise.
+func (s *Settings) Updates() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	switch s.have.Updates {
+	case UpdatesOff, UpdatesInstall:
+		return s.have.Updates
+	}
+	return UpdatesNotify
+}
+
+// PutUpdates keeps what kakel does with a newer release, and saves.
+func (s *Settings) PutUpdates(what string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.Updates = what
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
 }
 
 // LauncherKey is the launcher's key as written in the settings, or ""

@@ -46,6 +46,9 @@ type Release struct {
 
 	// Page is where that release is downloaded from.
 	Page string
+
+	// Assets are the files the release holds, by name.
+	Assets map[string]string
 }
 
 // Latest is the newest release GitHub knows about.
@@ -74,8 +77,12 @@ func Latest(ctx context.Context) (Release, error) {
 	}
 
 	var said struct {
-		Tag  string `json:"tag_name"`
-		Page string `json:"html_url"`
+		Tag    string `json:"tag_name"`
+		Page   string `json:"html_url"`
+		Assets []struct {
+			Name string `json:"name"`
+			URL  string `json:"browser_download_url"`
+		} `json:"assets"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, readLimit)).Decode(&said); err != nil {
 		return Release{}, fmt.Errorf("read what GitHub answered: %w", err)
@@ -88,7 +95,13 @@ func Latest(ctx context.Context) (Release, error) {
 	if page == "" {
 		page = Releases
 	}
-	return Release{Version: tag, Page: page}, nil
+	assets := map[string]string{}
+	for _, a := range said.Assets {
+		if a.Name != "" && a.URL != "" {
+			assets[a.Name] = a.URL
+		}
+	}
+	return Release{Version: tag, Page: page, Assets: assets}, nil
 }
 
 // Standing is how a build compares to a release.

@@ -51,6 +51,16 @@ type running struct {
 	PID   int    `json:"pid"`
 }
 
+// Running reports whether a kakel is running for dir.
+func Running(dir string) bool {
+	raw, err := os.ReadFile(filepath.Join(dir, File))
+	if err != nil {
+		return false
+	}
+	var r running
+	return json.Unmarshal(raw, &r) == nil && alive(r.PID)
+}
+
 // handTime is how long a handover waits for the one running to answer.
 const handTime = 3 * time.Second
 

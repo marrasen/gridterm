@@ -58,7 +58,7 @@ type Launcher struct {
 // NewLauncher returns the launcher's view.
 func NewLauncher() *Launcher {
 	l := &Launcher{field: widget.NewTextField(), machine: -1}
-	l.field.Placeholder = "Type a machine, a shell, files, a command…"
+	l.field.Icon = icon.Search
 	// What is typed lights the best of what it finds.
 	l.field.OnEdit = func(string, *gunim.UI) { l.hot, l.first = 0, 0; l.find() }
 	return l

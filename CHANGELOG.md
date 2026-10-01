@@ -15,9 +15,6 @@ change how something behaves.
 finishing, in a pane of a window behind sent its echo from the window in
 front. Each window now counts its own, and asks for attention itself.
 
-**The launcher fades out.** Escape, or a pick, used to make it vanish at
-once.
-
 ### Changed
 
 **The Servers pane replaces the sidebar.** Every machine, with what is
@@ -46,6 +43,19 @@ to Ctrl+PageDown and Ctrl+PageUp. Delete those two lines to get the tab
 keys.
 
 ### Added
+
+**Install kakel, and keep it up to date.** `install.ps1` on Windows and
+`install.sh` on Linux fetch the newest release, check it, and install it
+for you alone. A copy you downloaded does the same from Options ›
+Install kakel…, or `kakel -install`. On Windows that is
+`%LOCALAPPDATA%\Programs\kakel`, a Start menu shortcut and an entry
+under Installed apps; on Linux `~/.local/bin/kakel` and a desktop file.
+Options › Start with Computer starts it into the tray when you log in.
+The installed copy looks for a newer release once a day, and Options ›
+Updates… says whether it tells you, installs it by itself, or does
+nothing. Check for Updates now offers the update itself, not only its
+page. `kakel -tray` starts into the tray, and `kakel -quit` ends the kakel
+running. On Windows none of this has yet been run on Windows itself.
 
 **A launcher on Shift+Win+K.** From any program on Windows, and on
 Ctrl+Alt+K under X11 on Linux, the key opens a small window that finds a

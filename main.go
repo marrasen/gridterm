@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"os/exec"
 	"os/signal"
 	"runtime/pprof"
 	"slices"
@@ -36,7 +37,15 @@ import (
 )
 
 func main() {
-	if err := run(); err != nil {
+	err := run()
+	// A restart into a new copy, as after an update: started once this
+	// one has stopped listening, so it runs as the one.
+	if exe := app.RestartInto(); exe != "" {
+		if serr := exec.Command(exe).Start(); serr != nil {
+			log.Printf("couldn't start %s again: %v", exe, serr)
+		}
+	}
+	if err != nil {
 		log.Fatal(err)
 	}
 }
@@ -94,7 +103,7 @@ func run() error {
 		all, trouble := look.LoadSaying()
 		ws := &ownWindows{app: a, sh: sh, all: all, place: opts.WindowPlace}
 		// Where it was as it last closed, or else sized for the font.
-		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace()})
+		w, c, err := ws.open(gunim.WindowOptions{Size: opts.WindowSize(), Place: opts.WindowPlace(), Hidden: opts.StartsInTray()})
 		if err != nil {
 			return err
 		}

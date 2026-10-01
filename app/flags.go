@@ -41,6 +41,10 @@ type Options struct {
 	// launcher opens the launcher, in the kakel running when there is
 	// one, for a key the desktop binds where kakel can take none.
 	launcher bool
+	// tray starts kakel in the tray, with no window, as it does with
+	// the computer; quit ends the kakel running; install and uninstall
+	// install this copy for the user, or take the installed one away.
+	tray, quit, install, uninstall bool
 	// sizeSet says -font-size was given, which the size kept from last
 	// time does not overrule.
 	sizeSet bool
@@ -70,6 +74,10 @@ func ParseOptions(args []string) (Options, error) {
 			" on standard input and output, instead of opening a window")
 	fs.BoolVar(&o.stats, "stats", os.Getenv("KAKEL_STATS") == "1",
 		"say each second how many frames were drawn, on standard error")
+	fs.BoolVar(&o.tray, "tray", false, "start in the tray, with no window, as kakel does with the computer")
+	fs.BoolVar(&o.quit, "quit", false, "end the kakel running, asking first as Exit does while anything is open")
+	fs.BoolVar(&o.install, "install", false, "install this copy of kakel for you, with a Start menu or desktop file entry, and exit")
+	fs.BoolVar(&o.uninstall, "uninstall", false, "end the kakel running, take the installed kakel away, and exit; the settings stay")
 	fs.BoolVar(&o.launcher, "launcher", false,
 		"open the launcher, in the kakel already running if there is one;"+
 			" bind this to a key where kakel cannot take one itself, as under Wayland")
@@ -238,6 +246,10 @@ func (a *app) openFirst() error {
 // nor one told to run alone with KAKEL_ALONE=1.
 func (o Options) OneOfMany() bool { return o.shot == "" && os.Getenv("KAKEL_ALONE") != "1" }
 
+// StartsInTray reports whether this kakel starts in the tray, with its
+// first window never shown.
+func (o Options) StartsInTray() bool { return o.tray }
+
 // Trays reports whether this kakel shows itself in the tray: one of
 // many does, and one driving itself for screenshots does not.
 func (o Options) Trays() bool { return o.shot == "" }
@@ -266,6 +278,10 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		return true, err
 	case opts.listFonts:
 		return true, printFonts(os.Stdout)
+	case opts.install:
+		return true, installHere()
+	case opts.uninstall:
+		return true, uninstallHere()
 	}
 	return false, nil
 }

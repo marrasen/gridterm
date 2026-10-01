@@ -225,3 +225,51 @@ func (w *Window) launcherKeyDialog(u *gunim.UI) {
 	d.Dismiss = app.DialogClosed{}
 	w.openDialog(d, u)
 }
+
+// installDialog asks how to install this copy of kakel.
+func (w *Window) installDialog(u *gunim.UI) {
+	desk := widget.NewCheckbox("Shortcut on the desktop")
+	start := widget.NewCheckbox("Start with the computer, in the tray")
+	auto := widget.NewCheckbox("Update automatically")
+	d := widget.NewDialog("Install kakel")
+	d.Body = widget.NewForm().
+		Add("", widget.NewLabel("For you alone, with a Start menu entry. No administrator needed.")).
+		Add("", desk).Add("", start).Add("", auto)
+	d.SetButtons("Install", "Cancel")
+	d.OnAccept = func() gunim.Intent {
+		return app.InstallKakel{Desktop: desk.On, Autostart: start.On, AutoUpdate: auto.On}
+	}
+	d.Dismiss = app.DialogClosed{}
+	w.openDialog(d, u)
+}
+
+// updateChoices are the update setting's choices, as the dialog lists
+// them and the settings write them.
+var updateChoices = []struct{ title, value string }{
+	{"Tell me", settings.UpdatesNotify}, {"Install them", settings.UpdatesInstall}, {"Off", settings.UpdatesOff},
+}
+
+// updatesDialog asks what kakel does with a newer release.
+func (w *Window) updatesDialog(u *gunim.UI) {
+	var titles []string
+	at := 0
+	for i, c := range updateChoices {
+		titles = append(titles, c.title)
+		if c.value == w.update.Updates {
+			at = i
+		}
+	}
+	pick := widget.NewDropdown(titles...)
+	pick.Selected = at
+	d := widget.NewDialog("Updates")
+	d.Body = widget.NewForm().
+		Add("New releases", pick).
+		Add("", widget.NewLabel("Installed, an update starts the next time kakel does."))
+	d.SetButtons("Save", "Cancel")
+	d.AddAction("Check Now", func(u *gunim.UI) { d.Close(u); u.Send(w, app.CheckUpdates{}) })
+	d.OnAccept = func() gunim.Intent {
+		return app.SetUpdates{What: updateChoices[max(0, min(pick.Selected, len(updateChoices)-1))].value}
+	}
+	d.Dismiss = app.DialogClosed{}
+	w.openDialog(d, u)
+}

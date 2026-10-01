@@ -48,15 +48,17 @@ func TestANewerReleaseIsOffered(t *testing.T) {
 		return update.Release{Version: "v99.0.0", Page: "https://example.com/release"}, nil
 	}
 	t.Cleanup(func() { latestRelease, thisVersion = was, wasVersion })
-	for _, c := range []struct{ have, title string }{
-		{"v1.0.0", "Update available"},
-		{"v1.0.0-3-gabcdef-dirty", "Newest release"},
+	// A release behind is offered the update itself; a build from a
+	// working tree, which has no order against it, the page.
+	for _, c := range []struct{ have, title, yes string }{
+		{"v1.0.0", "kakel v99.0.0 is out", "Update"},
+		{"v1.0.0-3-gabcdef-dirty", "Newest release", "Open the Page"},
 	} {
 		thisVersion = func() string { return c.have }
 		a.handle(CheckUpdates{})
 		waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) > 0 })
 		q := a.st.Asks[0]
-		if q.Title != c.title || !strings.Contains(q.Text, "v99.0.0") || !strings.Contains(q.Text, c.have) || q.Yes != "Open the Page" || !q.Careful {
+		if q.Title != c.title || !strings.Contains(q.Title+q.Text, "v99.0.0") || !strings.Contains(q.Text, c.have) || q.Yes != c.yes {
 			t.Fatalf("to %s, the offer is %+v", c.have, q)
 		}
 		a.handle(AskAnswered{ID: q.ID})

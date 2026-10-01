@@ -4,7 +4,6 @@ import (
 	"errors"
 	"runtime"
 	"slices"
-	"strconv"
 	"strings"
 
 	"github.com/marrasen/kakel/machines"
@@ -337,13 +336,13 @@ func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
 			out = append(out, LaunchThing{Title: "Connection Log of " + m.Name, Note: m.Note, Also: []string{"log", "account"}, Kind: "log", Machine: m.ID, Action: "log"})
 		}
 	}
-	for i, c := range a.st.SavedCommands {
+	for _, c := range a.st.SavedCommands {
 		where := c.Host
 		if where == "" {
 			where = "This computer"
 		}
 		out = append(out, LaunchThing{Title: c.Line, Note: where, Also: []string{"run", "command", "saved"}, Kind: "command",
-			Machine: machines.ID(c.HostID), Action: "saved:" + strconv.Itoa(i)})
+			Machine: machines.ID(c.HostID), Action: "saved:" + c.HostID + "\x00" + c.Line})
 	}
 	return append(out,
 		LaunchThing{Title: "Servers", Note: "kakel", Also: []string{"machines", "connections"}, Kind: "servers", Action: "app:servers"},
@@ -371,6 +370,11 @@ func (a *app) handleLaunch(in gunim.Intent) {
 		if in.Action == "terminal" || in.Action == "files" || in.Action == "log" || strings.HasPrefix(in.Action, "shell:") {
 			a.launch.last[in.Machine] = in.Action
 		}
+		if in.Action == "app:window" {
+			// A window of its own: not first in the window worked in.
+			a.newWindow(func() { a.handle(NewTerminal{}) })
+			return
+		}
 		a.toTray(func() { a.launchOn(in) })
 	}
 }
@@ -381,8 +385,14 @@ func (a *app) launchOn(in Launch) {
 	case strings.HasPrefix(in.Action, "files:"):
 		a.handle(FilesOn{Machine: in.Machine, Path: strings.TrimPrefix(in.Action, "files:")})
 	case strings.HasPrefix(in.Action, "saved:"):
-		if i, err := strconv.Atoi(strings.TrimPrefix(in.Action, "saved:")); err == nil && i < len(a.st.SavedCommands) {
-			a.handle(RunSavedCommand{Saved: a.st.SavedCommands[i]})
+		// By what it is, not where it stood: the list moves as
+		// commands are run.
+		host, line, _ := strings.Cut(strings.TrimPrefix(in.Action, "saved:"), "\x00")
+		for _, c := range a.st.SavedCommands {
+			if c.HostID == host && c.Line == line {
+				a.handle(RunSavedCommand{Saved: c})
+				break
+			}
 		}
 	case in.Action == "app:servers":
 		a.showServers()

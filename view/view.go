@@ -128,6 +128,8 @@ type Window struct {
 	// and launcherKey the launcher's key, as last published.
 	termProgram string
 	launcherKey string
+	// update is where kakel stands on installing and updating.
+	update app.Update
 	// connected are the servers connected to, as last published.
 	connected []machines.ID
 	// help is the list of commands, once opened, and shortcutsRead
@@ -450,6 +452,12 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "app.launcherKey":
 		w.launcherKeyDialog(u)
+		return true
+	case "app.install":
+		w.installDialog(u)
+		return true
+	case "app.updates":
+		w.updatesDialog(u)
 		return true
 	case "tab.newWindow", "servers.window", "secrets.window":
 		// A little down and to the right of this window, as large.
@@ -1784,6 +1792,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.termProgram = st.TermProgram
 	w.launcherKey = st.LauncherKey
+	w.update = st.Update
 	w.secretsExist = st.Secrets.Exists
 	if st.ShortcutsRead != w.shortcutsRead {
 		w.shortcutsRead = st.ShortcutsRead
@@ -2061,6 +2070,10 @@ func (w *Window) applies(id string) bool {
 		return len(w.tabs.tabs) > 1
 	case "tab.close":
 		return w.focused != ""
+	case "app.install":
+		return w.update.Installable && !w.update.Installed
+	case "app.autostart":
+		return w.update.Installed
 	}
 	return true
 }
@@ -2104,6 +2117,8 @@ func (w *Window) switchOn(id string, st app.State, u *gunim.UI) (on, isSwitch bo
 		return ok && b.icons, true
 	case "app.tray":
 		return st.InTray, true
+	case "app.autostart":
+		return st.Update.Autostart, true
 	}
 	return false, false
 }

@@ -156,7 +156,9 @@ func (a *app) checkUpdates() {
 			have := thisVersion()
 			switch update.Against(have, newest.Version) {
 			case update.Behind:
-				a.offerRelease("Update available", have, newest)
+				// Fetched and put in place, or the page where this copy
+				// can't be written.
+				a.offerUpdate(newest)
 			case update.Current:
 				a.notify(newest.Version+" is the newest release", "", "")
 			case update.Ahead:

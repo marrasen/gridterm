@@ -174,3 +174,28 @@ func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
 		t.Fatal("opening Servers became what Enter opens on this computer")
 	}
 }
+
+// New Window from the launcher opens one window, also with kakel in the
+// tray and none open.
+func TestNewWindowFromTheLauncherOpensOne(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.traySet = (&fakeTray{}).tray()
+	a.publish()
+	opened := 0
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		opened++
+		return gunimtest.New(t, s, nil).Client(), nil, nil
+	}
+	for _, w := range []*ownWin{one, two} {
+		for _, p := range a.panesIn(w) {
+			a.remove(p.ID)
+		}
+		a.letWindowGo(w)
+	}
+	a.handleLaunch(Launch{Action: "app:window"})
+	waitFor(t, a, "the window", func() bool { return len(a.liveWins()) > 0 })
+	time.Sleep(50 * time.Millisecond)
+	if opened != 1 || a.opening != 0 {
+		t.Fatalf("New Window opened %d windows, %d on their way", opened, a.opening)
+	}
+}

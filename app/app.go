@@ -28,6 +28,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/marrasen/kakel/glyph"
+	"github.com/marrasen/kakel/install"
 	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/keys"
 	"github.com/marrasen/kakel/remote"
@@ -80,6 +81,8 @@ type State struct {
 	InTray bool
 	// LauncherKey is the launcher's key, as written.
 	LauncherKey string
+	// Update is where kakel stands on installing and updating.
+	Update Update
 	// FontSize is the terminals' font size in logical pixels.
 	FontSize float32
 	// Fonts are the families to draw the terminals in, and Font the one
@@ -550,6 +553,8 @@ type app struct {
 	thumbQueue   []thumbJob
 	thumbWanted  map[files.ThumbKey]bool
 	thumbWorking int
+	// updating says a look for a newer release is out.
+	updating bool
 	// work is the window last worked in, other than a tool window, and
 	// fromTool says an intent from a tool window is being handled.
 	work     *ownWin
@@ -787,10 +792,22 @@ func (a *app) run(ctx context.Context) error {
 		return err
 	}
 	a.takeLauncherKey()
-	if a.opts.launcher {
+	a.startUpdates()
+	switch {
+	case a.opts.tray:
+		// Started with the computer: into the tray, the first window,
+		// opened hidden, let go unseen. With no tray to start in, a
+		// window of its own, seen.
+		a.showTray()
+		first := a.cur
+		if !a.inTray() {
+			a.newWindow(func() { a.openFirstOrSay() })
+		}
+		a.letWindowGo(first)
+	case a.opts.launcher:
 		// Started for the launcher alone: no terminal with it.
 		a.openLauncher()
-	} else {
+	default:
 		a.openFirstOrSay()
 	}
 	a.publish()
@@ -819,7 +836,9 @@ func (a *app) run(ctx context.Context) error {
 		case in := <-a.intents:
 			if in.closed {
 				a.windowClosed(in.w)
-				if len(a.wins) == 0 && !a.inTray() {
+				// The last gone, unless kept in the tray or another is on
+				// its way, as the first, hidden, gives way to one shown.
+				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 {
 					a.closeAll()
 					a.leaveTray()
 					return a.c.Err()
@@ -856,7 +875,7 @@ func (a *app) run(ctx context.Context) error {
 		a.rehome()
 		a.leaveIfEmpty()
 		a.leaveEmpty()
-		if a.gone && len(a.liveWins()) == 0 && len(a.wins) == 0 {
+		if (a.gone || !a.inTray() && a.opening == 0) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
 			// Leaving with no window to wait for, as from the tray.
 			a.closeAll()
 			a.leaveTray()
@@ -956,6 +975,12 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't take the files dropped"
 	case SetLauncherKey:
 		return "Couldn't change the launcher's key"
+	case InstallKakel:
+		return "Couldn't install kakel"
+	case SetUpdates:
+		return "Couldn't keep the update setting"
+	case ToggleAutostart:
+		return "Couldn't change whether kakel starts with the computer"
 	case PasteImageAsFile, PasteImage:
 		return "Couldn't paste the image"
 	case SaveServer:
@@ -1407,6 +1432,17 @@ func (a *app) handle(in gunim.Intent) {
 		a.clearFinished()
 	case OpenLauncher:
 		a.openLauncher()
+	case InstallKakel:
+		err = a.installKakel(in)
+	case SetUpdates:
+		if a.settings != nil {
+			err = a.settings.PutUpdates(in.What)
+		}
+		a.showUpdate()
+	case ToggleAutostart:
+		err = install.SetAutostart(!install.Autostart())
+		a.showUpdate()
+
 	case SetLauncherKey:
 		err = a.setLauncherKey(in.Key)
 	case ToggleTray:
@@ -1538,6 +1574,10 @@ func (a *app) hooks(id string) screen.Hooks {
 		Bell: func() {
 			a.events <- func() {
 				w := a.ownerOf(id)
+				if w == nil || w.gone {
+					// A pane waiting for a window: the one in front.
+					w = a.cur
+				}
 				if w != nil {
 					w.bells++
 				}

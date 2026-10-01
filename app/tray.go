@@ -304,8 +304,15 @@ func (a *app) rehome() {
 // the folder it was started in.
 func (a *app) handover(h single.Handover) {
 	o, err := ParseOptions(h.Args)
-	if err == nil && o.launcher {
+	switch {
+	case err == nil && o.launcher:
 		a.openLauncher()
+		return
+	case err == nil && o.quit:
+		a.askToQuit()
+		return
+	case err == nil && o.tray:
+		// Started with the computer while one runs: it is there already.
 		return
 	}
 	if err != nil {

@@ -34,6 +34,11 @@ true.
 - `kakel_vX.Y.Z_linux_amd64.tar.gz`
 - `SHA256SUMS`
 
+Keep those names. `install.ps1`, `install.sh` and kakel's own updates
+find the archive by them, and check it against `SHA256SUMS`. An
+installed kakel updates only from a release: a build that calls itself
+`dev-…` or `v…-N-g…` never looks.
+
 The version is stamped into the binary at link time, so a build can
 always say which one it is: it is on the about dialog, it goes to a
 program in a pane as `TERM_PROGRAM_VERSION`, and it goes to an agent

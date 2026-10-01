@@ -472,3 +472,23 @@ func unlockedKey(t *testing.T) ssh.Signer {
 	}
 	return signer
 }
+
+// A key the server names is tried before the SSH agent's keys, so an
+// agent slow to answer, or not answering at all, does not hold up the
+// key chosen. With none named, the agent comes first, as before.
+func TestANamedKeyIsTriedBeforeTheAgent(t *testing.T) {
+	path := sshtest.WriteEncryptedKey(t, testPassphrase)
+	agentHere := func() (io.Closer, agent.Agent, error) {
+		return io.NopCloser(nil), listingAgent{signers: func() ([]ssh.Signer, error) { return nil, nil }}, nil
+	}
+	cfg := Config{Identities: []string{path}, Ring: NewRing(), Ask: &testAsk{passphrase: testPassphrase}, agent: agentHere}
+	a, err := authMethods(t.Context(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := rungs(a)
+	key, agentAt := slices.Index(got, "the private key "+path), slices.Index(got, "the keys the SSH agent holds")
+	if key < 0 || agentAt < 0 || key > agentAt {
+		t.Fatalf("the ladder is %v, want the named key before the agent", got)
+	}
+}

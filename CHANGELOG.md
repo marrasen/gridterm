@@ -43,6 +43,12 @@ user, port, key file and ProxyJump.
 
 ### Fixed
 
+**A server's own key is tried first.** A key chosen for a server was
+tried only after the SSH agent's keys, so an agent that didn't answer
+held the connection up for ten seconds before the key was tried. The
+chosen key now goes before the agent, and an agent gets three seconds to
+list its keys, not ten.
+
 **Locking the secrets locks them.** Lock forgot what the secrets hold,
 but kept the key that opens them unlocked, so they opened again at the
 next click or the next look for a saved password, with no question. Lock

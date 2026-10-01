@@ -402,6 +402,45 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 		}})
 	}
 
+	// The key files that need a passphrase, each a rung of its own.
+	addLocked := func() {
+		if cfg.Ask == nil {
+			return
+		}
+		for _, path := range locked {
+			a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the private key " + path, build: func() ssh.AuthMethod {
+				return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
+					signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
+					if err != nil {
+						err = fmt.Errorf("remote: private key %s: %w", path, err)
+						// Said and kept here. Returning it only would lose
+						// it: x/crypto counts a key that could not be
+						// offered as one more thing that did not work, and
+						// carries on to the next way of signing in without
+						// a word about it.
+						//
+						// Unless the connection was given up on, which is
+						// what a dismissed dialog does. That is the user's
+						// own decision, and the account of it is "given up
+						// on" rather than a key that went wrong.
+						if ctx.Err() == nil {
+							a.keyFailed(err)
+						}
+						return nil, err
+					}
+					return []ssh.Signer{signer}, nil
+				})
+			}})
+		}
+	}
+	// A key the server names goes before the agent's: it is the one the
+	// user chose, and an agent that answers slowly, or not at all, is
+	// not waited for when the chosen key signs in.
+	named := len(cfg.Identities) > 0 && !cfg.NoIdentities
+	if named {
+		addLocked()
+	}
+
 	if agentSigners != nil {
 		a.ladder = append(a.ladder, rung{method: methodPublicKey, agent: true,
 			what: "the keys the SSH agent holds", build: func() ssh.AuthMethod {
@@ -445,30 +484,8 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 	if cfg.Ask == nil {
 		return a, nil
 	}
-	for _, path := range locked {
-		a.ladder = append(a.ladder, rung{method: methodPublicKey, what: "the private key " + path, build: func() ssh.AuthMethod {
-			return ssh.PublicKeysCallback(func() ([]ssh.Signer, error) {
-				signer, err := cfg.Ring.Unlock(ctx, path, cfg.Ask)
-				if err != nil {
-					err = fmt.Errorf("remote: private key %s: %w", path, err)
-					// Said and kept here. Returning it only would lose
-					// it: x/crypto counts a key that could not be
-					// offered as one more thing that did not work, and
-					// carries on to the next way of signing in without
-					// a word about it.
-					//
-					// Unless the connection was given up on, which is
-					// what a dismissed dialog does. That is the user's
-					// own decision, and the account of it is "given up
-					// on" rather than a key that went wrong.
-					if ctx.Err() == nil {
-						a.keyFailed(err)
-					}
-					return nil, err
-				}
-				return []ssh.Signer{signer}, nil
-			})
-		}})
+	if !named {
+		addLocked()
 	}
 	if cfg.KeysOnly {
 		return a, nil
@@ -664,6 +681,6 @@ func bannerOf(ctx context.Context, cfg Config) ssh.BannerCallback {
 // Variables so the tests can shorten them. Nothing in the program writes
 // them.
 var (
-	agentListing = 10 * time.Second
+	agentListing = 3 * time.Second
 	agentGrace   = 60 * time.Second
 )

@@ -11,6 +11,12 @@ change how something behaves.
 
 ### Fixed
 
+**A bell's rings show on the window that rang, on Windows.** They used
+to show above every window. A window behind another drew its rings over
+the one in front, and over other programs too, so they looked like
+another window's. Now they stay with their own window and go behind
+whatever is in front of it.
+
 **Select text in the scrollback.** A selection stays on its text as the
 view scrolls and as output moves it up, rather than on the rows of the
 screen. A drag held past a pane's top or bottom scrolls toward it, faster

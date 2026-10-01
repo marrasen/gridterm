@@ -689,10 +689,12 @@ type app struct {
 	openLaunch LauncherOpener
 	// files opens the file manager's windows, and fileWins are those
 	// open; serverPlaces are the servers as its places list them, read
-	// off the program's goroutine.
+	// off the program's goroutine, and fmFiles the machines' files as
+	// it reads them.
 	files        FileWindows
 	fileWins     []*filemanager.Window
 	serverPlaces atomic.Pointer[[]filemanager.Place]
+	fmFiles      map[machines.ID]*fmFS
 	hotKeys      HotKeys
 	launch       launchState
 	// found are the shells on this machine, once scanned says they have
@@ -1072,10 +1074,11 @@ func (a *app) leaveIfEmpty() {
 
 // emptyAndIdle reports whether the program has no pane and none on its
 // way, and so leaves: nothing connecting, no window or shell opening,
-// and not kept open, as after the first pane failed.
+// no file manager window open, and not kept open, as after the first
+// pane failed.
 func (a *app) emptyAndIdle() bool {
 	return len(a.st.Panes) == 0 && len(a.st.Asks) == 0 && len(a.machines.Dialing()) == 0 && a.opening == 0 && a.starting == 0 && !a.stayEmpty &&
-		a.launch.c == nil && !a.launch.opening
+		a.launch.c == nil && !a.launch.opening && len(a.fileWins) == 0
 }
 
 func (a *app) publish() {

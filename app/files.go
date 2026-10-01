@@ -417,6 +417,7 @@ func (a *app) keepFiles(machine machines.ID, f vfs.FS) vfs.FS {
 		return have
 	}
 	a.machines.At(machine).Files = f
+	a.fmBack(machine, f)
 	return f
 }
 

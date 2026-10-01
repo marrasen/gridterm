@@ -2,10 +2,12 @@ package vfs
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"sync"
+	"time"
 
 	"github.com/pkg/sftp"
 )
@@ -207,6 +209,40 @@ func (s *SFTP) Create(path string, mode fs.FileMode) (io.WriteCloser, error) {
 	return f, nil
 }
 
+// CreateNew makes a file at path that is not there yet, failing with an
+// error that matches fs.ErrExist when something is, whatever comes there
+// meanwhile: the server makes it only if it isn't there. It is given
+// mode before anything is written to it.
+func (s *SFTP) CreateNew(path string, mode fs.FileMode) (io.WriteCloser, error) {
+	path = Spelled(s, path)
+	f, err := s.client.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL)
+	if err != nil {
+		if !errors.Is(err, fs.ErrExist) {
+			// Some servers answer a plain failure to a name taken.
+			if _, lerr := s.client.Lstat(path); lerr == nil {
+				err = fmt.Errorf("%w: %w", fs.ErrExist, err)
+			}
+		}
+		return nil, wrap(s, "create", path, err)
+	}
+	if err := f.Chmod(mode.Perm()); err != nil {
+		// A server may set permissions by path alone.
+		if perr := s.client.Chmod(path, mode.Perm()); perr != nil {
+			return nil, wrap(s, "set the permissions on", path,
+				errors.Join(err, f.Close(), s.client.Remove(path)))
+		}
+	}
+	return f, nil
+}
+
+// Failed reports whether err is SFTP's plain failure, which says nothing
+// of why: a rename across volumes fails so, as does a statvfs a server
+// can't answer.
+func Failed(err error) bool {
+	var se *sftp.StatusError
+	return errors.As(err, &se) && se.FxCode() == sftp.ErrSSHFxFailure
+}
+
 // Mkdir makes one directory, with the mode it was asked for rather than
 // whatever the far end's umask allows.
 func (s *SFTP) Mkdir(path string, mode fs.FileMode) error {
@@ -329,3 +365,56 @@ type drive struct {
 }
 
 func (d drive) Name() string { return d.name }
+
+// Follow says what is at path, following a link at the end of it, as
+// Stat does not.
+func (s *SFTP) Follow(path string) (fs.FileInfo, error) {
+	path = Spelled(s, path)
+	info, err := s.client.Stat(path)
+	if err != nil {
+		return nil, wrap(s, "read", path, err)
+	}
+	return info, nil
+}
+
+// Readlink says where the link at path points.
+func (s *SFTP) Readlink(path string) (string, error) {
+	path = Spelled(s, path)
+	to, err := s.client.ReadLink(path)
+	return to, wrap(s, "read the link", path, err)
+}
+
+// RealPath is path with the links along it followed, as the server
+// resolves it.
+func (s *SFTP) RealPath(path string) (string, error) {
+	path = Spelled(s, path)
+	to, err := s.client.RealPath(path)
+	return to, wrap(s, "resolve", path, err)
+}
+
+// Chtimes sets when the item at path was last changed, and last read.
+func (s *SFTP) Chtimes(path string, mod time.Time) error {
+	path = Spelled(s, path)
+	return wrap(s, "set the time on", path, s.client.Chtimes(path, mod, mod))
+}
+
+// Space is how many bytes are free and in all on the volume that holds
+// path, as OpenSSH's statvfs extension says. A server without it fails
+// with an error that matches errors.ErrUnsupported, and so does one that
+// has it and can't answer, as Go's SFTP server, kakel's own, can't on
+// Windows.
+func (s *SFTP) Space(path string) (free, total uint64, err error) {
+	path = Spelled(s, path)
+	if _, ok := s.client.HasExtension("statvfs@openssh.com"); !ok {
+		return 0, 0, errors.ErrUnsupported
+	}
+	st, err := s.client.StatVFS(path)
+	var se *sftp.StatusError
+	if Failed(err) || errors.As(err, &se) && se.FxCode() == sftp.ErrSSHFxOpUnsupported {
+		return 0, 0, fmt.Errorf("%w: %w", errors.ErrUnsupported, err)
+	}
+	if err != nil {
+		return 0, 0, wrap(s, "read the space on", path, err)
+	}
+	return st.FreeSpace(), st.TotalSpace(), nil
+}

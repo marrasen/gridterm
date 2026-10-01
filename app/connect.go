@@ -238,6 +238,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 						_ = f.Close()
 						a.machines.At(name).Files = nil
 						a.forgetFar(name)
+						a.fmGone(name)
 					}
 					if a.machines.Get(name).LetGo {
 						a.machines.At(name).LetGo = false

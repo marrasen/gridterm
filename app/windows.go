@@ -254,6 +254,7 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 			_ = m.Files.Close()
 			m.Files = nil
 			a.forgetFar(key)
+			a.fmGone(key)
 		}
 	})
 	said := "Its panes here have ended."

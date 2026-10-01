@@ -1,6 +1,7 @@
 package app
 
 import (
+	"maps"
 	"slices"
 
 	"github.com/marrasen/kakel/machines"
@@ -32,5 +33,6 @@ func (a *app) forgetUnused() {
 	for _, id := range a.machines.Forget(a.used) {
 		a.st.Accounts = slices.DeleteFunc(a.st.Accounts, func(n machines.ID) bool { return n == id })
 		a.forgetFar(id)
+		maps.DeleteFunc(a.fmFiles, func(k machines.ID, _ *fmFS) bool { return k.Of(id) })
 	}
 }

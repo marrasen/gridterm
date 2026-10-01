@@ -123,8 +123,11 @@ func (t *term) setAway(away bool, u *gunim.UI) {
 		// go to it. The press ends here, and no link stays lit or
 		// named at the foot of the pane.
 		if t.held != input.MouseNone {
+			// Let go where it was, so a program that has the mouse
+			// hears the button come up, and a selection ends there.
+			held := t.held
 			t.held, t.edge = input.MouseNone, 0
-			t.sh.T.CancelGesture()
+			t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: t.at.X, Row: t.at.Y}, u)
 		}
 		t.hoverMods = 0
 		t.sh.T.SetHover(t.at.X, t.at.Y, 0)

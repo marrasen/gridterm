@@ -47,7 +47,13 @@ func TestTypingGoesToEveryPaneInTheSplit(t *testing.T) {
 	lastWindow.Input(gi.TextInput{Text: "ls"})
 	lastWindow.Frame(time.Second / 60)
 	for _, id := range []string{"p1", "p2", "p3"} {
-		if got := sessions[id].Sent(); !strings.Contains(got, "ls") {
+		// A shell's writes go out on a goroutine of their own: waited
+		// for, a moment.
+		got := sessions[id].Sent()
+		for end := time.Now().Add(time.Second); !strings.Contains(got, "ls") && time.Now().Before(end); got = sessions[id].Sent() {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if !strings.Contains(got, "ls") {
 			t.Fatalf("%s was sent %q", id, got)
 		}
 	}

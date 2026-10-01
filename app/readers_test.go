@@ -172,7 +172,7 @@ func TestAReaderOnAServerReadsAgainAfterTheConnectionWent(t *testing.T) {
 	var id string
 	waitFor(t, a, "the reader", func() bool {
 		for rid, r := range a.st.Readers {
-			if r.Path == file && slices.Contains(r.Lines, "one") {
+			if r.Path == onServer(file) && slices.Contains(r.Lines, "one") {
 				id = rid
 				return true
 			}

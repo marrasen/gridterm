@@ -173,7 +173,7 @@ func TestAPathOnAServerOpensWithNoFilePaneThere(t *testing.T) {
 	}
 	waitFor(t, a, "the reader", func() bool {
 		for _, r := range a.st.Readers {
-			if r.Path == file && len(r.Lines) >= 2 {
+			if r.Path == onServer(file) && len(r.Lines) >= 2 {
 				return true
 			}
 		}

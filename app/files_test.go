@@ -205,13 +205,16 @@ func TestFilesOnAServerWithOneSavedFolderOpenThere(t *testing.T) {
 	waitFor(t, a, "the files", func() bool {
 		return len(a.st.Panes) == 2 && a.st.Browsers[a.st.Panes[1].ID].Seq > 0
 	})
-	// A folder on a Windows server is spelled as SFTP spells it,
-	// /C:/Users/..., and opens there.
-	want := there
-	if runtime.GOOS == "windows" {
-		want = "/" + filepath.ToSlash(there)
-	}
-	if got := a.st.Browsers[a.st.Panes[1].ID].Path; got != want {
+	if got := a.st.Browsers[a.st.Panes[1].ID].Path; got != onServer(there) {
 		t.Fatalf("the files opened at %q, want the saved folder %q", got, there)
 	}
+}
+
+// onServer is a path of this machine as the test server's SFTP spells
+// it: the same on Linux, and /C:/Users/... on Windows.
+func onServer(path string) string {
+	if runtime.GOOS == "windows" {
+		return "/" + filepath.ToSlash(path)
+	}
+	return path
 }

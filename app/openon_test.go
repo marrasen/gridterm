@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -398,7 +399,13 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 		t.Fatalf("the agent is told of %+v", sh.Panes)
 	}
 	// What a command it typed on the window's machine printed.
-	asAgentBoth(t, a, b, func() { err = c.Send(own.ID, "echo out-$((6*7))", []string{"Enter"}) })
+	// Worked out by the shell, so only its output says out-42: a POSIX
+	// shell's arithmetic, or cmd.exe's on Windows.
+	sum := "echo out-$((6*7))"
+	if runtime.GOOS == "windows" {
+		sum = "set /a x=6*7 >nul & call echo out-%x%"
+	}
+	asAgentBoth(t, a, b, func() { err = c.Send(own.ID, sum, []string{"Enter"}) })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -556,7 +563,14 @@ func TestAPathBeyondAWindowIsFoundOnItsServer(t *testing.T) {
 	b.handle(OpenOn{Machine: far})
 	pumpBoth(t, a, b, "the terminal on the server", func() bool { return len(b.st.Panes) == 2 })
 	onFar := b.st.Panes[1].ID
-	file := filepath.Join(t.TempDir(), "notes.txt")
+	// A short folder, so the path is one line of the screen: Windows's
+	// test folders are long enough to wrap.
+	short, err := os.MkdirTemp("", "k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(short) })
+	file := filepath.Join(short, "notes.txt")
 	if err := os.WriteFile(file, []byte("one\ntwo\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -583,7 +597,7 @@ func TestAPathBeyondAWindowIsFoundOnItsServer(t *testing.T) {
 	pumpBoth(t, a, b, "the reader", func() bool {
 		click()
 		for id, r := range b.st.Readers {
-			if r.Path == file && len(r.Lines) >= 2 {
+			if r.Path == onServer(file) && len(r.Lines) >= 2 {
 				p := slices.IndexFunc(b.st.Panes, func(p Pane) bool { return p.ID == id })
 				if p < 0 || b.st.Panes[p].Machine != win || b.st.Panes[p].On != "srv" {
 					t.Fatalf("the reader is %+v, want on srv through the window", b.st.Panes[p])

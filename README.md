@@ -59,6 +59,9 @@ platform:
 go install github.com/marrasen/kakel@latest
 ```
 
+On Windows, add `-ldflags -H=windowsgui`, or a console window flashes up
+as kakel starts.
+
 **Or from source.** [BUILDING.md](BUILDING.md).
 
 ## Start

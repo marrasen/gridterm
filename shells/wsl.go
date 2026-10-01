@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"github.com/marrasen/kakel/internal/quiet"
 	"os/exec"
 	"strings"
 	"time"
@@ -34,6 +35,7 @@ func wslDistros() ([]string, error) {
 	// -q lists the installed distributions by name alone, stopped ones included.
 	cmd := exec.CommandContext(ctx, "wsl.exe", "-l", "-q")
 	cmd.WaitDelay = wslWaitDelay
+	quiet.Hide(cmd)
 	out, err := cmd.Output()
 	if err != nil {
 		if ctx.Err() != nil {

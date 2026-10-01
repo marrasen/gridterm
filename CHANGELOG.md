@@ -32,6 +32,12 @@ user, port, key file and ProxyJump.
 
 ### Fixed
 
+**No windows flash up as kakel starts on Windows.** The release is now
+linked as a windowed program, so Windows gives it no console window to
+close. wsl.exe, which kakel asks for the WSL distributions, and the
+command that opens a link in the browser start without windows of their
+own too.
+
 **Shortcuts work after a click on empty room.** A click under the list
 in the Servers pane took the keyboard from everything, and no shortcut
 worked until a pane was clicked. The click gives the Servers pane the

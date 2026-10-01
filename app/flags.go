@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"github.com/marrasen/kakel/internal/quiet"
 	"io"
 	"log"
 	"os"
@@ -268,6 +269,7 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		// nothing and reaches nothing until the agent gives it a code.
 		return true, mcp.Serve(ctx, os.Stdin, os.Stdout, mcp.NewWindow())
 	case opts.mcpSkill:
+		quiet.ToParentConsole()
 		// Refused rather than printed with the bare name, as Write Skill
 		// refuses: a skill naming no program to start goes on failing
 		// long after this is forgotten.
@@ -277,6 +279,7 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 		_, err := io.WriteString(os.Stdout, agenthost.Named(agenthost.ClaudeCode).Skill(exePath()))
 		return true, err
 	case opts.listFonts:
+		quiet.ToParentConsole()
 		return true, printFonts(os.Stdout)
 	case opts.install:
 		return true, installHere()

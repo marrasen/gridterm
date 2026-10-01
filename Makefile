@@ -35,8 +35,11 @@ vet:
 fmt:
 	gofmt -l .
 
+# -H=windowsgui links the Windows build as a windowed program: started
+# from a shortcut, Windows gives it no console window, which would flash
+# up before the program let it go.
 windows:
-	$(GO_WIN) build -o kakel.exe .
+	$(GO_WIN) build -ldflags "-H=windowsgui" -o kakel.exe .
 
 linux:
 	GOOS=linux GOARCH=amd64 go build -o kakel-linux .
@@ -53,7 +56,7 @@ icon:
 # Both cross-compile, so this makes a whole release wherever it is run.
 release: clean
 	mkdir -p $(DIST)
-	$(GO_WIN) build -trimpath -ldflags "$(STAMP)" -o $(DIST)/kakel.exe .
+	$(GO_WIN) build -trimpath -ldflags "$(STAMP) -H=windowsgui" -o $(DIST)/kakel.exe .
 	cd $(DIST) && zip -q kakel_$(VERSION)_windows_amd64.zip kakel.exe
 	rm $(DIST)/kakel.exe
 	GOOS=linux GOARCH=amd64 $(BUILD) -o $(DIST)/kakel .

@@ -2,6 +2,7 @@ package app
 
 import (
 	"fmt"
+	"github.com/marrasen/kakel/internal/quiet"
 	"net"
 	"net/url"
 	"os/exec"
@@ -141,6 +142,7 @@ var openInBrowser = func(at string) error {
 		name = "open"
 	}
 	cmd := exec.Command(name, args...)
+	quiet.Hide(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("could not open %s: %w", at, err)
 	}

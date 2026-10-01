@@ -25,7 +25,9 @@ buttons.
 
 **A folder that can't be opened is said in a notice.** It sends a red
 echo, as a delete sends a green one, and the Window Log keeps it. The
-line under the path that said "Click for why" is gone.
+line under the path that said "Click for why" is gone. Failures the
+window finds itself, such as files dropped where they can't go, are
+kept in the Window Log too, with the same red echo.
 
 **Select text in the scrollback.** A selection stays on its text as the
 view scrolls and as output moves it up, rather than on the rows of the

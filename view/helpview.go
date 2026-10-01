@@ -287,7 +287,7 @@ func (w *Window) aboutDialog(u *gunim.UI) {
 func (w *Window) fileLocationsDialog(u *gunim.UI) {
 	dir, err := conf.Dir()
 	if err != nil {
-		w.toasts.Show(widget.Toast{Title: "Couldn't find where the files are", Body: err.Error()}, u)
+		w.failed("Couldn't find where the files are", err.Error(), u)
 		return
 	}
 	form := widget.NewForm()

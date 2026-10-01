@@ -162,7 +162,7 @@ func (b *browser) Handle(e gi.Event, u *gunim.UI) bool {
 			why = "This folder couldn't be read."
 		}
 		if why != "" {
-			b.w.toasts.Show(widget.Toast{Title: "Couldn't take the files dropped", Body: why, Kind: widget.ToastError}, u)
+			b.w.failed("Couldn't take the files dropped", why, u)
 			return true
 		}
 		u.Send(b, app.DropOnFiles{Pane: b.id, Into: b.st.Path, Paths: e.Paths, Copy: true})

@@ -218,8 +218,8 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	st.Focus = "ps"
 	publish(st)
 	focused := func() string {
-		for _, k := range win.list.Keys() {
-			if row, ok := widget.RowOf[*sideRow](win.list, k); ok && row.ring.Target() == 1 {
+		for _, k := range win.cards.keys() {
+			if row, ok := win.cards.row(k); ok && row.ring.Target() == 1 {
 				return string(k)
 			}
 		}
@@ -232,7 +232,7 @@ func TestTheSidebarWorksFromTheKeyboard(t *testing.T) {
 	if got := focused(); got != "p1" {
 		t.Fatalf("up went to %q", got)
 	}
-	keys := win.list.Keys()
+	keys := win.cards.keys()
 	last := string(keys[len(keys)-1])
 	press(gi.KeyEnd)
 	if got := focused(); got != last {
@@ -300,7 +300,7 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	for len(lastWindow.Client().Intents()) > 0 {
 		<-lastWindow.Client().Intents()
 	}
-	row, ok := widget.RowOf[*sideRow](win.list, "machine:")
+	row, ok := win.cards.row("machine:")
 	if !ok {
 		t.Fatal("this computer has no heading")
 	}
@@ -308,9 +308,11 @@ func TestAMachinesPlusOpensWhatCanBeOpenedThere(t *testing.T) {
 	for range 60 {
 		lastWindow.Frame(time.Second / 60)
 	}
+	// Its card's ⋯ opens the menu.
 	box, _ := lastUI.Bounds(row)
-	lastWindow.Input(gi.PointerDown{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary, Clicks: 1})
-	lastWindow.Input(gi.PointerUp{Pos: geom.Pt(box.Max.X-20, box.Min.Y+box.Size().H/2), Button: gi.ButtonPrimary})
+	at := row.menuAnchor(box.Size(), lastUI.Theme()).Center().Add(box.Min)
+	lastWindow.Input(gi.PointerDown{Pos: at, Button: gi.ButtonPrimary, Clicks: 1})
+	lastWindow.Input(gi.PointerUp{Pos: at, Button: gi.ButtonPrimary})
 	lastWindow.Frame(time.Second / 60)
 	// The program answers the keyboard coming into the Servers pane,
 	// which leaves the keyboard in the menu.

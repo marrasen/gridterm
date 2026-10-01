@@ -422,8 +422,8 @@ func (w *Window) anyBreathing(now time.Time) bool {
 		// Out of the tree, the list keeps the rows it had last.
 		return false
 	}
-	for _, k := range w.list.Keys() {
-		if row, ok := widget.RowOf[*sideRow](w.list, k); ok && row.marks.live != nil && row.marks.live(now) == meter.Active {
+	for _, k := range w.cards.keys() {
+		if row, ok := w.cards.row(k); ok && row.marks.live != nil && row.marks.live(now) == meter.Active {
 			return true
 		}
 	}

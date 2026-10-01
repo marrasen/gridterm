@@ -6,9 +6,9 @@ import (
 
 	"github.com/marrasen/kakel/app"
 
+	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/geom"
 	gi "github.com/marrasen/gunim/input"
-	"github.com/marrasen/gunim/widget"
 )
 
 // twoTabs is a window with two tabs, p1's in front, and p2's.
@@ -251,18 +251,21 @@ func TestTheServersListRestsOffStage(t *testing.T) {
 	}
 }
 
-// In a narrow pane the Servers pane's buttons keep to their icons, and
-// stay inside it.
+// In a narrow pane the Servers pane's field and Add stay inside it,
+// and the title makes room for them.
 func TestTheServersButtonsFitANarrowPane(t *testing.T) {
 	win, _, publish := windowStageOf(t, geom.Sz(300, 400))
 	publish(withServers(app.State{}))
 	settle()
 	pane, _ := lastUI.Bounds(win.serversView)
-	for _, b := range []*widget.Button{win.serversView.quick, win.serversView.add, win.serversView.attach} {
-		r, _ := lastUI.Bounds(b)
-		if r.Min.X < pane.Min.X || r.Max.X > pane.Max.X || b.Label != "" || b.Tooltip == "" {
-			t.Fatalf("a button is at %v in a pane at %v, labelled %q", r, pane, b.Label)
+	for _, n := range []gunim.Node{win.serversView.search, win.serversView.add} {
+		r, _ := lastUI.Bounds(n)
+		if r.Min.X < pane.Min.X || r.Max.X > pane.Max.X || r.Empty() {
+			t.Fatalf("%T is at %v in a pane at %v", n, r, pane)
 		}
+	}
+	if win.serversView.headShown {
+		t.Fatal("the title shows in a pane too narrow for it")
 	}
 }
 

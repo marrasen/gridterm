@@ -72,9 +72,9 @@ func TestCloseSelectedRowSaysWhyItDidNothing(t *testing.T) {
 	if win.toasts.Len() != was+1 {
 		t.Fatal("with no row selected, nothing was said")
 	}
-	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("machine:"))
+	row, ok := win.cards.row(widget.Key("machine:"))
 	if !ok {
-		t.Fatalf("no heading for this computer in %v", win.list.Keys())
+		t.Fatalf("no heading for this computer in %v", win.cards.keys())
 	}
 	lastUI.Focus(row)
 	if lastUI.Focused() != row {

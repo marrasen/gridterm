@@ -46,9 +46,9 @@ func TestTheSidebarMarksWhatEachRowIs(t *testing.T) {
 	publish(withServers(st))
 	row := func(key string) *sideRow {
 		t.Helper()
-		r, ok := widget.RowOf[*sideRow](win.list, widget.Key(key))
+		r, ok := win.cards.row(widget.Key(key))
 		if !ok {
-			t.Fatalf("no row %s in %v", key, win.list.Keys())
+			t.Fatalf("no row %s in %v", key, win.cards.keys())
 		}
 		return r
 	}
@@ -164,7 +164,7 @@ func TestATunnelThroughThisWindowHasARow(t *testing.T) {
 		Clients: []app.ServedClient{{Name: "laptop", From: "10.0.0.2"}},
 		Tunnels: []app.ServedTunnel{{Client: "laptop", From: "10.0.0.2", Label: ":8080 → db:5432", On: "db"}}}}
 	publish(withServers(st))
-	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("client:laptop:0:tunnel:0"))
+	row, ok := win.cards.row(widget.Key("client:laptop:0:tunnel:0"))
 	if !ok || row.title.Text != ":8080 → db:5432" || row.note.Text != "for laptop, on db" {
 		t.Fatalf("the tunnel's row is %v", ok)
 	}
@@ -208,7 +208,7 @@ func TestANoteGoesQuietOnceItHasSettled(t *testing.T) {
 	st := app.State{Panes: []app.Pane{{ID: "p1", Title: "build", Kind: app.KindFiles, Note: "42%"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1",
 		Browsers: map[string]app.Browser{"p1": {Path: "/", Seq: 1}}}
 	publish(withServers(st))
-	row, ok := widget.RowOf[*sideRow](win.list, widget.Key("p1"))
+	row, ok := win.cards.row(widget.Key("p1"))
 	if !ok || row.note.Text != "42%" {
 		t.Fatalf("the note is %q", row.note.Text)
 	}

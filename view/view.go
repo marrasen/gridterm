@@ -72,8 +72,9 @@ type Window struct {
 	titleRow *widget.Flex
 	barBox   *widget.Sized
 	// dock is where a tab dragged over the stage would join a split.
-	dock   tabDock
-	list   *widget.List
+	dock tabDock
+	// cards are the Servers pane's machines, a card each.
+	cards  *serverCards
 	stage  *stage
 	status *statusLine
 	shells *screen.Shells
@@ -257,7 +258,6 @@ type Window struct {
 func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w := &Window{
 		contents:    map[string]theme.Theme{},
-		list:        widget.NewList(),
 		stage:       &stage{},
 		shells:      sh,
 		keys:        keys,
@@ -276,6 +276,7 @@ func NewWindow(sh *screen.Shells, keys *ui.Keymap, all []look.Themed) *Window {
 	w.onStage = widget.NewThemed(w.stage, widget.Dark())
 	main := widget.Column(w.onStage, w.status).Grow(w.onStage, 1)
 	main.Cross, main.Gap = widget.CrossStretch, noGap
+	w.cards = newServerCards(w)
 	w.serversView = newServersPane(w)
 	w.bar = widget.NewMenubar()
 	// The menus behind one button, leaving the bar to move the window.
@@ -421,6 +422,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "server.add":
 		w.serverForm(nil, u)
+		return true
+	case "server.import":
+		u.Send(w, app.ImportSSHConfig{})
 		return true
 	case "view.theme":
 		w.pickTheme(u)
@@ -1055,14 +1059,14 @@ func (w *Window) servers(saved []remote.Host) {
 		}
 		m.Breaks = []int{len(m.Items)}
 	}
-	m.Items = append(m.Items, "Quick Connect…", "Open Launcher", "Add Server…", "Reload Server List")
-	m.Hints = append(m.Hints, hint("server.connect"), "", "", "")
-	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.RefreshCw)
-	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.reload")
+	m.Items = append(m.Items, "Quick Connect…", "Open Launcher", "Add Server…", "Import from SSH Config", "Reload Server List")
+	m.Hints = append(m.Hints, hint("server.connect"), "", "", "", "")
+	m.Icons = append(m.Icons, icon.Plug, icon.Search, icon.Plus, icon.FileInput, icon.RefreshCw)
+	w.serverIDs = append(w.serverIDs, "server.connect", "app.launcher", "server.add", "server.import", "server.reload")
 	if i := menuAt("Servers"); i >= 0 && i < len(w.bar.Menus) {
-		// The four lines always there first.
+		// The lines always there first.
 		n := len(m.Items)
-		w.bar.Menus[i] = withAccessKeys(m, n-4, n-3, n-2, n-1)
+		w.bar.Menus[i] = withAccessKeys(m, n-5, n-4, n-3, n-2, n-1)
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
@@ -1964,7 +1968,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		u.Invalidate()
 	}
 	w.listShown = slices.ContainsFunc(boxLeaves(st.Stage, nil), func(id string) bool { return w.kindOf(id) == app.KindServers }) &&
-		u.Presence(w.list) != gunim.Exiting
+		u.Presence(w.cards.grid) != gunim.Exiting
 	w.showServers(st, u)
 	w.vault = st.Secrets
 	w.noteFocus(st.Focus)
@@ -2618,8 +2622,8 @@ func (w *Window) quietNotes(u *gunim.UI) {
 	}
 	now := time.Now()
 	var next time.Duration
-	for _, key := range w.list.Keys() {
-		row, ok := widget.RowOf[*sideRow](w.list, key)
+	for _, key := range w.cards.keys() {
+		row, ok := w.cards.row(key)
 		if !ok || row.said == "" || row.pointed || row.typed {
 			continue
 		}
@@ -2670,6 +2674,10 @@ type sideRow struct {
 	pointed, typed bool
 	// dim says the row's thing has ended, and its words are faint.
 	dim bool
+	// card is what a machine's heading shows as a card's header, nil for
+	// a plain row; chipHot is its button under the pointer, -1 for none.
+	card    *cardInfo
+	chipHot int
 }
 
 // noteFor is how long a sidebar row's note stands before it goes quiet.
@@ -2693,7 +2701,7 @@ func (r *sideRow) showNote(now time.Time) {
 }
 
 func (w *Window) newSideRow(it sideItem) *sideRow {
-	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
+	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0), chipHot: -1}
 	r.title.MaxLines, r.note.MaxLines = 1, 1
 	r.note.Size, r.note.Color = smallText, look.Faint
 	if it.heading {
@@ -2756,6 +2764,9 @@ func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note}
 // Layout implements [gunim.Node]: the title at the start, the note at
 // the end.
 func (r *sideRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	if r.card != nil {
+		return r.layoutCard(c, kids)
+	}
 	// As tall, and with as much room at the ends, as the theme says.
 	const gap = 8
 	padX, height := look.SidebarPad.Get(f.Theme), look.SidebarRow.Get(f.Theme)
@@ -2782,6 +2793,10 @@ func (r *sideRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children
 
 // Paint implements [gunim.Node].
 func (r *sideRow) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
+	if r.card != nil {
+		r.paintCard(p, f, box, kids)
+		return
+	}
 	inset := geom.Rect{Min: geom.Pt(6, 1), Max: geom.Pt(box.W-6, box.H-1)}
 	radius := look.RowRadius.Get(f.Theme)
 	if t := r.hover.Value(); t > 0.01 {
@@ -2823,6 +2838,9 @@ func (r *sideRow) activate(u *gunim.UI) {
 
 // Handle implements [gunim.Handler].
 func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
+	if r.card != nil {
+		return r.handleCard(e, u)
+	}
 	if r.heading {
 		return r.handleHeading(e, u)
 	}
@@ -2874,7 +2892,7 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		case e.Key == input.KeyHome:
 			r.w.focusRow("", 1, u)
 		case e.Key == input.KeyEnd:
-			r.w.focusRowsAway(r.key, len(r.w.list.Keys()), u)
+			r.w.focusRowsAway(r.key, len(r.w.cards.keys()), u)
 		case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter, e.Key == input.KeySpace && e.Mods == 0:
 			r.activate(u)
 		case e.Key == input.KeyDelete && r.closes != nil:
@@ -3013,13 +3031,13 @@ func (w *Window) fullTitle(id string, menu, item int) string {
 // focusRow gives the keyboard to the row step rows from the one keyed
 // from, passing over headings, or to the first row when from is "".
 func (w *Window) focusRow(from string, step int, u *gunim.UI) {
-	keys := w.list.Keys()
+	keys := w.cards.keys()
 	at := slices.Index(keys, widget.Key(from))
 	if at < 0 {
 		at, step = -1, 1
 	}
 	for i := at + step; i >= 0 && i < len(keys); i += step {
-		if row, ok := widget.RowOf[*sideRow](w.list, keys[i]); ok && !row.heading {
+		if row, ok := w.cards.row(keys[i]); ok && !row.heading {
 			u.Focus(row)
 			return
 		}
@@ -3033,7 +3051,7 @@ const sidebarPage = 8
 // before it for a negative n, counting only rows that take it, and
 // stopping at the last one there is.
 func (w *Window) focusRowsAway(from string, n int, u *gunim.UI) {
-	keys := w.list.Keys()
+	keys := w.cards.keys()
 	at := slices.Index(keys, widget.Key(from))
 	step := 1
 	if n < 0 {
@@ -3041,7 +3059,7 @@ func (w *Window) focusRowsAway(from string, n int, u *gunim.UI) {
 	}
 	var last *sideRow
 	for i := at + step; i >= 0 && i < len(keys) && n > 0; i += step {
-		if row, ok := widget.RowOf[*sideRow](w.list, keys[i]); ok && !row.heading {
+		if row, ok := w.cards.row(keys[i]); ok && !row.heading {
 			last = row
 			n--
 		}
@@ -3101,7 +3119,7 @@ func (w *Window) showMachineMenu(r *sideRow, items []string, icons []*icon.Icon,
 	r.menu = menu
 	r.back = u.Focused()
 	r.popup = u.OpenPopup(r, menu, gunim.PopupOptions{
-		Anchor:  geom.Rect{Min: geom.Pt(box.Size().W-plusWidth-6, 0), Max: box.Size().Point()},
+		Anchor:  r.menuAnchor(box.Size(), u.Theme()),
 		Max:     geom.Sz(360, 480),
 		Dismiss: r.closeMenu,
 	})

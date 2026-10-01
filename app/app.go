@@ -994,6 +994,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't paste the image"
 	case SaveServer:
 		return "Couldn't save the server"
+	case ImportSSHConfig:
+		return "Couldn't import the SSH config"
 	case RemoveServer:
 		return "Couldn't remove the server"
 	case OpenTunnel, OpenSavedTunnel:
@@ -1237,6 +1239,8 @@ func (a *app) handle(in gunim.Intent) {
 		a.viewFile(in)
 	case SaveServer:
 		err = a.saveServer(in)
+	case ImportSSHConfig:
+		err = a.importSSHConfig()
 	case RemoveServer:
 		err = a.removeServer(in.ID)
 	case AskAnswered:

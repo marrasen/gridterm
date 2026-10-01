@@ -18,37 +18,43 @@ import (
 // what the sidebar was, in a tab of its own. A pane's row in another
 // window says so, and a click there brings that window to the front.
 
-// serversPane holds the machines' list, which is the window's: its rows
-// are the ones the keys and menus of the list work on.
+// serversPane holds the machines' cards, which are the window's: their
+// rows are the ones the keys and menus of the list work on. Along the
+// top are its title, a field that finds a machine as it is typed and
+// connects to one typed as user@host, and Add, whose menu adds a
+// server, connects to one, or to a window, or reads the SSH config.
 type serversPane struct {
 	w      *Window
 	head   *widget.Label
-	quick  *widget.Button
-	add    *widget.Button
-	attach *widget.Button
-	// words are the buttons' labels, and headShown says the heading has
-	// room beside them.
-	words     [3]string
+	search *widget.TextField
+	add    *widget.MenuButton
+	// headShown says the title has room beside the field.
 	headShown bool
 	body      *widget.Scroll
 }
+
+// addItems are the Add menu's lines, and addCommands what each runs.
+var (
+	addItems    = []string{"Add Server…", "Quick Connect…", "Connect to Window…", "Import from SSH Config"}
+	addCommands = []string{"server.add", "server.connect", "serve.attach", "server.import"}
+)
 
 func newServersPane(w *Window) *serversPane {
 	p := &serversPane{
 		w:      w,
 		head:   widget.NewLabel("Servers"),
-		quick:  iconButton(icon.Zap, "Quick Connect…"),
-		add:    iconButton(icon.Plus, "Add Server…"),
-		attach: iconButton(icon.Plug, "Connect to Window…"),
+		search: widget.NewTextField(),
+		add:    widget.NewMenuButton("Add", addItems...),
 	}
 	p.head.Size = widget.DialogTitleSize
-	p.words = [3]string{p.quick.Label, p.add.Label, p.attach.Label}
-	p.quick.OnActivate(func(u *gunim.UI) { w.run("server.connect", u) })
-	p.add.OnActivate(func(u *gunim.UI) { w.run("server.add", u) })
-	p.attach.OnActivate(func(u *gunim.UI) { w.run("serve.attach", u) })
-	col := widget.Column(w.list)
-	col.Cross = widget.CrossStretch
-	p.body = widget.NewScroll(col)
+	p.search.Icon = icon.Search
+	p.search.Placeholder = "Find a machine, or user@host to connect"
+	p.search.OnEdit = func(text string, u *gunim.UI) { w.cards.find(text, u) }
+	p.search.OnSubmit = func(text string) gunim.Intent { return w.cards.submit(text) }
+	p.add.Icon = icon.Plus
+	p.add.Icons = []*icon.Icon{icon.Server, icon.Zap, icon.Plug, icon.FileInput}
+	p.add.Picked = func(i int, u *gunim.UI) { w.run(addCommands[i], u) }
+	p.body = widget.NewScroll(w.cards.grid)
 	return p
 }
 
@@ -70,36 +76,33 @@ func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
 
 // Children implements [gunim.Composite].
 func (p *serversPane) Children() []gunim.Node {
-	return []gunim.Node{p.head, p.quick, p.add, p.attach, p.body}
+	return []gunim.Node{p.head, p.search, p.add, p.body}
 }
 
-// Layout implements [gunim.Node]: the heading and the buttons along the
-// top, the list under them.
+// Layout implements [gunim.Node]: the title, the field and Add along
+// the top, the cards under them.
 func (p *serversPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	const pad, top, gap = 16, 56, 8
-	head, quick, add, attach, body := kids.At(0), kids.At(1), kids.At(2), kids.At(3), kids.At(4)
-	buttons := []gunim.Child{attach, add, quick}
-	place := func() float32 {
-		x := c.Max.W - pad
-		for _, b := range buttons {
-			s := b.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
-			x -= s.W
-			b.Place(geom.Pt(x, (top-s.H)/2))
-			x -= gap
-		}
-		return x
+	const pad, top, gap = 16, 60, 10
+	head, search, add, body := kids.At(0), kids.At(1), kids.At(2), kids.At(3)
+	as := add.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
+	x := c.Max.W - pad - as.W
+	add.Place(geom.Pt(x, (top-as.H)/2))
+	hs := head.Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, top)})
+	// The field takes what is left, up to a comfortable width; the
+	// title shows where it still fits beside it.
+	p.headShown = x-gap-pad-hs.W-gap >= 160
+	left := float32(pad)
+	if p.headShown {
+		left += hs.W + 2*gap
 	}
-	// Narrow, the buttons keep their icons alone, their words said as
-	// the pointer rests on them; the heading shows where it fits.
-	p.labelled(true)
-	x := place()
-	if x < pad+100 {
-		p.labelled(false)
-		x = place()
+	fw := min(x-gap-left, 420)
+	if p.headShown {
+		// Kept against Add, the title at the start.
+		left = x - gap - fw
 	}
-	hs := head.Layout(gunim.Constraints{Max: geom.Sz(max(1, x-pad), top)})
+	ss := search.Layout(gunim.Constraints{Min: geom.Sz(max(0, fw), 0), Max: geom.Sz(max(0, fw), top)})
+	search.Place(geom.Pt(left, (top-ss.H)/2))
 	head.Place(geom.Pt(pad, (top-hs.H)/2))
-	p.headShown = x-pad >= hs.W
 	body.Layout(gunim.Tight(geom.Sz(c.Max.W, max(0, c.Max.H-top))))
 	body.Place(geom.Pt(0, top))
 	return c.Max
@@ -107,24 +110,13 @@ func (p *serversPane) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Chil
 
 // Paint implements [gunim.Node].
 func (p *serversPane) Paint(pt *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(look.SidebarFill.Get(f.Theme)))
+	pt.RRect(geom.Rect{Max: box.Point()}, 0, paint.Solid(look.TermBackground.Get(f.Theme)))
 	defer pt.Layer(paint.LayerOpts{Bounds: geom.Rect{Max: box.Point()}, Opacity: 1, Clip: true})()
 	for k := range kids.All {
 		if k.Node() == p.head && !p.headShown {
 			continue
 		}
 		k.Paint(pt)
-	}
-}
-
-// labelled gives the buttons their words, or takes them away to leave
-// the icons alone, the words said as the pointer rests on them.
-func (p *serversPane) labelled(on bool) {
-	for i, b := range []*widget.Button{p.quick, p.add, p.attach} {
-		b.Label, b.Tooltip = p.words[i], ""
-		if !on {
-			b.Label, b.Tooltip = "", p.words[i]
-		}
 	}
 }
 
@@ -136,12 +128,9 @@ func (w *Window) showServers(st app.State, u *gunim.UI) {
 		return
 	}
 	rows := w.rows
-	widget.Sync(w.list, u, rows,
-		func(r sideItem) widget.Key { return widget.Key(r.key) },
-		func(r sideItem) *sideRow { return w.newSideRow(r) },
-		func(row *sideRow, r sideItem, u *gunim.UI) { row.set(r) })
+	w.cards.sync(rows, u)
 	for _, r := range rows {
-		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(r.key)); ok && !r.heading {
+		if row, ok := w.cards.row(widget.Key(r.key)); ok && !r.heading {
 			row.setActive(r.pane != "" && r.pane == w.lastWorked, u)
 		}
 	}
@@ -150,7 +139,7 @@ func (w *Window) showServers(st app.State, u *gunim.UI) {
 		// The list follows the panes: the row of the pane last worked
 		// in scrolls into view.
 		w.revealed = w.lastWorked
-		if row, ok := widget.RowOf[*sideRow](w.list, widget.Key(w.lastWorked)); ok {
+		if row, ok := w.cards.row(widget.Key(w.lastWorked)); ok {
 			u.Reveal(row)
 		}
 	}
@@ -182,7 +171,7 @@ func windowNotes(rows []sideItem, all []app.Pane, own int) []sideItem {
 // heading, or else the first; never one on its way out.
 func (w *Window) serversRow(u *gunim.UI) gunim.Node {
 	staying := func(k widget.Key) (*sideRow, bool) {
-		row, ok := widget.RowOf[*sideRow](w.list, k)
+		row, ok := w.cards.row(k)
 		if !ok || u.Presence(row) == gunim.Exiting {
 			return nil, false
 		}
@@ -192,7 +181,7 @@ func (w *Window) serversRow(u *gunim.UI) gunim.Node {
 		return row
 	}
 	var first gunim.Node
-	for _, k := range w.list.Keys() {
+	for _, k := range w.cards.keys() {
 		row, ok := staying(k)
 		if !ok {
 			continue

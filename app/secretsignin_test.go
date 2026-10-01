@@ -245,3 +245,18 @@ func TestAKeysNoteSaysItsComment(t *testing.T) {
 		t.Fatalf("a key elsewhere with no public half says %q", got)
 	}
 }
+
+// Locking the secrets forgets the key that opens them, so nothing opens
+// them again without asking: not a look for a saved password, not the
+// next use.
+func TestLockedSecretsStayLocked(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	if a.vaultInHand() == nil {
+		t.Fatal("the open secrets are not in hand")
+	}
+	a.handle(LockSecrets{})
+	if a.vaultInHand() != nil || !a.secrets.Locked() {
+		t.Fatal("locked, the secrets opened again without asking")
+	}
+}

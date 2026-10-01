@@ -135,9 +135,11 @@ func TestLockedSecretsShowNoNames(t *testing.T) {
 	if s := a.st.Secrets; s.Open || len(s.Items) != 0 || len(s.Keys) != 0 {
 		t.Fatalf("locked, the secrets read %+v", s)
 	}
-	// The key is in the ring, so unlocking needs nothing asked.
+	// Locking forgot the key; it has no passphrase, so unlocking reads
+	// it again and asks nothing.
 	a.handle(UnlockSecrets{})
-	if s := a.st.Secrets; !s.Open || len(s.Items) != 1 {
+	waitFor(t, a, "the secrets open", func() bool { return a.st.Secrets.Open })
+	if s := a.st.Secrets; len(s.Items) != 1 {
 		t.Fatalf("unlocked, the secrets read %+v", s)
 	}
 }
@@ -241,7 +243,10 @@ func TestAKeysSavedPassphraseIsUsedWithoutAsking(t *testing.T) {
 	if _, err := a.secrets.Put(secrets.Item{Name: "locked key", Kind: secrets.Passphrase, File: locked}, "s3cret"); err != nil {
 		t.Fatal(err)
 	}
-	a.handle(LockSecrets{})
+	// Closed, with the key that opens them still unlocked, as a
+	// connection that used it leaves it: they open without asking.
+	// (Lock Secrets forgets that key too, so it asks.)
+	a.secrets.Lock()
 	got := make(chan string, 1)
 	go func() {
 		pass, _ := newAsker(a, "").Passphrase(t.Context(), remote.LockedKey{Path: locked})

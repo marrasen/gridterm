@@ -138,6 +138,9 @@ type Window struct {
 	// thisComputer is this computer's settings, as the program keeps
 	// them.
 	thisComputer app.ThisComputer
+	// useOnOpen is when Use Secret asked the secrets to open, for its
+	// list to come once they are; zero for none asked.
+	useOnOpen time.Time
 	// connected are the servers connected to, as last published.
 	connected []machines.ID
 	// help is the list of commands, once opened, and shortcutsRead
@@ -466,6 +469,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "app.thisComputer":
 		w.thisComputerDialog(u)
+		return true
+	case "secrets.use":
+		w.useSecret(u)
 		return true
 	case "app.install":
 		w.installDialog(u)
@@ -1091,6 +1097,9 @@ func (w *Window) servers(saved []remote.Host) {
 	}
 	w.palette.Items, w.paletteIDs = nil, nil
 	for _, c := range commands {
+		if notInPalette[c.id] {
+			continue
+		}
 		w.palette.Items = append(w.palette.Items, widget.PaletteItem{Title: c.title, Icon: commandIcons[c.id], Hint: hint(c.id), Also: commandAlso[c.id]})
 		w.paletteIDs = append(w.paletteIDs, c.id)
 	}
@@ -1992,6 +2001,7 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		u.Presence(w.cards.grid) != gunim.Exiting
 	w.showServers(st, u)
 	w.vault = st.Secrets
+	w.useWhenOpen(u)
 	w.noteFocus(st.Focus)
 	if w.walk != nil {
 		// Once the stage has laid the pane reached out, the ring goes to
@@ -2425,6 +2435,15 @@ func (w *Window) focusNode(id string, u *gunim.UI) gunim.Node {
 func (w *Window) shellGone(id string) bool {
 	_, made := w.terms[id]
 	return !made && w.shells.Get(id) == nil
+}
+
+// notInPalette are commands the palette leaves out: the secrets' own
+// work, which the Secrets pane holds, so finding "secret" offers what is
+// done with one, and where to manage them.
+var notInPalette = map[string]bool{
+	"secrets.open": true, "secrets.window": true, "secrets.add": true, "secrets.addNote": true,
+	"secrets.change": true, "secrets.forget": true, "secrets.export": true, "secrets.import": true,
+	"secrets.addKey": true, "secrets.addPassphrase": true, "secrets.removeKey": true,
 }
 
 // blankPane stands in for a pane that has nothing to show yet, or any

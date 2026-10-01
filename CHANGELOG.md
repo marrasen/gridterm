@@ -26,11 +26,24 @@ focus, and / goes to the field.
 
 ### Added
 
+**Use Secret (Ctrl+Shift+S).** Pick a secret and type it into the
+terminal used last, or copy it, without opening the Secrets pane. The
+secrets for the machine of the pane in front come first, and a field
+finds among them all; locked, the secrets are asked to open first. The
+palette offers only Use Secret, Manage Secrets and Lock Secrets for the
+secrets; the rest is in the Secrets pane.
+
 **Import from SSH Config.** On Add and the Servers menu, it saves the
 machines ~/.ssh/config names that aren't saved yet, with their host,
 user, port, key file and ProxyJump.
 
 ### Fixed
+
+**Locking the secrets locks them.** Lock forgot what the secrets hold,
+but kept the key that opens them unlocked, so they opened again at the
+next click or the next look for a saved password, with no question. Lock
+forgets that key too. One the SSH agent holds can't be made to ask
+again; kakel says so.
 
 **The server cards answer as buttons and keys should.** Their buttons
 are gunim's, pressed on release with the keyboard's ring, and every card

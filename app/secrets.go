@@ -45,6 +45,9 @@ type Secrets struct {
 type SecretItem struct {
 	ID, Name, User, File string
 	Kind                 secrets.Kind
+	// Logins are where it signs in, user@host, for a picker to put it
+	// first for a pane on one of those machines.
+	Logins []string
 }
 
 // SecretKey is something that opens the vault: a key, or the vault's
@@ -310,7 +313,10 @@ const vaultSettles = time.Second
 // secretsSame reports whether two readings of the vault show the same.
 func secretsSame(x, y Secrets) bool {
 	return x.Exists == y.Exists && x.Open == y.Open && x.Passphrase == y.Passphrase &&
-		slices.Equal(x.Items, y.Items) && slices.Equal(x.Keys, y.Keys)
+		slices.EqualFunc(x.Items, y.Items, func(a, b SecretItem) bool {
+			return a.ID == b.ID && a.Name == b.Name && a.User == b.User && a.File == b.File && a.Kind == b.Kind &&
+				slices.Equal(a.Logins, b.Logins)
+		}) && slices.Equal(x.Keys, y.Keys)
 }
 
 func (a *app) showVault() {
@@ -324,7 +330,7 @@ func (a *app) showVault() {
 		items, _ := v.Items()
 		a.noteSecretHints(items)
 		for _, it := range items {
-			s.Items = append(s.Items, SecretItem{ID: it.ID, Name: it.Name, User: it.User, File: it.File, Kind: it.Kind})
+			s.Items = append(s.Items, SecretItem{ID: it.ID, Name: it.Name, User: it.User, File: it.File, Kind: it.Kind, Logins: it.Logins})
 		}
 		for _, k := range v.Keys() {
 			key := secretKey(k)
@@ -541,8 +547,24 @@ func (a *app) kindOfPane(id string) string {
 
 // lockSecrets locks the vault. What is on disk stays.
 func (a *app) lockSecrets() {
-	if a.secrets != nil {
-		a.secrets.Lock()
+	v := a.secrets
+	if v == nil {
+		a.showVault()
+		return
+	}
+	v.Lock()
+	// The keys that open them go too, unlocked as they are: kept, they
+	// would open the secrets again at the next look, with no question.
+	for _, k := range v.Keys() {
+		if k.KeyFile != "" {
+			a.ring.Forget(k.KeyFile)
+		}
+	}
+	if v.Unlock(a.ring.Signers()) == nil {
+		// Still opened by a key the SSH agent holds, which kakel cannot
+		// make ask again: said, and locked all the same.
+		v.Lock()
+		a.notice(NoticePlain, "Secrets locked", "The SSH agent holds a key that opens them, so they open again without a passphrase while it does.", "")
 	}
 	a.showVault()
 }

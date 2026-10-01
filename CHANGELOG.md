@@ -60,6 +60,13 @@ keys.
 
 ### Added
 
+**This Computer's own settings.** Options › This Computer…, also on the
+This computer menu in the Servers pane, sets the folder new terminals
+start in, the shell they run, and folders to open files at, as Edit This
+Server… does for a server. The start folder is used when kakel was
+started from a shortcut, the Start menu or with the computer. Started
+from a shell in a folder of your own, kakel opens there as before.
+
 **Install kakel, and keep it up to date.** `install.ps1` on Windows and
 `install.sh` on Linux fetch the newest release, check it, and install it
 for you alone. A copy you downloaded does the same from Options ›

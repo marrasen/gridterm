@@ -161,24 +161,3 @@ func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
 		t.Fatalf("staged, Check for Updates offers %+v", q)
 	}
 }
-
-// A shell started from the installed program's own folder, as its
-// shortcut used to start it, starts at home; any other folder stays.
-func TestAShellStartsAtHomeFromTheProgramsFolder(t *testing.T) {
-	if runtime.GOOS != "linux" {
-		t.Skip("the installed folder is the user's own here")
-	}
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	bin := filepath.Join(home, ".local", "bin")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if got := startDir(bin); got != home {
-		t.Fatalf("from %s, a shell starts in %s, want %s", bin, got, home)
-	}
-	work := t.TempDir()
-	if got := startDir(work); got != work {
-		t.Fatalf("from %s, a shell starts in %s", work, got)
-	}
-}

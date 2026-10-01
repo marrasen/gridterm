@@ -4,7 +4,6 @@ import (
 	"errors"
 	"log"
 	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -57,32 +56,6 @@ var restartInto string
 
 // RestartInto is the program to start once kakel has ended, or "".
 func RestartInto() string { return restartInto }
-
-// startDir is the folder a local shell starts in when nothing names
-// another: cwd, where kakel was started, unless that is a folder nobody
-// starts kakel to work in, which only a shortcut or a start with the
-// computer gives it. The installed program's own folder and Windows's
-// system folder are such folders, and the shell starts at home instead.
-func startDir(cwd string) string {
-	if cwd == "" {
-		return ""
-	}
-	var not []string
-	if to, err := install.Exe(); err == nil {
-		not = append(not, filepath.Dir(to))
-	}
-	if root := os.Getenv("SystemRoot"); root != "" {
-		not = append(not, root, filepath.Join(root, "System32"), filepath.Join(root, "SysWOW64"))
-	}
-	for _, d := range not {
-		if install.SamePath(cwd, d) {
-			if home, err := os.UserHomeDir(); err == nil {
-				return home
-			}
-		}
-	}
-	return cwd
-}
 
 // executable is this program, as its path; a test sets it.
 var executable = os.Executable

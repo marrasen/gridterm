@@ -130,6 +130,9 @@ type Window struct {
 	launcherKey string
 	// update is where kakel stands on installing and updating.
 	update app.Update
+	// thisComputer is this computer's settings, as the program keeps
+	// them.
+	thisComputer app.ThisComputer
 	// connected are the servers connected to, as last published.
 	connected []machines.ID
 	// help is the list of commands, once opened, and shortcutsRead
@@ -452,6 +455,9 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 		return true
 	case "app.launcherKey":
 		w.launcherKeyDialog(u)
+		return true
+	case "app.thisComputer":
+		w.thisComputerDialog(u)
 		return true
 	case "app.install":
 		w.installDialog(u)
@@ -1465,6 +1471,7 @@ func (w *Window) foldersOn(m machines.ID) []string {
 		}
 	}
 	if m == "" {
+		out = append(out, w.thisComputer.Folders...)
 		for _, s := range w.shellChoices {
 			if s.Folder != "" {
 				out = append(out, s.Folder)
@@ -1829,8 +1836,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 		w.servers(w.saved)
 	}
 	w.setSavedCommands(st.SavedCommands)
-	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell {
-		w.shellChoices, w.chosenShell = st.Shells, st.ChosenShell
+	if !slices.Equal(st.Shells, w.shellChoices) || st.ChosenShell != w.chosenShell ||
+		st.ThisComputer.StartFolder != w.thisComputer.StartFolder || !slices.Equal(st.ThisComputer.Folders, w.thisComputer.Folders) {
+		w.shellChoices, w.chosenShell, w.thisComputer = st.Shells, st.ChosenShell, st.ThisComputer
 		w.servers(w.saved)
 	}
 	w.echoFor(st, u)
@@ -3209,6 +3217,10 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 				add(icon.Trash2, "Remove This "+what+"…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			}
 		}
+	}
+	if m == "" {
+		heading("This Computer")
+		add(icon.Pencil, "Edit This Computer…", func(u *gunim.UI) { w.thisComputerDialog(u) })
 	}
 	w.showMachineMenu(r, items, icons, acts, u)
 }

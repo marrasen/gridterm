@@ -335,7 +335,7 @@ func (a *app) handover(h single.Handover) {
 // openFirstFor opens the first pane of a window as o asks, a local
 // shell in dir.
 func (a *app) openFirstFor(o Options, dir string) {
-	dir = startDir(dir)
+	dir = a.startDir(dir)
 	if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
 		a.nextDir = dir
 	}

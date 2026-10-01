@@ -40,9 +40,8 @@ func (a *app) startLocalSession(argv []string, dir string, cols, rows int, shell
 		called = a.settings.TermProgram()
 	}
 	if dir == "" {
-		if cwd, err := os.Getwd(); err == nil {
-			dir = startDir(cwd)
-		}
+		cwd, _ := os.Getwd()
+		dir = a.startDir(cwd)
 	}
 	sess, err := session.StartLocal(session.LocalConfig{
 		Command: argv, Dir: dir, Env: paneEnv(argv, called), Cols: cols, Rows: rows,

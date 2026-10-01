@@ -86,6 +86,12 @@ type stored struct {
 	// LauncherKey is the key, from any program, that opens the
 	// launcher, as a shortcut is written; "none" takes none.
 	LauncherKey string `json:"launcherKey,omitempty"`
+	// StartFolder is where a new terminal on this computer starts when
+	// nothing names another folder; empty for the home folder.
+	// LocalFolders are folders on this computer worth opening files at,
+	// as a saved server's Folders are on it.
+	StartFolder  string   `json:"startFolder,omitempty"`
+	LocalFolders []string `json:"localFolders,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -883,6 +889,30 @@ func (s *Settings) PutLauncherKey(key string) error {
 	}
 	before := s.have
 	s.have.LauncherKey = key
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// Local is this computer's settings: the folder a new terminal starts
+// in, empty for home, and the folders worth opening files at.
+func (s *Settings) Local() (start string, folders []string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.StartFolder, slices.Clone(s.have.LocalFolders)
+}
+
+// PutLocal keeps this computer's settings, and saves.
+func (s *Settings) PutLocal(start string, folders []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.StartFolder, s.have.LocalFolders = start, slices.Clone(folders)
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

@@ -146,6 +146,9 @@ type State struct {
 	Dropped     []machines.ID
 	Shells      []ShellChoice
 	ChosenShell string
+	// ThisComputer is this computer's settings: where a new terminal
+	// starts, and the folders to open files at.
+	ThisComputer ThisComputer
 	// ShellSetup says new shells here are taught to say what they are
 	// doing, and TermProgram what they are told the terminal is called,
 	// "" for kakel's own name.
@@ -908,6 +911,7 @@ func (a *app) loadSettings() {
 			a.st.PaneTitles = s.PaneTitles()
 			a.st.SavedCommands = s.Commands()
 			a.st.ChosenShell, _ = s.Shell()
+			a.st.ThisComputer.StartFolder, a.st.ThisComputer.Folders = s.Local()
 			a.st.ShellSetup = s.ShellSetup()
 			a.st.TermProgram = s.TermProgram()
 			a.st.SavedCopies = s.Copies()
@@ -976,6 +980,8 @@ func failedTitle(in gunim.Intent) string {
 		return "Couldn't take the files dropped"
 	case DropOnFiles:
 		return "Couldn't take the files dropped"
+	case SaveThisComputer:
+		return "Couldn't save This Computer's settings"
 	case SetLauncherKey:
 		return "Couldn't change the launcher's key"
 	case InstallKakel:
@@ -1345,6 +1351,8 @@ func (a *app) handle(in gunim.Intent) {
 		}
 	case PickShell:
 		err = a.pickShell(in.ID)
+	case SaveThisComputer:
+		err = a.saveThisComputer(in)
 	case OpenDefaultShell:
 		if err = a.pickShell(""); err == nil {
 			err = a.open("", Placement{})

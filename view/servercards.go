@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/marrasen/kakel/app"
@@ -70,10 +71,14 @@ func (a cardAction) do(w *Window, u *gunim.UI) { u.Send(w, a.in) }
 type cardInfo struct {
 	name, sub string
 	state     cardState
-	badge     string
-	hue       color.NRGBA
-	actions   []cardAction
-	section   int
+	// since is when it connected, and rtt the round trip its last ping
+	// took, said on its pill.
+	since   time.Time
+	rtt     time.Duration
+	badge   string
+	hue     color.NRGBA
+	actions []cardAction
+	section int
 }
 
 // cardHues are the badges' colours, a machine's picked by its name, so
@@ -172,9 +177,13 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 		c.sub = "through " + w.nameOf(win)
 	}
 	for _, info := range w.machineList {
-		if info.ID == m && info.Quick {
+		if info.ID != m {
+			continue
+		}
+		if info.Quick {
 			c.sub = info.Target + " · not saved"
 		}
+		c.since, c.rtt = info.Since, info.RTT
 	}
 	for _, h := range w.saved {
 		if machines.ID(h.ID) != m {
@@ -703,10 +712,19 @@ func (r *sideRow) paintCard(p *paint.Painter, f gunim.Frame, box geom.Size, kids
 
 // pillOf is a state's words and colour.
 func pillOf(s cardState, th *theme.Live) (string, color.NRGBA) {
-	switch s {
+	return pillFor(cardInfo{state: s}, time.Time{}, th)
+}
+
+// pillFor is a card's pill's words and colour at now: a connected
+// machine's round trip and how long it has been connected, once pinged.
+func pillFor(c cardInfo, now time.Time, th *theme.Live) (string, color.NRGBA) {
+	switch c.state {
 	case cardLocal:
 		return "Local", widget.ToastSuccessInk.Get(th)
 	case cardConnected:
+		if c.rtt > 0 && !c.since.IsZero() {
+			return roundTrip(c.rtt) + " · " + connectedFor(now.Sub(c.since)), widget.ToastSuccessInk.Get(th)
+		}
 		return "Connected", widget.ToastSuccessInk.Get(th)
 	case cardDialing:
 		return "Connecting…", widget.ToastWarningInk.Get(th)
@@ -716,9 +734,43 @@ func pillOf(s cardState, th *theme.Live) (string, color.NRGBA) {
 	return "Not connected", look.Faint.Get(th)
 }
 
+// roundTrip says a ping's round trip: in milliseconds, or seconds once
+// it takes one.
+func roundTrip(d time.Duration) string {
+	switch {
+	case d < time.Millisecond:
+		return "<1 ms"
+	case d < time.Second:
+		return strconv.Itoa(int(d.Milliseconds())) + " ms"
+	}
+	return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + " s"
+}
+
+// connectedFor says how long a connection has stood, to the minute.
+func connectedFor(d time.Duration) string {
+	m := int(d.Minutes())
+	switch {
+	case m < 1:
+		return "just now"
+	case m < 60:
+		return strconv.Itoa(m) + " min"
+	case m < 24*60:
+		s := strconv.Itoa(m/60) + " h"
+		if m%60 != 0 {
+			s += " " + strconv.Itoa(m%60) + " min"
+		}
+		return s
+	}
+	s := strconv.Itoa(m/(24*60)) + " d"
+	if h := m % (24 * 60) / 60; h != 0 {
+		s += " " + strconv.Itoa(h) + " h"
+	}
+	return s
+}
+
 // paintPill draws the state's pill at the header's top right.
 func (r *sideRow) paintPill(p *paint.Painter, f gunim.Frame, box geom.Size) {
-	words, c := pillOf(r.card.state, f.Theme)
+	words, c := pillFor(*r.card, f.Now, f.Theme)
 	run := text.Default().Shape(words, smallText.Get(f.Theme))
 	w := 8 + 6 + 6 + run.Advance + 10
 	pr := geom.Rc(box.W-cardPad-w, cardPad+4, w, 22)

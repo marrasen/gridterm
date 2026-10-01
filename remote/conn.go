@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
@@ -232,6 +233,24 @@ func (c *Conn) reach(ctx context.Context, addr string) (net.Conn, error) {
 	ctx, cancel := context.WithTimeout(ctx, dialTimeout)
 	defer cancel()
 	return c.client.DialContext(ctx, "tcp", addr)
+}
+
+// Ping asks the server something it answers at once, OpenSSH's
+// keepalive, and reports how long the answer took: the round trip. A
+// server that refuses the request has still answered.
+func (c *Conn) Ping(ctx context.Context) (time.Duration, error) {
+	start := time.Now()
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.client.SendRequest("keepalive@openssh.com", true, nil)
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		return time.Since(start), err
+	case <-ctx.Done():
+		return 0, ctx.Err()
+	}
 }
 
 // Wait blocks until the connection is gone, and returns why.

@@ -13,7 +13,10 @@
 // A name is looked up from the ID wherever one is shown.
 package machines
 
-import "strings"
+import (
+	"strings"
+	"time"
+)
 
 // ID is what the program knows a machine by, and keys everything on it
 // by: a saved server's or window's ID in the server list, a quick
@@ -59,4 +62,8 @@ type Info struct {
 	Quick  bool
 	Window bool
 	Target string
+	// Since is when it connected, and RTT the round trip its last ping
+	// took, for a machine connected to; zero otherwise.
+	Since time.Time
+	RTT   time.Duration
 }

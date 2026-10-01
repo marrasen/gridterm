@@ -9,6 +9,27 @@ change how something behaves.
 
 ## Unreleased
 
+### Changed
+
+**The Servers pane shows each machine as a card.** A card has a badge
+in the machine's own colour, its name, who and where it is, and its
+route. A pill says how its connection is doing: for a connected server,
+its round trip and how long it has been connected. Terminal and Files,
+or Connect, are on the card, ⋯ holds the rest, and what is open on the
+machine is listed under them. Cards stand side by side under This
+Computer, Connected and Saved, and narrow into one line each when the
+pane is narrow. A field along the top finds a machine as you type, and
+Enter connects to what you typed when it reads as an address. Add holds
+Add Server, Quick Connect and Connect to Window. The arrow keys move
+along the cards; Enter, F, E, Delete and Shift+F10 work on the card in
+focus, and / goes to the field.
+
+### Added
+
+**Import from SSH Config.** On Add and the Servers menu, it saves the
+machines ~/.ssh/config names that aren't saved yet, with their host,
+user, port, key file and ProxyJump.
+
 ### Fixed
 
 **Shortcuts work after a click on empty room.** A click under the list

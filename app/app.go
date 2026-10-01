@@ -799,6 +799,7 @@ func (a *app) run(ctx context.Context) error {
 	}
 	a.takeLauncherKey()
 	a.startUpdates()
+	a.startPings()
 	switch {
 	case a.opts.tray:
 		// Started with the computer: into the tray, the first window,

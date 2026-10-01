@@ -531,3 +531,17 @@ func TestARefusedPasswordIsAskedForAgain(t *testing.T) {
 		t.Fatalf("asked for %q, without the port", ask.asked[0])
 	}
 }
+
+// A ping comes back, with how long it took.
+func TestAPingTimesTheRoundTrip(t *testing.T) {
+	s := sshtest.New(t)
+	c, err := Connect(t.Context(), testConfig(t, s))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.Close() })
+	rtt, err := c.Ping(t.Context())
+	if err != nil || rtt <= 0 {
+		t.Fatalf("the ping took %v, %v", rtt, err)
+	}
+}

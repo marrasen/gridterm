@@ -198,6 +198,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			}
 			m := a.machines.At(name)
 			m.Conn, m.SavedID = conn, savedID
+			m.Since, m.RTT = time.Now(), 0
 			a.machines.KeepHops(conn, names, hops, made)
 			m.Dropped = false
 			m.Reached = hops[len(hops)-1].Target()
@@ -217,6 +218,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					}
 					a.machines.At(name).Conn = nil
 					a.machines.At(name).SavedID = ""
+					a.machines.At(name).Since, a.machines.At(name).RTT = time.Time{}, 0
 					if err := a.tunnelsDiedOn(name, a.machines.Get(name).LetGo); err != nil {
 						a.failed("Trouble closing the tunnels on "+a.machines.Name(name), err.Error())
 					}

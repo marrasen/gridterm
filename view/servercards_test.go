@@ -2,6 +2,7 @@ package view
 
 import (
 	"testing"
+	"time"
 
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/machines"
@@ -77,5 +78,22 @@ func TestNarrowCardsAreLines(t *testing.T) {
 	chips := head.cardChips(box.Size(), lastUI.Theme())
 	if last := chips[len(chips)-1]; last.Max.X > box.Size().W {
 		t.Fatalf("its ⋯ is at %v, past its edge", last)
+	}
+}
+
+func TestAConnectedPillSaysTheRoundTripAndHowLong(t *testing.T) {
+	now := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	c := cardInfo{state: cardConnected, since: now.Add(-(2*time.Hour + 5*time.Minute)), rtt: 23 * time.Millisecond}
+	if got, _ := pillFor(c, now, nil); got != "23 ms · 2 h 5 min" {
+		t.Fatalf("the pill says %q", got)
+	}
+	c.rtt = 0
+	if got, _ := pillFor(c, now, nil); got != "Connected" {
+		t.Fatalf("before a ping the pill says %q", got)
+	}
+	for d, want := range map[time.Duration]string{30 * time.Second: "just now", 12 * time.Minute: "12 min", 3 * time.Hour: "3 h", 50 * time.Hour: "2 d 2 h"} {
+		if got := connectedFor(d); got != want {
+			t.Errorf("connectedFor(%v) = %q, want %q", d, got, want)
+		}
 	}
 }

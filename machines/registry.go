@@ -28,6 +28,9 @@ type Machine struct {
 	// took, 0 before the first.
 	Since time.Time
 	RTT   time.Duration
+	// Pinging is set while a ping is on its way, and Silent once one
+	// went unanswered, until one is answered again.
+	Pinging, Silent bool
 
 	// Window is its connection when it is another kakel window.
 	Window *Window
@@ -304,7 +307,7 @@ func (r *Registry) Infos() []Info {
 	slices.SortFunc(out, func(x, y Info) int { return strings.Compare(string(x.ID), string(y.ID)) })
 	for i := range out {
 		if m := r.all[out[i].ID]; m != nil && m.Conn != nil {
-			out[i].Since, out[i].RTT = m.Since, m.RTT
+			out[i].Since, out[i].RTT, out[i].Silent = m.Since, m.RTT, m.Silent
 		}
 	}
 	return out

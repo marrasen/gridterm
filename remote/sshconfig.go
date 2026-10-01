@@ -3,6 +3,7 @@ package remote
 import (
 	"bufio"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -31,58 +32,132 @@ func (h SSHConfigHost) Host() Host {
 	return s
 }
 
+// sshBlock is one Host block: the patterns it applies to, and its
+// settings in the order they come.
+type sshBlock struct {
+	patterns []string
+	settings [][2]string
+}
+
+// matches reports whether the block applies to alias, as ssh decides:
+// one of its patterns matches, and none of its negated ones does.
+func (b sshBlock) matches(alias string) bool {
+	alias = strings.ToLower(alias)
+	hit := false
+	for _, p := range b.patterns {
+		neg := strings.HasPrefix(p, "!")
+		p = strings.ToLower(strings.TrimPrefix(p, "!"))
+		ok, err := path.Match(p, alias)
+		if err != nil || !ok {
+			continue
+		}
+		if neg {
+			return false
+		}
+		hit = true
+	}
+	return hit
+}
+
 // ReadSSHConfig reads the machines an OpenSSH client config at path
-// names, and the files it includes, in the order they come.
+// names, in the order they come, through the files it includes.
 //
-// Only Host blocks naming a machine count: a pattern with * or ? in it,
-// or a negated one, names no one machine, and a Match block's
-// conditions are not followed. Within a block the first value of a
-// setting is the one kept, as ssh keeps it.
-func ReadSSHConfig(path string) ([]SSHConfigHost, error) {
-	var out []SSHConfigHost
-	byAlias := map[string]int{}
-	err := readSSHConfig(path, 0, &out, byAlias)
-	return out, err
+// A machine is a Host pattern with no * or ? in it, which names one
+// alias. Its settings are taken as ssh takes them: from every block that
+// applies to it, wildcard blocks such as Host * included, in the order
+// they come, the first value of each setting the one kept. A Match
+// block's conditions are not followed, and its settings are not taken.
+// A relative Include is read from ~/.ssh, as ssh reads it for a user's
+// config.
+func ReadSSHConfig(file string) ([]SSHConfigHost, error) {
+	var blocks []sshBlock
+	var aliases []string
+	seen := map[string]bool{}
+	if err := readSSHBlocks(file, 0, &blocks, &aliases, seen); err != nil {
+		return nil, err
+	}
+	out := make([]SSHConfigHost, 0, len(aliases))
+	for _, alias := range aliases {
+		h := SSHConfigHost{Alias: alias}
+		for _, b := range blocks {
+			if b.matches(alias) {
+				for _, kv := range b.settings {
+					h.set(kv[0], kv[1])
+				}
+			}
+		}
+		out = append(out, h)
+	}
+	return out, nil
+}
+
+// set takes setting key's value v, when it has none yet.
+func (h *SSHConfigHost) set(key, v string) {
+	switch key {
+	case "hostname":
+		if h.HostName == "" && !strings.Contains(v, "%") {
+			h.HostName = v
+		}
+	case "user":
+		if h.User == "" && !strings.Contains(v, "%") {
+			h.User = v
+		}
+	case "port":
+		if n, err := strconv.Atoi(v); err == nil && h.Port == 0 && n > 0 && n < 65536 {
+			h.Port = n
+		}
+	case "identityfile":
+		if h.Identity == "" && !strings.Contains(v, "%") {
+			h.Identity = expandHome(v)
+		}
+	case "proxyjump":
+		if h.Jump == "" && !strings.EqualFold(v, "none") {
+			h.Jump = jumpHost(v)
+		}
+	}
 }
 
 // sshConfigDepth is how deep Include goes, as a loop of includes would
 // otherwise never end.
 const sshConfigDepth = 8
 
-func readSSHConfig(path string, depth int, out *[]SSHConfigHost, byAlias map[string]int) error {
-	f, err := os.Open(path)
+// readSSHBlocks reads file's Host blocks into blocks, and the aliases
+// they name into aliases, following Include.
+func readSSHBlocks(file string, depth int, blocks *[]sshBlock, aliases *[]string, seen map[string]bool) error {
+	f, err := os.Open(file)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = f.Close() }()
-	// The blocks the lines go to now: indexes into out, none outside a
-	// Host block or inside a Match one.
-	var in []int
+	// The block lines go to: -1 before any Host line, and inside a Match
+	// one, whose settings are not taken.
+	at := -1
+	first := true
 	sc := bufio.NewScanner(f)
 	for sc.Scan() {
-		key, args := sshConfigLine(sc.Text())
+		line := sc.Text()
+		if first {
+			// A config saved by a Windows editor may start with a BOM.
+			line = strings.TrimPrefix(line, "\ufeff")
+			first = false
+		}
+		key, args := sshConfigLine(line)
 		if key == "" || len(args) == 0 {
 			continue
 		}
 		switch key {
 		case "host":
-			in = in[:0]
-			for _, pat := range args {
-				if strings.ContainsAny(pat, "*?!") {
+			*blocks = append(*blocks, sshBlock{patterns: args})
+			at = len(*blocks) - 1
+			for _, p := range args {
+				if strings.ContainsAny(p, "*?!") || seen[strings.ToLower(p)] {
 					continue
 				}
-				i, ok := byAlias[strings.ToLower(pat)]
-				if !ok {
-					i = len(*out)
-					byAlias[strings.ToLower(pat)] = i
-					*out = append(*out, SSHConfigHost{Alias: pat})
-				}
-				in = append(in, i)
+				seen[strings.ToLower(p)] = true
+				*aliases = append(*aliases, p)
 			}
-			continue
 		case "match":
-			in = in[:0]
-			continue
+			at = -1
 		case "include":
 			if depth >= sshConfigDepth {
 				continue
@@ -90,39 +165,18 @@ func readSSHConfig(path string, depth int, out *[]SSHConfigHost, byAlias map[str
 			for _, pat := range args {
 				pat = expandHome(pat)
 				if !filepath.IsAbs(pat) {
-					pat = filepath.Join(filepath.Dir(path), pat)
+					if home, err := os.UserHomeDir(); err == nil {
+						pat = filepath.Join(home, ".ssh", pat)
+					}
 				}
 				matches, _ := filepath.Glob(pat)
 				for _, m := range matches {
-					_ = readSSHConfig(m, depth+1, out, byAlias)
+					_ = readSSHBlocks(m, depth+1, blocks, aliases, seen)
 				}
 			}
-			continue
-		}
-		for _, i := range in {
-			h := &(*out)[i]
-			v := args[0]
-			switch key {
-			case "hostname":
-				if h.HostName == "" && !strings.Contains(v, "%") {
-					h.HostName = v
-				}
-			case "user":
-				if h.User == "" && !strings.Contains(v, "%") {
-					h.User = v
-				}
-			case "port":
-				if n, err := strconv.Atoi(v); err == nil && h.Port == 0 && n > 0 && n < 65536 {
-					h.Port = n
-				}
-			case "identityfile":
-				if h.Identity == "" && !strings.Contains(v, "%") {
-					h.Identity = expandHome(v)
-				}
-			case "proxyjump":
-				if h.Jump == "" && !strings.EqualFold(v, "none") {
-					h.Jump = jumpHost(v)
-				}
+		default:
+			if at >= 0 {
+				(*blocks)[at].settings = append((*blocks)[at].settings, [2]string{key, args[0]})
 			}
 		}
 	}
@@ -183,11 +237,11 @@ func jumpHost(v string) string {
 }
 
 // expandHome is path with a leading ~ the home folder.
-func expandHome(path string) string {
-	if path == "~" || strings.HasPrefix(path, "~/") {
+func expandHome(p string) string {
+	if p == "~" || strings.HasPrefix(p, "~/") {
 		if home, err := os.UserHomeDir(); err == nil {
-			return filepath.Join(home, path[1:])
+			return filepath.Join(home, p[1:])
 		}
 	}
-	return path
+	return p
 }

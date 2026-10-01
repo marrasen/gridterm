@@ -2551,6 +2551,13 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 				out = append(out, paneRow(p))
 			}
 		}
+		// Its tunnels, before the machines a window reaches, which have
+		// headings of their own.
+		for _, t := range tunnels {
+			if t.Machine == m {
+				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: app.ShowTunnel{ID: t.ID}, closes: app.CloseTunnel{ID: t.ID}, dim: !t.Live})
+			}
+		}
 		var far []string
 		for _, w := range windows {
 			if w.Name != m {
@@ -2602,11 +2609,6 @@ func sidebarRows(panes []app.Pane, tunnels []app.Tunnel, share app.Share, window
 						out = append(out, sideItem{key: "window:" + string(m) + ":" + o.ID, text: o.Label, note: "there", click: app.AttachWindow{Window: m, ID: o.ID}, dim: true})
 					}
 				}
-			}
-		}
-		for _, t := range tunnels {
-			if t.Machine == m {
-				out = append(out, sideItem{key: "tunnel:" + t.ID, text: t.Label, note: t.Note, pane: t.Pane, click: app.ShowTunnel{ID: t.ID}, closes: app.CloseTunnel{ID: t.ID}, dim: !t.Live})
 			}
 		}
 	}
@@ -2765,7 +2767,7 @@ func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note}
 // the end.
 func (r *sideRow) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	if r.card != nil {
-		return r.layoutCard(c, kids)
+		return r.layoutCard(c, f, kids)
 	}
 	// As tall, and with as much room at the ends, as the theme says.
 	const gap = 8

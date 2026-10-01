@@ -67,6 +67,16 @@ func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
 	case gi.FocusEntered:
 		p.w.entered(p.w.paneOfKind(app.KindServers), u)
 	case gi.PointerDown:
+		if e.Button != gi.ButtonPrimary {
+			return false
+		}
+		// On a card's room, that card; on the pane's, the row the pane
+		// would give the keyboard to.
+		pane, _ := u.Bounds(p)
+		if head := p.w.cards.at(e.Pos.Add(pane.Min), u); head != nil {
+			u.Focus(head)
+			return true
+		}
 		if row := p.w.serversRow(u); row != nil {
 			u.Focus(row)
 			return true

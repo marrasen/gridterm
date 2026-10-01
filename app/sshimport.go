@@ -45,50 +45,65 @@ func (a *app) importSSHConfig() error {
 		return err
 	}
 	have := a.book.Hosts()
-	saved := func(h remote.Host) bool {
-		return slices.ContainsFunc(have, func(o remote.Host) bool {
-			return strings.EqualFold(o.Name, h.Name) ||
-				strings.EqualFold(o.Address, h.Address) && o.User == h.User && o.Port == h.Port
-		})
-	}
 	var todo []remote.Host
 	skipped := 0
+	// The config's aliases, to name a route's server by: one saved
+	// already under a name of its own, matched by its address, goes by
+	// that name.
+	alias := map[string]string{}
 	for _, c := range found {
 		h := c.Host()
-		if saved(h) {
+		alias[strings.ToLower(h.Name)] = h.Name
+		if i := slices.IndexFunc(have, func(o remote.Host) bool {
+			return strings.EqualFold(o.Name, h.Name) ||
+				strings.EqualFold(o.Address, h.Address) && o.User == h.User && o.Port == h.Port
+		}); i >= 0 {
+			alias[strings.ToLower(h.Name)] = have[i].Name
 			skipped++
 			continue
 		}
 		todo = append(todo, h)
 	}
-	// Each route's server first: one not saved and not coming is no
-	// route, and the machine is saved without it.
-	named := func(name string) bool {
-		return slices.ContainsFunc(have, func(o remote.Host) bool { return strings.EqualFold(o.Name, name) }) ||
-			slices.ContainsFunc(todo, func(o remote.Host) bool { return strings.EqualFold(o.Name, name) })
-	}
 	for i := range todo {
-		if todo[i].Via != "" && !named(todo[i].Via) {
+		if todo[i].Via == "" {
+			continue
+		}
+		if name, ok := alias[strings.ToLower(todo[i].Via)]; ok {
+			todo[i].Via = name
+		} else if !slices.ContainsFunc(have, func(o remote.Host) bool { return strings.EqualFold(o.Name, todo[i].Via) }) {
+			// Through a server that is neither saved nor coming: saved
+			// without its route.
 			todo[i].Via = ""
 		}
 	}
-	slices.SortStableFunc(todo, func(x, y remote.Host) int {
-		switch {
-		case x.Via == "" && y.Via != "":
-			return -1
-		case x.Via != "" && y.Via == "":
-			return 1
-		}
-		return 0
-	})
+	// Each machine once its route's server is saved, however long the
+	// route: what is left at the end goes round in a circle.
+	saved := func(name string) bool {
+		_, ok := a.book.Lookup(name)
+		return ok
+	}
 	var added []string
 	var errs []error
-	for _, h := range todo {
-		if err := a.book.Put(h, ""); err != nil {
-			errs = append(errs, errors.New(h.Name+": "+err.Error()))
-			continue
+	for len(todo) > 0 {
+		var later []remote.Host
+		for _, h := range todo {
+			if h.Via != "" && !saved(h.Via) {
+				later = append(later, h)
+				continue
+			}
+			if err := a.book.Put(h, ""); err != nil {
+				errs = append(errs, errors.New(h.Name+": "+err.Error()))
+				continue
+			}
+			added = append(added, h.Name)
 		}
-		added = append(added, h.Name)
+		if len(later) == len(todo) {
+			for _, h := range later {
+				errs = append(errs, errors.New(h.Name+": its ProxyJump goes round in a circle"))
+			}
+			break
+		}
+		todo = later
 	}
 	a.st.Saved = a.book.Hosts()
 	if len(errs) > 0 {

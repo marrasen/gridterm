@@ -66,4 +66,6 @@ type Info struct {
 	// took, for a machine connected to; zero otherwise.
 	Since time.Time
 	RTT   time.Duration
+	// Silent says its last ping went unanswered.
+	Silent bool
 }

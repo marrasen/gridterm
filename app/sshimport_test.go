@@ -21,6 +21,8 @@ Host srv
   HostName elsewhere.example.com
 Host lost
   ProxyJump nowhere
+Host deep
+  ProxyJump build
 `), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -40,10 +42,14 @@ Host lost
 	if after, _ := a.book.Lookup("srv"); after.Address != before.Address {
 		t.Fatalf("a server saved already was changed to %+v", after)
 	}
-	if len(a.st.Saved) != 4 {
-		t.Fatalf("%d servers saved, want 4", len(a.st.Saved))
+	// Two hops: deep through build through jump.
+	if deep, ok := a.book.Lookup("deep"); !ok || deep.Via != build.ID {
+		t.Fatalf("a machine two hops away is %+v, %v", deep, ok)
 	}
-	if n := a.st.Notices[len(a.st.Notices)-1]; n.Title != "Imported 3 servers from the SSH config" {
+	if len(a.st.Saved) != 5 {
+		t.Fatalf("%d servers saved, want 5", len(a.st.Saved))
+	}
+	if n := a.st.Notices[len(a.st.Notices)-1]; n.Title != "Imported 4 servers from the SSH config" {
 		t.Fatalf("said %+v", n)
 	}
 }

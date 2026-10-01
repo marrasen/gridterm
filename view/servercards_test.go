@@ -97,3 +97,24 @@ func TestAConnectedPillSaysTheRoundTripAndHowLong(t *testing.T) {
 		}
 	}
 }
+
+// A machine named twice in the rows, as a tunnel through a window names
+// the machine the window reaches, is one card.
+func TestAMachineNamedTwiceIsOneCard(t *testing.T) {
+	win := cardsStage(t, geom.Sz(1100, 600))
+	rows := []sideItem{
+		{key: "machine:", text: "This computer", heading: true},
+		{key: "machine:w1", text: "far", heading: true},
+		{key: "t1", text: "a tunnel"},
+		{key: "machine:w1", text: "far", heading: true, depth: 1},
+		{key: "p9", text: "a pane"},
+	}
+	win.cards.sync(rows, lastUI)
+	frames(2)
+	if n := len(win.cards.order); n != 2 {
+		t.Fatalf("%d cards, want 2", n)
+	}
+	if c := win.cards.cards["w1"]; c == nil || len(c.items) != 2 {
+		t.Fatalf("the machine's card holds %+v", c)
+	}
+}

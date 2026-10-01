@@ -73,8 +73,10 @@ type cardInfo struct {
 	state     cardState
 	// since is when it connected, and rtt the round trip its last ping
 	// took, said on its pill.
-	since   time.Time
-	rtt     time.Duration
+	since time.Time
+	rtt   time.Duration
+	// silent says its last ping went unanswered.
+	silent  bool
 	badge   string
 	hue     color.NRGBA
 	actions []cardAction
@@ -183,7 +185,7 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 		if info.Quick {
 			c.sub = info.Target + " · not saved"
 		}
-		c.since, c.rtt = info.Since, info.RTT
+		c.since, c.rtt, c.silent = info.Since, info.RTT, info.Silent
 	}
 	for _, h := range w.saved {
 		if machines.ID(h.ID) != m {
@@ -441,14 +443,24 @@ func (s *serverCards) sync(rows []sideItem, u *gunim.UI) {
 		items []sideItem
 	}
 	s.rows = rows
+	// One group a machine: a machine a window reaches, which a tunnel
+	// through it also names at the top, comes together on one card.
 	var groups []group
+	at := map[string]int{}
+	cur := -1
 	for _, r := range rows {
 		if r.heading {
-			groups = append(groups, group{head: r})
+			i, ok := at[r.key]
+			if !ok {
+				i = len(groups)
+				at[r.key] = i
+				groups = append(groups, group{head: r})
+			}
+			cur = i
 			continue
 		}
-		if len(groups) > 0 {
-			groups[len(groups)-1].items = append(groups[len(groups)-1].items, r)
+		if cur >= 0 {
+			groups[cur].items = append(groups[cur].items, r)
 		}
 	}
 	seen := map[machines.ID]bool{}
@@ -652,7 +664,7 @@ func (r *sideRow) cardChips(box geom.Size, th *theme.Live) []geom.Rect {
 
 // layoutCard lays a header out: the badge and the name on the first
 // line, who and where under it, the buttons along the bottom.
-func (r *sideRow) layoutCard(c gunim.Constraints, kids gunim.Children) geom.Size {
+func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	if r.w.cards.compact {
 		const badge = 30
 		x := float32(cardPad + badge + 10)
@@ -667,7 +679,8 @@ func (r *sideRow) layoutCard(c gunim.Constraints, kids gunim.Children) geom.Size
 	}
 	const badge = 36
 	x := float32(cardPad + badge + 10)
-	pill := float32(110)
+	// The name stops short of the pill, as wide as its words are now.
+	pill := pillWidth(*r.card, f) + 8
 	ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-x-cardPad-pill), 24)})
 	kids.At(0).Place(geom.Pt(x, cardPad+1))
 	kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-x-cardPad), 20)})
@@ -722,6 +735,9 @@ func pillFor(c cardInfo, now time.Time, th *theme.Live) (string, color.NRGBA) {
 	case cardLocal:
 		return "Local", widget.ToastSuccessInk.Get(th)
 	case cardConnected:
+		if c.silent {
+			return "Not answering", widget.ToastWarningInk.Get(th)
+		}
 		if c.rtt > 0 && !c.since.IsZero() {
 			return roundTrip(c.rtt) + " · " + connectedFor(now.Sub(c.since)), widget.ToastSuccessInk.Get(th)
 		}
@@ -768,11 +784,22 @@ func connectedFor(d time.Duration) string {
 	return s
 }
 
-// paintPill draws the state's pill at the header's top right.
+// pillWidth is how wide a card's pill is at f's time.
+func pillWidth(c cardInfo, f gunim.Frame) float32 {
+	words, _ := pillFor(c, f.Now, f.Theme)
+	return 8 + 6 + 6 + text.Default().Shape(words, smallText.Get(f.Theme)).Advance + 10
+}
+
+// paintPill draws the state's pill at the header's top right. A
+// connected machine's says how long it has been connected, so it is
+// drawn again each minute.
 func (r *sideRow) paintPill(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	words, c := pillFor(*r.card, f.Now, f.Theme)
 	run := text.Default().Shape(words, smallText.Get(f.Theme))
-	w := 8 + 6 + 6 + run.Advance + 10
+	w := pillWidth(*r.card, f)
+	if r.card.state == cardConnected && !r.card.since.IsZero() {
+		f.RedrawAt(f.Now.Add(time.Minute))
+	}
 	pr := geom.Rc(box.W-cardPad-w, cardPad+4, w, 22)
 	fill := c
 	fill.A = 0x22
@@ -888,6 +915,14 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 		w.cards.stepCard(r.key, e.Key == input.KeyRight, u)
 	case e.Key == input.KeyHome:
 		w.focusRow("", 1, u)
+	case e.Key == input.KeyEnd:
+		w.focusRowsAway(r.key, len(w.cards.keys()), u)
+	case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
+		step := sidebarPage
+		if e.Key == input.KeyPageUp {
+			step = -step
+		}
+		w.focusRowsAway(r.key, step, u)
 	case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter, e.Key == input.KeySpace && plain:
 		if len(r.card.actions) > 0 {
 			r.card.actions[0].do(w, u)
@@ -941,6 +976,17 @@ func (s *serverCards) stepCard(from string, forward bool, u *gunim.UI) {
 	if at >= 0 && next >= 0 && next < len(s.order) {
 		u.Focus(s.cards[s.order[next]].head)
 	}
+}
+
+// at is the header of the card at p, in the window's space, or nil.
+func (s *serverCards) at(p geom.Point, u *gunim.UI) gunim.Node {
+	for _, m := range s.order {
+		c := s.cards[m]
+		if box, ok := u.Bounds(c); ok && box.Contains(p) {
+			return c.head
+		}
+	}
+	return nil
 }
 
 // first is the first card's header, for the keyboard to come to, or nil

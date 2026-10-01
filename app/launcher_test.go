@@ -3,6 +3,7 @@ package app
 import (
 	"errors"
 	"runtime"
+	"slices"
 	"testing"
 	"time"
 
@@ -141,5 +142,35 @@ func TestALaunchWhileLeavingOpensNothing(t *testing.T) {
 	a.handleLaunch(Launch{Machine: machines.Local, Action: "files"})
 	if len(a.st.Panes) != panes {
 		t.Fatal("a launch while leaving opened a pane")
+	}
+}
+
+// The launcher offers each shell here, WSL's files, files and a
+// terminal on each machine, and kakel's windows; a pick of one opens it
+// and is not what Enter opens on the machine next time.
+func TestTheLauncherOffersShellsFilesAndWindows(t *testing.T) {
+	a, _, two := twoWindowApp(t)
+	a.next = 100
+	a.noteWork()
+	a.st.Shells = []ShellChoice{{ID: "cmd", Title: "Command Prompt"}, {ID: "wsl:Ubuntu", Title: "Ubuntu (WSL)", Folder: `\\wsl$\Ubuntu`}}
+	things := a.launchThings(a.launchMachines())
+	titles := map[string]LaunchThing{}
+	for _, th := range things {
+		titles[th.Title] = th
+	}
+	for _, want := range []string{"Command Prompt", "Ubuntu (WSL)", "Files in Ubuntu (WSL)", "Terminal on This computer", "Files on This computer", "Servers", "Secrets", "New Window"} {
+		if _, ok := titles[want]; !ok {
+			t.Fatalf("the launcher offers no %q among %v", want, things)
+		}
+	}
+	if th := titles["Ubuntu (WSL)"]; !slices.Contains(th.Also, "wsl") {
+		t.Fatalf("WSL is not found by wsl: %+v", th)
+	}
+	a.handleLaunch(Launch{Action: "app:servers"})
+	if a.serversPane() == "" || a.cur != two {
+		t.Fatalf("Servers did not open in the window worked in: %q in window %d", a.serversPane(), a.cur.id)
+	}
+	if ms := a.launchMachines(); ms[0].Default != 0 {
+		t.Fatal("opening Servers became what Enter opens on this computer")
 	}
 }

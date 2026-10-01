@@ -88,7 +88,10 @@ The whole list. The [README](README.md) has the short version.
   window, as before.
 - **A launcher from any program.** Shift+Win+K on Windows, and
   Ctrl+Alt+K on Linux under X11, opens a small window over everything
-  that finds a machine by its name as you type. Enter opens what you
+  that finds a machine by its name as you type, and once you type, the
+  shells here by name (`cmd`, `wsl`, PowerShell), files on any machine
+  or in a WSL distribution, your saved commands, and the Servers,
+  Secrets and a new window. Enter on a machine opens what you
   opened there last since kakel started, a terminal at first, in the
   window you last worked in; Tab lists the rest, as Files and, while
   connected, the Connection Log, and Escape goes back and then closes

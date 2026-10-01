@@ -125,3 +125,35 @@ func TestTheLauncherKeepsItsMachine(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 }
+
+// Typing finds more than machines: a shell here by its name or a word
+// for it, files on a machine, and Enter opens it.
+func TestTheLauncherFindsShellsAndFiles(t *testing.T) {
+	l, w := launcherStage(t)
+	st := l.st
+	st.Things = []app.LaunchThing{
+		{Title: "Command Prompt", Note: "This computer", Also: []string{"cmd"}, Kind: "terminal", Action: "shell:cmd"},
+		{Title: "Ubuntu (WSL)", Note: "This computer", Also: []string{"wsl:Ubuntu", "wsl"}, Kind: "terminal", Action: "shell:wsl:Ubuntu"},
+		{Title: "Files on backup", Kind: "files", Machine: "b", Action: "files"},
+	}
+	if err := w.Client().Publish(app.LauncherTopic, st); err != nil {
+		t.Fatal(err)
+	}
+	w.Frame(time.Second / 60)
+	typeIn := func(s string) {
+		for _, r := range s {
+			w.Input(gi.TextInput{Text: string(r)})
+		}
+		w.Input(gi.KeyPress{Key: gi.KeyEnter})
+		w.Frame(time.Second / 60)
+	}
+	typeIn("wsl")
+	if in := next(t, w); in != (app.Launch{Action: "shell:wsl:Ubuntu"}) {
+		t.Fatalf("wsl and Enter sent %#v", in)
+	}
+	l.field.SetText("")
+	typeIn("files on b")
+	if in := next(t, w); in != (app.Launch{Machine: "b", Action: "files"}) {
+		t.Fatalf("files on b and Enter sent %#v", in)
+	}
+}

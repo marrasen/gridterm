@@ -18,7 +18,9 @@ import (
 )
 
 // The launcher's window: a field that finds a machine by its name as it
-// is typed, over the machines found. Enter opens what was opened there
+// is typed, over the machines found, and once something is typed, the
+// shells here, files on each machine, saved commands and kakel's own
+// windows too. Enter opens what was opened there
 // last, a terminal at first; Tab shows what else can be opened there,
 // and Escape goes back. Escape again, or a click on another program,
 // closes it. The field keeps Left and Right for its own caret.
@@ -56,7 +58,7 @@ type Launcher struct {
 // NewLauncher returns the launcher's view.
 func NewLauncher() *Launcher {
 	l := &Launcher{field: widget.NewTextField(), machine: -1}
-	l.field.Placeholder = "Type a machine's name"
+	l.field.Placeholder = "Type a machine, a shell, files, a command…"
 	// What is typed lights the best of what it finds.
 	l.field.OnEdit = func(string, *gunim.UI) { l.hot, l.first = 0, 0; l.find() }
 	return l
@@ -85,6 +87,13 @@ func (l *Launcher) titles() []match.Item {
 	if l.machine < 0 {
 		for _, m := range l.st.Machines {
 			out = append(out, match.Item{Title: m.Name, Also: []string{m.Note}})
+		}
+		// Once something is typed, the rest too: shells, files, saved
+		// commands, kakel's windows, after the machines.
+		if l.field.Text() != "" {
+			for _, t := range l.st.Things {
+				out = append(out, match.Item{Title: t.Title, Also: t.Also})
+			}
 		}
 		return out
 	}
@@ -150,10 +159,16 @@ func (l *Launcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 			p.RRect(r, look.RowRadius.Get(th), paint.Solid(look.RowActive.Get(th)))
 		}
 		ic := icon.Server
-		if l.machine >= 0 {
+		switch {
+		case l.machine >= 0:
 			ic = icon.SquareTerminal
-		} else if l.st.Machines[l.found[k]].ID == "" {
+		case l.thing(l.found[k]) != nil:
+			ic = thingIcons[l.thing(l.found[k]).Kind]
+		case l.st.Machines[l.found[k]].ID == "":
 			ic = icon.Laptop
+		}
+		if ic == nil {
+			ic = icon.SquareTerminal
 		}
 		mid := r.Min.Y + r.Size().H/2
 		drawIcon(p, ic, geom.Rc(r.Min.X+10, mid-8, 16, 16), faint, 1.3)
@@ -170,8 +185,27 @@ func (l *Launcher) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gu
 	}
 }
 
+// thingIcons are the icons of the kinds of things the launcher finds.
+var thingIcons = map[string]*icon.Icon{
+	"terminal": icon.SquareTerminal, "files": icon.Folder, "log": icon.ScrollText, "command": icon.SquareChevronRight,
+	"servers": icon.Server, "secrets": icon.Lock, "window": icon.AppWindow,
+}
+
+// thing is found item i when it is one of the things rather than a
+// machine, and nil otherwise.
+func (l *Launcher) thing(i int) *app.LaunchThing {
+	n := len(l.st.Machines)
+	if l.machine >= 0 || i < n || i-n >= len(l.st.Things) {
+		return nil
+	}
+	return &l.st.Things[i-n]
+}
+
 // line is the title and the note of found item i.
 func (l *Launcher) line(i int) (string, string) {
+	if t := l.thing(i); t != nil {
+		return t.Title, t.Note
+	}
 	if l.machine < 0 {
 		m := l.st.Machines[i]
 		return m.Name, m.Note
@@ -181,7 +215,7 @@ func (l *Launcher) line(i int) (string, string) {
 
 // hintText says what Enter and Tab do on the line lit.
 func (l *Launcher) hintText() string {
-	if l.machine >= 0 || l.hot >= len(l.found) {
+	if l.machine >= 0 || l.hot >= len(l.found) || l.thing(l.found[l.hot]) != nil {
 		return "Enter opens it"
 	}
 	m := l.st.Machines[l.found[l.hot]]
@@ -243,7 +277,7 @@ func (l *Launcher) key(e input.KeyPress, u *gunim.UI) bool {
 	case input.KeyEnter, input.KeyKPEnter:
 		l.pick(u)
 	case input.KeyTab, input.KeyRight:
-		if l.machine >= 0 || l.hot >= len(l.found) {
+		if l.machine >= 0 || l.hot >= len(l.found) || l.thing(l.found[l.hot]) != nil {
 			return e.Key == input.KeyTab
 		}
 		l.machine, l.hot = l.found[l.hot], 0
@@ -278,6 +312,10 @@ func (l *Launcher) key(e input.KeyPress, u *gunim.UI) bool {
 // pick opens the line lit: a machine's usual thing, or the thing lit.
 func (l *Launcher) pick(u *gunim.UI) {
 	if l.hot >= len(l.found) {
+		return
+	}
+	if t := l.thing(l.found[l.hot]); t != nil {
+		u.Send(l, app.Launch{Machine: t.Machine, Action: t.Action})
 		return
 	}
 	if l.machine < 0 {

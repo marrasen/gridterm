@@ -197,22 +197,35 @@ const commandLong = 3 * time.Second
 // commandDone sends an echo for a long command that finished in pane
 // id: green for exit 0, red for any other.
 func (a *app) commandDone(id string, status int) {
+	w := a.ownerOf(id)
+	p := a.pingsIn(w)
+	front := w != nil && a.focusIn(w) == id
 	switch {
-	case a.st.Focus == id && status == 0:
-		a.st.Pings.FrontDones++
-	case a.st.Focus == id:
-		a.st.Pings.FrontProblems++
+	case front && status == 0:
+		p.FrontDones++
+	case front:
+		p.FrontProblems++
 	case status == 0:
-		a.done()
+		p.Dones++
 	default:
-		a.problem()
+		p.Problems++
 	}
 }
 
-// problem and done have the window send an echo out for a failure, or
-// for work finished.
-func (a *app) problem() { a.st.Pings.Problems++ }
-func (a *app) done()    { a.st.Pings.Dones++ }
+// problem and done have the window in front send an echo out for a
+// failure, or for work finished, that is no pane's.
+func (a *app) problem() { a.pingsIn(a.cur).Problems++ }
+func (a *app) done()    { a.pingsIn(a.cur).Dones++ }
+
+// pingsIn is what window w sends echoes out for: a pane's from the
+// window it is in, which is where the user looks for it. A window gone
+// counts nothing that is shown.
+func (a *app) pingsIn(w *ownWin) *Pings {
+	if w == nil {
+		return &Pings{}
+	}
+	return &w.pings
+}
 
 // Notice is something to tell the user once, in a toast. Clipboard,
 // when set, goes on the clipboard as it shows.
@@ -1524,10 +1537,13 @@ func (a *app) hooks(id string) screen.Hooks {
 		Exit:  func() { a.events <- func() { a.paneEnded(id) } },
 		Bell: func() {
 			a.events <- func() {
-				a.st.Bells++
-				if w := a.ownerOf(id); w == nil || a.focusIn(w) != id {
+				w := a.ownerOf(id)
+				if w != nil {
+					w.bells++
+				}
+				if w == nil || a.focusIn(w) != id {
 					a.setPane(id, func(p *Pane) { p.Rang = true })
-					a.st.Pings.Calls++
+					a.pingsIn(w).Calls++
 				}
 			}
 		},

@@ -9,6 +9,15 @@ change how something behaves.
 
 ## Unreleased
 
+### Fixed
+
+**A bell echoes from its own window.** A bell, or a long command
+finishing, in a pane of a window behind sent its echo from the window in
+front. Each window now counts its own, and asks for attention itself.
+
+**The launcher fades out.** Escape, or a pick, used to make it vanish at
+once.
+
 ### Changed
 
 **The Servers pane replaces the sidebar.** Every machine, with what is
@@ -40,7 +49,8 @@ keys.
 
 **A launcher on Shift+Win+K.** From any program on Windows, and on
 Ctrl+Alt+K under X11 on Linux, the key opens a small window that finds a
-machine as you type; Enter opens a terminal there, or what was opened
+machine, a shell (cmd, wsl), files on a machine, a saved command or a
+kakel window as you type; Enter opens a terminal there, or what was opened
 there last since kakel started, and Tab lists the rest. Options › Launcher Key… changes the
 key. Open Launcher does the same from the Servers menu and the tray, and
 `kakel -launcher` from a key the desktop binds, as under Wayland. macOS

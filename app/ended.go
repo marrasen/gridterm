@@ -64,11 +64,11 @@ func (a *app) paneEnded(id string) {
 		log.Printf("%s ended, exit %d", a.paneForLog(a.st.Panes[i]), status)
 	}
 	// Ended out of sight, with its status in: an echo says how it went.
-	if known && a.st.Focus != id {
+	if w := a.ownerOf(id); known && (w == nil || a.focusIn(w) != id) {
 		if status == 0 {
-			a.done()
+			a.pingsIn(w).Dones++
 		} else {
-			a.problem()
+			a.pingsIn(w).Problems++
 		}
 	}
 	// The choices are made on the window's goroutine, where the pane

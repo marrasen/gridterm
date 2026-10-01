@@ -1819,10 +1819,9 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.echoFor(st, u)
 	if st.Bells > w.bells {
+		// The window the bell rang in, in front or not.
 		w.bells = st.Bells
-		if !st.Behind {
-			u.RequestAttention()
-		}
+		u.RequestAttention()
 	}
 	if st.PaneTitles != w.titles {
 		w.titles = st.PaneTitles
@@ -3285,12 +3284,9 @@ func (w *Window) madeNode(id string) gunim.Node {
 // front. A
 // faint one goes out again and again while a connection is being made.
 func (w *Window) echoFor(st app.State, u *gunim.UI) {
+	// Each window counts its own: a pane's from the window it is in.
 	was := w.pings
 	w.pings = st.Pings
-	if st.Behind {
-		// The window in front sends them; this one only keeps count.
-		was = st.Pings
-	}
 	if st.Pings.Problems > was.Problems || st.Pings.FrontProblems > was.FrontProblems && w.away {
 		w.echo.Ping(u, widget.EchoProblem)
 	}

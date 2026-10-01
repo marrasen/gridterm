@@ -32,6 +32,10 @@ type ownWin struct {
 	// asking says the window asks whether to close, and gone that it is
 	// on its way out.
 	asking, gone bool
+	// pings and bells count what this window sends echoes out for, and
+	// the bells rung in its panes.
+	pings Pings
+	bells uint64
 }
 
 // windowIn is an intent from one of the windows, or word that it
@@ -371,6 +375,7 @@ func (a *app) leaveEmpty() {
 // panes, its own pane in front, and the questions and notices for it.
 func (a *app) stateFor(w *ownWin, st State) State {
 	st.Window, st.Behind = w.id, w != a.cur
+	st.Pings, st.Bells = w.pings, w.bells
 	st.Panes = a.panesIn(w)
 	st.Focus = a.focusIn(w)
 	st.Stage = nil

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/marrasen/kakel/machines"
@@ -28,11 +29,25 @@ const LauncherTopic = "launcher"
 // do.
 var DefaultLauncherKey = map[bool]string{true: "shift+super+k", false: "ctrl+alt+k"}[runtime.GOOS == "windows"]
 
-// LaunchState is what the launcher shows: the machines, and a count of
-// the times it was opened, for it to start afresh each time.
+// LaunchState is what the launcher shows: the machines, the things it
+// finds besides them once something is typed, and a count of the times
+// it was opened, for it to start afresh each time.
 type LaunchState struct {
 	Machines []LaunchMachine
+	Things   []LaunchThing
 	Opened   uint64
+}
+
+// LaunchThing is one thing the launcher opens straight from what is
+// typed: a shell here, files somewhere, a saved command, a window. Note
+// says where, Also are other words it is found by, and Kind picks its
+// icon.
+type LaunchThing struct {
+	Title, Note string
+	Also        []string
+	Kind        string
+	Machine     machines.ID
+	Action      string
 }
 
 // LaunchMachine is a machine the launcher offers, what can be opened on
@@ -248,7 +263,8 @@ func (a *app) publishLauncher() {
 	if a.launch.c == nil {
 		return
 	}
-	_ = a.launch.c.Publish(LauncherTopic, LaunchState{Machines: a.launchMachines(), Opened: a.launch.opened})
+	ms := a.launchMachines()
+	_ = a.launch.c.Publish(LauncherTopic, LaunchState{Machines: ms, Things: a.launchThings(ms), Opened: a.launch.opened})
 }
 
 // launchMachines are the machines the launcher offers: this computer,
@@ -296,6 +312,46 @@ func (a *app) launchMachines() []LaunchMachine {
 	return append(out, rest...)
 }
 
+// launchThings are what the launcher finds besides the machines: each
+// shell here, files and a terminal on each machine, the files of each
+// WSL distribution, a connection's log, the saved commands, and kakel's
+// own windows.
+func (a *app) launchThings(ms []LaunchMachine) []LaunchThing {
+	var out []LaunchThing
+	for _, sh := range a.st.Shells {
+		also := []string{sh.ID, "shell", "terminal"}
+		if strings.HasPrefix(sh.ID, "wsl:") {
+			also = append(also, "wsl", "linux")
+		}
+		out = append(out, LaunchThing{Title: sh.Title, Note: "This computer", Also: also, Kind: "terminal", Action: "shell:" + sh.ID})
+		if sh.Folder != "" {
+			out = append(out, LaunchThing{Title: "Files in " + sh.Title, Note: "This computer", Also: []string{"wsl", "folder", "explorer"},
+				Kind: "files", Action: "files:" + sh.Folder})
+		}
+	}
+	for _, m := range ms {
+		out = append(out,
+			LaunchThing{Title: "Terminal on " + m.Name, Note: m.Note, Also: []string{"shell", "ssh", "console"}, Kind: "terminal", Machine: m.ID, Action: "terminal"},
+			LaunchThing{Title: "Files on " + m.Name, Note: m.Note, Also: []string{"folder", "browse", "explorer", "sftp"}, Kind: "files", Machine: m.ID, Action: "files"})
+		if slices.ContainsFunc(m.Actions, func(x LaunchAction) bool { return x.ID == "log" }) {
+			out = append(out, LaunchThing{Title: "Connection Log of " + m.Name, Note: m.Note, Also: []string{"log", "account"}, Kind: "log", Machine: m.ID, Action: "log"})
+		}
+	}
+	for i, c := range a.st.SavedCommands {
+		where := c.Host
+		if where == "" {
+			where = "This computer"
+		}
+		out = append(out, LaunchThing{Title: c.Line, Note: where, Also: []string{"run", "command", "saved"}, Kind: "command",
+			Machine: machines.ID(c.HostID), Action: "saved:" + strconv.Itoa(i)})
+	}
+	return append(out,
+		LaunchThing{Title: "Servers", Note: "kakel", Also: []string{"machines", "connections"}, Kind: "servers", Action: "app:servers"},
+		LaunchThing{Title: "Secrets", Note: "kakel", Also: []string{"passwords", "vault"}, Kind: "secrets", Action: "app:secrets"},
+		LaunchThing{Title: "New Window", Note: "kakel", Also: []string{"terminal"}, Kind: "window", Action: "app:window"},
+	)
+}
+
 // handleLaunch carries out what the launcher asks.
 func (a *app) handleLaunch(in gunim.Intent) {
 	if a.gone {
@@ -310,7 +366,11 @@ func (a *app) handleLaunch(in gunim.Intent) {
 		if a.launch.last == nil {
 			a.launch.last = map[machines.ID]string{}
 		}
-		a.launch.last[in.Machine] = in.Action
+		// What opens on the machine itself is what Enter opens there
+		// next: not a window of kakel's, nor a command.
+		if in.Action == "terminal" || in.Action == "files" || in.Action == "log" || strings.HasPrefix(in.Action, "shell:") {
+			a.launch.last[in.Machine] = in.Action
+		}
 		a.toTray(func() { a.launchOn(in) })
 	}
 }
@@ -318,6 +378,18 @@ func (a *app) handleLaunch(in gunim.Intent) {
 // launchOn opens what in asks for, in the window in front.
 func (a *app) launchOn(in Launch) {
 	switch {
+	case strings.HasPrefix(in.Action, "files:"):
+		a.handle(FilesOn{Machine: in.Machine, Path: strings.TrimPrefix(in.Action, "files:")})
+	case strings.HasPrefix(in.Action, "saved:"):
+		if i, err := strconv.Atoi(strings.TrimPrefix(in.Action, "saved:")); err == nil && i < len(a.st.SavedCommands) {
+			a.handle(RunSavedCommand{Saved: a.st.SavedCommands[i]})
+		}
+	case in.Action == "app:servers":
+		a.showServers()
+	case in.Action == "app:secrets":
+		a.showSecretsPane(func(string) {})
+	case in.Action == "app:window":
+		a.newWindow(func() { a.handle(NewTerminal{}) })
 	case in.Action == "files":
 		a.handle(FilesOn{Machine: in.Machine})
 	case in.Action == "log":
@@ -333,6 +405,12 @@ func (a *app) launchOn(in Launch) {
 func (a *app) closeLauncher() {
 	if c := a.launch.c; c != nil {
 		a.launch.c = nil
-		c.Close()
+		// Shrinking and fading as it goes, as kakel's windows do; at
+		// once only as kakel leaves, with nothing to wait for it.
+		if a.gone {
+			c.Close()
+		} else {
+			c.Leave()
+		}
 	}
 }

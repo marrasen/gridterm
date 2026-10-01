@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"context"
 	"errors"
 	"io"
 	"path/filepath"
@@ -492,5 +493,41 @@ func TestAClosedConnectionSaysSoToEveryWaiter(t *testing.T) {
 		case <-time.After(5 * time.Second):
 			t.Fatalf("waiter %d never came back", i)
 		}
+	}
+}
+
+// staleAsk answers with a stale password first, then the right one, as
+// a saved password gone stale and then the user does.
+type staleAsk struct {
+	*testAsk
+	asked []string
+}
+
+func (a *staleAsk) Password(ctx context.Context, user, host string) (string, error) {
+	a.asked = append(a.asked, host)
+	if len(a.asked) == 1 {
+		return "stale", nil
+	}
+	return sshtest.Password, nil
+}
+
+// A refused password is asked for again on the same connection, so a
+// saved one gone stale does not end it.
+func TestARefusedPasswordIsAskedForAgain(t *testing.T) {
+	s := sshtest.New(t)
+	cfg := testConfig(t, s)
+	ask := &staleAsk{testAsk: newTestAsk()}
+	cfg.Ask = ask
+	c, err := Connect(t.Context(), cfg)
+	if err != nil {
+		t.Fatalf("the second password did not sign in: %v", err)
+	}
+	_ = c.Close()
+	if len(ask.asked) != 2 {
+		t.Fatalf("asked %d times, want twice", len(ask.asked))
+	}
+	// Asked by host and port, the port being sshtest's own.
+	if !strings.Contains(ask.asked[0], ":") {
+		t.Fatalf("asked for %q, without the port", ask.asked[0])
 	}
 }

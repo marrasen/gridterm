@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -547,5 +548,28 @@ func TestReplaceKeepsWhatTheFileDoesNotMention(t *testing.T) {
 	}
 	if got != "newpassword" {
 		t.Errorf("the password is %q, want the one from the file", got)
+	}
+}
+
+// Logins go out in the export and come back in, from their own column;
+// a file without that column claims no logins, whatever its first
+// column says.
+func TestLoginsComeBackFromTheirOwnColumn(t *testing.T) {
+	in, err := ReadCSV(strings.NewReader("name,password,logins\nmy web,x,me@a.example me@b.example\nroot@prod,y,\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(in) != 2 || !slices.Equal(in[0].Logins, []string{"me@a.example", "me@b.example"}) || len(in[1].Logins) != 0 {
+		t.Fatalf("read %+v", in)
+	}
+	in, err = ReadCSV(strings.NewReader("name,password\nroot@prod,y\n"))
+	if err != nil || len(in) != 1 || len(in[0].Logins) != 0 {
+		t.Fatalf("with no logins column, read %+v, %v", in, err)
+	}
+}
+
+func TestALoginIsTheSameUserExactly(t *testing.T) {
+	if !SameLogin("me@Web.Example:2200", "me@web.example:2200") || SameLogin("Admin@h", "admin@h") || SameLogin("me@h", "me@h:2200") {
+		t.Fatal("logins compare wrongly")
 	}
 }

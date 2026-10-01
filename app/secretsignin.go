@@ -6,7 +6,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
-	"strings"
 
 	"github.com/marrasen/kakel/secrets"
 )
@@ -118,32 +117,38 @@ func (q asker) askSecret(ctx context.Context, ask Ask, keep string, about signIn
 			ask.Saved = append(ask.Saved, it.Name)
 		}
 	}
-	ans, err := q.a.ask(ctx, ask)
-	if err != nil {
-		return "", err
-	}
-	typed := ans.Answers[0]
-	if q.kept == nil {
-		return typed, nil
-	}
-	rest := ans.Answers[1:]
-	ticked := len(rest) > 0 && rest[0] == "yes"
-	if len(items) > 0 && len(rest) > 1 {
-		if i, err := strconv.Atoi(rest[len(rest)-1]); err == nil && i >= 0 && i < len(items) {
-			id := items[i].ID
-			value := q.inHand(ctx, func() string { return q.a.secretValue(id) })
-			if value != "" {
+	for {
+		ans, err := q.a.ask(ctx, ask)
+		if err != nil {
+			return "", err
+		}
+		typed := ans.Answers[0]
+		if q.kept == nil {
+			return typed, nil
+		}
+		rest := ans.Answers[1:]
+		ticked := len(rest) > 0 && rest[0] == "yes"
+		if len(items) > 0 && len(rest) > 1 {
+			if i, err := strconv.Atoi(rest[len(rest)-1]); err == nil && i >= 0 && i < len(items) {
+				id := items[i].ID
+				value := q.inHand(ctx, func() string { return q.a.secretValue(id) })
+				if value == "" {
+					// Locked since, or gone: asked again, not answered
+					// with what was typed before the pick.
+					ask.Text = "That saved secret couldn't be read. Type it, or pick another."
+					continue
+				}
 				about.picked = id
 				q.kept.put(about)
 				return value, nil
 			}
 		}
+		if ticked && typed != "" {
+			about.value = typed
+			q.kept.put(about)
+		}
+		return typed, nil
 	}
-	if ticked && typed != "" {
-		about.value = typed
-		q.kept.put(about)
-	}
-	return typed, nil
 }
 
 // secretValue is the value of the saved secret id, or "".
@@ -175,17 +180,14 @@ func (a *app) keepSignIns(k *signIns) {
 		return
 	}
 	keep := func() {
-		var errs []error
 		for _, in := range list {
-			errs = append(errs, keepSignIn(v, in))
-		}
-		if err := errors.Join(errs...); err != nil {
-			a.failed("Couldn't keep the sign-in in the secrets", err.Error())
-			return
-		}
-		for _, in := range list {
-			if in.value != "" {
-				a.worked("Saved in the secrets", "Used from now on for "+in.what()+".", "")
+			said, err := keepSignIn(v, in)
+			if err != nil {
+				a.failed("Couldn't keep the sign-in for "+in.what()+" in the secrets", err.Error())
+				continue
+			}
+			if said != "" {
+				a.worked(said, "Used from now on for "+in.what()+".", "")
 			}
 		}
 	}
@@ -212,61 +214,89 @@ func (in signIn) what() string {
 	return in.login
 }
 
-// keepSignIn keeps one answer in v.
-func keepSignIn(v *secrets.Vault, in signIn) error {
+// keepSignIn keeps one answer in v, and says what it did, or "" for
+// nothing to do. A secret answering for this login or key and nothing
+// else is changed; one shared with other logins or a key keeps its
+// value, and only stops answering here.
+func keepSignIn(v *secrets.Vault, in signIn) (string, error) {
 	items, err := v.Items()
 	if err != nil {
-		return err
+		return "", err
 	}
-	// The secret answering for this login or key until now.
-	was := slices.IndexFunc(items, func(it secrets.Item) bool {
+	answers := func(it secrets.Item) bool {
 		if in.file != "" {
 			return it.File == in.file
 		}
-		return slices.ContainsFunc(it.Logins, func(l string) bool { return strings.EqualFold(l, in.login) })
-	})
+		return slices.ContainsFunc(it.Logins, func(l string) bool { return secrets.SameLogin(l, in.login) })
+	}
+	// unlinked is it no longer answering here.
+	unlinked := func(it secrets.Item) secrets.Item {
+		if in.file != "" {
+			it.File = ""
+		} else {
+			it.Logins = slices.DeleteFunc(slices.Clone(it.Logins), func(l string) bool { return secrets.SameLogin(l, in.login) })
+		}
+		return it
+	}
+	was := slices.IndexFunc(items, answers)
 	if in.picked != "" {
 		at := slices.IndexFunc(items, func(it secrets.Item) bool { return it.ID == in.picked })
 		if at < 0 {
-			return secrets.ErrNoSuchItem
-		}
-		if was >= 0 && items[was].ID != in.picked {
-			// The one picked answers from now on.
-			old := items[was]
-			if in.file != "" {
-				old.File = ""
-			} else {
-				old.Logins = slices.DeleteFunc(old.Logins, func(l string) bool { return strings.EqualFold(l, in.login) })
-			}
-			if _, err := v.PutDetails(old); err != nil {
-				return err
-			}
+			return "", secrets.ErrNoSuchItem
 		}
 		it := items[at]
-		switch {
-		case in.file != "" && it.File == in.file:
-			return nil
-		case in.file != "" && it.File != "":
-			return errors.New(it.Name + " already unlocks " + it.File + ", and a secret unlocks one key")
-		case in.file != "":
-			it.File = in.file
-		case slices.ContainsFunc(it.Logins, func(l string) bool { return strings.EqualFold(l, in.login) }):
-			return nil
-		default:
-			it.Logins = append(it.Logins, in.login)
+		if answers(it) {
+			return "", nil
 		}
-		_, err := v.PutDetails(it)
-		return err
+		// Refused before anything is written, so nothing is left half
+		// done.
+		if in.file != "" && it.File != "" {
+			return "", errors.New(it.Name + " already unlocks " + it.File + ", and a secret unlocks one key")
+		}
+		if was >= 0 {
+			if _, err := v.PutDetails(unlinked(items[was])); err != nil {
+				return "", err
+			}
+		}
+		if in.file != "" {
+			it.File = in.file
+		} else {
+			it.Logins = append(slices.Clone(it.Logins), in.login)
+		}
+		if _, err := v.PutDetails(it); err != nil {
+			if was >= 0 {
+				_, _ = v.PutDetails(items[was])
+			}
+			return "", err
+		}
+		return it.Name + " linked", nil
 	}
 	if was >= 0 {
-		// Typed again, as the one kept was refused: the one kept changes.
-		_, err := v.Put(items[was], in.value)
-		return err
+		old := items[was]
+		alone := old.File == "" && len(old.Logins) == 1
+		if in.file != "" {
+			alone = len(old.Logins) == 0
+		}
+		if alone {
+			// Typed again, as the one kept was refused: it changes.
+			if _, err := v.Put(old, in.value); err != nil {
+				return "", err
+			}
+			return old.Name + " changed", nil
+		}
+		if _, err := v.PutDetails(unlinked(old)); err != nil {
+			return "", err
+		}
 	}
 	it := secrets.Item{Name: in.login, Kind: secrets.Password, User: in.user, Logins: []string{in.login}}
 	if in.file != "" {
 		it = secrets.Item{Name: filepath.Base(in.file), Kind: secrets.Passphrase, File: in.file}
 	}
-	_, err = v.Put(it, in.value)
-	return err
+	if _, err := v.Put(it, in.value); err != nil {
+		if was >= 0 {
+			_, _ = v.PutDetails(items[was])
+		}
+		return "", err
+	}
+	return it.Name + " saved in the secrets", nil
 }

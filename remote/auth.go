@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"os"
 	"os/user"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -476,12 +478,28 @@ func authMethods(ctx context.Context, cfg Config) (*auth, error) {
 			return ssh.KeyboardInteractive(keyboardInteractive(ctx, cfg))
 		}},
 		rung{method: methodPassword, what: "a password", build: func() ssh.AuthMethod {
-			return ssh.PasswordCallback(func() (string, error) {
-				return cfg.Ask.Password(ctx, cfg.User, cfg.Host)
-			})
+			// Asked again when refused, as a saved password gone stale
+			// or a typo is: the question says the last was invalid.
+			return ssh.RetryableAuthMethod(ssh.PasswordCallback(func() (string, error) {
+				return cfg.Ask.Password(ctx, cfg.User, cfg.hostPort())
+			}), passwordTries)
 		}},
 	)
 	return a, nil
+}
+
+// passwordTries is how many passwords one connection tries, the first
+// perhaps one the secrets keep.
+const passwordTries = 3
+
+// hostPort is the host as a password is asked for and kept: its name,
+// and the port where it is not 22, as two servers on one address are
+// two accounts.
+func (c Config) hostPort() string {
+	if c.Port == 0 || c.Port == 22 {
+		return c.Host
+	}
+	return net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 }
 
 // keyboardInteractive answers whatever the server decided to ask, which

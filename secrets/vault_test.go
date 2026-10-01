@@ -886,7 +886,7 @@ func TestAVaultCreatedElsewhereIsFound(t *testing.T) {
 	}
 }
 
-// A secret signs in where its logins say, whatever its case, and any
+// A secret signs in where its logins say, the host in any case, and any
 // secret can unlock a key, one secret to a key.
 func TestASecretAnswersForItsLoginsAndItsKey(t *testing.T) {
 	v, _, _ := aVault(t)
@@ -894,7 +894,7 @@ func TestASecretAnswersForItsLoginsAndItsKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, login := range []string{"me@web.example", "ME@Web2.Example"} {
+	for _, login := range []string{"me@web.example", "me@Web2.Example"} {
 		if got, err := v.PasswordFor(login); err != nil || got != "hunter2" {
 			t.Fatalf("PasswordFor(%s) = %q, %v", login, got, err)
 		}

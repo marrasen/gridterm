@@ -110,3 +110,46 @@ func TestAPickedSecretUnlocksAKeyFromThenOn(t *testing.T) {
 		t.Fatalf("the next time it gave %q, asking %+v", pass, a.st.Asks)
 	}
 }
+
+// A password typed for a login a shared secret answers for leaves the
+// shared one as it is: this login gets a secret of its own.
+func TestATypedPasswordLeavesASharedSecretAlone(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	shared, err := a.secrets.Put(secrets.Item{Name: "work", Logins: []string{"me@a.example", "me@b.example"}}, "old")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.keepSignIns(&signIns{list: []signIn{{login: "me@b.example", user: "me", value: "new"}}})
+	if got, _ := a.secrets.Secret(shared.ID); got != "old" {
+		t.Fatalf("the shared secret became %q", got)
+	}
+	if got, _ := a.secrets.PasswordFor("me@a.example"); got != "old" {
+		t.Fatalf("the other login signs in with %q", got)
+	}
+	if got, _ := a.secrets.PasswordFor("me@b.example"); got != "new" {
+		t.Fatalf("this login signs in with %q", got)
+	}
+}
+
+// A secret picked that already unlocks another key is refused before
+// anything changes.
+func TestAPickedSecretForAnotherKeyChangesNothing(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	mine, err := a.secrets.Put(secrets.Item{Name: "mine", Kind: secrets.Passphrase, File: "/k/one"}, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, err := a.secrets.Put(secrets.Item{Name: "other", File: "/k/two"}, "b")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = mine
+	if _, err := keepSignIn(a.secrets, signIn{file: "/k/one", picked: other.ID}); err == nil {
+		t.Fatal("a secret for another key was linked")
+	}
+	if got, _ := a.secrets.PassphraseFor("/k/one"); got != "a" {
+		t.Fatalf("the key lost its secret: %q", got)
+	}
+}

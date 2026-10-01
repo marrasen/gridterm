@@ -40,6 +40,7 @@ var columns = map[string][]string{
 	"notes":    {"notes", "note", "extra", "comment", "comments"},
 	"kind":     {"kind"},
 	"file":     {"file"},
+	"logins":   {"logins"},
 }
 
 // ErrNothingToRead says a file has no column an import could use.
@@ -103,8 +104,8 @@ func headerOf(head []string) map[string]int {
 // rowOf turns one line into a secret, and says whether there was one.
 func rowOf(at map[string]int, row []string) (Export, bool) {
 	get := func(what string) string {
-		i := at[what]
-		if i < 0 || i >= len(row) {
+		i, ok := at[what]
+		if !ok || i < 0 || i >= len(row) {
 			return ""
 		}
 		return strings.TrimSpace(row[i])

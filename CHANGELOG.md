@@ -93,7 +93,13 @@ a key's passphrase, it offers your saved secrets to answer with, and a
 box to save what you type. Either is kept once the connection goes
 through, so a password the server refused is never saved. From then on
 that login or key signs in without asking. A saved secret is tried
-first, and if it is refused you are asked, as before.
+first, and if it is refused you are asked again on the same connection.
+A login is user@host, with the port when it isn't 22. A secret shared by
+several logins is never changed by a sign-in: a new password typed for
+one of them is saved on its own.
+
+**A mistyped password gets another try.** A refused password is asked
+for again, up to three times, rather than ending the connection.
 
 **This Computer's own settings.** Options › This Computer…, also on the
 This computer menu in the Servers pane, sets the folder new terminals

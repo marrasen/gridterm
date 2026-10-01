@@ -568,11 +568,23 @@ func (v *Vault) PasswordFor(login string) (string, error) {
 	// Another window may have saved it a moment ago.
 	v.refresh()
 	for _, e := range v.items {
-		if slices.ContainsFunc(e.Logins, func(l string) bool { return strings.EqualFold(l, login) }) {
+		if slices.ContainsFunc(e.Logins, func(l string) bool { return SameLogin(l, login) }) {
 			return e.Value, nil
 		}
 	}
 	return "", ErrNoSuchItem
+}
+
+// SameLogin reports whether two logins, user@host or user@host:port,
+// name one account: the user exactly, as accounts differing in case are
+// two on most systems, and the host whatever its case.
+func SameLogin(a, b string) bool {
+	au, ah, aok := strings.Cut(a, "@")
+	bu, bh, bok := strings.Cut(b, "@")
+	if !aok || !bok {
+		return a == b
+	}
+	return au == bu && strings.EqualFold(ah, bh)
 }
 
 // Put adds an item or replaces the one with the same id, and saves.

@@ -53,10 +53,17 @@ func newServersPane(w *Window) *serversPane {
 }
 
 // Handle implements [gunim.Handler]: the keyboard coming into the pane
-// makes it the one in front.
+// makes it the one in front, and a press on its empty room gives it the
+// keyboard, on the row it would have, as a press in a terminal does.
 func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
-	if _, ok := e.(gi.FocusEntered); ok {
+	switch e.(type) {
+	case gi.FocusEntered:
 		p.w.entered(p.w.paneOfKind(app.KindServers), u)
+	case gi.PointerDown:
+		if row := p.w.serversRow(u); row != nil {
+			u.Focus(row)
+			return true
+		}
 	}
 	return false
 }

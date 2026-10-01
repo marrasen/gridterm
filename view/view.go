@@ -1676,6 +1676,17 @@ func (w *Window) ctrlHeld(k input.Key, mods input.Mods, down bool, u *gunim.UI) 
 	}
 }
 
+// CatchKey implements [gunim.KeyCatcher]: the window's shortcuts while
+// nothing has the keyboard, as after a click on room that takes none.
+// The keys then go to gunim's root, above the window, and would reach no
+// shortcut. With anything focused, Handle has heard them already.
+func (w *Window) CatchKey(e input.Event, u *gunim.UI) bool {
+	if u.Focused() != nil {
+		return false
+	}
+	return w.shortcut(e, u)
+}
+
 // Handle implements [gunim.Handler]: the window's shortcuts, which the
 // focused pane passes on.
 func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
@@ -1727,6 +1738,12 @@ func (w *Window) Handle(e input.Event, u *gunim.UI) bool {
 		}
 		return false
 	}
+	return w.shortcut(e, u)
+}
+
+// shortcut runs the window's command e is the shortcut for, and reports
+// whether there was one.
+func (w *Window) shortcut(e input.Event, u *gunim.UI) bool {
 	k, ok := e.(input.KeyPress)
 	if !ok {
 		return false

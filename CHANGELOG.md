@@ -9,6 +9,13 @@ change how something behaves.
 
 ## Unreleased
 
+### Fixed
+
+**Shortcuts work after a click on empty room.** A click under the list
+in the Servers pane took the keyboard from everything, and no shortcut
+worked until a pane was clicked. The click gives the Servers pane the
+keyboard now, and with nothing focused the window's shortcuts still work.
+
 ## v0.3.0
 
 ### Added

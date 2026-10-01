@@ -11,6 +11,13 @@ change how something behaves.
 
 ### Fixed
 
+**Select text in the scrollback.** A selection stays on its text as the
+view scrolls and as output moves it up, rather than on the rows of the
+screen. A drag held past a pane's top or bottom scrolls toward it, faster
+the further past, and the wheel scrolls during a drag too, so a
+selection reaches as far back as the scrollback goes. Edit › Select All
+selects all of it.
+
 **Tabs open and close in motion.** A new tab grows in where it lands,
 a closed one shrinks away, and the tabs beside it and the + slide into
 place. They used to appear and vanish at once.

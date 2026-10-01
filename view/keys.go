@@ -146,6 +146,7 @@ var commands = []struct{ id, title string }{
 	{"conn.tunnel", "Open Tunnel"},
 	{"conn.socks", "Open SOCKS Proxy"},
 	{"edit.copy", "Copy"},
+	{"edit.selectAll", "Select All"},
 	{"edit.paste", "Paste"},
 	{"edit.pasteImage", "Paste Image as File"},
 	{"view.scrollUp", "Scroll Page Up"},
@@ -211,6 +212,7 @@ var commandIcons = map[string]*icon.Icon{
 	"app.exit":               icon.LogOut,
 	"menu.open":              icon.Menu,
 	"edit.copy":              icon.Copy,
+	"edit.selectAll":         icon.TextSelect,
 	"edit.paste":             icon.ClipboardPaste,
 	"edit.pasteImage":        icon.ImagePlus,
 	"pane.scrollback":        icon.TextSearch,
@@ -294,6 +296,7 @@ var menus = []struct {
 	}},
 	{"Edit", []menuItem{
 		{id: "edit.copy", title: "Copy"}, {id: "edit.paste", title: "Paste"},
+		{id: "edit.selectAll", title: "Select All"},
 		{id: "edit.pasteImage", title: "Paste Image as File"},
 		{id: "pane.scrollback", title: "Find in Scrollback…", group: true},
 	}},

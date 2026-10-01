@@ -243,6 +243,14 @@ type Terminal struct {
 	// selecting is true between a press and its release, so motion is
 	// only a drag when a drag started here.
 	selecting bool
+	// sel is the selection with its rows named by line number, as
+	// vt.Screen.LineNumber names them, so it stays on its text as the
+	// view scrolls through history and as output moves the text up. The
+	// grid holds it in the view's rows, put there at each draw. selAt
+	// is the cell of the view the pointer was last on while selecting,
+	// for the wheel to carry the selection along as it scrolls.
+	sel   grid.Selection
+	selAt grid.Point
 
 	// hoverLink is the address the pointer is over while ctrl is held,
 	// and hoverRow with hoverFrom and hoverTo are the stretch of the
@@ -877,7 +885,9 @@ func (t *Terminal) draw(v grid.View) {
 	if t.pending.Swap(false) {
 		t.mu.Lock()
 		t.term.Render(t.g)
+		top := t.term.Screen().ViewTop()
 		t.mu.Unlock()
+		t.showSelection(top)
 	}
 	// Copying cell by cell rather than handing the emulator the view
 	// keeps the grid's damage tracking: an unchanged cell is not written,
@@ -1067,7 +1077,7 @@ func (t *Terminal) HandleKey(ev input.Event) (bool, error) {
 	}
 
 	// Typing replaces a selection, as it does everywhere else.
-	t.g.ClearSelection()
+	t.ClearSelection()
 	t.send(t.encBuf)
 	return true, nil
 }
@@ -1124,6 +1134,11 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		t.ScrollView(n)
+		if t.selecting {
+			// The pointer is still on its row of the view, which shows
+			// another line now: the selection follows it there.
+			t.selectTo(t.selAt)
+		}
 		return true, nil
 
 	case input.MouseMiddle:
@@ -1145,26 +1160,22 @@ func (t *Terminal) HandleMouse(ev input.MouseEvent) (bool, error) {
 			return true, nil
 		}
 		t.selecting = true
-		t.g.SetSelection(grid.Selection{
-			Anchor: grid.Point{X: ev.Col, Y: ev.Row},
-			Cursor: grid.Point{X: ev.Col, Y: ev.Row},
-			Active: true,
-			Block:  ev.Mods.Has(input.ModAlt),
-		})
+		top := t.viewTop()
+		at := grid.Point{X: ev.Col, Y: top + ev.Row}
+		t.selAt = grid.Point{X: ev.Col, Y: ev.Row}
+		t.sel = grid.Selection{Anchor: at, Cursor: at, Active: true, Block: ev.Mods.Has(input.ModAlt)}
+		t.showSelection(top)
 	case input.MouseMove:
 		if !t.selecting {
 			return false, nil
 		}
-		sel := t.g.Selection()
-		sel.Cursor = grid.Point{X: ev.Col, Y: ev.Row}
-		t.g.SetSelection(sel)
+		t.selectTo(grid.Point{X: ev.Col, Y: ev.Row})
 	case input.MouseRelease:
 		t.selecting = false
 		// A click that never moved is a click, not an empty selection
 		// left highlighting one cell.
-		sel := t.g.Selection()
-		if sel.Anchor == sel.Cursor {
-			t.g.ClearSelection()
+		if t.sel.Anchor == t.sel.Cursor {
+			t.ClearSelection()
 		}
 	}
 	t.pending.Store(true)
@@ -1441,12 +1452,79 @@ func (t *Terminal) CancelGesture() { t.selecting, t.reported = false, 0 }
 
 // SelectionText returns the text currently selected, or "" when nothing
 // is.
-func (t *Terminal) SelectionText() string { return t.g.SelectedText() }
+func (t *Terminal) SelectionText() string {
+	if !t.sel.Active {
+		return ""
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	s := t.term.Screen()
+	cols, _ := t.g.Size()
+	return t.sel.Text(cols, s.LineAt)
+}
+
+// SelectAll selects every line there is, from the oldest history keeps
+// to the screen's last row.
+func (t *Terminal) SelectAll() {
+	t.mu.Lock()
+	s := t.term.Screen()
+	cols, rows := s.Size()
+	from, top, last := s.OldestLine(), s.ViewTop(), int(s.LineNumber(rows-1))
+	t.mu.Unlock()
+	t.selecting = false
+	t.sel = grid.Selection{Anchor: grid.Point{Y: from}, Cursor: grid.Point{X: max(cols-1, 0), Y: last}, Active: true}
+	t.showSelection(top)
+	t.pending.Store(true)
+}
+
+// Selecting reports whether a press is selecting, until its release.
+func (t *Terminal) Selecting() bool { return t.selecting }
+
+// DragScroll moves the view n lines back into history, as ScrollView
+// does, carrying a selection being dragged along with the pointer.
+func (t *Terminal) DragScroll(n int) {
+	t.ScrollView(n)
+	if t.selecting {
+		t.selectTo(t.selAt)
+	}
+}
+
+// ClearSelection takes the selection away.
+func (t *Terminal) ClearSelection() {
+	t.sel = grid.Selection{}
+	t.g.ClearSelection()
+}
+
+// viewTop is the number of the line at the view's top row.
+func (t *Terminal) viewTop() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.term.Screen().ViewTop()
+}
+
+// selectTo moves the selection's moving end to cell at of the view.
+func (t *Terminal) selectTo(at grid.Point) {
+	t.selAt = at
+	top := t.viewTop()
+	t.sel.Cursor = grid.Point{X: at.X, Y: top + at.Y}
+	t.showSelection(top)
+}
+
+// showSelection puts the selection on the grid, in the rows of a view
+// whose top row is line top.
+func (t *Terminal) showSelection(top int) {
+	s := t.sel
+	if s.Active {
+		s.Anchor.Y -= top
+		s.Cursor.Y -= top
+	}
+	t.g.SetSelection(s)
+}
 
 // Copy puts the selection on the clipboard. It reports whether there was
 // anything to copy.
 func (t *Terminal) Copy() bool {
-	text := t.g.SelectedText()
+	text := t.SelectionText()
 	if text == "" || t.cfg.WriteClipboard == nil {
 		return false
 	}

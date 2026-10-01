@@ -870,18 +870,42 @@ func (g *Grid) ClearSelection() { g.SetSelection(Selection{}) }
 // between rows and trailing blanks trimmed from each — which is what
 // makes pasting a selected command line work.
 func (g *Grid) SelectedText() string {
-	if !g.sel.Active {
+	return g.sel.Text(g.cols, func(y int) []Cell {
+		if y < 0 || y >= g.rows {
+			return nil
+		}
+		return g.cells[y*g.cols : (y+1)*g.cols]
+	})
+}
+
+// Text returns the text s covers, as [Grid.SelectedText] does, with
+// its rows read from line: the cells of row y, cols wide or less, and
+// nil for a row there is none of, which is left out. It is what reads a
+// selection of more rows than a screen holds, from a terminal's
+// history.
+func (s Selection) Text(cols int, line func(y int) []Cell) string {
+	if !s.Active {
 		return ""
 	}
-	from, to := g.sel.normalised()
+	from, to := s.normalised()
 	var sb strings.Builder
-	for y := max(from.Y, 0); y <= min(to.Y, g.rows-1); y++ {
+	first := true
+	for y := from.Y; y <= to.Y; y++ {
+		cells := line(y)
+		if cells == nil {
+			continue
+		}
 		var row strings.Builder
-		for x := 0; x < g.cols; x++ {
-			if !g.sel.Contains(x, y) {
+		for x := 0; x < min(cols, len(cells)); x++ {
+			if !s.Contains(x, y) {
 				continue
 			}
-			c := g.cells[y*g.cols+x]
+			c := cells[x]
+			if c.Rune == 0 && c.Width != 0 {
+				// A cell never written to.
+				row.WriteByte(' ')
+				continue
+			}
 			// The continuation half of a wide character carries no rune
 			// of its own; its lead cell already contributed one.
 			if c.Width == 0 {
@@ -892,9 +916,10 @@ func (g *Grid) SelectedText() string {
 				row.WriteRune(m)
 			}
 		}
-		if y > max(from.Y, 0) {
+		if !first {
 			sb.WriteByte('\n')
 		}
+		first = false
 		sb.WriteString(strings.TrimRight(row.String(), " "))
 	}
 	return sb.String()

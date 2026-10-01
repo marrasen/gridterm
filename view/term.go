@@ -53,6 +53,11 @@ type term struct {
 	// held is the button down in the pane, and at the cell the pointer
 	// was last heard of in.
 	held input.MouseButton
+	// edge is how many rows past the top, negative, or the bottom of the
+	// cells the pointer is while it drags a selection, and edgeLines the
+	// part of a line the view has to scroll toward it still.
+	edge      int
+	edgeLines float64
 	// hoverMods are the modifiers the pointer last moved with, or held
 	// since, and over says the pointer is over the pane.
 	hoverMods input.Mods
@@ -487,12 +492,63 @@ func mouseButton(b gi.Button) input.MouseButton {
 }
 
 func (t *term) cellAt(p geom.Point) grid.Point {
+	col, row := t.cells.CellAt(t.cellSpace(p))
+	return grid.Point{X: col, Y: row}
+}
+
+// cellSpace is p in the cells' own space.
+func (t *term) cellSpace(p geom.Point) geom.Point {
 	if t.scale > 0 && t.scale < 1 {
 		// Drawn shrunk: the point back in the cells' own space.
 		p = geom.Pt((p.X-t.offset.X)/t.scale, (p.Y-t.offset.Y)/t.scale)
 	}
-	col, row := t.cells.CellAt(p)
-	return grid.Point{X: col, Y: row}
+	return p
+}
+
+// rowsPast is how many rows above the cells, negative, or below them p
+// is, and 0 over them.
+func (t *term) rowsPast(p geom.Point) int {
+	h := t.cells.CellSize().H
+	_, rows := t.cells.Fit()
+	if h <= 0 {
+		return 0
+	}
+	y := t.cellSpace(p).Y
+	switch {
+	case y < 0:
+		return int(y/h) - 1
+	case y >= float32(rows)*h:
+		return int((y-float32(rows)*h)/h) + 1
+	}
+	return 0
+}
+
+// Step implements [gunim.Animator]: the view scrolling toward a
+// selection dragged past the cells' top or bottom, faster the further
+// past, for as long as it is held there.
+func (t *term) Step(dt time.Duration) bool {
+	moving := t.Group.Step(dt)
+	if t.edge == 0 || t.held != input.MouseLeft {
+		t.edge, t.edgeLines = 0, 0
+		return moving
+	}
+	n := t.edge
+	if n < 0 {
+		n = -n
+	}
+	n = min(n, 8)
+	t.edgeLines += dt.Seconds() * float64(10*n)
+	lines := int(t.edgeLines)
+	t.edgeLines -= float64(lines)
+	if lines > 0 {
+		if t.edge < 0 {
+			t.sh.T.DragScroll(lines)
+		} else {
+			t.sh.T.DragScroll(-lines)
+		}
+		t.sync()
+	}
+	return true
 }
 
 // press starts a selection, or a program's click; the middle button
@@ -540,6 +596,10 @@ func (t *term) drag(e gi.PointerMove, u *gunim.UI) bool {
 			u.Invalidate()
 		}
 	}
+	t.edge = 0
+	if t.held == input.MouseLeft && t.sh.T.Selecting() {
+		t.edge = t.rowsPast(e.Pos)
+	}
 	if at == t.at {
 		return t.held != input.MouseNone
 	}
@@ -553,7 +613,7 @@ func (t *term) release(e gi.PointerUp, u *gunim.UI) bool {
 	}
 	at := t.cellAt(e.Pos)
 	held := t.held
-	t.held = input.MouseNone
+	t.held, t.edge = input.MouseNone, 0
 	return t.mouse(input.MouseEvent{Kind: input.MouseRelease, Button: held, Col: at.X, Row: at.Y, Mods: mouseMods(e.Mods)}, u)
 }
 

@@ -1021,6 +1021,27 @@ func (s *Screen) Floor() uint64 { return s.floor }
 // and it says what the primary screen has there.
 func (s *Screen) LineNumber(row int) uint64 { return s.gone + uint64(max(row, 0)) }
 
+// ViewTop is the number of the line at the view's top row, counted as
+// LineNumber counts, so a row of the view is this plus the row however
+// far back the view is scrolled.
+func (s *Screen) ViewTop() int { return int(s.gone) - s.scrollOff }
+
+// OldestLine is the number of the oldest line history keeps, or of the
+// screen's top row when it keeps none.
+func (s *Screen) OldestLine() int { return int(s.gone) - len(s.cur.scrollback) }
+
+// LineAt is the cells of line n, numbered as LineNumber numbers them,
+// from history or the screen, and nil for a line history has let go
+// or one below the screen. The cells are the screen's own: read them,
+// don't keep them.
+func (s *Screen) LineAt(n int) []grid.Cell {
+	i := n - int(s.gone)
+	if i >= s.rows {
+		return nil
+	}
+	return s.cur.view(i, 0)
+}
+
 // History is how many lines have scrolled off the top and are kept.
 func (s *Screen) History() int { return len(s.cur.scrollback) }
 

@@ -598,6 +598,13 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 			t.copySelection(u)
 		}
 		return true
+	case "edit.selectAll":
+		if t, ok := w.terms[w.focused]; ok {
+			t.sh.T.SelectAll()
+			t.sync()
+			u.Invalidate()
+		}
+		return true
 	}
 	if w.runItem(id, u) {
 		return true
@@ -2054,7 +2061,7 @@ func (w *Window) applies(id string) bool {
 	case "files.goTo", "files.icons":
 		_, ok := w.browsers[w.focused]
 		return ok
-	case "edit.copy", "edit.paste":
+	case "edit.copy", "edit.paste", "edit.selectAll":
 		_, ok := w.terms[w.focused]
 		return ok
 	case "view.scrollUp", "view.scrollDown":

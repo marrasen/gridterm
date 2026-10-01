@@ -29,7 +29,9 @@ func cardsStage(t *testing.T, size geom.Size) *Window {
 }
 
 // The cards say who and where each server is, and the keyboard goes
-// along them: Right to the next card, Enter does its first button.
+// along them by where they stand: Down to the card below, Right to the
+// one beside it. Enter opens the menu of what opens there, its first
+// line a terminal.
 func TestTheServerCardsTakeTheKeyboard(t *testing.T) {
 	win := cardsStage(t, geom.Sz(1100, 600))
 	db, ok := win.cards.cards["s2"]
@@ -39,28 +41,47 @@ func TestTheServerCardsTakeTheKeyboard(t *testing.T) {
 	here := win.cards.cards[machines.Local]
 	lastUI.Focus(here.head)
 	frames(2)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})
+	frames(1)
+	first, second := win.cards.cards[win.cards.order[1]], win.cards.cards[win.cards.order[2]]
+	if lastUI.Focused() != first.head {
+		t.Fatalf("Down left the keyboard with %T", lastUI.Focused())
+	}
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyRight})
 	frames(1)
-	next := win.cards.cards[win.cards.order[1]]
-	if lastUI.Focused() != next.head {
+	if lastUI.Focused() != second.head {
 		t.Fatalf("Right left the keyboard with %T", lastUI.Focused())
 	}
 	drain()
 	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
-	frames(1)
-	if in, ok := nextIntent(t).(app.ConnectTo); !ok || in.Server != next.id {
-		t.Fatalf("Enter on a saved server sent %#v", in)
+	frames(2)
+	if second.head.menu == nil || second.head.menu.Items[1] != "New Terminal" {
+		t.Fatalf("Enter on a card opened %+v", second.head.menu)
 	}
-	// / goes to the search field, and Down from it to the first card.
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
+	frames(1)
+	if in, ok := nextIntent(t).(app.OpenOn); !ok || in.Machine != second.id {
+		t.Fatalf("the menu's first line sent %#v", in)
+	}
+	// Ctrl+PageDown is the window's, from a card too.
+	lastUI.Focus(second.head)
+	frames(1)
+	if second.head.cardKey(gi.KeyPress{Key: gi.KeyPageDown, Mods: gi.ModControl}, lastUI) {
+		t.Fatal("a card took Ctrl+PageDown")
+	}
+	// / goes to the search field, and Enter there to the first found.
 	lastWindow.Input(gi.TextInput{Text: "/"})
 	frames(1)
 	if lastUI.Focused() != win.serversView.search || win.serversView.search.Text() != "" {
 		t.Fatalf("/ left the keyboard with %T, the field saying %q", lastUI.Focused(), win.serversView.search.Text())
 	}
-	lastWindow.Input(gi.KeyPress{Key: gi.KeyDown})
+	lastWindow.Input(gi.TextInput{Text: "db"})
+	frames(2)
+	lastWindow.Input(gi.KeyPress{Key: gi.KeyEnter})
 	frames(1)
-	if lastUI.Focused() != win.cards.first() {
-		t.Fatalf("Down from the field left the keyboard with %T", lastUI.Focused())
+	if lastUI.Focused() != win.cards.cards["s2"].head {
+		t.Fatalf("Enter in the field left the keyboard with %T", lastUI.Focused())
 	}
 }
 
@@ -75,9 +96,11 @@ func TestNarrowCardsAreLines(t *testing.T) {
 	if box.Size().H != compactHeadHeight {
 		t.Fatalf("a compact card's header is %v tall", box.Size().H)
 	}
-	chips := head.cardChips(box.Size(), lastUI.Theme())
-	if last := chips[len(chips)-1]; last.Max.X > box.Size().W {
-		t.Fatalf("its ⋯ is at %v, past its edge", last)
+	for i, b := range head.chips {
+		r, _ := lastUI.Bounds(b)
+		if r.Max.X > box.Max.X || r.Min.X < box.Min.X || i < 2 && (b.Label != "" || b.Tooltip == "") {
+			t.Fatalf("button %d is at %v in a card at %v, labelled %q", i, r, box, b.Label)
+		}
 	}
 }
 

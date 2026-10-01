@@ -32,6 +32,23 @@ user, port, key file and ProxyJump.
 
 ### Fixed
 
+**The server cards answer as buttons and keys should.** Their buttons
+are gunim's, pressed on release with the keyboard's ring, and every card
+has Terminal, Files and ⋯; Connect, which opened a terminal too, is gone.
+Enter on a card opens the menu of what opens on it, the shells among
+them, so the keyboard picks; Enter twice opens a terminal. The arrows go
+to what is above, below or beside a card on the screen. Ctrl+PageUp and
+Ctrl+PageDown go on to the next tab from the Servers pane. Enter in the
+search field goes to the first machine found, and the field says / finds.
+Cards slide to their new place as a server connects or disconnects, and
+fade in and out as they come and go.
+
+**A key's passphrase question is easy to read.** It names the key in
+bold, with the comment it was made with under it, and its folder only
+when that isn't ~/.ssh. Opening the secrets for a sign-in, it says what
+they hold the sign-in for and which key opens them, each on a line of
+its own. A wrong passphrase is said in red.
+
 **Locked secrets are asked to open for a connection they hold the
 sign-in for.** A key's passphrase or a server's password saved in the
 secrets was only used when the secrets opened without asking. Now, when

@@ -43,7 +43,9 @@ import (
 
 // The window's own tokens.
 var (
-	noGap     = theme.Length("kakel.nogap", 0)
+	noGap = theme.Length("kakel.nogap", 0)
+	// factGap is the room between a question's fact and its note.
+	factGap   = theme.Length("kakel.ask.fact.gap", 2)
 	smallText = theme.Length("kakel.small", 12)
 )
 
@@ -940,6 +942,25 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 			note.Face, note.Selectable, note.NoWrap = widget.MonoFont, true, true
 		}
 		form.Add("", note)
+	}
+	// What it is about: each a name in bold, with a note under it.
+	for _, fact := range q.Facts {
+		name := widget.NewLabel(fact.Name)
+		name.Face, name.Color = widget.BoldFont, widget.Ink
+		if fact.Note == "" {
+			form.Add(fact.Label, name)
+			continue
+		}
+		note := widget.NewLabel(fact.Note)
+		note.Size, note.Color = smallText, look.Faint
+		col := widget.Column(name, note)
+		col.Gap = factGap
+		form.Add(fact.Label, col)
+	}
+	if q.Problem != "" {
+		problem := widget.NewLabel(q.Problem)
+		problem.Color = widget.DialogDangerInk
+		form.Add("", problem)
 	}
 	var fields []*widget.TextField
 	for i, prompt := range q.Prompts {
@@ -2704,9 +2725,10 @@ type sideRow struct {
 	// dim says the row's thing has ended, and its words are faint.
 	dim bool
 	// card is what a machine's heading shows as a card's header, nil for
-	// a plain row; chipHot is its button under the pointer, -1 for none.
-	card    *cardInfo
-	chipHot int
+	// a plain row; chips are its buttons, and chipRects where they are.
+	card      *cardInfo
+	chips     []*widget.Button
+	chipRects []geom.Rect
 }
 
 // noteFor is how long a sidebar row's note stands before it goes quiet.
@@ -2730,7 +2752,7 @@ func (r *sideRow) showNote(now time.Time) {
 }
 
 func (w *Window) newSideRow(it sideItem) *sideRow {
-	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0), chipHot: -1}
+	r := &sideRow{w: w, heading: it.heading, title: widget.NewLabel(""), note: widget.NewLabel(""), active: anim.NewFloat(0), hover: anim.NewFloat(0)}
 	r.title.MaxLines, r.note.MaxLines = 1, 1
 	r.note.Size, r.note.Color = smallText, look.Faint
 	if it.heading {
@@ -2788,7 +2810,13 @@ func (r *sideRow) setActive(on bool, u *gunim.UI) {
 }
 
 // Children implements [gunim.Composite].
-func (r *sideRow) Children() []gunim.Node { return []gunim.Node{r.title, r.note} }
+func (r *sideRow) Children() []gunim.Node {
+	out := []gunim.Node{r.title, r.note}
+	for _, b := range r.chips {
+		out = append(out, b)
+	}
+	return out
+}
 
 // Layout implements [gunim.Node]: the title at the start, the note at
 // the end.
@@ -2908,15 +2936,14 @@ func (r *sideRow) Handle(e input.Event, u *gunim.UI) bool {
 		r.showNote(time.Now())
 		r.w.quietNotes(u)
 	case input.KeyPress:
+		if e.Mods&(input.ModControl|input.ModAlt|input.ModSuper) != 0 {
+			// The window's, as Ctrl+PageDown to the next tab.
+			return false
+		}
 		switch {
-		case e.Key == input.KeyUp, e.Key == input.KeyDown:
-			step := 1
-			if e.Key == input.KeyUp {
-				step = -1
-			}
-			r.w.focusRow(r.key, step, u)
-		case e.Key == input.KeyLeft, e.Key == input.KeyRight:
-			r.w.cards.stepCard(r.key, e.Key == input.KeyRight, u)
+		case e.Key == input.KeyUp, e.Key == input.KeyDown, e.Key == input.KeyLeft, e.Key == input.KeyRight:
+			// To what is next to the row on the screen.
+			r.w.cards.move(r, e.Key, u)
 		case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
 			// A page of rows.
 			step := sidebarPage

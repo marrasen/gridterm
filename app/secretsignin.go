@@ -346,10 +346,10 @@ func (a *app) noteSecretHints(items []secrets.Item) {
 }
 
 // unlockFor opens the secrets, asking, when they are locked and hold a
-// secret for hint, and reports whether they are open now. why says what
-// they are wanted for. Declined, or nothing held, it reports false and
+// secret for hint, and reports whether they are open now. saved is what
+// they are opened for, which the question names. Declined, or nothing held, it reports false and
 // the question for the key or the password goes on as before.
-func (q asker) unlockFor(ctx context.Context, hint, why string) bool {
+func (q asker) unlockFor(ctx context.Context, hint string, saved AskFact) bool {
 	if q.kept == nil {
 		return false
 	}
@@ -368,7 +368,7 @@ func (q asker) unlockFor(ctx context.Context, hint, why string) bool {
 	if v == nil {
 		return false
 	}
-	if err := q.a.openVault(v, why); err != nil {
+	if err := q.a.openVault(v, &saved); err != nil {
 		return false
 	}
 	q.inHand(ctx, func() string { q.a.showVault(); return "" })

@@ -17,6 +17,7 @@ import (
 	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/gunim"
+	"github.com/marrasen/gunim/anim"
 	"github.com/marrasen/gunim/geom"
 	"github.com/marrasen/gunim/icon"
 	"github.com/marrasen/gunim/input"
@@ -57,16 +58,6 @@ const (
 
 var sectionTitles = [sections]string{"THIS COMPUTER", "CONNECTED", "SAVED"}
 
-// cardAction is a button on a card, and what it asks the program.
-type cardAction struct {
-	label string
-	ic    *icon.Icon
-	in    gunim.Intent
-}
-
-// do asks what the button does.
-func (a cardAction) do(w *Window, u *gunim.UI) { u.Send(w, a.in) }
-
 // cardInfo is what a card's header shows of its machine.
 type cardInfo struct {
 	name, sub string
@@ -79,7 +70,6 @@ type cardInfo struct {
 	silent  bool
 	badge   string
 	hue     color.NRGBA
-	actions []cardAction
 	section int
 }
 
@@ -143,13 +133,9 @@ func localWho() string {
 
 // cardFor is what m's card shows.
 func (w *Window) cardFor(m machines.ID, name string) cardInfo {
-	open := []cardAction{
-		{"Terminal", icon.SquareTerminal, app.OpenOn{Machine: m}},
-		{"Files", icon.Folder, app.FilesOn{Machine: m}},
-	}
 	c := cardInfo{name: name, badge: badgeOf(name), hue: hueOf(name)}
 	if m == machines.Local {
-		c.name, c.state, c.section, c.actions = "This computer", cardLocal, sectionHere, open
+		c.name, c.state, c.section = "This computer", cardLocal, sectionHere
 		c.badge = "⌂"
 		c.sub = localWho()
 		for _, sh := range w.shellChoices {
@@ -199,10 +185,6 @@ func (w *Window) cardFor(m machines.ID, name string) cardInfo {
 			c.sub += " · via " + w.nameOf(machines.ID(h.Via))
 		}
 	}
-	c.actions = open
-	if c.state == cardOff || c.state == cardLost {
-		c.actions = []cardAction{{"Connect", icon.Plug, app.ConnectTo{Server: m}}}
-	}
 	return c
 }
 
@@ -249,10 +231,45 @@ func newServerCards(w *Window) *serverCards {
 // serverCard is one machine's card: its header row, and a list of
 // what is open on it.
 type serverCard struct {
+	anim.Group
 	id    machines.ID
 	head  *sideRow
 	items []*sideRow
 	info  cardInfo
+	// at is where the card stands, sliding to where the grid puts it;
+	// shown how far it has faded in, 0 to 1, as it comes and goes; size
+	// its size, as last laid out, which it keeps as it goes.
+	at    *anim.Point
+	shown *anim.Float
+	size  geom.Size
+}
+
+// newServerCard is m's card, faded out until it comes in.
+func newServerCard(m machines.ID) *serverCard {
+	c := &serverCard{id: m, shown: anim.NewFloat(0)}
+	c.Add(c.shown)
+	return c
+}
+
+// Transition implements [gunim.Transitioner]: a card fades in as it
+// comes, and out where it stood as it goes.
+func (c *serverCard) Transition(p gunim.Presence, f gunim.Frame) bool {
+	to := float32(1)
+	if p == gunim.Exiting {
+		to = 0
+	}
+	c.shown.Animate(to, widget.Settle.Get(f.Theme))
+	return !c.shown.Active()
+}
+
+// placeAt moves the card to pt: at once the first time, sliding after.
+func (c *serverCard) placeAt(pt geom.Point, f gunim.Frame) {
+	if c.at == nil {
+		c.at = anim.NewPoint(pt)
+		c.Add(c.at)
+		return
+	}
+	c.at.Animate(pt, widget.Settle.Get(f.Theme))
 }
 
 // Children implements [gunim.Composite]: the header, then the rows.
@@ -304,6 +321,9 @@ func (c *serverCard) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Chil
 // Paint implements [gunim.Node].
 func (c *serverCard) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
 	r := geom.Rect{Max: box.Point()}
+	if t := c.shown.Value(); t < 1 {
+		defer p.Layer(paint.LayerOpts{Bounds: r, Opacity: max(t, 0)})()
+	}
 	radius := float32(10)
 	p.RRect(r, radius, paint.Solid(widget.CardFill.Get(f.Theme)))
 	p.RRectStroke(r, radius, paint.Fill{}, paint.Stroke{Width: 1, Color: widget.DialogBorder.Get(f.Theme)})
@@ -350,7 +370,7 @@ func (g *cardGrid) Children() []gunim.Node {
 
 // Layout implements [gunim.Node]: each section's title, then its cards
 // in as many columns as fit, each row of cards as tall as its tallest.
-func (g *cardGrid) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
+func (g *cardGrid) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
 	const pad = 16
 	width := max(c.Max.W, 1)
 	g.s.compact = width < compactBelow
@@ -383,7 +403,10 @@ func (g *cardGrid) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 			for col := 0; col < cols && row+col < len(in); col++ {
 				k := in[row+col]
 				s := k.Layout(gunim.Constraints{Max: geom.Sz(cw, 1e6)})
-				k.Place(geom.Pt(pad+float32(col)*(cw+cardGap), y))
+				card := k.Node().(*serverCard)
+				card.size = s
+				card.placeAt(geom.Pt(pad+float32(col)*(cw+cardGap), y), f)
+				k.Place(card.at.Value())
 				tallest = max(tallest, s.H)
 			}
 			y += tallest + cardGap
@@ -398,11 +421,17 @@ func (g *cardGrid) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Childre
 	} else {
 		hint.Layout(gunim.Constraints{})
 	}
-	// Cards on their way out take no room.
+	// Cards on their way out take no room, and fade where they stood.
 	for n, k := range at {
-		if !placed[n] {
-			k.Layout(gunim.Constraints{})
+		if placed[n] {
+			continue
 		}
+		if card, ok := n.(*serverCard); ok && card.at != nil {
+			k.Layout(gunim.Tight(card.size))
+			k.Place(card.at.Value())
+			continue
+		}
+		k.Layout(gunim.Constraints{})
 	}
 	return geom.Sz(width, y+8)
 }
@@ -427,6 +456,12 @@ func (g *cardGrid) Paint(p *paint.Painter, _ gunim.Frame, _ geom.Size, kids guni
 	}
 	if g.hint.Text != "" {
 		at[g.hint].Paint(p)
+	}
+	// Those going first, under the ones staying.
+	for n, k := range at {
+		if card, ok := n.(*serverCard); ok && g.s.cards[card.id] != card {
+			k.Paint(p)
+		}
 	}
 	for _, m := range g.s.order {
 		if k, ok := at[g.s.cards[m]]; ok {
@@ -476,8 +511,10 @@ func (s *serverCards) sync(rows []sideItem, u *gunim.UI) {
 		c := s.cards[m]
 		fresh := c == nil
 		if fresh {
-			c = &serverCard{id: m}
+			c = newServerCard(m)
 			c.head = s.w.newSideRow(g.head)
+			c.head.card = &c.info
+			c.head.makeButtons()
 			s.cards[m] = c
 		} else {
 			c.head.set(g.head)
@@ -559,24 +596,6 @@ func (s *serverCards) find(text string, u *gunim.UI) {
 	}
 }
 
-// submit is what Enter in the search field asks: the first button of
-// the one machine found, or a connection to what was typed, when it
-// names a host.
-func (s *serverCards) submit(text string) gunim.Intent {
-	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-	if len(s.order) == 1 {
-		if c := s.cards[s.order[0]]; len(c.info.actions) > 0 {
-			return c.info.actions[0].in
-		}
-	}
-	if len(s.order) == 0 && looksLikeHost(text) {
-		return app.ConnectTo{Target: strings.TrimSpace(text)}
-	}
-	return nil
-}
-
 // looksLikeHost reports whether text could be an address to connect
 // to: user@host, or a host name with a dot or a port.
 func looksLikeHost(text string) bool {
@@ -629,70 +648,100 @@ const compactBelow = 420
 
 // The header's buttons: their height, and the room between them.
 const (
-	cardChipHeight = 28
+	cardChipHeight = 32
 	cardChipGap    = 6
-	moreWidth      = 32
 )
 
-// cardChips are the header's buttons, its actions and then ⋯, where
-// they are in a header box wide.
-func (r *sideRow) cardChips(box geom.Size, th *theme.Live) []geom.Rect {
-	if r.w.cards.compact {
-		// Icons alone, at the end: the actions, then ⋯.
-		y := (box.H - cardChipHeight) / 2
-		x := box.W - cardPad - moreWidth
-		out := make([]geom.Rect, len(r.card.actions)+1)
-		out[len(out)-1] = geom.Rc(x, y, moreWidth, cardChipHeight)
-		for i := len(r.card.actions) - 1; i >= 0; i-- {
-			x -= cardChipGap + cardChipHeight
-			out[i] = geom.Rc(x, y, cardChipHeight, cardChipHeight)
-		}
-		return out
+// makeButtons gives a header its buttons, once: Terminal and Files,
+// which connect first where they have to, and ⋯, the machine's menu.
+// They are gunim's, so they press on release, show the keyboard's ring,
+// and say what they do as the pointer rests on them.
+func (r *sideRow) makeButtons() {
+	if r.chips != nil {
+		return
 	}
-	y := box.H - cardPad - cardChipHeight
-	x := float32(cardPad)
-	var out []geom.Rect
-	for _, a := range r.card.actions {
-		run := text.Default().Shape(a.label, smallText.Get(th)+1)
-		w := 10 + 16 + 6 + run.Advance + 12
-		out = append(out, geom.Rc(x, y, w, cardChipHeight))
-		x += w + cardChipGap
-	}
-	out = append(out, geom.Rc(box.W-cardPad-moreWidth, y, moreWidth, cardChipHeight))
-	return out
+	term := iconButton(icon.SquareTerminal, "Terminal")
+	files := iconButton(icon.Folder, "Files")
+	more := iconButton(icon.Ellipsis, "")
+	more.Tooltip = "Everything that opens here"
+	term.OnActivate(func(u *gunim.UI) { u.Send(r, app.OpenOn{Machine: r.machine}) })
+	files.OnActivate(func(u *gunim.UI) { u.Send(r, app.FilesOn{Machine: r.machine}) })
+	more.OnActivate(func(u *gunim.UI) { r.w.openMachineMenu(r, u) })
+	r.chips = []*widget.Button{term, files, more}
 }
 
+// chipWords are the buttons' words, which a compact card says as the
+// pointer rests on its buttons instead.
+var chipWords = []string{"Terminal", "Files"}
+
 // layoutCard lays a header out: the badge and the name on the first
-// line, who and where under it, the buttons along the bottom.
+// line, who and where under it, the buttons along the bottom; compact,
+// all on one line, the buttons icons at its end.
 func (r *sideRow) layoutCard(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
-	if r.w.cards.compact {
+	compact := r.w.cards.compact
+	for i, word := range chipWords {
+		if compact {
+			r.chips[i].Label, r.chips[i].Tooltip = "", word
+		} else {
+			r.chips[i].Label, r.chips[i].Tooltip = word, ""
+		}
+	}
+	sizes := make([]geom.Size, len(r.chips))
+	for i := range r.chips {
+		sizes[i] = kids.At(2 + i).Layout(gunim.Constraints{Max: geom.Sz(c.Max.W, cardChipHeight)})
+	}
+	r.chipRects = r.chipRects[:0]
+	if compact {
 		const badge = 30
-		x := float32(cardPad + badge + 10)
-		buttons := float32(len(r.card.actions)+1)*(cardChipHeight+cardChipGap) + cardPad
-		room := max(0, c.Max.W-x-buttons)
+		h := float32(compactHeadHeight)
+		x := c.Max.W - cardPad
+		rects := make([]geom.Rect, len(r.chips))
+		for i := len(r.chips) - 1; i >= 0; i-- {
+			x -= sizes[i].W
+			rects[i] = geom.Rc(x, (h-sizes[i].H)/2, sizes[i].W, sizes[i].H)
+			x -= cardChipGap
+		}
+		r.chipRects = append(r.chipRects, rects...)
+		tx := float32(cardPad + badge + 10)
+		room := max(0, x-tx)
 		ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(room, 22)})
 		ns := kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(room, 18)})
-		top := (compactHeadHeight - ts.H - ns.H - 1) / 2
-		kids.At(0).Place(geom.Pt(x, top))
-		kids.At(1).Place(geom.Pt(x, top+ts.H+1))
+		top := (h - ts.H - ns.H - 1) / 2
+		kids.At(0).Place(geom.Pt(tx, top))
+		kids.At(1).Place(geom.Pt(tx, top+ts.H+1))
+	} else {
+		const badge = 36
+		h := float32(cardHeadHeight)
+		x := float32(cardPad)
+		for i := range len(r.chips) - 1 {
+			r.chipRects = append(r.chipRects, geom.Rc(x, h-cardPad-sizes[i].H, sizes[i].W, sizes[i].H))
+			x += sizes[i].W + cardChipGap
+		}
+		last := sizes[len(sizes)-1]
+		r.chipRects = append(r.chipRects, geom.Rc(c.Max.W-cardPad-last.W, h-cardPad-last.H, last.W, last.H))
+		tx := float32(cardPad + badge + 10)
+		// The name stops short of the pill, as wide as its words are now.
+		pill := pillWidth(*r.card, f) + 8
+		ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-tx-cardPad-pill), 24)})
+		kids.At(0).Place(geom.Pt(tx, cardPad+1))
+		kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-tx-cardPad), 20)})
+		kids.At(1).Place(geom.Pt(tx, cardPad+ts.H+3))
+	}
+	for i := range r.chips {
+		kids.At(2 + i).Place(r.chipRects[i].Min)
+	}
+	if compact {
 		return geom.Sz(c.Max.W, compactHeadHeight)
 	}
-	const badge = 36
-	x := float32(cardPad + badge + 10)
-	// The name stops short of the pill, as wide as its words are now.
-	pill := pillWidth(*r.card, f) + 8
-	ts := kids.At(0).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-x-cardPad-pill), 24)})
-	kids.At(0).Place(geom.Pt(x, cardPad+1))
-	kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(max(0, c.Max.W-x-cardPad), 20)})
-	kids.At(1).Place(geom.Pt(x, cardPad+ts.H+3))
 	return geom.Sz(c.Max.W, cardHeadHeight)
 }
 
-// paintCard draws a header: the badge, the status pill, the buttons.
+// paintCard draws a header: the badge, the words, the status, the
+// buttons.
 func (r *sideRow) paintCard(p *paint.Painter, f gunim.Frame, box geom.Size, kids gunim.Children) {
-	badge := float32(36)
 	info := r.card
 	compact := r.w.cards.compact
+	badge := float32(36)
 	b := geom.Rc(cardPad, cardPad, badge, badge)
 	if compact {
 		badge = 30
@@ -704,8 +753,9 @@ func (r *sideRow) paintCard(p *paint.Painter, f gunim.Frame, box geom.Size, kids
 	p.RRect(b, 9, paint.Solid(fill))
 	run := text.GoSans(true, false).Shape(info.badge, 14)
 	run.Paint(p, geom.Pt(b.Center().X-run.Advance/2, b.Center().Y-run.Height()/2), info.hue)
-	kids.At(0).Paint(p)
-	kids.At(1).Paint(p)
+	for i := range kids.Len() {
+		kids.At(i).Paint(p)
+	}
 	if compact {
 		// The state as a dot on the badge's corner, in place of the pill.
 		_, c := pillOf(info.state, f.Theme)
@@ -715,7 +765,6 @@ func (r *sideRow) paintCard(p *paint.Painter, f gunim.Frame, box geom.Size, kids
 	} else {
 		r.paintPill(p, f, box)
 	}
-	r.paintChips(p, f, box)
 	if t := r.ring.Value(); t > 0.01 {
 		c := widget.Accent.Get(f.Theme)
 		c.A = uint8(float32(c.A) * min(t, 1))
@@ -809,74 +858,15 @@ func (r *sideRow) paintPill(p *paint.Painter, f gunim.Frame, box geom.Size) {
 	run.Paint(p, geom.Pt(dot.Max.X+6, pr.Center().Y-run.Height()/2), c)
 }
 
-// paintChips draws the header's buttons, the one under the pointer lit.
-func (r *sideRow) paintChips(p *paint.Painter, f gunim.Frame, box geom.Size) {
-	chips := r.cardChips(box, f.Theme)
-	ink, faint := widget.Ink.Get(f.Theme), look.Faint.Get(f.Theme)
-	for i, cr := range chips {
-		fill := widget.ChipFill.Get(f.Theme)
-		if i == r.chipHot {
-			fill = widget.ChipHover.Get(f.Theme)
-		}
-		p.RRect(cr, 7, paint.Solid(fill))
-		if i == len(chips)-1 {
-			// ⋯: three dots.
-			for d := range 3 {
-				dot := geom.Rc(cr.Center().X-7+float32(d)*6, cr.Center().Y-1.5, 3, 3)
-				p.RRect(dot, 1.5, paint.Solid(faint))
-			}
-			continue
-		}
-		a := r.card.actions[i]
-		if r.w.cards.compact {
-			drawIcon(p, a.ic, geom.Rc(cr.Center().X-8, cr.Center().Y-8, 16, 16), ink, 1.5)
-			continue
-		}
-		drawIcon(p, a.ic, geom.Rc(cr.Min.X+10, cr.Center().Y-8, 16, 16), ink, 1.5)
-		run := text.Default().Shape(a.label, smallText.Get(f.Theme)+1)
-		run.Paint(p, geom.Pt(cr.Min.X+10+16+6, cr.Center().Y-run.Height()/2), ink)
-	}
-}
-
-// chipAt is the header button at pt, -1 for none.
-func (r *sideRow) chipAt(pt geom.Point, box geom.Size, th *theme.Live) int {
-	for i, cr := range r.cardChips(box, th) {
-		if cr.Contains(pt) {
-			return i
-		}
-	}
-	return -1
-}
-
-// handleCard is a header's answer to the pointer: a button under it is
-// lit, and a press on one does what it says; ⋯ opens the machine's
-// menu.
+// handleCard is a header's answer to the pointer and the keys: a press
+// on its room gives it the keyboard; its buttons answer for themselves.
 func (r *sideRow) handleCard(e input.Event, u *gunim.UI) bool {
-	box, _ := u.Bounds(r)
-	size := box.Size()
 	switch e := e.(type) {
-	case input.PointerMove:
-		if hot := r.chipAt(e.Pos, size, u.Theme()); hot != r.chipHot {
-			r.chipHot = hot
-			u.Invalidate()
-		}
-		return true
-	case input.PointerLeave:
-		r.chipHot = -1
-		u.Invalidate()
 	case input.PointerDown:
 		if e.Button != input.ButtonPrimary {
 			return false
 		}
-		i := r.chipAt(e.Pos, size, u.Theme())
-		switch {
-		case i < 0:
-			return true
-		case i == len(r.card.actions):
-			r.w.openMachineMenu(r, u)
-		default:
-			r.card.actions[i].do(r.w, u)
-		}
+		u.Focus(r)
 		return true
 	case input.FocusGained:
 		r.ring.Animate(1, widget.Quick.Get(u.Theme()))
@@ -897,39 +887,39 @@ func (r *sideRow) handleCard(e input.Event, u *gunim.UI) bool {
 	return false
 }
 
-// cardKey is a header's answer to a key: the arrows move along the
-// cards and what is open on them, Enter does the first button, F opens
-// the files, E edits the machine, Delete removes it, and the menu key or
-// Shift+F10 opens its menu.
+// cardKey is a header's answer to a key. The arrows go to what is above,
+// below or beside it on the screen; Enter opens the menu of what opens
+// on the machine, its first line a terminal; F opens the files, E edits
+// the machine, Delete removes it, the menu key or Shift+F10 opens the
+// menu too. With Ctrl or Alt held a key is the window's, as Ctrl+PageDown
+// to the next tab.
 func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	w, m := r.w, r.machine
-	plain := e.Mods == 0
-	switch {
-	case e.Key == input.KeyUp, e.Key == input.KeyDown:
-		step := 1
-		if e.Key == input.KeyUp {
-			step = -1
-		}
-		w.focusRow(r.key, step, u)
-	case e.Key == input.KeyLeft, e.Key == input.KeyRight:
-		w.cards.stepCard(r.key, e.Key == input.KeyRight, u)
-	case e.Key == input.KeyHome:
+	if e.Key == input.KeyMenu || e.Key == input.KeyF10 && e.Mods == input.ModShift {
+		w.openMachineMenu(r, u)
+		return true
+	}
+	if e.Mods != 0 {
+		return false
+	}
+	switch e.Key {
+	case input.KeyUp, input.KeyDown, input.KeyLeft, input.KeyRight:
+		w.cards.move(r, e.Key, u)
+	case input.KeyHome:
 		w.focusRow("", 1, u)
-	case e.Key == input.KeyEnd:
+	case input.KeyEnd:
 		w.focusRowsAway(r.key, len(w.cards.keys()), u)
-	case e.Key == input.KeyPageUp, e.Key == input.KeyPageDown:
+	case input.KeyPageUp, input.KeyPageDown:
 		step := sidebarPage
 		if e.Key == input.KeyPageUp {
 			step = -step
 		}
 		w.focusRowsAway(r.key, step, u)
-	case e.Key == input.KeyEnter || e.Key == input.KeyKPEnter, e.Key == input.KeySpace && plain:
-		if len(r.card.actions) > 0 {
-			r.card.actions[0].do(w, u)
-		}
-	case e.Key == input.KeyF && plain:
+	case input.KeyEnter, input.KeyKPEnter, input.KeySpace:
+		w.openMachineMenu(r, u)
+	case input.KeyF:
 		u.Send(w, app.FilesOn{Machine: m})
-	case e.Key == input.KeyE && plain:
+	case input.KeyE:
 		if m == machines.Local {
 			w.thisComputerDialog(u)
 			break
@@ -940,13 +930,11 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 				w.serverForm(&saved, u)
 			}
 		}
-	case e.Key == input.KeyDelete && m != machines.Local:
-		if slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
+	case input.KeyDelete:
+		if m != machines.Local && slices.ContainsFunc(w.saved, func(h remote.Host) bool { return machines.ID(h.ID) == m }) {
 			w.confirmRemove(m, u)
 		}
-	case e.Key == input.KeyMenu, e.Key == input.KeyF10 && e.Mods == input.ModShift:
-		w.openMachineMenu(r, u)
-	case e.Key == input.KeyEscape:
+	case input.KeyEscape:
 		// Back to the pane last worked in, wherever it is.
 		if id := w.lastWorked; id != "" && id != w.focused {
 			u.Send(r, app.FocusPane{Pane: id})
@@ -959,23 +947,57 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	return true
 }
 
-// stepCard gives the keyboard to the header of the card after the one
-// the row keyed from is on, or before it.
-func (s *serverCards) stepCard(from string, forward bool, u *gunim.UI) {
-	at := -1
-	for i, m := range s.order {
-		c := s.cards[m]
-		if c.head.key == from || slices.ContainsFunc(c.items, func(r *sideRow) bool { return r.key == from }) {
-			at = i
+// move gives the keyboard to what is next to from on the screen, the
+// way key points: the nearest header or row past from's edge, the one
+// most in line with it first. Down from a header is the first row under
+// it; down from a card's last row, the card below.
+func (s *serverCards) move(from gunim.Node, key input.Key, u *gunim.UI) {
+	cur, ok := u.Bounds(from)
+	if !ok {
+		return
+	}
+	var best gunim.Node
+	bestScore := float32(-1)
+	for _, k := range s.keys() {
+		row, ok := s.row(k)
+		if !ok || !row.takesKeys() || gunim.Node(row) == from {
+			continue
+		}
+		b, ok := u.Bounds(row)
+		if !ok {
+			continue
+		}
+		var along, across float32
+		switch key {
+		case input.KeyDown:
+			along, across = b.Min.Y-cur.Max.Y, b.Center().X-cur.Center().X
+		case input.KeyUp:
+			along, across = cur.Min.Y-b.Max.Y, b.Center().X-cur.Center().X
+		case input.KeyRight:
+			along, across = b.Min.X-cur.Max.X, b.Center().Y-cur.Center().Y
+		case input.KeyLeft:
+			along, across = cur.Min.X-b.Max.X, b.Center().Y-cur.Center().Y
+		}
+		if along < -1 {
+			continue
+		}
+		score := max(along, 0) + 3*abs32(across)
+		if best == nil || score < bestScore {
+			best, bestScore = row, score
 		}
 	}
-	next := at + 1
-	if !forward {
-		next = at - 1
+	if best != nil {
+		u.Focus(best)
+		u.Reveal(best)
 	}
-	if at >= 0 && next >= 0 && next < len(s.order) {
-		u.Focus(s.cards[s.order[next]].head)
+}
+
+// abs32 is x without its sign.
+func abs32(x float32) float32 {
+	if x < 0 {
+		return -x
 	}
+	return x
 }
 
 // at is the header of the card at p, in the window's space, or nil.
@@ -1000,10 +1022,9 @@ func (s *serverCards) first() gunim.Node {
 
 // menuAnchor is where a heading's menu opens from: its ⋯ on a card, its
 // plus otherwise.
-func (r *sideRow) menuAnchor(box geom.Size, th *theme.Live) geom.Rect {
-	if r.card != nil {
-		chips := r.cardChips(box, th)
-		return chips[len(chips)-1]
+func (r *sideRow) menuAnchor(box geom.Size, _ *theme.Live) geom.Rect {
+	if r.card != nil && len(r.chipRects) > 0 {
+		return r.chipRects[len(r.chipRects)-1]
 	}
 	return geom.Rect{Min: geom.Pt(box.W-plusWidth-6, 0), Max: box.Point()}
 }

@@ -210,7 +210,7 @@ func (a *app) makeVault(signer ssh.Signer, keyFile string) error {
 // when no key of its is here or the one here is refused. It runs on a
 // goroutine of its own.
 func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
-	err := a.openVault(v, "")
+	err := a.openVault(v, nil)
 	a.events <- func() {
 		switch {
 		case err == nil:
@@ -222,14 +222,14 @@ func (a *app) unlockVault(v *secrets.Vault, what string, then func()) {
 	}
 }
 
-// openVault unlocks v as unlockVault does, and says how it went. why,
-// when it is not empty, says on each question why the secrets are
-// wanted now. It asks, so it runs off the program's goroutine.
-func (a *app) openVault(v *secrets.Vault, why string) error {
+// openVault unlocks v as unlockVault does, and says how it went. saved,
+// when it is not nil, is what the secrets are opened for, which each
+// question names. It asks, so it runs off the program's goroutine.
+func (a *app) openVault(v *secrets.Vault, saved *AskFact) error {
 	keyFile, err := vaultkeys.ToUnlock(v)
 	if err == nil {
 		var signer ssh.Signer
-		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a, "").saying(why))
+		signer, err = a.ring.Unlock(a.ctx, keyFile, newAsker(a, "").opening(saved))
 		if err == nil {
 			err = v.Unlock([]ssh.Signer{signer})
 		}
@@ -240,9 +240,12 @@ func (a *app) openVault(v *secrets.Vault, why string) error {
 		return err
 	}
 	for wrong := 0; ; wrong++ {
-		q := Ask{Title: "Unlock your secrets", Icon: "lock", Text: why, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+		q := Ask{Title: "Unlock your secrets", Icon: "lock", Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+		if saved != nil {
+			q.Facts = []AskFact{*saved}
+		}
 		if wrong > 0 {
-			q.Text = "That passphrase didn't open the secrets. Try again."
+			q.Problem = "That passphrase didn't open the secrets. Try again."
 		}
 		ans, err := a.ask(a.ctx, q)
 		if err != nil || !ans.Yes {

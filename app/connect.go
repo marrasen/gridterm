@@ -61,12 +61,22 @@ type Ask struct {
 	// list under the fields. Its answer comes last: the index of the
 	// one picked, or -1 for none.
 	Saved []string
+	// Facts are what the question is about, each on a line of its own
+	// before the fields: a label, a name in bold, and a note under it,
+	// faint, as a key's comment. Problem says, in the colour of a
+	// failure, what went wrong with the last answer.
+	Facts   []AskFact
+	Problem string
 	// win is the window it is asked in.
 	win int
 	// Icon is the Lucide name of the icon before the title, one of
 	// askIcons, or empty for none; a Danger question shows a warning.
 	Icon string
 }
+
+// AskFact is one thing a question is about: Label, as "Key", the Name,
+// in bold, and a Note under it, faint, or "".
+type AskFact struct{ Label, Name, Note string }
 
 // errDeclined is the user saying no to a question, which stops the
 // connection quietly.
@@ -334,14 +344,15 @@ type asker struct {
 	// asker whose answers are kept nowhere, as the one unlocking the
 	// secrets themselves.
 	kept *signIns
-	// why says on a passphrase's question what it is wanted for, when
-	// that is not the connection the question is about.
-	why string
+	// savedFor is, while the secrets are opened for a sign-in, what they
+	// are opened for, which the passphrase's question names first.
+	savedFor *AskFact
 }
 
-// saying is q, saying why on its passphrase questions.
-func (q asker) saying(why string) asker {
-	q.why = why
+// opening is q, asking for the passphrase that opens the secrets for
+// saved, nil for none.
+func (q asker) opening(saved *AskFact) asker {
+	q.savedFor = saved
 	return q
 }
 
@@ -375,32 +386,32 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 		}
 		// Kept in the secrets, which are locked: they are asked to open
 		// first, and the passphrase comes from them.
-		if q.unlockFor(ctx, hintOf("key", key.Path), "They hold the passphrase for "+keyName(key.Path)+".") {
+		if q.unlockFor(ctx, hintOf("key", key.Path), AskFact{Label: "Saved for", Name: keyName(key.Path), Note: keyNote(key.Path)}) {
 			if pass := q.inHand(ctx, func() string { return q.a.passphraseInHand(key.Path) }); pass != "" {
 				return pass, nil
 			}
 		}
 	}
-	// The key by its file's name: the folder only where it is not the
-	// usual one, ~/.ssh. Unlocking the secrets, the question says so,
-	// and why, and that this key is what opens them.
-	name := keyName(key.Path)
-	title, text := "Unlock "+name, keyFolder(key.Path)
-	if q.why != "" {
-		title, text = "Unlock your secrets", q.why+" They open with your key "+name+"."
+	// The key by its file's name, in bold, with its comment and, where it
+	// is not ~/.ssh, its folder under it. Opening the secrets, the
+	// question says what for first, and that this key opens them.
+	this := AskFact{Label: "Key", Name: keyName(key.Path), Note: keyNote(key.Path)}
+	q2 := Ask{Title: "Unlock SSH key", Icon: "key-round", Facts: []AskFact{this}, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+	if q.savedFor != nil {
+		this.Label = "Opened by"
+		q2.Title, q2.Facts = "Unlock your secrets", []AskFact{*q.savedFor, this}
 	}
 	if key.Wrong > 0 {
-		text = "That passphrase didn't open " + name + ". Try again."
+		q2.Problem = "That passphrase didn't open it. Try again."
 	}
-	q2 := Ask{Title: title, Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
 	return q.askSecret(ctx, q2, "Save this passphrase in the secrets", signIn{file: key.Path})
 }
 
 // keyName is a key file's name, as a question says it.
 func keyName(path string) string { return filepath.Base(path) }
 
-// keyFolder says where a key file is, for a question, when that is not
-// the usual ~/.ssh, and is "" when it is.
+// keyFolder is the folder a key file is in, for a question, home as ~,
+// and "" for the usual one, ~/.ssh.
 func keyFolder(path string) string {
 	dir := filepath.Dir(path)
 	if home, err := os.UserHomeDir(); err == nil {
@@ -411,7 +422,35 @@ func keyFolder(path string) string {
 			dir = filepath.Join("~", rel)
 		}
 	}
-	return "In " + dir + "."
+	return dir
+}
+
+// keyComment is the comment a key was made with, as its public half
+// keeps it, or "". The private half keeps it too, but locked, where a
+// question for its passphrase can't read it.
+func keyComment(path string) string {
+	data, err := os.ReadFile(path + ".pub")
+	if err != nil {
+		return ""
+	}
+	line, _, _ := strings.Cut(string(data), "\n")
+	fields := strings.Fields(line)
+	if len(fields) < 3 {
+		return ""
+	}
+	return strings.Join(fields[2:], " ")
+}
+
+// keyNote is what a question says under a key's name: its comment, and
+// its folder where that is not ~/.ssh.
+func keyNote(path string) string {
+	var parts []string
+	for _, p := range []string{keyComment(path), keyFolder(path)} {
+		if p != "" {
+			parts = append(parts, p)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // Password implements [remote.Ask].
@@ -430,7 +469,7 @@ func (q asker) Password(ctx context.Context, user, host string) (string, error) 
 			if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
 				return pass, nil
 			}
-			if q.unlockFor(ctx, hintOf("login", login), "They hold the password for "+login+".") {
+			if q.unlockFor(ctx, hintOf("login", login), AskFact{Label: "Saved for", Name: login, Note: "its password"}) {
 				if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
 					return pass, nil
 				}

@@ -195,7 +195,7 @@ func TestLockedSecretsHoldingAKeysPassphraseAreAskedToOpen(t *testing.T) {
 		p, _ := newAsker(a, "srv").keeping(&signIns{}).Passphrase(t.Context(), remote.LockedKey{Path: other})
 		got <- p
 	}()
-	answer(t, a, "Unlock id_other", true, "typed", "")
+	answer(t, a, "Unlock SSH key", true, "typed", "")
 	if p := await(t, a, got); p != "typed" {
 		t.Fatalf("the other key was unlocked with %q", p)
 	}
@@ -220,7 +220,28 @@ func TestAKeyIsNamedByItsFile(t *testing.T) {
 	if got := keyFolder(filepath.Join(home, ".ssh", "id_rsa")); got != "" {
 		t.Fatalf("a key in ~/.ssh says %q", got)
 	}
-	if got, want := keyFolder(filepath.Join(home, "keys", "work", "id_rsa")), "In "+filepath.Join("~", "keys", "work")+"."; got != want {
+	if got, want := keyFolder(filepath.Join(home, "keys", "work", "id_rsa")), filepath.Join("~", "keys", "work"); got != want {
 		t.Fatalf("a key elsewhere says %q, want %q", got, want)
+	}
+}
+
+// A key's note says the comment it was made with, from its public half.
+func TestAKeysNoteSaysItsComment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	key := filepath.Join(home, ".ssh", "id_rsa")
+	if err := os.MkdirAll(filepath.Dir(key), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(key+".pub", []byte("ssh-rsa AAAAB3Nza marcus at laptop\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := keyNote(key); got != "marcus at laptop" {
+		t.Fatalf("the note says %q", got)
+	}
+	elsewhere := filepath.Join(home, "keys", "id_rsa")
+	if got := keyNote(elsewhere); got != filepath.Join("~", "keys") {
+		t.Fatalf("a key elsewhere with no public half says %q", got)
 	}
 }

@@ -1,6 +1,8 @@
 package view
 
 import (
+	"strings"
+
 	"github.com/marrasen/kakel/app"
 	"github.com/marrasen/kakel/look"
 
@@ -48,9 +50,8 @@ func newServersPane(w *Window) *serversPane {
 	}
 	p.head.Size = widget.DialogTitleSize
 	p.search.Icon = icon.Search
-	p.search.Placeholder = "Find a machine, or user@host to connect"
+	p.search.Placeholder = "Find a machine, or user@host  ( / )"
 	p.search.OnEdit = func(text string, u *gunim.UI) { w.cards.find(text, u) }
-	p.search.OnSubmit = func(text string) gunim.Intent { return w.cards.submit(text) }
 	p.add.Icon = icon.Plus
 	p.add.Icons = []*icon.Icon{icon.Server, icon.Zap, icon.Plug, icon.FileInput}
 	p.add.Picked = func(i int, u *gunim.UI) { w.run(addCommands[i], u) }
@@ -89,9 +90,15 @@ func (p *serversPane) Handle(e gi.Event, u *gunim.UI) bool {
 		}
 	case gi.KeyPress:
 		switch {
-		case inSearch && e.Key == gi.KeyDown:
+		case inSearch && (e.Key == gi.KeyDown || e.Key == gi.KeyEnter || e.Key == gi.KeyKPEnter):
+			// To the first machine found; Enter with none found connects
+			// to what was typed, when it reads as an address.
 			if n := p.w.cards.first(); n != nil {
 				u.Focus(n)
+				return true
+			}
+			if text := strings.TrimSpace(p.search.Text()); e.Key != gi.KeyDown && looksLikeHost(text) {
+				u.Send(p.w, app.ConnectTo{Target: text})
 				return true
 			}
 		case inSearch && e.Key == gi.KeyEscape && p.search.Text() != "":

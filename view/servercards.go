@@ -296,7 +296,12 @@ func (c *serverCard) Layout(cs gunim.Constraints, _ gunim.Frame, kids gunim.Chil
 	head := at[c.head]
 	hs := head.Layout(gunim.Constraints{Max: geom.Sz(w, cs.Max.H)})
 	head.Place(geom.Pt(0, 0))
-	y := hs.H + 4
+	// Nothing open on it, the header is the whole card, its ring round
+	// all of it.
+	y := hs.H
+	if len(c.items) > 0 {
+		y += 4
+	}
 	for _, r := range c.items {
 		k, ok := at[r]
 		if !ok {

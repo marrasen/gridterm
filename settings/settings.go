@@ -99,6 +99,9 @@ type stored struct {
 	// SecretHintsKnown says the hints were taken from the secrets once,
 	// so none means the secrets hold no sign-in.
 	SecretHintsKnown bool `json:"secretHintsKnown,omitempty"`
+	// FilesInWindow says files open in a file manager window of their
+	// own, the user's last choice, rather than in a file pane.
+	FilesInWindow bool `json:"filesInWindow,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -946,6 +949,30 @@ func (s *Settings) PutSecretHints(hints []string) error {
 	}
 	before := s.have
 	s.have.SecretHints, s.have.SecretHintsKnown = slices.Clone(hints), true
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// FilesInWindow reports whether files open in a file manager window,
+// as the user last chose, rather than in a file pane.
+func (s *Settings) FilesInWindow() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.FilesInWindow
+}
+
+// PutFilesInWindow keeps where files open, and saves.
+func (s *Settings) PutFilesInWindow(on bool) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.FilesInWindow = on
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

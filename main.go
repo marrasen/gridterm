@@ -29,6 +29,7 @@ import (
 
 	"github.com/marrasen/gunim"
 	"github.com/marrasen/gunim/driver"
+	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
 
 	"github.com/marrasen/kakel/appicon"
@@ -119,6 +120,9 @@ func run() error {
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen}, Handovers: handovers,
 			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey,
+			// The file manager's windows, gunim's own, outside kakel's
+			// tabs; they end with the program.
+			Files: filemanager.NewHub(ctx, a),
 		})
 	})
 	if errors.Is(err, driver.ErrNoDriver) {

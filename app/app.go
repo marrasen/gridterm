@@ -7,6 +7,7 @@ package app
 import (
 	"context"
 	"errors"
+	"github.com/marrasen/gunim/filemanager"
 	"log"
 	"maps"
 	"runtime"
@@ -686,8 +687,14 @@ type app struct {
 	// openLaunch opens the launcher's window, hotKeys takes its key from
 	// every program, and launch is the launcher as it is.
 	openLaunch LauncherOpener
-	hotKeys    HotKeys
-	launch     launchState
+	// files opens the file manager's windows, and fileWins are those
+	// open; serverPlaces are the servers as its places list them, read
+	// off the program's goroutine.
+	files        FileWindows
+	fileWins     []*filemanager.Window
+	serverPlaces atomic.Pointer[[]filemanager.Place]
+	hotKeys      HotKeys
+	launch       launchState
 	// found are the shells on this machine, once scanned says they have
 	// been looked for; shellGoneSaid says the kept shell was found gone,
 	// which is said once a run.
@@ -845,7 +852,8 @@ func (a *app) run(ctx context.Context) error {
 				a.windowClosed(in.w)
 				// The last gone, unless kept in the tray or another is on
 				// its way, as the first, hidden, gives way to one shown.
-				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 {
+				// A file manager window open keeps kakel too.
+				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 {
 					a.closeAll()
 					a.leaveTray()
 					return a.c.Err()
@@ -882,7 +890,7 @@ func (a *app) run(ctx context.Context) error {
 		a.rehome()
 		a.leaveIfEmpty()
 		a.leaveEmpty()
-		if (a.gone || !a.inTray() && a.opening == 0) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
+		if (a.gone || !a.inTray() && a.opening == 0 && len(a.fileWins) == 0) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
 			// Leaving with no window to wait for, as from the tray.
 			a.closeAll()
 			a.leaveTray()
@@ -1071,6 +1079,9 @@ func (a *app) emptyAndIdle() bool {
 }
 
 func (a *app) publish() {
+	if a.files != nil {
+		a.notePlaces()
+	}
 	a.forgetUnused()
 	a.noteTabFocus()
 	a.st.Machines = a.machines.Infos()
@@ -1367,6 +1378,14 @@ func (a *app) handle(in gunim.Intent) {
 	case OpenOn:
 		err = a.open(in.Machine, Placement{})
 	case FilesOn:
+		err = a.filesOn(in.Machine, in.Path)
+	case OpenFilesOn:
+		err = a.openFilesWhere(in.Machine, in.Path)
+	case OpenFileManager:
+		a.keepFilesIn(true)
+		err = a.openFileManager(in.Machine, in.Path)
+	case FilesInPane:
+		a.keepFilesIn(false)
 		err = a.filesOn(in.Machine, in.Path)
 	case ReloadShortcuts:
 		err = a.loadShortcuts(true)
@@ -2144,6 +2163,8 @@ type Config struct {
 	// from every program; either may be unset.
 	OpenLauncher LauncherOpener
 	HotKeys      HotKeys
+	// Files opens the file manager's windows; unset, files open in panes.
+	Files FileWindows
 }
 
 // Start runs the program side until its last window closes.
@@ -2158,6 +2179,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a.traySet = cfg.Tray
 	a.handovers = cfg.Handovers
 	a.openLaunch = cfg.OpenLauncher
+	a.files = cfg.Files
 	a.hotKeys = cfg.HotKeys
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)

@@ -670,7 +670,7 @@ func (r *sideRow) makeButtons() {
 	more := iconButton(icon.Ellipsis, "")
 	more.Tooltip = "Everything that opens here"
 	term.OnActivate(func(u *gunim.UI) { u.Send(r, app.OpenOn{Machine: r.machine}) })
-	files.OnActivate(func(u *gunim.UI) { u.Send(r, app.FilesOn{Machine: r.machine}) })
+	files.OnActivate(func(u *gunim.UI) { u.Send(r, app.OpenFilesOn{Machine: r.machine}) })
 	more.OnActivate(func(u *gunim.UI) { r.w.openMachineMenu(r, u) })
 	r.chips = []*widget.Button{term, files, more}
 }
@@ -923,7 +923,7 @@ func (r *sideRow) cardKey(e input.KeyPress, u *gunim.UI) bool {
 	case input.KeyEnter, input.KeyKPEnter, input.KeySpace:
 		w.openMachineMenu(r, u)
 	case input.KeyF:
-		u.Send(w, app.FilesOn{Machine: m})
+		u.Send(w, app.OpenFilesOn{Machine: m})
 	case input.KeyE:
 		if m == machines.Local {
 			w.thisComputerDialog(u)

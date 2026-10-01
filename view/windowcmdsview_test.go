@@ -89,8 +89,8 @@ func TestCommandsOnOneThingFindItByGridtermsName(t *testing.T) {
 		{"server.open.my-desk", app.ConnectTo{Server: "d1"}},
 		{"conn.terminal.my-desk", app.OpenOn{Machine: "d1"}},
 		{"conn.terminal.", app.OpenOn{Machine: ""}},
-		{"conn.files.my-desk", app.FilesOn{Machine: "d1"}},
-		{"conn.files.my-desk.1", app.FilesOn{Machine: "d1", Path: "/srv/www"}},
+		{"conn.files.my-desk", app.OpenFilesOn{Machine: "d1"}},
+		{"conn.files.my-desk.1", app.OpenFilesOn{Machine: "d1", Path: "/srv/www"}},
 	} {
 		if !win.run(c.id, lastUI) {
 			t.Fatalf("%s was not taken", c.id)

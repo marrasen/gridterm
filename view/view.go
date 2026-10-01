@@ -526,6 +526,10 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	case "sshkey.add":
 		w.addSavedKey(u)
 		return true
+	case "files.manager":
+		// On the machine of the pane in front, as Files is.
+		u.Send(w, app.OpenFileManager{Machine: w.machineOf(w.focused)})
+		return true
 	case "help.shortcuts":
 		u.Send(w, app.ShowHelp{})
 		return true
@@ -1257,7 +1261,7 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 	case strings.HasPrefix(id, "conn.files."):
 		rest := strings.TrimPrefix(id, "conn.files.")
 		if m, ok := machineNamed(rest); ok {
-			u.Send(w, app.FilesOn{Machine: m})
+			u.Send(w, app.OpenFilesOn{Machine: m})
 			break
 		}
 		// A folder offered on a machine: its number follows the
@@ -1269,7 +1273,7 @@ func (w *Window) runItem(id string, u *gunim.UI) bool {
 		m, ok := machineNamed(rest[:cut])
 		i, numbered := nth(rest[cut+1:])
 		if folders := w.foldersOn(m); ok && numbered && i < len(folders) {
-			u.Send(w, app.FilesOn{Machine: m, Path: folders[i]})
+			u.Send(w, app.OpenFilesOn{Machine: m, Path: folders[i]})
 		}
 	case strings.HasPrefix(id, shellfind.CommandPrefix):
 		for i, sid := range w.shellIDs() {
@@ -3361,10 +3365,13 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 		}
 	}
 	heading("Files")
-	add(icon.House, "Home", send(app.FilesOn{Machine: m}))
+	add(icon.House, "Home", send(app.OpenFilesOn{Machine: m}))
 	for _, f := range w.foldersOn(m) {
-		add(icon.Folder, f, send(app.FilesOn{Machine: m, Path: f}))
+		add(icon.Folder, f, send(app.OpenFilesOn{Machine: m, Path: f}))
 	}
+	// Where they open, kept for the next time.
+	add(icon.AppWindow, "Files in a Window", send(app.OpenFileManager{Machine: m}))
+	add(icon.PanelsTopLeft, "Files in a Pane", send(app.FilesInPane{Machine: m}))
 	if m != "" {
 		heading("Forward")
 		add(icon.Cable, "Tunnel…", func(u *gunim.UI) { w.tunnelDialogOn(m, false, u) })

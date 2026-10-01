@@ -156,7 +156,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	machine := func(m machines.ID, title string) gunim.TrayItem {
 		sub := []gunim.TrayItem{
 			{Title: "Terminal", ID: act(func() { a.toTray(func() { a.handle(OpenOn{Machine: m}) }) })},
-			{Title: "Files", ID: act(func() { a.toTray(func() { a.handle(FilesOn{Machine: m}) }) })},
+			{Title: "Files", ID: act(func() { a.toTray(func() { a.handle(OpenFilesOn{Machine: m}) }) })},
 		}
 		if m == machines.Local {
 			for _, sh := range a.st.Shells {

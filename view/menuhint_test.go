@@ -20,8 +20,9 @@ func TestAMenuLineSaysItsFullTitleAtTheBottom(t *testing.T) {
 	if win.status.hinted != "" {
 		t.Fatalf("with nothing highlighted, the hint is %q", win.status.hinted)
 	}
-	// Right goes into File, at its first line, and Down to its second, Pane, under the caption Close.
-	for _, k := range []gi.Key{gi.KeyRight, gi.KeyDown} {
+	// Right goes into File, at its first line, and Down twice, past Open
+	// File Manager, to Pane, under the caption Close.
+	for _, k := range []gi.Key{gi.KeyRight, gi.KeyDown, gi.KeyDown} {
 		lastWindow.Input(gi.KeyPress{Key: k})
 		frame()
 	}

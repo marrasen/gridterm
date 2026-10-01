@@ -186,7 +186,7 @@ func TestAWSLDistributionsFilesAreOfferedHere(t *testing.T) {
 	if !win.run("conn.files..1", lastUI) {
 		t.Fatal("the first folder here was not taken")
 	}
-	if in := nextIntent(t); in != (app.FilesOn{Machine: "", Path: root}) {
+	if in := nextIntent(t); in != (app.OpenFilesOn{Machine: "", Path: root}) {
 		t.Fatalf("it sent %#v", in)
 	}
 }

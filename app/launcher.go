@@ -383,7 +383,7 @@ func (a *app) handleLaunch(in gunim.Intent) {
 func (a *app) launchOn(in Launch) {
 	switch {
 	case strings.HasPrefix(in.Action, "files:"):
-		a.handle(FilesOn{Machine: in.Machine, Path: strings.TrimPrefix(in.Action, "files:")})
+		a.handle(OpenFilesOn{Machine: in.Machine, Path: strings.TrimPrefix(in.Action, "files:")})
 	case strings.HasPrefix(in.Action, "saved:"):
 		// By what it is, not where it stood: the list moves as
 		// commands are run.
@@ -401,7 +401,7 @@ func (a *app) launchOn(in Launch) {
 	case in.Action == "app:window":
 		a.newWindow(func() { a.handle(NewTerminal{}) })
 	case in.Action == "files":
-		a.handle(FilesOn{Machine: in.Machine})
+		a.handle(OpenFilesOn{Machine: in.Machine})
 	case in.Action == "log":
 		a.handle(ShowLog{Machine: in.Machine})
 	case len(in.Action) > len("shell:") && in.Action[:len("shell:")] == "shell:":

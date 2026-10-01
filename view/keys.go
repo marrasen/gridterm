@@ -61,6 +61,7 @@ func Shortcuts() *ui.Keymap {
 // commands are what the palette offers, in gridterm's words.
 var commands = []struct{ id, title string }{
 	{"conn.terminal", "New Terminal"},
+	{"files.manager", "Open File Manager"},
 	{"shell.default", "New Terminal, Default Shell"},
 	{"pane.splitRight", "Split Right"},
 	{"pane.splitDown", "Split Down"},
@@ -257,6 +258,7 @@ var commandIcons = map[string]*icon.Icon{
 	"sshkey.make":            icon.KeyRound,
 	"sshkey.forget":          icon.KeySquare,
 	"sshkey.add":             icon.KeyRound,
+	"files.manager":          icon.FolderOpen,
 	"sshkey.lock":            icon.LockKeyhole,
 	"shell.termProgram":      icon.IdCard,
 	"view.themesStart":       icon.FilePlus,
@@ -300,6 +302,7 @@ var menus = []struct {
 }{
 	{"File", []menuItem{
 		{id: "conn.terminal", title: "New Terminal"},
+		{id: "files.manager", title: "Open File Manager"},
 		{title: "Close", caption: true}, {id: "pane.close", title: "Pane"},
 		{id: "app.exit", title: "Exit", group: true},
 	}},
@@ -467,6 +470,7 @@ var commandAlso = map[string][]string{
 	"sshkey.make":           {"make", "create", "generate", "keygen", "ed25519"},
 	"sshkey.forget":         {"forget", "kept", "delete", "list", "identity", "clear"},
 	"sshkey.add":            {"existing key", "import", "id_rsa", "id_ed25519", "identity", "private key"},
+	"files.manager":         {"file manager", "files", "explorer", "finder", "folders", "browse"},
 	"sidebar.toggle":        {"show", "hide", "toggle", "connections", "panel", "sidebar", "machines", "window"},
 	"sidebar.focus":         {"go to the connections", "panel", "focus sidebar", "machines"},
 	"conn.command":          {"here", "program", "execute"},

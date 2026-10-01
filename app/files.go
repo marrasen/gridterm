@@ -258,7 +258,7 @@ func (a *app) filesOf(pane string) vfs.FS {
 type wrappedFiles struct{ under, over vfs.FS }
 
 // openFiles opens a file pane at home on the focused pane's machine.
-func (a *app) openFiles() error { return a.filesOn(a.filesKey(a.st.Focus), "") }
+func (a *app) openFiles() error { return a.openFilesWhere(a.filesKey(a.st.Focus), "") }
 
 // filesOn opens a file pane on machine, at path, or when path is empty
 // at the one folder saved for the machine, or else at home.

@@ -53,6 +53,13 @@ user, port, key file and ProxyJump.
 
 ### Fixed
 
+**Copies to and from servers are many times faster on a slow link.**
+A copy read and wrote 64 KB at a time, each waiting a full round trip
+to the server, so a server 50 ms away gave about 1.3 MB a second however
+fast the line. Copies now keep many requests on their way at once. Over
+a 20 ms round trip, 8 MB goes in about a fifth of a second either way,
+where it took 2.8 s down and 5.4 s up.
+
 **A server's own key is tried first.** A key chosen for a server was
 tried only after the SSH agent's keys, so an agent that didn't answer
 held the connection up for ten seconds before the key was tried. The

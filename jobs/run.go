@@ -8,8 +8,8 @@ import (
 	"io/fs"
 	"slices"
 	"strings"
+	"time"
 
-	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/vfs"
 )
 
@@ -526,19 +526,65 @@ func (j *Job) partName(to string) string {
 
 // stream copies the bytes, counting them and stopping when the job is
 // cancelled.
+//
+// Over SFTP a read or a write is a round trip to the server, and one at a
+// time a copy goes no faster than a round trip lets it: 64 KB each, which
+// at 50 ms is about 1.3 MB a second, whatever the line can carry. pkg/sftp
+// keeps many requests on their way at once, but only in its own copies: a
+// file read from a server writes itself out with WriteTo, and a file
+// written to one reads itself in with ReadFromWithConcurrency. Each is
+// used where the file is one of those; between two servers both are, and
+// a pipe joins them. The order the parts land in does not matter: the
+// copy goes to a part file, renamed onto the name only once it is whole.
 func (j *Job) stream(ctx context.Context, out io.Writer, in io.Reader) error {
-	if j.opts.Count != nil {
-		out = meter.Writer{W: out, M: j.opts.Count, Out: j.opts.Out}
+	counted := func(n int) {
+		if n <= 0 {
+			return
+		}
+		j.update(func(p *Progress) { p.BytesDone += int64(n) })
+		if m := j.opts.Count; m != nil {
+			if j.opts.Out {
+				m.Moved(0, n, time.Now())
+			} else {
+				m.Moved(n, 0, time.Now())
+			}
+		}
 	}
+	if to, ok := out.(concurrentWriter); ok {
+		from := in
+		if wt, ok := in.(io.WriterTo); ok {
+			// Between two servers: the reads go on all at once as well,
+			// into a pipe the writes take from.
+			pr, pw := io.Pipe()
+			done := make(chan struct{})
+			go func() {
+				defer close(done)
+				_, err := wt.WriteTo(pw)
+				pw.CloseWithError(err)
+			}()
+			defer func() {
+				_ = pr.Close()
+				<-done
+			}()
+			from = pr
+		}
+		_, err := to.ReadFromWithConcurrency(cancelReader{ctx: ctx, r: from, counted: counted}, 0)
+		return err
+	}
+	if wt, ok := in.(io.WriterTo); ok {
+		_, err := wt.WriteTo(cancelWriter{ctx: ctx, w: out, counted: counted})
+		return err
+	}
+	// Neither end a server's file: the bytes go across as they are read.
 	buf := make([]byte, copyBuffer)
+	w := cancelWriter{ctx: ctx, w: out, counted: counted}
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
 		n, err := in.Read(buf)
 		if n > 0 {
-			wrote, werr := out.Write(buf[:n])
-			j.update(func(p *Progress) { p.BytesDone += int64(wrote) })
+			wrote, werr := w.Write(buf[:n])
 			if werr != nil {
 				return werr
 			}
@@ -553,6 +599,46 @@ func (j *Job) stream(ctx context.Context, out io.Writer, in io.Reader) error {
 			return err
 		}
 	}
+}
+
+// concurrentWriter is a file that reads itself in with many writes on
+// their way at once: pkg/sftp's.
+type concurrentWriter interface {
+	ReadFromWithConcurrency(r io.Reader, concurrency int) (int64, error)
+}
+
+// cancelWriter passes writes on to w, counting them, and fails once ctx
+// has ended, which stops a copy that does its own writing.
+type cancelWriter struct {
+	ctx     context.Context
+	w       io.Writer
+	counted func(int)
+}
+
+func (c cancelWriter) Write(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := c.w.Write(p)
+	c.counted(n)
+	return n, err
+}
+
+// cancelReader passes reads on from r, counting them, and fails once ctx
+// has ended, which stops a copy that does its own reading.
+type cancelReader struct {
+	ctx     context.Context
+	r       io.Reader
+	counted func(int)
+}
+
+func (c cancelReader) Read(p []byte) (int, error) {
+	if err := c.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := c.r.Read(p)
+	c.counted(n)
+	return n, err
 }
 
 // renames reports whether the job's move is a rename: within one

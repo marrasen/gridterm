@@ -85,7 +85,9 @@ func dial(t *testing.T, a *app, code string) (c *agent.Client, sh agent.Share) {
 func TestAnAgentTypesIntoASharedPaneAndReadsItBack(t *testing.T) {
 	a, code := agentApp(t)
 	c, sh := dial(t, a, code)
-	if len(sh.Panes) != 1 || sh.Panes[0].Label != "Terminal 1 on this machine" {
+	// cmd.exe names its pane after itself on Windows: the machine is
+	// what the label adds.
+	if len(sh.Panes) != 1 || !strings.HasSuffix(sh.Panes[0].Label, " on this machine") {
 		t.Fatalf("the share holds %+v", sh.Panes)
 	}
 	id := sh.Panes[0].ID

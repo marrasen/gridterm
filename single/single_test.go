@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"testing"
 	"time"
@@ -49,7 +50,9 @@ func TestACommandLineIsHandedOver(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("the one running heard nothing")
 	}
-	if fi, err := os.Stat(filepath.Join(dir, File)); err != nil || fi.Mode().Perm()&0o077 != 0 {
+	// Windows reports every writable file as rw-rw-rw-: there the file
+	// is private by being in the user's own profile.
+	if fi, err := os.Stat(filepath.Join(dir, File)); err != nil || runtime.GOOS != "windows" && fi.Mode().Perm()&0o077 != 0 {
 		t.Fatalf("the file is %v, %v", fi.Mode(), err)
 	}
 }

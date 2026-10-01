@@ -104,7 +104,17 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		}
 	}
 
-	c := p.Command(argv[0], argv[1:]...)
+	// A bare name is looked for on PATH first, as exec.Command does. On
+	// Windows go-pty joins it to Dir instead, so cmd.exe started in a
+	// folder became that folder's cmd.exe, which isn't there.
+	name := argv[0]
+	if !strings.ContainsAny(name, `/\`) {
+		if found, err := exec.LookPath(name); err == nil {
+			name = found
+		}
+	}
+	c := p.Command(name, argv[1:]...)
+	c.Args[0] = argv[0]
 	c.Dir = cfg.Dir
 	c.Env = append(os.Environ(), cfg.Env...)
 	if !hasEnv(cfg.Env, "TERM") {

@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -204,7 +205,13 @@ func TestFilesOnAServerWithOneSavedFolderOpenThere(t *testing.T) {
 	waitFor(t, a, "the files", func() bool {
 		return len(a.st.Panes) == 2 && a.st.Browsers[a.st.Panes[1].ID].Seq > 0
 	})
-	if got := a.st.Browsers[a.st.Panes[1].ID].Path; got != there {
+	// A folder on a Windows server is spelled as SFTP spells it,
+	// /C:/Users/..., and opens there.
+	want := there
+	if runtime.GOOS == "windows" {
+		want = "/" + filepath.ToSlash(there)
+	}
+	if got := a.st.Browsers[a.st.Panes[1].ID].Path; got != want {
 		t.Fatalf("the files opened at %q, want the saved folder %q", got, there)
 	}
 }

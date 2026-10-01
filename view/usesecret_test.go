@@ -43,6 +43,13 @@ func TestUseSecretPicksAndTypes(t *testing.T) {
 	if !ok {
 		t.Fatalf("the dialog shows %T", win.dialog.Body)
 	}
+	// It stays inside the dialog: no wider than the row of buttons.
+	field, _ := lastUI.Bounds(body.find)
+	list, _ := lastUI.Bounds(body.table)
+	panel, _ := lastUI.Bounds(body)
+	if field.Max.X > panel.Max.X+0.5 || list.Max.X > panel.Max.X+0.5 || field.Size().W > pickerWidth*1.02 { // the dialog may still be scaling in
+		t.Fatalf("the field is at %v and the list at %v, in a body at %v", field, list, panel)
+	}
 	if k, _ := body.table.Cursor(); k != "w" {
 		t.Fatalf("the first picked is %q, want the web server's", k)
 	}

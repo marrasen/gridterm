@@ -1,6 +1,7 @@
 package view
 
 import (
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -105,7 +106,7 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 	table := widget.NewTable(widget.TableColumn{Title: "Name"}, widget.TableColumn{Title: "For", Width: 180})
 	table.Row = func(k widget.Key) widget.TableRow {
 		it := byID[k]
-		return widget.TableRow{Cells: []string{it.Name, secretFor(it)}, Strong: related[it.ID]}
+		return widget.TableRow{Cells: []string{it.Name, useFor(it)}, Strong: related[it.ID]}
 	}
 	find := widget.NewTextField()
 	find.Placeholder, find.Icon = "Find a secret", icon.Search
@@ -135,7 +136,9 @@ func (w *Window) useSecretDialog(u *gunim.UI) {
 	typeIt := picked(func(id string) gunim.Intent { return app.TypeSecret{ID: id} })
 	d := widget.NewDialog("Use a secret")
 	d.Icon = icon.KeyRound
-	d.Body = &pickerBody{find: find, table: table, keys: &keys, list: widget.NewSized(table, 460, 280)}
+	// Wider than a dialog's usual, for the list's two columns.
+	d.Width = pickerWidth + 60
+	d.Body = &pickerBody{find: find, table: table, keys: &keys}
 	d.SetButtons("Type", "Cancel")
 	d.AddButton("Copy", picked(func(id string) gunim.Intent { return app.CopySecret{ID: id} }))
 	d.Check = func() string {
@@ -162,22 +165,41 @@ type pickerBody struct {
 	find  *widget.TextField
 	table *widget.Table
 	keys  *[]widget.Key
-	list  *widget.Sized
 }
 
 // Children implements [gunim.Composite].
-func (b *pickerBody) Children() []gunim.Node { return []gunim.Node{b.find, b.list} }
+func (b *pickerBody) Children() []gunim.Node { return []gunim.Node{b.find, b.table} }
 
 // Focusables are what Tab goes through in the dialog.
 func (b *pickerBody) Focusables() []gunim.Node { return []gunim.Node{b.find, b.table} }
 
-// Layout implements [gunim.Node]: the field, the list under it.
-func (b *pickerBody) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
-	fs := kids.At(0).Layout(gunim.Constraints{Min: geom.Sz(460, 0), Max: geom.Sz(460, 60)})
+// Layout implements [gunim.Node]: the field, the list under it, as wide
+// as the dialog gives, and as tall as its rows, from four to ten.
+func (b *pickerBody) Layout(c gunim.Constraints, f gunim.Frame, kids gunim.Children) geom.Size {
+	w := float32(pickerWidth)
+	if c.Max.W > 0 {
+		w = min(w, c.Max.W)
+	}
+	fs := kids.At(0).Layout(gunim.Constraints{Min: geom.Sz(w, 0), Max: geom.Sz(w, 60)})
 	kids.At(0).Place(geom.Pt(0, 0))
-	ls := kids.At(1).Layout(gunim.Constraints{Max: geom.Sz(460, 280)})
+	row := widget.TableRowHeight.Get(f.Theme)
+	rows := min(max(len(*b.keys), 4), 10)
+	h := float32(rows+1)*row + 6
+	kids.At(1).Layout(gunim.Tight(geom.Sz(w, h)))
 	kids.At(1).Place(geom.Pt(0, fs.H+8))
-	return c.Constrain(geom.Sz(460, fs.H+8+ls.H))
+	return c.Constrain(geom.Sz(w, fs.H+8+h))
+}
+
+// pickerWidth is how wide Use Secret's list is at most.
+const pickerWidth = 460
+
+// useFor is what Use Secret says a secret is for: who it signs in as,
+// or the key whose passphrase it is, by the key's name.
+func useFor(it app.SecretItem) string {
+	if it.File != "" {
+		return "key " + filepath.Base(it.File)
+	}
+	return it.User
 }
 
 // Paint implements [gunim.Node].

@@ -7,6 +7,15 @@
 # kakel install itself into ~/.local/bin, with a desktop file.
 set -eu
 
+case "$(uname -s)/$(uname -m)" in
+Linux/x86_64 | Linux/amd64) ;;
+*)
+	echo "kakel's releases are for Linux on amd64; this is $(uname -s) on $(uname -m)." >&2
+	echo "Build it from source instead: https://github.com/marrasen/kakel/blob/main/BUILDING.md" >&2
+	exit 1
+	;;
+esac
+
 tag=$(curl -fsSL https://api.github.com/repos/marrasen/kakel/releases/latest |
 	sed -n 's/^ *"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)
 [ -n "$tag" ] || { echo "Couldn't find the newest release." >&2; exit 1; }

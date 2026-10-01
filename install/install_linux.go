@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/marrasen/kakel/appicon"
 )
@@ -52,7 +53,32 @@ func Exe() (string, error) {
 // desktopFile is what a desktop file says of kakel, started with args.
 func desktopFile(exe, args string) []byte {
 	return []byte("[Desktop Entry]\nType=Application\nName=kakel\nComment=Terminals, files and tunnels on your machines\n" +
-		"Exec=" + exe + args + "\nIcon=" + Name + "\nTerminal=false\nCategories=System;TerminalEmulator;\n")
+		"Exec=" + execArg(exe) + args + "\nIcon=" + Name + "\nTerminal=false\nCategories=System;TerminalEmulator;\n")
+}
+
+// execArg is path as an Exec line's argument: quoted when it holds a
+// space or a character the line gives a meaning, with the escapes the
+// desktop entry spec asks for inside quotes, and its backslashes doubled
+// again as a desktop file's strings have them.
+func execArg(path string) string {
+	if !strings.ContainsAny(path, " \t\n\"'\\><~|&;$*?#()`%") {
+		return path
+	}
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range path {
+		switch r {
+		case '"', '`', '$':
+			b.WriteString(`\\`)
+		case '\\':
+			b.WriteString(`\\\`)
+		case '%':
+			b.WriteByte('%')
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('"')
+	return b.String()
 }
 
 // paths are where the desktop file, the icon, the autostart file and the
@@ -133,6 +159,16 @@ func SetAutostart(on bool) error {
 		return err
 	}
 	return write(p.autostart, desktopFile(exe, " -tray"), 0o644)
+}
+
+// Desktop reports whether kakel has a shortcut on the desktop.
+func Desktop() bool {
+	p, err := where()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(p.desk)
+	return err == nil
 }
 
 // Autostart reports whether kakel starts with the user's session.

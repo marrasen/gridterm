@@ -286,6 +286,10 @@ func RunAlone(ctx context.Context, opts Options) (bool, error) {
 	return false, nil
 }
 
+// Quits says the command line only ends the kakel running, and opens
+// nothing when none is.
+func (o Options) Quits() bool { return o.quit }
+
 // ShowStats says to log how the window draws, each second.
 func (o Options) ShowStats() bool { return o.stats }
 

@@ -555,6 +555,9 @@ type app struct {
 	thumbWorking int
 	// updating says a look for a newer release is out.
 	updating bool
+	// staged is the release put in place of this program, which starts
+	// the next time kakel does.
+	staged string
 	// work is the window last worked in, other than a tool window, and
 	// fromTool says an intent from a tool window is being handled.
 	work     *ownWin

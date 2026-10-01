@@ -110,16 +110,35 @@ func register(exe string, o Options) error {
 // Script Host object: the shell's own way to write one, with no COM
 // written here.
 func shortcut(lnk, exe string) error {
-	quote := func(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
 	script := "$s = (New-Object -ComObject WScript.Shell).CreateShortcut(" + quote(lnk) + "); " +
 		"$s.TargetPath = " + quote(exe) + "; $s.WorkingDirectory = " + quote(filepath.Dir(exe)) + "; " +
 		"$s.IconLocation = " + quote(exe+",0") + "; $s.Save()"
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+	cmd := powershell(script)
+	cmd.SysProcAttr.CreationFlags = windows.CREATE_NO_WINDOW
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("%w: %s", err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// powershell is PowerShell running script, with no window.
+func powershell(script string) *exec.Cmd {
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	return cmd
+}
+
+// quote is s as a PowerShell string that takes nothing in it as code.
+func quote(s string) string { return "'" + strings.ReplaceAll(s, "'", "''") + "'" }
+
+// Desktop reports whether kakel has a shortcut on the desktop.
+func Desktop() bool {
+	desk, err := desktop()
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(desk)
+	return err == nil
 }
 
 // SetAutostart starts kakel with the user, into the tray, or no longer.
@@ -171,10 +190,21 @@ func Uninstall() error {
 	if err := registry.DeleteKey(registry.CURRENT_USER, uninstallKey); err != nil && err != registry.ErrNotExist {
 		return err
 	}
+	// A program running cannot be taken away, nor the folder it runs
+	// from: PowerShell does it once this program has ended. It takes
+	// kakel's own files, and the folder only when that leaves it empty,
+	// so a kakel-files folder of settings beside the program stays.
 	dir := filepath.Dir(exe)
-	// A program cannot take away the folder it runs from: a shell does,
-	// a moment after this one has ended.
-	cmd := exec.Command("cmd.exe", "/c", "ping -n 3 127.0.0.1 >nul & rmdir /s /q \""+dir+"\"")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW | windows.DETACHED_PROCESS}
+	var files []string
+	for _, f := range []string{exe, exe + ".old", exe + ".new"} {
+		files = append(files, quote(f))
+	}
+	script := fmt.Sprintf("Wait-Process -Id %d -ErrorAction SilentlyContinue; "+
+		"for ($i = 0; $i -lt 20; $i++) { Remove-Item -LiteralPath %s -Force -ErrorAction SilentlyContinue; "+
+		"if (-not (Test-Path -LiteralPath %s)) { break }; Start-Sleep -Milliseconds 500 }; "+
+		"if (-not (Get-ChildItem -LiteralPath %s -Force)) { Remove-Item -LiteralPath %s -Force }",
+		os.Getpid(), strings.Join(files, ","), quote(exe), quote(dir), quote(dir))
+	cmd := powershell(script)
+	cmd.SysProcAttr.CreationFlags = windows.CREATE_NO_WINDOW | windows.CREATE_NEW_PROCESS_GROUP
 	return cmd.Start()
 }

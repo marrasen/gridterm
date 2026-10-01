@@ -97,10 +97,17 @@ func (a *app) showTray() {
 		if !errors.Is(err, gunim.ErrNoTray) && a.tray.failed == "" {
 			a.failed("Couldn't show kakel in the tray", err.Error())
 		}
-		if a.tray.on {
+		lost := a.tray.on
+		a.tray = trayState{gen: gen, failed: sig}
+		if lost {
+			// The icon was the way back to kakel: with no window
+			// shown, one opens rather than kakel ending, or going on
+			// with nothing to reach it by.
+			if len(a.liveWins()) == 0 {
+				a.newWindow(a.showServers)
+			}
 			a.traySet.StayOpen(false)
 		}
-		a.tray = trayState{gen: gen, failed: sig}
 		return
 	}
 	a.tray = trayState{on: true, actions: actions, was: sig, gen: gen}

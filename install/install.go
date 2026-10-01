@@ -44,13 +44,22 @@ func Installed(exe string) bool {
 }
 
 // samePath reports whether two paths name one file, letter case aside
-// where the system ignores it.
+// where the system ignores it, and through links: the program's own path
+// comes with them resolved.
 func samePath(a, b string) bool {
-	a, b = filepath.Clean(a), filepath.Clean(b)
+	a, b = resolve(a), resolve(b)
 	if caseless {
 		return strings.EqualFold(a, b)
 	}
 	return a == b
+}
+
+// resolve is path cleaned, with its links resolved where it exists.
+func resolve(path string) string {
+	if real, err := filepath.EvalSymlinks(path); err == nil {
+		return real
+	}
+	return filepath.Clean(path)
 }
 
 // Install copies the program at from to where it is installed, and
@@ -102,16 +111,23 @@ func copyFile(from, to string) error {
 		_ = os.Remove(part)
 		return err
 	}
-	return Replace(part, to)
+	if err := Replace(part, to); err != nil {
+		_ = os.Remove(part)
+		return err
+	}
+	return nil
 }
 
 // Replace puts the program at part in place of the one at exe. On
 // Windows a running program cannot be written over, but can be moved:
-// it is moved aside to exe.old, which the next start takes away.
+// it is moved aside to exe.old, which the next start takes away. The
+// old program is moved back when the new one can't be put in place, so
+// exe is never left missing.
 func Replace(part, exe string) error {
+	old := ""
 	if movesAside {
 		if _, err := os.Stat(exe); err == nil {
-			old := exe + ".old"
+			old = exe + ".old"
 			_ = os.Remove(old)
 			if err := os.Rename(exe, old); err != nil {
 				return fmt.Errorf("move the old kakel aside: %w", err)
@@ -119,6 +135,9 @@ func Replace(part, exe string) error {
 		}
 	}
 	if err := os.Rename(part, exe); err != nil {
+		if old != "" {
+			_ = os.Rename(old, exe)
+		}
 		return fmt.Errorf("put the new kakel in place: %w", err)
 	}
 	return nil

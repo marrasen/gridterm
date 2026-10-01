@@ -1,6 +1,7 @@
 package app
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -19,7 +20,9 @@ func installHere() error {
 	if err != nil {
 		return err
 	}
-	to, err := install.Install(exe, install.Options{Version: thisVersion()})
+	// Installed again, as by the install script, it keeps the shortcut
+	// and the start with the computer it had.
+	to, err := install.Install(exe, install.Options{Desktop: install.Desktop(), Autostart: install.Autostart(), Version: thisVersion()})
 	if err != nil {
 		return sayDone("Couldn't install kakel", err)
 	}
@@ -33,8 +36,8 @@ func uninstallHere() error {
 		return nil
 	}
 	if dir, err := settings.Dir(); err == nil {
-		if taken, _ := single.Hand(dir, single.Handover{Args: []string{"-quit"}}); taken {
-			waitGone(dir, 60*time.Second)
+		if taken, _ := single.Hand(dir, single.Handover{Args: []string{"-quit"}}); taken && !waitGone(dir, 60*time.Second) {
+			return sayDone("Couldn't remove kakel", errors.New("the kakel running didn't end; close it and try again"))
 		}
 	}
 	if err := install.Uninstall(); err != nil {
@@ -44,13 +47,15 @@ func uninstallHere() error {
 }
 
 // waitGone waits for the kakel running for dir to end, as long as
-// patience, while it asks whether to close what is open.
-func waitGone(dir string, patience time.Duration) {
+// patience, while it asks whether to close what is open. It reports
+// whether it ended.
+func waitGone(dir string, patience time.Duration) bool {
 	for end := time.Now().Add(patience); time.Now().Before(end); time.Sleep(200 * time.Millisecond) {
 		if !single.Running(dir) {
-			return
+			return true
 		}
 	}
+	return false
 }
 
 // sayDone tells the user how it went: in a message box on Windows, where

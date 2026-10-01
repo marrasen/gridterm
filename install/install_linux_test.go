@@ -64,3 +64,58 @@ func TestAReplaceIsWhole(t *testing.T) {
 		t.Fatalf("the program holds %q", got)
 	}
 }
+
+// A path an Exec line would split or read as code is quoted, with the
+// escapes the desktop entry spec asks for.
+func TestExecArg(t *testing.T) {
+	for path, want := range map[string]string{
+		"/home/u/.local/bin/kakel":   "/home/u/.local/bin/kakel",
+		"/home/a b/.local/bin/kakel": `"/home/a b/.local/bin/kakel"`,
+		`/home/a"b/kakel`:            `"/home/a\\"b/kakel"`,
+		`/home/$x/kakel`:             `"/home/\\$x/kakel"`,
+		`/home/a\b/kakel`:            `"/home/a\\\\b/kakel"`,
+		"/home/100%/kakel":           `"/home/100%%/kakel"`,
+	} {
+		if got := execArg(path); got != want {
+			t.Errorf("execArg(%q) = %s, want %s", path, got, want)
+		}
+	}
+}
+
+// The desktop's shortcut is told of, so installing again keeps it.
+func TestDesktopIsToldOf(t *testing.T) {
+	h := t.TempDir()
+	t.Setenv("HOME", h)
+	t.Setenv("XDG_DATA_HOME", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	from := filepath.Join(t.TempDir(), "kakel")
+	if err := os.WriteFile(from, []byte("program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Install(from, Options{}); err != nil || Desktop() {
+		t.Fatalf("installed with none, the desktop has one: %v, %v", Desktop(), err)
+	}
+	if _, err := Install(from, Options{Desktop: true}); err != nil || !Desktop() {
+		t.Fatalf("installed with one, the desktop has none: %v", err)
+	}
+}
+
+// The program reached through a link is the installed one.
+func TestInstalledThroughALink(t *testing.T) {
+	real := t.TempDir()
+	h := filepath.Join(t.TempDir(), "home")
+	if err := os.Symlink(real, h); err != nil {
+		t.Skip(err)
+	}
+	t.Setenv("HOME", h)
+	exe := filepath.Join(real, ".local", "bin", "kakel")
+	if err := os.MkdirAll(filepath.Dir(exe), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(exe, nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if !Installed(exe) {
+		t.Fatal("reached through the real path, it isn't the installed one")
+	}
+}

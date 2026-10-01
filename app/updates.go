@@ -80,9 +80,11 @@ func (a *app) startUpdates() {
 	}
 	install.CleanOld(exe)
 	a.showUpdate()
-	if !isRelease(thisVersion()) || !a.opts.OneOfMany() {
-		// A build from a working tree has no order against releases,
-		// and a kakel of its own leaves it to the one running.
+	if !isRelease(thisVersion()) || !a.opts.OneOfMany() || !a.st.Update.Installed {
+		// A build from a working tree has no order against releases, a
+		// kakel of its own leaves it to the one running, and a copy not
+		// installed is the user's to keep as it is: Check for Updates
+		// still offers it the newest.
 		return
 	}
 	var look func(time.Duration)
@@ -120,8 +122,9 @@ func (a *app) lookForUpdate() {
 		newest, err := latestRelease(a.ctx)
 		a.events <- func() {
 			a.updating = false
-			if err != nil || update.Against(thisVersion(), newest.Version) != update.Behind {
-				// Said nothing: the next look may reach GitHub.
+			if err != nil || update.Against(thisVersion(), newest.Version) != update.Behind || newest.Version == a.staged {
+				// Said nothing: the next look may reach GitHub, and an
+				// update put in place waits for the next start.
 				return
 			}
 			if what == settings.UpdatesInstall && a.writable() {
@@ -148,9 +151,16 @@ func (a *app) writable() bool {
 	return true
 }
 
-// offerUpdate says a newer release is out, and fetches it if asked.
+// offerUpdate says a newer release is out, and fetches it if asked, or
+// offers the restart into it when it is in place already.
 func (a *app) offerUpdate(newest update.Release) {
 	have := thisVersion()
+	if newest.Version == a.staged {
+		if exe, err := executable(); err == nil {
+			a.offerRestart(exe, "kakel "+newest.Version+" is ready", "It starts the next time kakel does.")
+		}
+		return
+	}
 	go func() {
 		ans, err := a.ask(a.ctx, Ask{Title: "kakel " + newest.Version + " is out",
 			Text: "This is " + have + ". Update now, and restart into it when you like.", Yes: "Update", No: "Not Now"})
@@ -193,6 +203,7 @@ func (a *app) fetchUpdate(newest update.Release, asked bool) {
 				}
 				return
 			}
+			a.staged = newest.Version
 			a.offerRestart(exe, "kakel "+newest.Version+" is ready", "It starts the next time kakel does.")
 		}
 	}()

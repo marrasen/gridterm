@@ -20,7 +20,9 @@ try {
     $file = Join-Path $tmp $name
     Write-Host "Fetching kakel $($release.tag_name)..."
     Invoke-WebRequest $zip.browser_download_url -OutFile $file -UseBasicParsing
-    $want = ((Invoke-RestMethod $sums.browser_download_url) -split "`n" |
+    $sumsFile = Join-Path $tmp 'SHA256SUMS'
+    Invoke-WebRequest $sums.browser_download_url -OutFile $sumsFile -UseBasicParsing
+    $want = (Get-Content $sumsFile |
         Where-Object { $_ -match "\s\*?$([regex]::Escape($name))\s*$" } |
         ForEach-Object { ($_ -split '\s+')[0] }) | Select-Object -First 1
     $have = (Get-FileHash $file -Algorithm SHA256).Hash

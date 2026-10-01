@@ -36,6 +36,9 @@ func (a *app) askToQuit() {
 			a.leaving = false
 			if err == nil {
 				a.exitNow()
+			} else {
+				// A restart asked for is not done by a quit long after.
+				restartInto = ""
 			}
 		}
 	}()

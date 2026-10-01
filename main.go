@@ -96,6 +96,10 @@ func run() error {
 			}
 		}
 	}
+	if opts.Quits() {
+		// No kakel was running to end.
+		return nil
+	}
 
 	app.CaptureLog()
 	err = gunim.Main(ctx, func(a *gunim.App) error {

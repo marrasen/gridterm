@@ -129,3 +129,35 @@ func TestInstallingCopiesAndOffersARestart(t *testing.T) {
 		t.Fatal("the installed copy doesn't know it is installed")
 	}
 }
+
+// A restart the user then declines to quit for isn't done by a quit
+// long after.
+func TestADeclinedRestartIsForgotten(t *testing.T) {
+	a := updatesApp(t)
+	t.Cleanup(func() { restartInto = "" })
+	a.restartAs("/new/kakel")
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID})
+	waitFor(t, a, "the no", func() bool { return !a.leaving })
+	if restartInto != "" {
+		t.Fatalf("declined, it still restarts into %q", restartInto)
+	}
+}
+
+// An update put in place isn't fetched again: asked, kakel offers the
+// restart into it.
+func TestAStagedUpdateIsNotFetchedAgain(t *testing.T) {
+	a := updatesApp(t)
+	looks := stubRelease(t, "v99.0.0")
+	a.staged = "v99.0.0"
+	a.lookForUpdate()
+	waitFor(t, a, "the look", func() bool { return !a.updating })
+	if looks.Load() != 1 || len(a.st.Asks) != 0 {
+		t.Fatalf("staged, the look asked %+v", a.st.Asks)
+	}
+	a.handle(CheckUpdates{})
+	waitFor(t, a, "the offer", func() bool { return len(a.st.Asks) == 1 })
+	if q := a.st.Asks[0]; q.Title != "kakel v99.0.0 is ready" || q.Yes != "Restart Now" {
+		t.Fatalf("staged, Check for Updates offers %+v", q)
+	}
+}

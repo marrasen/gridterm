@@ -155,12 +155,12 @@ func TestAPassphraseOpensTheSecretsWhenTheirKeyIsGone(t *testing.T) {
 		t.Fatal(err)
 	}
 	a.handle(UnlockSecrets{})
-	answer(t, a, "Unlock Secrets", true, "wrong horse")
+	answer(t, a, "Unlock your secrets", true, "wrong horse")
 	waitFor(t, a, "a second try", func() bool { return len(a.st.Asks) > 0 })
-	if !strings.Contains(a.st.Asks[0].Text, "did not open") {
+	if !strings.Contains(a.st.Asks[0].Text, "didn't open") {
 		t.Fatalf("after a wrong passphrase, the question says %q", a.st.Asks[0].Text)
 	}
-	answer(t, a, "Unlock Secrets", true, "correct horse")
+	answer(t, a, "Unlock your secrets", true, "correct horse")
 	waitFor(t, a, "the secrets open", func() bool { return a.st.Secrets.Open })
 	if len(a.st.Secrets.Items) != 1 {
 		t.Fatalf("opened by passphrase, the items are %+v", a.st.Secrets.Items)

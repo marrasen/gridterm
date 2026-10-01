@@ -7,6 +7,8 @@ import (
 	"log"
 	"maps"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -373,21 +375,43 @@ func (q asker) Passphrase(ctx context.Context, key remote.LockedKey) (string, er
 		}
 		// Kept in the secrets, which are locked: they are asked to open
 		// first, and the passphrase comes from them.
-		if q.unlockFor(ctx, hintOf("key", key.Path), "The secrets hold the passphrase for "+key.Path+".") {
+		if q.unlockFor(ctx, hintOf("key", key.Path), "They hold the passphrase for "+keyName(key.Path)+".") {
 			if pass := q.inHand(ctx, func() string { return q.a.passphraseInHand(key.Path) }); pass != "" {
 				return pass, nil
 			}
 		}
 	}
-	text := "The key " + key.Path + " is locked with a passphrase."
+	// The key by its file's name: the folder only where it is not the
+	// usual one, ~/.ssh. Unlocking the secrets, the question says so,
+	// and why, and that this key is what opens them.
+	name := keyName(key.Path)
+	title, text := "Unlock "+name, keyFolder(key.Path)
 	if q.why != "" {
-		text = q.why + " " + text
+		title, text = "Unlock your secrets", q.why+" They open with your key "+name+"."
 	}
 	if key.Wrong > 0 {
-		text = "That passphrase did not open " + key.Path + ". Try again."
+		text = "That passphrase didn't open " + name + ". Try again."
 	}
-	q2 := Ask{Title: "Unlock your key", Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+	q2 := Ask{Title: title, Icon: "key-round", Text: text, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
 	return q.askSecret(ctx, q2, "Save this passphrase in the secrets", signIn{file: key.Path})
+}
+
+// keyName is a key file's name, as a question says it.
+func keyName(path string) string { return filepath.Base(path) }
+
+// keyFolder says where a key file is, for a question, when that is not
+// the usual ~/.ssh, and is "" when it is.
+func keyFolder(path string) string {
+	dir := filepath.Dir(path)
+	if home, err := os.UserHomeDir(); err == nil {
+		if same, err := filepath.Rel(filepath.Join(home, ".ssh"), dir); err == nil && same == "." {
+			return ""
+		}
+		if rel, err := filepath.Rel(home, dir); err == nil && !strings.HasPrefix(rel, "..") {
+			dir = filepath.Join("~", rel)
+		}
+	}
+	return "In " + dir + "."
 }
 
 // Password implements [remote.Ask].
@@ -406,7 +430,7 @@ func (q asker) Password(ctx context.Context, user, host string) (string, error) 
 			if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
 				return pass, nil
 			}
-			if q.unlockFor(ctx, hintOf("login", login), "The secrets hold the password for "+login+".") {
+			if q.unlockFor(ctx, hintOf("login", login), "They hold the password for "+login+".") {
 				if pass := q.inHand(ctx, func() string { return q.a.passwordInHand(login) }); pass != "" {
 					return pass, nil
 				}

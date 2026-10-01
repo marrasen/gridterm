@@ -184,7 +184,7 @@ func TestLockedSecretsHoldingAKeysPassphraseAreAskedToOpen(t *testing.T) {
 		p, _ := newAsker(a, "srv").keeping(&signIns{}).Passphrase(t.Context(), remote.LockedKey{Path: locked})
 		got <- p
 	}()
-	answer(t, a, "Unlock Secrets", true, "correct horse")
+	answer(t, a, "Unlock your secrets", true, "correct horse")
 	if p := await(t, a, got); p != "s3cret" {
 		t.Fatalf("the key was unlocked with %q", p)
 	}
@@ -195,7 +195,7 @@ func TestLockedSecretsHoldingAKeysPassphraseAreAskedToOpen(t *testing.T) {
 		p, _ := newAsker(a, "srv").keeping(&signIns{}).Passphrase(t.Context(), remote.LockedKey{Path: other})
 		got <- p
 	}()
-	answer(t, a, "Unlock your key", true, "typed", "")
+	answer(t, a, "Unlock id_other", true, "typed", "")
 	if p := await(t, a, got); p != "typed" {
 		t.Fatalf("the other key was unlocked with %q", p)
 	}
@@ -209,4 +209,18 @@ func mustSettings(t *testing.T) *settings.Settings {
 		t.Fatal(err)
 	}
 	return s
+}
+
+// A key is named by its file, its folder said only where it is not
+// ~/.ssh.
+func TestAKeyIsNamedByItsFile(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	if got := keyFolder(filepath.Join(home, ".ssh", "id_rsa")); got != "" {
+		t.Fatalf("a key in ~/.ssh says %q", got)
+	}
+	if got, want := keyFolder(filepath.Join(home, "keys", "work", "id_rsa")), "In "+filepath.Join("~", "keys", "work")+"."; got != want {
+		t.Fatalf("a key elsewhere says %q, want %q", got, want)
+	}
 }

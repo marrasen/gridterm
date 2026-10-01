@@ -240,9 +240,9 @@ func (a *app) openVault(v *secrets.Vault, why string) error {
 		return err
 	}
 	for wrong := 0; ; wrong++ {
-		q := Ask{Title: "Unlock Secrets", Icon: "lock", Text: why, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
+		q := Ask{Title: "Unlock your secrets", Icon: "lock", Text: why, Prompts: []string{"Passphrase"}, Secret: []bool{true}, Yes: "Unlock"}
 		if wrong > 0 {
-			q.Text = "That passphrase did not open the secrets. Try again."
+			q.Text = "That passphrase didn't open the secrets. Try again."
 		}
 		ans, err := a.ask(a.ctx, q)
 		if err != nil || !ans.Yes {

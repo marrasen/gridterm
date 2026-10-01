@@ -9,82 +9,7 @@ change how something behaves.
 
 ## Unreleased
 
-### Fixed
-
-**Edit This Server shows what was saved.** The window took in a saved
-server again only when its name or address changed, so an edit to its
-user, port, key or folders showed the old values the next time.
-
-**A bell's rings show on the window that rang, on Windows.** They used
-to show above every window. A window behind another drew its rings over
-the one in front, and over other programs too, so they looked like
-another window's. Now they stay with their own window and go behind
-whatever is in front of it.
-
-**The hand shows over a link with Ctrl held.** The pointer over a
-terminal is the I-beam, and the hand where Ctrl and a click would follow
-a link.
-
-**A link's address no longer sticks after a Ctrl+click.** A browser the
-click opened took the button's release, and the link stayed lit, its
-address shown at the foot of the pane, until the next click.
-
-**A delete's question shows which button Enter presses.** It opens on
-Cancel, with its ring showing, and the arrow keys move between the
-buttons.
-
-**A folder that can't be opened is said in a notice.** It sends a red
-echo, as a delete sends a green one, and the Window Log keeps it. The
-line under the path that said "Click for why" is gone. Failures the
-window finds itself, such as files dropped where they can't go, are
-kept in the Window Log too, with the same red echo.
-
-**Select text in the scrollback.** A selection stays on its text as the
-view scrolls and as output moves it up, rather than on the rows of the
-screen. A drag held past a pane's top or bottom scrolls toward it, faster
-the further past, and the wheel scrolls during a drag too, so a
-selection reaches as far back as the scrollback goes. Edit › Select All
-selects all of it.
-
-**Tabs open and close in motion.** A new tab grows in where it lands,
-a closed one shrinks away, and the tabs beside it and the + slide into
-place. They used to appear and vanish at once.
-
-**Ctrl+wheel zooms when it should on Linux.** Under X11 a scroll just
-after pressing Ctrl scrolled instead of zooming, and Ctrl stayed held
-for the wheel after it was let go, so scrolling zoomed. kakel now asks
-the system what is held as the wheel turns.
-
-**A bell echoes from its own window.** A bell, or a long command
-finishing, in a pane of a window behind sent its echo from the window in
-front. Each window now counts its own, and asks for attention itself.
-
-### Changed
-
-**The Servers pane replaces the sidebar.** Every machine, with what is
-open on it in every window, is now listed in a pane of its own.
-`Ctrl+Shift+L` opens it in a tab or goes to it, and `Ctrl+Shift+B`
-opens or closes it. Drag its tab out to keep it in a window of its own.
-A click on a pane in another window brings that window to the front.
-Quick Connect and Add Server are along its top. The stage takes the
-whole window, and a terminal's text sits a little in from its edges.
-
-**Servers are known by an ID, not their name.** Everything open on a
-saved server, its connection, panes, files, log and tunnels, goes by the
-ID the server list gave it. Renaming a server is saving its new name:
-nothing moves, and nothing is refused.
-
-**Quick Connect replaces "+ Connect to server…".** It is on the Servers
-menu, with the same shortcut. A server connected to by typing its
-address gets an ID of its own, is listed marked "quick", and is
-forgotten once it is not connected and nothing is open on it.
-
-**Ctrl+PageDown and Ctrl+PageUp go to the next and previous tab.** They
-used to go to the next and previous pane in the sidebar. Next Pane and
-Previous Pane are still on the Pane menu and in the palette, with no
-shortcut. A shortcuts file written before this change still binds them
-to Ctrl+PageDown and Ctrl+PageUp. Delete those two lines to get the tab
-keys.
+## v0.3.0
 
 ### Added
 
@@ -171,8 +96,8 @@ outside every window opens a window of its own. Each window has its own
 panes and sidebar. A window left empty closes, and closing a window with
 panes in it asks first.
 
-**Icons, from Lucide.** The sidebar's rows, its close cross and its plus
-are drawn with Lucide's icons, in place of pictures built from rounded
+**Icons, from Lucide.** Rows, close crosses and plus buttons are drawn
+with Lucide's icons, in place of pictures built from rounded
 rectangles. The menus and the command palette show an icon beside each
 command, the machine menu beside each thing it opens, and the tunnel,
 secrets and jobs panes on their buttons. A question shows one before
@@ -213,66 +138,6 @@ typed -- so it is a command, the dialog says what it costs before it is
 added, and it opens on `Cancel`. What a guess costs is written into the
 slot, so it can be raised later without shutting anybody out of a vault
 sealed under the old cost.
-
-### Changed
-
-**gridterm is now kakel, and its window is drawn with gunim.** Kakel is
-Swedish for tile. The window was drawn with ebitengine; it is now drawn
-with [gunim](https://github.com/marrasen/gunim), a GPU toolkit built
-around animation, and the ebitengine window and its fork are gone. The
-program is `kakel`, the module is `github.com/marrasen/kakel`, and
-`go install github.com/marrasen/kakel@latest` installs it.
-
-Your files come along. The first time kakel starts, it renames
-gridterm's directory to kakel's, and a copy that carried a
-`gridterm-files` directory beside it carries it on as `kakel-files`.
-Shortcut files keep working, since the commands kept their names, and a
-kakel and a gridterm still connect to each other. An agent set up for
-gridterm is set up again for kakel: the MCP server is now called kakel.
-
-With gunim came motion and a few things of its own:
-
-- The window fades in as it opens and out as it closes, and the pane
-  switcher zooms from every pane into the one you pick.
-- An echo goes out past the window's edges when something happens you
-  may be looking away from: red for a failure, green for work done,
-  amber for a bell, and a faint grey ring while a connection is made. A
-  theme's `Echo` block sets its colours and strength.
-- `F11` fills the screen with the pane or split in front, and brings
-  the menus and the sidebar back again.
-- A program that wraps its frames in synchronized updates, as termflix
-  does, is shown a whole frame at a time, and one that asks whether the
-  terminal knows a mode is told.
-
-**What this window is serving is a pane too.** It was a dialog, which
-could only say who was connected at the moment it opened -- and what it
-is about changes while it is up, as windows connect and go. The pane
-follows: the address, the fingerprint to check this machine by, and one
-line per window working here, with `Disconnect` and `Stop serving`
-along the bottom. The row of a window working in this one opens it,
-which is what that row could not do before: it stood in for a pane
-because there was none to put in front.
-
-**A finished drop says so without a dialog.** A file dropped on a pane
-put up a box when it landed, which took the keys from whatever the user
-had moved on to. It is said the way a program's message is now: a line
-in the log, a pop-up outside the window, and a line on the bottom row.
-A file whose pane closed before it landed still gets a dialog, because
-its path could not be typed and the dialog's `Copy` is how to get it.
-
-**File work is watched in a pane, not a dialog.** Clicking a copy's row
-on the sidebar opened a box over the window, which took the keys and had
-to be dismissed before anything else could be done -- for work that
-takes as long as it takes. It opens a pane now, and the pane has room to
-say more than the box could: how far it has got, drawn as a bar that
-moves in eighths of a cell; how much has moved, how fast, and how long
-is left; the last seconds of it as a run; and the names it was given,
-ticked off as it passes them. `Cancel`, `Repeat` and the box that keeps
-a copy are along the bottom, and `Close` takes the pane away and leaves
-the work running. `Repeat` watches the new run in the same pane, so a
-copy done again and again does not leave a pane for every time.
-
-### Added
 
 **An agent can type, press and wait in one call.** `send_keys` takes a
 list of steps -- `type:`, `key:`, `wait:<ms>`, `until:<text>` and a bare
@@ -391,14 +256,86 @@ agent forwarding is off unless a saved server turns it on.
 
 ### Changed
 
-**The sidebar's notes go quiet.** A note is the second thing on a row
-and the first thing to crowd it: it takes its room from the name, which
-is what the row is for. A note is now shown while it is changing -- for
-as long as the status line holds a line -- and then comes off the row,
-leaving the name the width back. The pointer on the row brings it back,
-and so does the selection while the sidebar has the focus. A copy says
-`3 of 7` and then `4 of 7`, so its note is up the whole time it runs,
-and a connection that has settled goes back to being a name.
+**The Servers pane replaces the sidebar.** Every machine, with what is
+open on it in every window, is now listed in a pane of its own.
+`Ctrl+Shift+L` opens it in a tab or goes to it, and `Ctrl+Shift+B`
+opens or closes it. Drag its tab out to keep it in a window of its own.
+A click on a pane in another window brings that window to the front.
+Quick Connect and Add Server are along its top. The stage takes the
+whole window, and a terminal's text sits a little in from its edges.
+
+**Servers are known by an ID, not their name.** Everything open on a
+saved server, its connection, panes, files, log and tunnels, goes by the
+ID the server list gave it. Renaming a server is saving its new name:
+nothing moves, and nothing is refused.
+
+**Quick Connect replaces "+ Connect to server…".** It is on the Servers
+menu, with the same shortcut. A server connected to by typing its
+address gets an ID of its own, is listed marked "quick", and is
+forgotten once it is not connected and nothing is open on it.
+
+**Ctrl+PageDown and Ctrl+PageUp go to the next and previous tab.** They
+used to go to the next and previous pane in the sidebar. Next Pane and
+Previous Pane are still on the Pane menu and in the palette, with no
+shortcut. A shortcuts file written before this change still binds them
+to Ctrl+PageDown and Ctrl+PageUp. Delete those two lines to get the tab
+keys.
+
+**gridterm is now kakel, and its window is drawn with gunim.** Kakel is
+Swedish for tile. The window was drawn with ebitengine; it is now drawn
+with [gunim](https://github.com/marrasen/gunim), a GPU toolkit built
+around animation, and the ebitengine window and its fork are gone. The
+program is `kakel`, the module is `github.com/marrasen/kakel`, and
+`go install github.com/marrasen/kakel@latest` installs it.
+
+Your files come along. The first time kakel starts, it renames
+gridterm's directory to kakel's, and a copy that carried a
+`gridterm-files` directory beside it carries it on as `kakel-files`.
+Shortcut files keep working, since the commands kept their names, and a
+kakel and a gridterm still connect to each other. An agent set up for
+gridterm is set up again for kakel: the MCP server is now called kakel.
+
+With gunim came motion and a few things of its own:
+
+- The window fades in as it opens and out as it closes, and the pane
+  switcher zooms from every pane into the one you pick.
+- An echo goes out past the window's edges when something happens you
+  may be looking away from: red for a failure, green for work done,
+  amber for a bell, and a faint grey ring while a connection is made. A
+  theme's `Echo` block sets its colours and strength.
+- `F11` fills the screen with the pane or split in front, and brings
+  the menus and the sidebar back again.
+- A program that wraps its frames in synchronized updates, as termflix
+  does, is shown a whole frame at a time, and one that asks whether the
+  terminal knows a mode is told.
+
+**What this window is serving is a pane too.** It was a dialog, which
+could only say who was connected at the moment it opened -- and what it
+is about changes while it is up, as windows connect and go. The pane
+follows: the address, the fingerprint to check this machine by, and one
+line per window working here, with `Disconnect` and `Stop serving`
+along the bottom. The row of a window working in this one opens it,
+which is what that row could not do before: it stood in for a pane
+because there was none to put in front.
+
+**A finished drop says so without a dialog.** A file dropped on a pane
+put up a box when it landed, which took the keys from whatever the user
+had moved on to. It is said the way a program's message is now: a line
+in the log, a pop-up outside the window, and a line on the bottom row.
+A file whose pane closed before it landed still gets a dialog, because
+its path could not be typed and the dialog's `Copy` is how to get it.
+
+**File work is watched in a pane, not a dialog.** Clicking a copy's row
+on the sidebar opened a box over the window, which took the keys and had
+to be dismissed before anything else could be done -- for work that
+takes as long as it takes. It opens a pane now, and the pane has room to
+say more than the box could: how far it has got, drawn as a bar that
+moves in eighths of a cell; how much has moved, how fast, and how long
+is left; the last seconds of it as a run; and the names it was given,
+ticked off as it passes them. `Cancel`, `Repeat` and the box that keeps
+a copy are along the bottom, and `Close` takes the pane away and leaves
+the work running. `Repeat` watches the new run in the same pane, so a
+copy done again and again does not leave a pane for every time.
 
 **A connection's account opens in a pane, and the row of a connection
 that dropped opens it.** `Connection Log` showed the account in a dialog
@@ -451,6 +388,54 @@ plus menu. The commands keep their full titles for the palette, where
 they are read with no heading around them.
 
 ### Fixed
+
+**Edit This Server shows what was saved.** The window took in a saved
+server again only when its name or address changed, so an edit to its
+user, port, key or folders showed the old values the next time.
+
+**A bell's rings show on the window that rang, on Windows.** They used
+to show above every window. A window behind another drew its rings over
+the one in front, and over other programs too, so they looked like
+another window's. Now they stay with their own window and go behind
+whatever is in front of it.
+
+**The hand shows over a link with Ctrl held.** The pointer over a
+terminal is the I-beam, and the hand where Ctrl and a click would follow
+a link.
+
+**A link's address no longer sticks after a Ctrl+click.** A browser the
+click opened took the button's release, and the link stayed lit, its
+address shown at the foot of the pane, until the next click.
+
+**A delete's question shows which button Enter presses.** It opens on
+Cancel, with its ring showing, and the arrow keys move between the
+buttons.
+
+**A folder that can't be opened is said in a notice.** It sends a red
+echo, as a delete sends a green one, and the Window Log keeps it. The
+line under the path that said "Click for why" is gone. Failures the
+window finds itself, such as files dropped where they can't go, are
+kept in the Window Log too, with the same red echo.
+
+**Select text in the scrollback.** A selection stays on its text as the
+view scrolls and as output moves it up, rather than on the rows of the
+screen. A drag held past a pane's top or bottom scrolls toward it, faster
+the further past, and the wheel scrolls during a drag too, so a
+selection reaches as far back as the scrollback goes. Edit › Select All
+selects all of it.
+
+**Tabs open and close in motion.** A new tab grows in where it lands,
+a closed one shrinks away, and the tabs beside it and the + slide into
+place. They used to appear and vanish at once.
+
+**Ctrl+wheel zooms when it should on Linux.** Under X11 a scroll just
+after pressing Ctrl scrolled instead of zooming, and Ctrl stayed held
+for the wheel after it was let go, so scrolling zoomed. kakel now asks
+the system what is held as the wheel turns.
+
+**A bell echoes from its own window.** A bell, or a long command
+finishing, in a pane of a window behind sent its echo from the window in
+front. Each window now counts its own, and asks for attention itself.
 
 **A window closing waits for file work the user dismissed.** Dropping a
 copy cancels it and takes its row away, and cancelling is not stopping:
@@ -544,7 +529,6 @@ not a terminal or a file browser.
 dropped on a pane on a server showed its copy under this machine,
 because that is where the file was read. Work is filed under the
 machine it writes to now, unless that is this one.
-
 
 ## v0.2.1
 

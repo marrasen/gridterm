@@ -25,7 +25,10 @@ base="https://github.com/marrasen/kakel/releases/download/$tag"
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 echo "Fetching kakel $tag..."
-curl -fsSL -o "$tmp/$name" "$base/$name"
+curl -fsSL -o "$tmp/$name" "$base/$name" || {
+	echo "The newest release, $tag, has no $name. It may be from before kakel could install itself: wait for a newer release, or build it from source." >&2
+	exit 1
+}
 curl -fsSL -o "$tmp/SHA256SUMS" "$base/SHA256SUMS"
 (cd "$tmp" && grep " \*\{0,1\}$name\$" SHA256SUMS | sha256sum -c -)
 tar xzf "$tmp/$name" -C "$tmp" kakel

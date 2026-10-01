@@ -12,7 +12,9 @@ $release = Invoke-RestMethod 'https://api.github.com/repos/marrasen/kakel/releas
 $name = "kakel_$($release.tag_name)_windows_amd64.zip"
 $zip = $release.assets | Where-Object name -eq $name
 $sums = $release.assets | Where-Object name -eq 'SHA256SUMS'
-if (-not $zip -or -not $sums) { throw "Release $($release.tag_name) has no $name or SHA256SUMS." }
+if (-not $zip -or -not $sums) {
+    throw "The newest release, $($release.tag_name), has no $name or SHA256SUMS. It may be from before kakel could install itself: wait for a newer release, or build it from source."
+}
 
 $tmp = Join-Path ([IO.Path]::GetTempPath()) ("kakel-" + [guid]::NewGuid())
 New-Item -ItemType Directory $tmp | Out-Null

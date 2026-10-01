@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/marrasen/kakel/internal/winattrs"
 	"github.com/pkg/sftp"
 )
 
@@ -134,7 +135,9 @@ func (s *SFTP) ReadDir(path string) ([]Entry, error) {
 				return nil, wrap(s, "read the link", at, err)
 			}
 		}
-		out = append(out, entryOf(info.Name(), info, link))
+		e := entryOf(info.Name(), info, link)
+		e.Attrs = WinAttrs(info)
+		out = append(out, e)
 	}
 	return out, nil
 }
@@ -152,7 +155,26 @@ func (s *SFTP) Stat(path string) (Entry, error) {
 			return Entry{}, wrap(s, "read the link", path, err)
 		}
 	}
-	return entryOf(Base(s, path), info, link), nil
+	e := entryOf(Base(s, path), info, link)
+	e.Attrs = WinAttrs(info)
+	return e, nil
+}
+
+// WinAttrs are the Windows attributes a kakel window sent with info,
+// read over SFTP, and zero where it sent none.
+func WinAttrs(info fs.FileInfo) uint32 {
+	st, ok := info.Sys().(*sftp.FileStat)
+	if !ok {
+		return 0
+	}
+	for _, x := range st.Extended {
+		if x.ExtType == winattrs.Name {
+			if v, ok := winattrs.Parse(x.ExtData); ok {
+				return v
+			}
+		}
+	}
+	return 0
 }
 
 // Open reads a file.

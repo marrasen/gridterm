@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/marrasen/kakel/internal/winattrs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/vfs"
@@ -339,4 +340,26 @@ func TestATransferToNowhereSaysSo(t *testing.T) {
 	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't copy the files" }) {
 		t.Fatalf("it said %+v", a.st.Notices)
 	}
+}
+
+// A file a kakel window on Windows says is kept online only reads as
+// such in the file manager; a folder, or a pinned file, does not.
+func TestOnlineOnlyFilesFromAWindowOnWindows(t *testing.T) {
+	m := newFMFS(serverFS+"w", nil)
+	cases := []struct {
+		e    vfs.Entry
+		want bool
+	}{
+		{vfs.Entry{Name: "a", Attrs: winattrs.RecallOnDataAccess}, true},
+		{vfs.Entry{Name: "b", Attrs: winattrs.Offline}, true},
+		{vfs.Entry{Name: "c", Attrs: winattrs.Pinned}, false},
+		{vfs.Entry{Name: "d"}, false},
+		{vfs.Entry{Name: "e", Mode: fs.ModeDir, Attrs: winattrs.RecallOnOpen}, false},
+	}
+	for _, c := range cases {
+		if got := m.OnlineOnly(fmInfo{c.e}); got != c.want {
+			t.Errorf("%s with %#x reads online only: %v", c.e.Name, c.e.Attrs, got)
+		}
+	}
+	var _ filemanager.OnlineReporter = m
 }

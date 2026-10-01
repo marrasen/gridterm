@@ -17,6 +17,7 @@ import (
 
 	"github.com/pkg/sftp"
 
+	"github.com/marrasen/kakel/internal/winattrs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/meter"
 	"github.com/marrasen/kakel/remote"
@@ -663,7 +664,13 @@ func (a *app) serveFiles(client context.Context, host string, ch io.ReadWriteClo
 		if home, err := os.UserHomeDir(); err == nil {
 			opts = append(opts, sftp.WithServerWorkingDirectory(home))
 		}
-		srv, err := sftp.NewServer(keptOpen{ch}, opts...)
+		var conn io.ReadWriteCloser = keptOpen{ch}
+		if winattrs.Lookup != nil {
+			// Windows: how OneDrive keeps each file goes with it.
+			home, _ := os.UserHomeDir()
+			conn = winattrs.Proxy(conn, home, winattrs.Lookup)
+		}
+		srv, err := sftp.NewServer(conn, opts...)
 		if err != nil {
 			return err
 		}

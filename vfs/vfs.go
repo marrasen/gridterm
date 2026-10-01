@@ -44,6 +44,11 @@ type Entry struct {
 	// Mode carries the directory bit for the browser's sake. Stored is
 	// the file as it is on disk.
 	Archive bool
+
+	// Attrs are the Windows attributes that say how a cloud provider
+	// keeps the item, as a kakel window serving its files sends them
+	// (see package winattrs), and zero from anything else.
+	Attrs uint32
 }
 
 // IsDir reports whether the entry is a directory.

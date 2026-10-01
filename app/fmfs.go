@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"image"
 	"io"
 	"io/fs"
 	"path"
@@ -13,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/marrasen/kakel/internal/winattrs"
 	"github.com/marrasen/kakel/vfs"
 
 	"github.com/marrasen/gunim/filemanager"
@@ -407,6 +409,26 @@ func (m *fmFS) Space(path string) (free, total uint64, err error) {
 	}
 	return 0, 0, errors.ErrUnsupported
 }
+
+// OnlineOnly implements [filemanager.OnlineReporter]: a file a kakel
+// window on Windows says a cloud provider keeps online only. Such a file
+// is read only when the user asks, as reading it downloads it.
+func (m *fmFS) OnlineOnly(info fs.FileInfo) bool {
+	if info.IsDir() {
+		return false
+	}
+	attrs := uint32(0)
+	if i, ok := info.(fmInfo); ok {
+		attrs = i.e.Attrs
+	} else {
+		attrs = vfs.WinAttrs(info)
+	}
+	return winattrs.OnlineOnly(attrs)
+}
+
+// SystemThumb implements [filemanager.OnlineReporter]: the thumbnails
+// Windows keeps don't come over SFTP.
+func (m *fmFS) SystemThumb(string, int) (image.Image, error) { return nil, nil }
 
 // fmEntry is an item of a folder, as the file manager reads it.
 type fmEntry struct{ e vfs.Entry }

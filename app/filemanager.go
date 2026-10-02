@@ -101,7 +101,7 @@ func (a *app) openFileManager(m machines.ID, path string) error {
 func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 	a.notePlaces()
 	w, err := a.files.Open(filemanager.Options{
-		FS: fsys, Dir: path, Name: "Files", PrefsPath: fileManagerPrefs(),
+		FS: fsys, Dir: path, Name: ProgramName, PrefsPath: fileManagerPrefs(),
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
 	})

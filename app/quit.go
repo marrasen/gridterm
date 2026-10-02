@@ -1,10 +1,12 @@
 package app
 
 import (
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/words"
@@ -117,26 +119,40 @@ func (a *app) hangUp() {
 
 // whatIsOpen is what the window would take with it, worst first: file
 // work part way through is the one thing that cannot be started again
-// where it left off.
+// where it left off. A connection with nothing on it is not asked
+// about: closing it loses nothing.
 func (a *app) whatIsOpen() []string {
 	var out []string
-	jobs := 0
+	// Copies and deletes running, kakel's own and those of the file
+	// manager's windows: these, a file manager window counts itself.
+	copies, deletes := 0, 0
 	for _, r := range a.running {
-		if !r.job.Progress().Done {
-			jobs++
+		if r.quiet || r.job.Progress().Done {
+			continue
+		}
+		if r.op.Kind == jobs.Delete {
+			deletes++
+		} else {
+			copies++
 		}
 	}
-	if jobs > 0 {
-		out = append(out, words.ManyOf(jobs, "piece of file work", "pieces of file work"))
+	for _, w := range a.fileWins {
+		copies += w.Running()
 	}
-	if n := len(a.st.Panes); n > 0 {
+	if copies > 0 {
+		out = append(out, words.ManyOf(copies, "copy running", "copies running"))
+	}
+	if deletes > 0 {
+		out = append(out, words.ManyOf(deletes, "delete running", "deletes running"))
+	}
+	// The tool panes have nothing to lose, and a connection with nothing
+	// on it nothing to end.
+	panes := slices.DeleteFunc(slices.Clone(a.st.Panes), func(p Pane) bool { return isToolKind(p.Kind) })
+	if n := len(panes); n > 0 {
 		out = append(out, words.ManyOf(n, "pane", "panes"))
 	}
 	if n := len(a.tunnels); n > 0 {
 		out = append(out, words.ManyOf(n, "tunnel", "tunnels"))
-	}
-	if n := len(a.machines.Connected()) + len(a.machines.Windows()); n > 0 {
-		out = append(out, words.ManyOf(n, "connection", "connections"))
 	}
 	if len(a.agents.by) > 0 {
 		out = append(out, "an agent share")

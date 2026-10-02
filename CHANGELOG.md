@@ -7,7 +7,7 @@ and the numbering follows [semantic versioning](https://semver.org/spec/v2.0.0.h
 While the major version is 0 the shape is still moving: a minor bump may
 change how something behaves.
 
-## Unreleased
+## v0.4.0
 
 ### Changed
 
@@ -41,7 +41,29 @@ this computer's folders, then each saved server with how it is doing.
 It keeps to windows of its own, outside kakel's tabs, and kakel runs
 while one is open. Files open where you last chose: the machine menu
 has Files in a Window and Files in a Pane, and Files remembers which.
-Servers' files come to it next; until then a server opens in a pane.
+A window's title names the machine first, as "Picard — Documents —
+kakel".
+
+- **Servers' files too.** A click on a server in the sidebar connects
+  to it and turns the window to its files; Ctrl+click opens it in a
+  window of its own. A connected server's icon is green, and its menu
+  has Disconnect, or Connect. A machine reached through a kakel window
+  opens the same way.
+- **Copy and move between machines.** Drag items, or copy and paste
+  them, between file manager windows on different machines: this
+  computer to a server, a server to this computer, or one server to
+  another. The window they go to shows the copy as its own, with its
+  progress and speed and a Stop, and asks there whether to replace a
+  file. kakel's Jobs list it too. A move between two machines that are
+  one folder, as this computer and a server that is this computer, is
+  refused rather than losing the files.
+- **Favourites on any machine.** Pin a folder on any machine; every
+  file manager window lists them all, a machine's menu and the palette
+  list its own, and the launcher finds them. The folders saved for a
+  server and for This Computer become favourites, once.
+- **OneDrive's online-only files.** Through a kakel window on a Windows
+  machine, files a cloud provider keeps online only are shown so, and
+  aren't read for thumbnails or previews, which would download them.
 
 **Add Saved Key.** Puts a key you already have on the saved keys, which
 the server form offers: one of the private keys in ~/.ssh, listed, or
@@ -58,7 +80,36 @@ secrets; the rest is in the Secrets pane.
 machines ~/.ssh/config names that aren't saved yet, with their host,
 user, port, key file and ProxyJump.
 
+**kakel starts in the tray.** Started from its shortcut, or with
+nothing to do, kakel goes to the tray and takes the launcher's key; a
+window opens from the tray, the launcher, or kakel started again. The
+first time, a pop-up says where it went. Where there is no tray, a
+window opens at once.
+
+**A password asked for interactively can be kept in the secrets.** A
+server that asks for its password through keyboard-interactive sign-in
+offers to keep it, as the plain password question does, and the
+secrets answer it from then on.
+
+**Dialogs have a title bar, and blur what is behind them much less.**
+
 ### Fixed
+
+**Exit asks only about what it would lose:** copies running, terminals
+and tunnels. A connection with nothing on it closes without a question,
+and so does a window with one pane.
+
+**On Windows, a drag drops on the window in front,** not on a kakel
+window behind it, and a file can be dragged from a window behind
+another without bringing it forward, as in Explorer.
+
+**The file manager's menus follow the pointer on Windows.** An open
+menu's shadow lay over the menu bar and took the pointer, so the bar
+missed moves and clicks; and a click on one title could flip the menu
+between it and another.
+
+**A caret doesn't blink in a window without the keyboard,** so a field
+there no longer looks ready to type into.
 
 **Copies to and from servers are many times faster on a slow link.**
 A copy read and wrote 64 KB at a time, each waiting a full round trip

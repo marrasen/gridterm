@@ -200,20 +200,22 @@ func (a *app) notePlaces() {
 	// As the machines are now: State's lists are filled in only on the
 	// copy the windows are sent.
 	dialing, connected := a.machines.Dialing(), a.machines.Connected()
+	// Saved windows among them: a window's files are its machine's.
+	windows := map[machines.ID]bool{}
+	for _, m := range a.machines.Windows() {
+		windows[m] = true
+	}
 	for _, h := range a.st.Saved {
-		if h.Window {
-			continue
-		}
 		m := machines.ID(h.ID)
 		note := "Not connected"
 		switch {
 		case slices.Contains(dialing, m):
 			note = "Connecting…"
-		case slices.Contains(connected, m):
+		case slices.Contains(connected, m) || windows[m]:
 			note = "Connected"
 		}
 		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Servers", Note: note, FS: serverFS + h.ID,
-			Lit: slices.Contains(connected, m)}
+			Lit: slices.Contains(connected, m) || windows[m]}
 		if fm := a.fmFiles[m]; fm != nil {
 			if fm.live() {
 				p.Path = fm.homeDir()

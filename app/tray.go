@@ -178,9 +178,6 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	}
 	connected := a.machines.Connected()
 	for _, h := range a.st.Saved {
-		if h.Window {
-			continue
-		}
 		m := machines.ID(h.ID)
 		title := h.Name
 		for _, c := range connected {

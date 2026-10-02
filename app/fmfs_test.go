@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -478,5 +479,46 @@ func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
 	places = *a.serverPlaces.Load()
 	if items := placeMenu(places[i]); places[i].Lit || len(items) != 1 || items[0].ID != "connect" {
 		t.Fatalf("disconnected, the place is %+v, its menu %+v", places[i], items)
+	}
+}
+
+// Files asked for on a saved kakel window not connected connect to it
+// quietly, with no terminal and no pane of its log, and open in a file
+// manager window.
+func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
+	a, _ := agentApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	b, keyFile := clientOf(t, a)
+	host, port, err := net.SplitHostPort(a.st.Serving.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	book, err := remote.LoadBook(filepath.Join(t.TempDir(), "servers.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := strconv.Atoi(port)
+	if err := book.Put(remote.Host{Name: "desk", Address: host, Port: n, Window: true, Identities: []string{keyFile}}, ""); err != nil {
+		t.Fatal(err)
+	}
+	b.book = book
+	b.st.Saved = book.Hosts()
+	desk := machines.ID(b.st.Saved[0].ID)
+	files := &fakeFiles{}
+	b.files = files
+	panes := len(b.st.Panes)
+
+	if err := b.openFileManager(desk, ""); err != nil {
+		t.Fatal(err)
+	}
+	pumpBoth(t, a, b, "the question about the host key", func() bool { return len(b.st.Asks) > 0 })
+	b.handle(AskAnswered{ID: b.st.Asks[0].ID, Yes: true})
+	pumpBoth(t, a, b, "the files window", func() bool { return len(files.opened) == 1 })
+	if b.machines.Get(desk).Window == nil {
+		t.Fatal("the window isn't connected")
+	}
+	if len(b.st.Panes) != panes {
+		t.Fatalf("panes opened: %+v", b.st.Panes)
 	}
 }

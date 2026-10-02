@@ -55,6 +55,8 @@ type (
 	ConnectWindow struct {
 		Addr, KeyFile string
 		ID            machines.ID
+		// Only connects, and opens nothing on it.
+		Only bool
 	}
 	// DisconnectWindow lets go of a window, by its ID, closing the
 	// panes on it.
@@ -110,11 +112,15 @@ func (a *app) windowAt(addr string) machines.ID {
 
 // connectWindow connects to a served window, and opens a terminal on
 // it once it has.
-func (a *app) connectWindow(in ConnectWindow) error { return a.reachWindow(in, true) }
+func (a *app) connectWindow(in ConnectWindow) error { return a.reachWindow(in, false, nil) }
 
-// reachWindow connects to a served window, and opens a terminal on it
-// once it has when terminal is set.
-func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
+// reachWindow connects to a served window, as connectThen does a
+// server: then runs once it has, or could not, with why; with then nil,
+// a terminal opens on it. quiet is for a file manager window, which says
+// how it went itself: no pane of its log, no toast and no flash. Sign-in
+// questions still come, the secrets answering them where they can.
+func (a *app) reachWindow(in ConnectWindow, quiet bool, then func(error)) error {
+	terminal := then == nil && !in.Only
 	addr := serveAddr(in.Addr)
 	if addr == "" {
 		return errors.New("type the address of the window to connect to")
@@ -143,7 +149,11 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	case a.machines.Get(name).Window != nil:
 		return fmt.Errorf("this window is already connected to %s", a.machines.Name(name))
 	case a.machines.Get(name).Dialing != nil:
-		// On its way already: that connection is the one asked for.
+		// On its way already: that connection is the one asked for, and
+		// whoever asked hears how it went.
+		if then != nil {
+			a.machines.At(name).Waiters = append(a.machines.At(name).Waiters, then)
+		}
 		return nil
 	}
 	// Connected to again some other way: the question is answered.
@@ -152,12 +162,16 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 	a.machines.At(name).Dialing = cancel
 	acct := a.dialLog(name)
 	logLine(acct, "", "connecting to the window at "+addr)
-	logPane := a.watchDial(name)
+	logPane := ""
+	if !quiet {
+		logPane = a.watchDial(name)
+	}
 	began := time.Now()
+	kept := &signIns{}
 	a.showStatus()
 	go func() {
 		win, err := remote.ReachWindow(dctx, remote.Reach{
-			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a, name),
+			Addr: addr, KeyFile: strings.TrimSpace(in.KeyFile), Ring: a.ring, Ask: newAsker(a, name).keeping(kept),
 			Known:  knownWindows,
 			Saying: func(what string) { logLine(acct, "", what) },
 			Wrong:  func(what string) { logLine(acct, badly, what) },
@@ -166,6 +180,17 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			a.machines.At(name).Dialing = nil
 			cancel()
 			a.showStatus()
+			// Whoever asked for it again waits on this one.
+			waiting := a.machines.Get(name).Waiters
+			a.machines.At(name).Waiters = nil
+			defer func() {
+				for _, w := range waiting {
+					w(err)
+				}
+				if then != nil {
+					then(err)
+				}
+			}()
 			if err != nil {
 				logLine(acct, badly, "could not connect: "+err.Error())
 				if errors.Is(err, context.Canceled) && logPane != "" {
@@ -173,7 +198,7 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 					// failure leaves the log up, saying why.
 					a.closePane(logPane)
 				}
-				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
+				if !quiet && !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.failed("Couldn't connect to the window at "+addr, err.Error())
 					a.problem()
 				}
@@ -181,7 +206,10 @@ func (a *app) reachWindow(in ConnectWindow, terminal bool) error {
 			}
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			log.Printf("connected to the window %s at %s", oneLine(a.machines.Name(name)), addr)
-			a.done()
+			a.keepSignIns(kept)
+			if !quiet {
+				a.done()
+			}
 			a.holdWindow(name, addr, in.KeyFile, win)
 			a.dialed(logPane, name, terminal)
 		}
@@ -292,7 +320,8 @@ func (a *app) windowGone(name machines.ID, w *machines.Window, why error) {
 			if !ans.Yes {
 				return
 			}
-			if err := a.reachWindow(again, false); err != nil {
+			again.Only = true
+			if err := a.reachWindow(again, false, nil); err != nil {
 				a.failed("Couldn't reconnect to "+a.machines.Name(name), err.Error())
 				a.problem()
 			}

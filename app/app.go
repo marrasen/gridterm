@@ -472,6 +472,9 @@ type (
 		// went: no pane of its log, no toast and no flash in kakel's
 		// windows. Sign-in questions still come.
 		Quiet bool
+		// Only connects, and opens nothing on it: no terminal when
+		// nothing else waits on the connection.
+		Only bool
 	}
 	// SaveServer saves a server, in place of the one named Under when
 	// that is set.

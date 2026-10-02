@@ -89,16 +89,13 @@ func (a *app) dialAgain(machine machines.ID, then func(error)) error {
 func (a *app) dialAgainHow(machine machines.ID, quiet bool, then func(error)) error {
 	if target, window, ok := a.machines.Quick(machine); ok {
 		if window {
-			return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
+			return a.reachWindow(ConnectWindow{Addr: target, ID: machine}, quiet, then)
 		}
 		return a.connectThen(ConnectTo{Target: target, As: machine, Quiet: quiet}, then)
 	}
-	h, saved := a.machines.Saved(machine)
-	switch {
-	case !saved:
+	if _, saved := a.machines.Saved(machine); !saved {
 		return errors.New(a.machines.Name(machine) + " is not in the server list any more, so there is nothing to connect to")
-	case h.Window:
-		return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
 	}
+	// A saved window too: connectThen connects to it as one.
 	return a.connectThen(ConnectTo{Server: machine, Quiet: quiet}, then)
 }

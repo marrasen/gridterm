@@ -3357,7 +3357,8 @@ func (w *Window) openMachineMenu(r *sideRow, u *gunim.UI) {
 			// Saved as a window and not connected: nothing that needs a
 			// shell applies.
 			saved := h
-			add(icon.Plug, "Connect", send(app.ConnectTo{Server: m}))
+			add(icon.Plug, "Connect", send(app.ConnectTo{Server: m, Only: true}))
+			add(icon.Folder, "Files", send(app.OpenFilesOn{Machine: m}))
 			add(icon.Pencil, "Edit This Window…", func(u *gunim.UI) { w.serverForm(&saved, u) })
 			add(icon.Trash2, "Remove This Window…", func(u *gunim.UI) { w.confirmRemove(m, u) })
 			w.showMachineMenu(r, items, icons, acts, u)

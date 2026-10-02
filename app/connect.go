@@ -107,13 +107,13 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		if err != nil {
 			return err
 		}
-		// A saved kakel window is connected to as one.
+		// A saved kakel window is connected to as one, the same way.
 		if last := hosts[len(hosts)-1]; last.Window {
 			key := ""
 			if len(last.Identities) > 0 {
 				key = last.Identities[0]
 			}
-			return a.connectWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: machines.ID(last.ID)})
+			return a.reachWindow(ConnectWindow{Addr: last.ServeAddr(), KeyFile: key, ID: machines.ID(last.ID), Only: in.Only}, in.Quiet, then)
 		}
 		for _, h := range hosts {
 			hops = append(hops, h.Config())
@@ -129,7 +129,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		// not SSH to the port it serves on. A quick connection made
 		// again stays SSH, as it was made.
 		if h, ok := a.savedWindowAt(cfg); ok && in.As == "" {
-			return a.connectWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID)})
+			return a.reachWindow(ConnectWindow{Addr: h.ServeAddr(), KeyFile: h.KeyFile(), ID: machines.ID(h.ID), Only: in.Only}, in.Quiet, then)
 		}
 		hops = []remote.Config{cfg}
 		names, shown = []machines.ID{machines.Local}, []string{cfg.Target()}
@@ -147,6 +147,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		}
 		if then != nil {
 			then(nil)
+			return nil
+		}
+		if in.Only {
 			return nil
 		}
 		return a.open(name, Placement{})
@@ -264,7 +267,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					a.notify("Disconnected from "+a.machines.Name(name), "", "")
 				}
 			}()
-			a.dialed(logPane, name, then == nil)
+			a.dialed(logPane, name, then == nil && !in.Only)
 			if then != nil {
 				then(nil)
 			}

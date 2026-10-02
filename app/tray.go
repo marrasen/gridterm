@@ -158,7 +158,7 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 	machine := func(m machines.ID, title string) gunim.TrayItem {
 		sub := []gunim.TrayItem{
 			{Title: "Terminal", ID: act(func() { a.toTray(func() { a.handle(OpenOn{Machine: m}) }) })},
-			{Title: "Files", ID: act(func() { a.toTray(func() { a.handle(OpenFilesOn{Machine: m}) }) })},
+			{Title: "Files", ID: act(func() { a.filesFromOutside(m, "") })},
 		}
 		if m == machines.Local {
 			for _, sh := range a.st.Shells {
@@ -241,6 +241,21 @@ func (a *app) toTray(f func()) {
 	a.front(w)
 	w.c.ToFront()
 	f()
+}
+
+// filesFromOutside opens the files on m, at path or at home, as asked
+// from outside kakel's windows, by the tray or the launcher: in a file
+// manager window of their own when that is where files open, with no
+// kakel window opened or brought forward for them, and otherwise in a
+// pane of the window worked in.
+func (a *app) filesFromOutside(m machines.ID, path string) {
+	if a.files != nil && a.settings != nil && a.settings.FilesInWindow() {
+		if err := a.openFileManager(m, path); err != nil {
+			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
+		}
+		return
+	}
+	a.toTray(func() { a.handle(OpenFilesOn{Machine: m, Path: path}) })
 }
 
 // newWindow opens a window, brings it to the front, and does f in it.

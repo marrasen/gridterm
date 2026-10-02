@@ -203,3 +203,34 @@ func TestNewWindowFromTheLauncherOpensOne(t *testing.T) {
 		t.Fatalf("New Window opened %d windows, %d on their way", opened, a.opening)
 	}
 }
+
+// Files asked for from the tray or the launcher, where files open in a
+// window, open there alone: no kakel window opens for them.
+func TestFilesFromTheTrayOpenNoKakelWindow(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.traySet = (&fakeTray{}).tray()
+	a.settings = mustSettings(t)
+	if err := a.settings.PutFilesInWindow(true); err != nil {
+		t.Fatal(err)
+	}
+	files := &fakeFiles{}
+	a.files = files
+	a.publish()
+	opened := 0
+	a.openWindow = func(_ *gunim.Window, _ geom.Point, s geom.Size) (gunim.Client, *gunim.Window, error) {
+		opened++
+		return gunimtest.New(t, s, nil).Client(), nil, nil
+	}
+	for _, w := range []*ownWin{one, two} {
+		for _, p := range a.panesIn(w) {
+			a.remove(p.ID)
+		}
+		a.letWindowGo(w)
+	}
+	a.handleLaunch(Launch{Action: "files"})
+	a.filesFromOutside("", "/tmp")
+	time.Sleep(50 * time.Millisecond)
+	if len(files.opened) != 2 || opened != 0 || a.opening != 0 {
+		t.Fatalf("files opened %d windows of their own, and %d kakel windows opened, %d on their way", len(files.opened), opened, a.opening)
+	}
+}

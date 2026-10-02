@@ -389,7 +389,14 @@ func (a *app) handleLaunch(in gunim.Intent) {
 			a.newWindow(func() { a.handle(NewTerminal{}) })
 			return
 		}
-		a.toTray(func() { a.launchOn(in) })
+		switch {
+		case strings.HasPrefix(in.Action, "files:"):
+			a.filesFromOutside(in.Machine, strings.TrimPrefix(in.Action, "files:"))
+		case in.Action == "files":
+			a.filesFromOutside(in.Machine, "")
+		default:
+			a.toTray(func() { a.launchOn(in) })
+		}
 	}
 }
 

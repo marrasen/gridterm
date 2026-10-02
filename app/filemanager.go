@@ -232,11 +232,20 @@ func (a *app) notePlaces() {
 }
 
 // visitPlace turns window w to a place on another file system than the
-// one it shows: this computer's, or a server's, connected to first. It
-// runs on a goroutine of its own.
-func (a *app) visitPlace(w *filemanager.Window, fs, path string) {
+// one it shows: this computer's, or a server's, connected to first.
+// With newWindow, as with Ctrl held, the place opens in a window of its
+// own, and w stays as it is. It runs on a goroutine of its own.
+func (a *app) visitPlace(w *filemanager.Window, fs, path string, newWindow bool) {
 	if fs == "" {
-		w.Show(filemanager.LocalFS(), path)
+		if !newWindow {
+			w.Show(filemanager.LocalFS(), path)
+			return
+		}
+		a.events <- func() {
+			if err := a.openFileWindow(filemanager.LocalFS(), path); err != nil {
+				w.Notify("Couldn't open a window", words.UpperFirst(err.Error())+".", "warning")
+			}
+		}
 		return
 	}
 	id, ok := strings.CutPrefix(fs, serverFS)
@@ -251,7 +260,16 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string) {
 				w.Notify("Couldn't open the files on "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
 			}
 		}
-		if err := a.withFilesHow(m, func(f vfs.FS) { w.Show(a.fmFor(m, f), path) }, failed, true); err != nil {
+		show := func(f vfs.FS) {
+			if !newWindow {
+				w.Show(a.fmFor(m, f), path)
+				return
+			}
+			if err := a.openFileWindow(a.fmFor(m, f), path); err != nil {
+				failed(err)
+			}
+		}
+		if err := a.withFilesHow(m, show, failed, true); err != nil {
 			failed(err)
 		}
 	}

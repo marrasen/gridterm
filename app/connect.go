@@ -468,13 +468,21 @@ func keyNote(path string) string {
 
 // Password implements [remote.Ask].
 func (q asker) Password(ctx context.Context, user, host string) (string, error) {
+	return q.password(ctx, user, host, "")
+}
+
+// password is the password for user at host: the one the secrets keep
+// for the login, the first time round, or else asked for, with an offer
+// to keep it there. said is what the server said with its question, if
+// anything.
+func (q asker) password(ctx context.Context, user, host, said string) (string, error) {
 	// Asked again, the last one was refused, and the question says so
 	// rather than opening again with no word of why.
 	login := user + "@" + host
-	text := ""
+	text := said
 	if q.asked != nil {
 		if *q.asked {
-			text = "Invalid password."
+			text = strings.TrimSpace("Invalid password. " + said)
 		} else if q.kept != nil {
 			// The one the secrets keep for this login, the first time
 			// round. Refused, the question that follows says so.
@@ -508,15 +516,54 @@ func (q asker) Question(ctx context.Context, rq remote.Question) ([]string, erro
 	if len(said) > 0 {
 		text = "The server says: " + strings.Join(said, " ")
 	}
+	// A password asked for this way is the login's password, as asked
+	// for in the plain way: kept in the secrets, and offered to keep.
+	host := loginHost(rq.Host)
+	if passwordQuestion(rq) {
+		pass, err := q.password(ctx, rq.User, host, text)
+		if err != nil {
+			return nil, err
+		}
+		return []string{pass}, nil
+	}
 	secret := make([]bool, len(rq.Echo))
 	for i, e := range rq.Echo {
 		secret[i] = !e
 	}
-	ans, err := q.a.ask(ctx, Ask{Title: rq.User + "@" + rq.Host + " asks", Icon: "log-in", Text: text, Prompts: rq.Prompts, Secret: secret, Yes: "Answer"})
+	ans, err := q.a.ask(ctx, Ask{Title: rq.User + "@" + host + " asks", Icon: "log-in", Text: text, Prompts: rq.Prompts, Secret: secret, Yes: "Answer"})
 	if err != nil {
 		return nil, err
 	}
 	return ans.Answers, nil
+}
+
+// passwordQuestion reports whether rq asks for a password alone: one
+// answer, hidden as it is typed, its prompt naming a password, and not a
+// code of the moment, which is never the same twice.
+func passwordQuestion(rq remote.Question) bool {
+	if len(rq.Prompts) != 1 || len(rq.Echo) != 1 || rq.Echo[0] {
+		return false
+	}
+	p := strings.ToLower(rq.Prompts[0])
+	if !strings.Contains(p, "password") {
+		return false
+	}
+	for _, w := range []string{"code", "token", "otp", "one-time", "verification", "new password", "again", "retype", "confirm"} {
+		if strings.Contains(p, w) {
+			return false
+		}
+	}
+	return true
+}
+
+// loginHost is a host and port as a login names it: the port left out
+// where it is SSH's own, 22, as the plain password question names it.
+func loginHost(hostPort string) string {
+	host, port, err := net.SplitHostPort(hostPort)
+	if err != nil || port != "22" {
+		return hostPort
+	}
+	return host
 }
 
 // TrustHostKey implements [remote.Ask].

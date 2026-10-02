@@ -285,3 +285,75 @@ func TestAnExistingKeyIsAddedToSavedKeys(t *testing.T) {
 		t.Fatalf("refusing it said %+v", n)
 	}
 }
+
+// A server that asks for its password through keyboard-interactive is
+// answered as the plain password question is: from the secrets, by the
+// login named without port 22, and typed, with the offer to keep it.
+func TestAPasswordAskedInteractivelyIsALoginsPassword(t *testing.T) {
+	a, _ := secretsApp(t)
+	startVault(t, a)
+	if _, err := a.secrets.Put(secrets.Item{Name: "web", Logins: []string{"me@web.example"}}, "hunter2"); err != nil {
+		t.Fatal(err)
+	}
+	q := newAsker(a, "web").keeping(&signIns{})
+	rq := remote.Question{User: "me", Host: "web.example:22", Prompts: []string{"Password: "}, Echo: []bool{false}}
+	pass := run(t, a, func() string {
+		ans, _ := q.Question(t.Context(), rq)
+		if len(ans) != 1 {
+			return ""
+		}
+		return ans[0]
+	})
+	if pass != "hunter2" || len(a.st.Asks) != 0 {
+		t.Fatalf("answered %q, asking %+v", pass, a.st.Asks)
+	}
+
+	// Typed for a login with none kept, it is kept once in.
+	kept := &signIns{}
+	q = newAsker(a, "srv").keeping(kept)
+	got := make(chan string, 1)
+	go func() {
+		ans, _ := q.Question(t.Context(), remote.Question{User: "me", Host: "srv.example:22", Prompts: []string{"Password:"}, Echo: []bool{false}})
+		if len(ans) == 1 {
+			got <- ans[0]
+		}
+	}()
+	answer(t, a, "Sign in to me@srv.example", true, "s3cret", "yes")
+	if p := await(t, a, got); p != "s3cret" {
+		t.Fatalf("answered %q", p)
+	}
+	a.keepSignIns(kept)
+	if pass, err := a.secrets.PasswordFor("me@srv.example"); err != nil || pass != "s3cret" {
+		t.Fatalf("kept %q, %v", pass, err)
+	}
+}
+
+// Only a question for a password alone is one: not a code, not two
+// answers, not one shown as it is typed.
+func TestWhatIsAPasswordQuestion(t *testing.T) {
+	for _, c := range []struct {
+		rq   remote.Question
+		want bool
+	}{
+		{remote.Question{Prompts: []string{"Password: "}, Echo: []bool{false}}, true},
+		{remote.Question{Prompts: []string{"(me@host) Password:"}, Echo: []bool{false}}, true},
+		{remote.Question{Prompts: []string{"Verification code: "}, Echo: []bool{false}}, false},
+		{remote.Question{Prompts: []string{"One-time password: "}, Echo: []bool{false}}, false},
+		{remote.Question{Prompts: []string{"New password: "}, Echo: []bool{false}}, false},
+		{remote.Question{Prompts: []string{"Password: "}, Echo: []bool{true}}, false},
+		{remote.Question{Prompts: []string{"Password: ", "Code: "}, Echo: []bool{false, false}}, false},
+	} {
+		if got := passwordQuestion(c.rq); got != c.want {
+			t.Errorf("%q is a password question: %v", c.rq.Prompts, got)
+		}
+	}
+	if got := loginHost("web.example:22"); got != "web.example" {
+		t.Errorf("web.example:22 is %q", got)
+	}
+	if got := loginHost("web.example:2222"); got != "web.example:2222" {
+		t.Errorf("web.example:2222 is %q", got)
+	}
+	if got := loginHost("[::1]:22"); got != "::1" {
+		t.Errorf("[::1]:22 is %q", got)
+	}
+}

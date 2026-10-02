@@ -82,11 +82,16 @@ func (a *app) needsFiles(in gunim.Intent) bool {
 // quick connection. then hears how it went. A window is connected to
 // again by the user, and a server removed from the list is not.
 func (a *app) dialAgain(machine machines.ID, then func(error)) error {
+	return a.dialAgainHow(machine, false, then)
+}
+
+// dialAgainHow is dialAgain, quiet for a file manager window.
+func (a *app) dialAgainHow(machine machines.ID, quiet bool, then func(error)) error {
 	if target, window, ok := a.machines.Quick(machine); ok {
 		if window {
 			return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
 		}
-		return a.connectThen(ConnectTo{Target: target, As: machine}, then)
+		return a.connectThen(ConnectTo{Target: target, As: machine, Quiet: quiet}, then)
 	}
 	h, saved := a.machines.Saved(machine)
 	switch {
@@ -95,5 +100,5 @@ func (a *app) dialAgain(machine machines.ID, then func(error)) error {
 	case h.Window:
 		return errors.New("the window " + a.machines.Name(machine) + " has gone. Connect to it again first")
 	}
-	return a.connectThen(ConnectTo{Server: machine}, then)
+	return a.connectThen(ConnectTo{Server: machine, Quiet: quiet}, then)
 }

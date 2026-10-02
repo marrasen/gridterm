@@ -149,6 +149,11 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 		return a.open(name, Placement{})
 	}
 	if a.machines.Get(name).Dialing != nil {
+		if in.Quiet && then != nil {
+			// The one on its way will do: nobody is asked.
+			a.machines.At(name).Waiters = append(a.machines.At(name).Waiters, then)
+			return nil
+		}
 		a.askAboutTheOneOnItsWay(in, name, then)
 		return nil
 	}
@@ -156,7 +161,10 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 	a.machines.At(name).Dialing = cancel
 	acct := a.dialLog(name)
 	logLine(acct, "", "connecting to "+called)
-	logPane := a.watchDial(name)
+	logPane := ""
+	if !in.Quiet {
+		logPane = a.watchDial(name)
+	}
 	began := time.Now()
 	kept := &signIns{}
 	for i := range hops {
@@ -199,7 +207,7 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 					// failure leaves the log up, saying why.
 					a.closePane(logPane)
 				}
-				if !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
+				if !in.Quiet && !errors.Is(err, errDeclined) && !errors.Is(err, context.Canceled) {
 					a.failed("Couldn't connect to "+called, err.Error())
 					a.problem()
 				}
@@ -217,7 +225,9 @@ func (a *app) connectThen(in ConnectTo, then func(error)) error {
 			logLine(acct, well, "connected in "+time.Since(began).Round(10*time.Millisecond).String())
 			a.keepSignIns(kept)
 			log.Printf("connected to %s", oneLine(a.machines.Name(name)))
-			a.done()
+			if !in.Quiet {
+				a.done()
+			}
 			go func() {
 				err := conn.Wait()
 				a.events <- func() {

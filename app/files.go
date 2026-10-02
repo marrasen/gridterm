@@ -314,6 +314,18 @@ func (a *app) withFiles(machine machines.ID, then func(vfs.FS)) error {
 // withFilesOr is withFiles, running failed when the files could not be
 // opened after it returned.
 func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func()) error {
+	return a.withFilesHow(machine, then, func(err error) {
+		failed()
+		if err != nil {
+			a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
+		}
+	}, false)
+}
+
+// withFilesHow is withFilesOr for a file manager window when quiet: it
+// connects quietly, and failed hears why, nil where the connection
+// said so itself, rather than kakel's windows.
+func (a *app) withFilesHow(machine machines.ID, then func(vfs.FS), failed func(error), quiet bool) error {
 	if c := a.machines.Get(machine).Conn; c != nil {
 		// Its files came over the connection as it was saved then.
 		if err := a.machines.SavedOtherwise(machine); err != nil {
@@ -328,14 +340,17 @@ func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func())
 	if open == nil {
 		if _, _, far := machine.Far(); !far && machine != machines.Local {
 			// Not connected: connected to first.
-			return a.dialAgain(machine, func(err error) {
+			return a.dialAgainHow(machine, quiet, func(err error) {
 				if err != nil {
-					failed()
+					if quiet {
+						failed(fmt.Errorf("couldn't connect to %s: %w", a.machines.Name(machine), err))
+					} else {
+						failed(nil)
+					}
 					return
 				}
-				if err := a.withFilesOr(machine, then, failed); err != nil {
-					failed()
-					a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
+				if err := a.withFilesHow(machine, then, failed, quiet); err != nil {
+					failed(err)
 				}
 			})
 		}
@@ -350,8 +365,7 @@ func (a *app) withFilesOr(machine machines.ID, then func(vfs.FS), failed func())
 			a.starting--
 			a.say(opening, "")
 			if err != nil {
-				failed()
-				a.failed("Couldn't open the files on "+a.machines.Name(machine), err.Error())
+				failed(err)
 				return
 			}
 			then(a.keepFiles(machine, f))

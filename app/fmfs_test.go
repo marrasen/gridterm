@@ -9,12 +9,12 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/marrasen/kakel/internal/winattrs"
+	"github.com/marrasen/kakel/jobs"
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/vfs"
@@ -278,8 +278,32 @@ func TestAServersFilesOpenInAWindow(t *testing.T) {
 	}
 }
 
-// Items a file manager window sends between machines go as one of
-// kakel's copy jobs: copied, or moved, into the folder asked for.
+// transferNow runs a transfer as a file manager window does, kakel's
+// own goroutine answering it, until it ends.
+func transferNow(t *testing.T, a *app, tr filemanager.Transfer) error {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- a.transferFiles(t.Context(), nil, tr, nil) }()
+	tick := time.NewTicker(SampleEvery)
+	defer tick.Stop()
+	deadline := time.After(10 * time.Second)
+	for {
+		select {
+		case err := <-done:
+			return err
+		case f := <-a.events:
+			f()
+		case <-tick.C:
+			a.showJobs()
+		case <-deadline:
+			t.Fatal("the transfer never ended")
+		}
+	}
+}
+
+// Items a file manager window sends between machines go as kakel's copy
+// jobs, listed quietly, which end before the transfer returns: copied,
+// or moved, into the folder asked for.
 func TestATransferBetweenMachinesRunsAsAJob(t *testing.T) {
 	a, _ := agentApp(t)
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
@@ -292,21 +316,30 @@ func TestATransferBetweenMachinesRunsAsAJob(t *testing.T) {
 		}
 	}
 	into := onServer(there)
-	// Through the door a window uses: on a goroutine of its own.
-	go a.transferFiles(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "s1", Into: into})
-	(<-a.events)()
-	a.transfer(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "b.txt")}, ToFS: serverFS + "s1", Into: into, Move: true})
-	if len(a.running) != 2 || a.running[0].from != machines.Local || a.running[0].to != "s1" {
+	notices := len(a.st.Notices)
+	if err := transferNow(t, a, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "s1", Into: into}); err != nil {
+		t.Fatal(err)
+	}
+	if err := transferNow(t, a, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "b.txt")}, ToFS: serverFS + "s1", Into: into, Move: true}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.running) != 2 || a.running[0].from != machines.Local || a.running[0].to != "s1" || !a.running[0].quiet {
 		t.Fatalf("the jobs are %+v", a.running)
 	}
-	waitFor(t, a, "both copied", func() bool {
-		_, errA := os.Stat(filepath.Join(there, "a.txt"))
-		_, errB := os.Stat(filepath.Join(there, "b.txt"))
-		_, gone := os.Stat(filepath.Join(here, "b.txt"))
-		return errA == nil && errB == nil && os.IsNotExist(gone)
-	})
+	for _, name := range []string{"a.txt", "b.txt"} {
+		if _, err := os.Stat(filepath.Join(there, name)); err != nil {
+			t.Fatalf("%s is not there: %v", name, err)
+		}
+	}
 	if _, err := os.Stat(filepath.Join(here, "a.txt")); err != nil {
 		t.Fatalf("the copy took the original away: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(here, "b.txt")); !os.IsNotExist(err) {
+		t.Fatalf("the move left the original: %v", err)
+	}
+	a.showJobs()
+	if len(a.st.Notices) != notices {
+		t.Fatalf("kakel's windows said %+v", a.st.Notices[notices:])
 	}
 
 	// Back from the server, from two folders at once: a job for each.
@@ -318,27 +351,44 @@ func TestATransferBetweenMachinesRunsAsAJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	back := t.TempDir()
-	a.transfer(nil, filemanager.Transfer{FromFS: serverFS + "s1", Paths: []string{into + "/a.txt", onServer(sub) + "/c.txt"}, ToFS: "", Into: back})
+	if err := transferNow(t, a, filemanager.Transfer{FromFS: serverFS + "s1", Paths: []string{into + "/a.txt", onServer(sub) + "/c.txt"}, ToFS: "", Into: back}); err != nil {
+		t.Fatal(err)
+	}
 	if len(a.running) != 4 || a.running[2].from != "s1" || a.running[3].to != machines.Local {
 		t.Fatalf("the jobs back are %+v", a.running[2:])
 	}
-	waitFor(t, a, "both copied back", func() bool {
-		_, errA := os.Stat(filepath.Join(back, "a.txt"))
-		_, errC := os.Stat(filepath.Join(back, "c.txt"))
-		return errA == nil && errC == nil
-	})
+	for _, name := range []string{"a.txt", "c.txt"} {
+		if _, err := os.Stat(filepath.Join(back, name)); err != nil {
+			t.Fatalf("%s is not back: %v", name, err)
+		}
+	}
+
+	// A name taken, and no window to ask: the copy stops, and says so.
+	if err := transferNow(t, a, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "s1", Into: into}); err == nil {
+		t.Fatal("a copy over a file nobody was asked about went ahead")
+	}
 }
 
-// A transfer to a machine kakel can't reach starts nothing, and says so.
-func TestATransferToNowhereSaysSo(t *testing.T) {
+// A transfer to a machine kakel can't reach fails, and starts nothing.
+func TestATransferToNowhereFails(t *testing.T) {
 	a, _ := agentApp(t)
 	here := t.TempDir()
-	a.transfer(nil, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "nowhere", Into: "/tmp"})
-	if len(a.running) != 0 {
-		t.Fatalf("the jobs are %+v", a.running)
+	err := transferNow(t, a, filemanager.Transfer{FromFS: "", Paths: []string{filepath.Join(here, "a.txt")}, ToFS: serverFS + "nowhere", Into: "/tmp"})
+	if err == nil || len(a.running) != 0 {
+		t.Fatalf("it ended with %v, the jobs %+v", err, a.running)
 	}
-	if !slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't copy the files" }) {
-		t.Fatalf("it said %+v", a.st.Notices)
+}
+
+// A name that is taken gets a name of its own beside it.
+func TestAFreeNameBesideATakenOne(t *testing.T) {
+	dir := t.TempDir()
+	for _, n := range []string{"a.txt", "a (2).txt"} {
+		if err := os.WriteFile(filepath.Join(dir, n), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := nameBeside(vfs.NewLocal(), filepath.Join(dir, "a.txt"), false); got != "a (3).txt" {
+		t.Fatalf("the free name is %q", got)
 	}
 }
 
@@ -362,4 +412,28 @@ func TestOnlineOnlyFilesFromAWindowOnWindows(t *testing.T) {
 		}
 	}
 	var _ filemanager.OnlineReporter = m
+}
+
+// An answer for all goes for the names after it, but a Replace for all
+// never puts a folder where a file is, or a file where a folder is: that
+// is asked again, and with no window to ask, the job stops.
+func TestAnAnswerForAllInAFileManagerWindow(t *testing.T) {
+	dir := t.TempDir()
+	to := vfs.NewLocal()
+	file, folder := vfs.Entry{Name: "a"}, vfs.Entry{Name: "a", Mode: fs.ModeDir}
+	ask := &fmAsker{}
+	replace, keep := filemanager.ChoiceReplace, filemanager.ChoiceKeepBoth
+
+	ask.all = &replace
+	if c, err := ask.Overwrite(t.Context(), jobs.Conflict{To: to, Path: filepath.Join(dir, "a"), Have: file, Want: file}); err != nil || c.What != jobs.Replace {
+		t.Fatalf("a file over a file, for all, is %+v, %v", c, err)
+	}
+	if c, err := ask.Overwrite(t.Context(), jobs.Conflict{To: to, Path: filepath.Join(dir, "a"), Have: file, Want: folder}); err != nil || c.What != jobs.Stop {
+		t.Fatalf("a folder over a file, for all, is %+v, %v", c, err)
+	}
+	ask.all = &keep
+	c, err := ask.Overwrite(t.Context(), jobs.Conflict{To: to, Path: filepath.Join(dir, "v1.2"), Have: folder, Want: folder})
+	if err != nil || c.What != jobs.Rename || c.Name != "v1.2 (2)" {
+		t.Fatalf("a folder kept beside, for all, is %+v, %v", c, err)
+	}
 }

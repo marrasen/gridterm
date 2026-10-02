@@ -1,10 +1,14 @@
 package app
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/marrasen/kakel/conf"
 	"github.com/marrasen/kakel/jobs"
@@ -99,7 +103,7 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 	w, err := a.files.Open(filemanager.Options{
 		FS: fsys, Dir: path, Name: "Files", PrefsPath: fileManagerPrefs(),
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
-		Transfer: a.transferFiles,
+		Transfer: a.transferFiles, FSName: a.fsName,
 	})
 	if err != nil {
 		return err
@@ -122,7 +126,6 @@ func (a *app) favStore() filemanager.FavouriteStore {
 	}
 	if a.fmFavs == nil {
 		a.fmFavs = &fmFavourites{a: a}
-		a.fmFavs.noteNames(a)
 	}
 	return a.fmFavs
 }
@@ -215,9 +218,7 @@ func (a *app) notePlaces() {
 		}
 		places = append(places, p)
 	}
-	if a.fmFavs != nil {
-		a.fmFavs.noteNames(a)
-	}
+	a.noteNames()
 	if old := a.serverPlaces.Load(); old != nil && slices.Equal(*old, places) {
 		return
 	}
@@ -241,73 +242,223 @@ func (a *app) visitPlace(w *filemanager.Window, fs, path string) {
 	}
 	m := machines.ID(strings.TrimSuffix(id, gone))
 	a.events <- func() {
-		if err := a.withFiles(m, func(f vfs.FS) { w.Show(a.fmFor(m, f), path) }); err != nil {
-			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
+		// Quietly: the window says what went wrong, not kakel's.
+		failed := func(err error) {
+			if err != nil {
+				w.Notify("Couldn't open the files on "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
+			}
+		}
+		if err := a.withFilesHow(m, func(f vfs.FS) { w.Show(a.fmFor(m, f), path) }, failed, true); err != nil {
+			failed(err)
 		}
 	}
 }
 
 // transferFiles copies or moves items between machines, as file
-// manager window w asks, as kakel's copy jobs: their progress, a way to
-// stop them, and any question they ask are in kakel's window, and w
-// says so. It runs on a goroutine of its own.
-func (a *app) transferFiles(w *filemanager.Window, t filemanager.Transfer) {
+// manager window w asks, as kakel's copy jobs: w shows how they go,
+// stops them and asks whether to replace a file, and kakel's windows
+// list them, quietly. It runs on a goroutine of its own, and returns
+// once the items are across.
+func (a *app) transferFiles(ctx context.Context, _ *filemanager.Window, t filemanager.Transfer, p *filemanager.TransferProgress) error {
+	if len(t.Paths) == 0 || t.Into == "" {
+		return nil
+	}
+	from, to := machineOfFS(t.FromFS), machineOfFS(t.ToFS)
+	// on runs fn on the program's goroutine, unless the transfer or
+	// kakel ends first.
+	on := func(fn func()) bool {
+		select {
+		case a.events <- fn:
+			return true
+		case <-ctx.Done():
+		case <-a.ctx.Done():
+		}
+		return false
+	}
+	type opened struct {
+		ff, tf vfs.FS
+		err    error
+	}
+	got := make(chan opened, 1)
+	var once sync.Once
+	answer := func(o opened) { once.Do(func() { got <- o }) }
+	unreached := func(err error) {
+		if err == nil {
+			err = errors.New("a machine could not be reached")
+		}
+		answer(opened{err: err})
+	}
+	if !on(func() {
+		err := a.withFilesHow(from, func(ff vfs.FS) {
+			if err := a.withFilesHow(to, func(tf vfs.FS) { answer(opened{ff: ff, tf: tf}) }, unreached, true); err != nil {
+				answer(opened{err: err})
+			}
+		}, unreached, true)
+		if err != nil {
+			answer(opened{err: err})
+		}
+	}) {
+		return context.Cause(ctx)
+	}
+	var o opened
 	select {
-	case a.events <- func() { a.transfer(w, t) }:
-	case <-a.ctx.Done():
+	case o = <-got:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+	if o.err != nil {
+		return o.err
+	}
+	kind, verb := jobs.Copy, "Copying"
+	if t.Move {
+		kind, verb = jobs.Move, "Moving"
+	}
+	// The items by the folder they are in, in the order they came: a job
+	// for each.
+	var ats []string
+	names := map[string][]string{}
+	for _, path := range t.Paths {
+		at := vfs.Dir(o.ff, path)
+		if _, ok := names[at]; !ok {
+			ats = append(ats, at)
+		}
+		names[at] = append(names[at], vfs.Base(o.ff, path))
+	}
+	ask := &fmAsker{p: p}
+	for _, at := range ats {
+		op := jobs.Op{Kind: kind, From: o.ff, At: at, Names: names[at], To: o.tf, Into: t.Into}
+		title := verb + " " + words.Count(len(names[at]), "item") + " to " + vfs.Base(o.tf, t.Into)
+		started := make(chan *jobs.Job, 1)
+		if !on(func() {
+			if ctx.Err() != nil {
+				// Stopped while this waited its turn: nothing starts.
+				started <- nil
+				return
+			}
+			started <- a.followAsking(op, title, from, to, ask, true)
+		}) {
+			return context.Cause(ctx)
+		}
+		var job *jobs.Job
+		select {
+		case job = <-started:
+		case <-a.ctx.Done():
+			return a.ctx.Err()
+		}
+		if job == nil {
+			return ctx.Err()
+		}
+		if err := follow(ctx, job, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// follow tells p how job goes until it ends, and stops it when ctx
+// ends. It returns why the job stopped short.
+func follow(ctx context.Context, job *jobs.Job, p *filemanager.TransferProgress) error {
+	t := time.NewTicker(SampleEvery)
+	defer t.Stop()
+	report := func() jobs.Progress {
+		pr := job.Progress()
+		p.Report(pr.BytesDone, pr.Bytes, pr.FilesDone, pr.Files, pr.Current)
+		return pr
+	}
+	for {
+		select {
+		case <-job.Done():
+			pr := report()
+			if why := jobs.Trouble(pr.Err); why != nil {
+				return why
+			}
+			// Nil, or stopped as the user asked.
+			return pr.Err
+		case <-ctx.Done():
+			// A job stuck in a read or a write may not hear it at once:
+			// the window does not wait long for it, as kakel's own jobs
+			// list it until it ends.
+			job.Cancel()
+			select {
+			case <-job.Done():
+			case <-time.After(stopWait):
+			}
+			return ctx.Err()
+		case <-t.C:
+			report()
+		}
 	}
 }
 
-// transfer starts the jobs t asks for, one for each folder the items
-// are in, opening the files of both machines first, connecting where
-// it must. w, when not nil, is told how it went.
-func (a *app) transfer(w *filemanager.Window, t filemanager.Transfer) {
-	if len(t.Paths) == 0 || t.Into == "" {
-		return
+// stopWait is how long a transfer the user stopped waits for its job to
+// end before the window hears it has.
+const stopWait = 2 * time.Second
+
+// fmAsker asks about a name that is taken through the file manager
+// window a transfer runs in. An answer for all is kept here: a job
+// would replace a file with a folder on a Replace for all, which the
+// window never offers, and asks again about each name to keep beside.
+type fmAsker struct {
+	p   *filemanager.TransferProgress
+	mu  sync.Mutex
+	all *filemanager.Choice
+}
+
+// Overwrite implements [jobs.Ask].
+func (f *fmAsker) Overwrite(ctx context.Context, c jobs.Conflict) (jobs.Choice, error) {
+	sameKind := c.Have.IsDir() == c.Want.IsDir()
+	f.mu.Lock()
+	all := f.all
+	f.mu.Unlock()
+	if all != nil && (*all != filemanager.ChoiceReplace || sameKind) {
+		return f.choice(c, *all), nil
 	}
-	from, to := machineOfFS(t.FromFS), machineOfFS(t.ToFS)
-	kind, verb, failed := jobs.Copy, "Copying", "Couldn't copy the files"
-	if t.Move {
-		kind, verb, failed = jobs.Move, "Moving", "Couldn't move the files"
+	coming := "a folder"
+	if !c.Want.IsDir() {
+		coming = words.Size(c.Want.Size)
 	}
-	fail := func(err error) {
-		a.failed(failed, err.Error())
-		if w != nil {
-			w.Notify(failed, words.UpperFirst(err.Error())+".", "warning")
-		}
+	if !c.Want.Mod.IsZero() {
+		coming += ", modified " + c.Want.Mod.Format("2 Jan 2006 15:04")
 	}
-	// A connection that fails later says why in kakel's window.
-	unreached := func() {
-		if w != nil {
-			w.Notify(failed, "A machine could not be reached. kakel's window says why.", "warning")
-		}
-	}
-	err := a.withFilesOr(from, func(ff vfs.FS) {
-		// The items by the folder they are in, in the order they came.
-		var ats []string
-		names := map[string][]string{}
-		for _, p := range t.Paths {
-			at := vfs.Dir(ff, p)
-			if _, ok := names[at]; !ok {
-				ats = append(ats, at)
-			}
-			names[at] = append(names[at], vfs.Base(ff, p))
-		}
-		if err := a.withFilesOr(to, func(tf vfs.FS) {
-			for _, at := range ats {
-				op := jobs.Op{Kind: kind, From: ff, At: at, Names: names[at], To: tf, Into: t.Into}
-				a.followOn(op, verb+" "+words.Count(len(names[at]), "item")+" to "+vfs.Base(tf, t.Into), from, to)
-			}
-			if w != nil {
-				w.Notify(verb+" "+words.Count(len(t.Paths), "item")+" to "+vfs.Base(tf, t.Into),
-					"kakel's window shows how it goes, and can stop it.", "info")
-			}
-		}, unreached); err != nil {
-			fail(err)
-		}
-	}, unreached)
+	choice, forAll, err := f.p.Clash(ctx, c.Path, coming, sameKind)
 	if err != nil {
-		fail(err)
+		// Stopped there, as the user asked: a stop, not a failure.
+		return jobs.Choice{What: jobs.Stop}, nil
+	}
+	if forAll {
+		f.mu.Lock()
+		f.all = &choice
+		f.mu.Unlock()
+	}
+	return f.choice(c, choice), nil
+}
+
+// choice is what the job does about c, as the window answered.
+func (f *fmAsker) choice(c jobs.Conflict, choice filemanager.Choice) jobs.Choice {
+	switch choice {
+	case filemanager.ChoiceReplace:
+		return jobs.Choice{What: jobs.Replace}
+	case filemanager.ChoiceSkip:
+		return jobs.Choice{What: jobs.Skip}
+	}
+	return jobs.Choice{What: jobs.Rename, Name: nameBeside(c.To, c.Path, c.Want.IsDir())}
+}
+
+// nameBeside is a name beside path on f that nothing has: "a (2).txt" for
+// a.txt, and "v1.2 (2)" for a folder, counting on. One that can't be
+// told free is given as it is, and the job says what is wrong with it.
+func nameBeside(f vfs.FS, path string, dir bool) string {
+	at, name := vfs.Dir(f, path), vfs.Base(f, path)
+	stem, ext := name, ""
+	if i := strings.LastIndexByte(name, '.'); i > 0 && !dir {
+		stem, ext = name[:i], name[i:]
+	}
+	for n := 2; ; n++ {
+		try := stem + " (" + strconv.Itoa(n) + ")" + ext
+		// Stat reads a link as itself, so one going nowhere is taken.
+		if _, err := f.Stat(vfs.Join(f, at, try)); err != nil || n > 999 {
+			return try
+		}
 	}
 }
 

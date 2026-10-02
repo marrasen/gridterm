@@ -139,6 +139,9 @@ type running struct {
 	lastAt    time.Time
 	// ended is set once its end has been reported.
 	ended bool
+	// quiet says a file manager window shows how the job goes, and how
+	// it ends: kakel's windows list it, and say nothing of its own.
+	quiet bool
 }
 
 // folderOf returns a file pane's filesystem and folder.
@@ -199,13 +202,19 @@ func (a *app) follow(op jobs.Op, title string) { a.followOn(op, title, "", "") }
 // followOn is follow, for a job between the machines from and to, which
 // a repeat opens again.
 func (a *app) followOn(op jobs.Op, title string, from, to machines.ID) *jobs.Job {
+	return a.followAsking(op, title, from, to, overwriteAsker{a}, false)
+}
+
+// followAsking is followOn, asking ask about names that are taken, and
+// quiet when a file manager window shows how the job goes.
+func (a *app) followAsking(op jobs.Op, title string, from, to machines.ID, ask jobs.Ask, quiet bool) *jobs.Job {
 	if a.jobs == nil {
 		a.jobs = jobs.New(2)
 	}
-	job := a.jobs.Start(a.ctx, op, jobs.Options{Ask: overwriteAsker{a}})
+	job := a.jobs.Start(a.ctx, op, jobs.Options{Ask: ask})
 	a.clearJobs(false)
 	a.jobSeq++
-	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, op: op, from: from, to: to})
+	a.running = append(a.running, &running{id: "j" + itoa(a.jobSeq), job: job, title: title, op: op, from: from, to: to, quiet: quiet})
 	if !a.watching {
 		a.watching = true
 		go a.watchJobs()
@@ -277,6 +286,7 @@ func (a *app) showJobs() bool {
 		}
 		r.ended = true
 		switch {
+		case r.quiet:
 		case jobs.Trouble(p.Err) != nil:
 			a.failed(r.title+" stopped", jobs.Outcome(p))
 			a.problem()

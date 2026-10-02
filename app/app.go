@@ -468,6 +468,10 @@ type (
 	ConnectTo struct {
 		Target     string
 		Server, As machines.ID
+		// Quiet connects for a file manager window, which says how it
+		// went: no pane of its log, no toast and no flash in kakel's
+		// windows. Sign-in questions still come.
+		Quiet bool
 	}
 	// SaveServer saves a server, in place of the one named Under when
 	// that is set.
@@ -699,6 +703,7 @@ type app struct {
 	serverPlaces atomic.Pointer[[]filemanager.Place]
 	fmFiles      map[machines.ID]*fmFS
 	fmFavs       *fmFavourites
+	fmNames      atomic.Pointer[map[string]string]
 	hotKeys      HotKeys
 	launch       launchState
 	// found are the shells on this machine, once scanned says they have

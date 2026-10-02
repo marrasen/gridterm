@@ -6,7 +6,6 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync/atomic"
 
 	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/settings"
@@ -146,12 +145,7 @@ func (a *app) forgetFavourites(machine machines.ID) {
 // fmFavourites keeps the file manager's favourites in kakel's settings,
 // on every machine, each by the ID of the machine's file system there.
 // Its windows call it on their own goroutines; the settings lock.
-type fmFavourites struct {
-	a *app
-	// names are the machines' names by the ID of their file systems,
-	// as last noted.
-	names atomic.Pointer[map[string]string]
-}
+type fmFavourites struct{ a *app }
 
 // fsOf is the ID of machine's file system in the file manager.
 func fsOf(machine machines.ID) string {
@@ -196,11 +190,16 @@ func (s *fmFavourites) Save(favs []filemanager.Favourite) error {
 }
 
 // Where implements [filemanager.AnyFSFavourites].
-func (s *fmFavourites) Where(fs string) string {
+func (s *fmFavourites) Where(fs string) string { return s.a.fsName(fs) }
+
+// fsName names the machine whose file system has ID fs, as the file
+// manager's titles and favourites say: by the names last noted, as it
+// asks off the program's goroutine.
+func (a *app) fsName(fs string) string {
 	if fs == "" {
 		return "This computer"
 	}
-	if names := s.names.Load(); names != nil {
+	if names := a.fmNames.Load(); names != nil {
 		if n, ok := (*names)[fs]; ok {
 			return n
 		}
@@ -208,10 +207,10 @@ func (s *fmFavourites) Where(fs string) string {
 	return string(machineOfFS(fs))
 }
 
-// noteNames notes the machines' names, for Where: the saved servers',
-// and those of the machines with favourites. Changed, the windows read
-// their favourites again, to say so.
-func (s *fmFavourites) noteNames(a *app) {
+// noteNames notes the machines' names, for fsName: the saved servers',
+// and those of the machines with favourites or open in a file manager
+// window. Changed, the windows read their titles and favourites again.
+func (a *app) noteNames() {
 	names := map[string]string{}
 	for _, h := range a.st.Saved {
 		names[fsOf(machines.ID(h.ID))] = h.Name
@@ -221,11 +220,14 @@ func (s *fmFavourites) noteNames(a *app) {
 			names[fsOf(f.Machine)] = a.machines.Name(f.Machine)
 		}
 	}
-	old := s.names.Load()
+	for m := range a.fmFiles {
+		names[fsOf(m)] = a.machines.Name(m)
+	}
+	old := a.fmNames.Load()
 	if old != nil && maps.Equal(*old, names) {
 		return
 	}
-	s.names.Store(&names)
+	a.fmNames.Store(&names)
 	if old != nil && a.files != nil && len(a.fileWins) > 0 {
 		a.files.Refresh()
 	}

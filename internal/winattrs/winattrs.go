@@ -53,23 +53,35 @@ func Parse(v string) (uint32, bool) {
 // goroutines at once.
 var Lookup func(home, p string, follow bool) (uint32, bool)
 
+// Space returns how many bytes are free to the user and in all on the
+// volume that holds the SFTP path p, or false where it can't say; nil
+// where the proxy leaves the question to the server. home is the folder
+// a relative path starts in.
+var Space func(home, p string) (free, total uint64, ok bool)
+
+// statvfs is OpenSSH's extension asking for a volume's space, which Go's
+// SFTP server can't answer on Windows.
+const statvfs = "statvfs@openssh.com"
+
 // The SFTP packets the proxy reads.
 const (
-	fxpInit     = 1
-	fxpLstat    = 7
-	fxpOpendir  = 11
-	fxpReaddir  = 12
-	fxpStat     = 17
-	fxpClose    = 4
-	fxpStatus   = 101
-	fxpHandle   = 102
-	fxpName     = 104
-	fxpAttrs    = 105
-	attrSize    = 0x1
-	attrUIDGID  = 0x2
-	attrPerms   = 0x4
-	attrTimes   = 0x8
-	attrExtends = 0x80000000
+	fxpExtended      = 200
+	fxpExtendedReply = 201
+	fxpInit          = 1
+	fxpLstat         = 7
+	fxpOpendir       = 11
+	fxpReaddir       = 12
+	fxpStat          = 17
+	fxpClose         = 4
+	fxpStatus        = 101
+	fxpHandle        = 102
+	fxpName          = 104
+	fxpAttrs         = 105
+	attrSize         = 0x1
+	attrUIDGID       = 0x2
+	attrPerms        = 0x4
+	attrTimes        = 0x8
+	attrExtends      = 0x80000000
 	// maxPacket is the longest packet read, as pkg/sftp takes.
 	maxPacket = 1 << 18
 )
@@ -82,10 +94,14 @@ const (
 // A reply that needs attributes looked up waits for them on a goroutine
 // of its own, so a slow disk holds up no other reply: the client matches
 // replies to requests by their IDs, in whatever order they come.
-func Proxy(conn io.ReadWriteCloser, home string, lookup func(home, p string, follow bool) (uint32, bool)) io.ReadWriteCloser {
+//
+// With space, it answers OpenSSH's statvfs itself, from it, in place of
+// the server.
+func Proxy(conn io.ReadWriteCloser, home string, lookup func(home, p string, follow bool) (uint32, bool),
+	space func(home, p string) (free, total uint64, ok bool)) io.ReadWriteCloser {
 	toServer, fromConn := io.Pipe()
 	toConn, fromServer := io.Pipe()
-	p := &proxy{home: home, lookup: lookup, dirs: map[string]string{}, opening: map[uint32]string{},
+	p := &proxy{home: home, lookup: lookup, space: space, conn: conn, dirs: map[string]string{}, opening: map[uint32]string{},
 		reading: map[uint32]string{}, stating: map[uint32]stat{}, busy: make(chan struct{}, 4)}
 	go func() {
 		err := p.requests(conn, fromConn)
@@ -114,7 +130,10 @@ func (e *end) Close() error { return e.close() }
 type proxy struct {
 	home   string
 	lookup func(home, p string, follow bool) (uint32, bool)
-	mu     sync.Mutex
+	space  func(home, p string) (free, total uint64, ok bool)
+	// conn is where the proxy answers what it answers itself.
+	conn io.Writer
+	mu   sync.Mutex
 	// dirs are the folders open, by handle; opening, reading and
 	// stating the requests waiting for their reply, by ID.
 	dirs             map[string]string
@@ -139,6 +158,15 @@ func (p *proxy) requests(from io.Reader, to io.Writer) error {
 		pkt, err := readPacket(from)
 		if err != nil {
 			return err
+		}
+		if reply, ok := p.answer(pkt); ok {
+			p.wmu.Lock()
+			_, err := p.conn.Write(reply)
+			p.wmu.Unlock()
+			if err != nil {
+				return err
+			}
+			continue
 		}
 		p.note(pkt)
 		if _, err := to.Write(pkt); err != nil {
@@ -198,6 +226,36 @@ func readPacket(r io.Reader) ([]byte, error) {
 		return nil, err
 	}
 	return pkt, nil
+}
+
+// answer is the reply to a request the proxy answers itself, a volume's
+// space, and false for any it passes on.
+func (p *proxy) answer(pkt []byte) ([]byte, bool) {
+	b := pkt[4:]
+	if p.space == nil || len(b) < 5 || b[0] != fxpExtended {
+		return nil, false
+	}
+	id := binary.BigEndian.Uint32(b[1:5])
+	name, rest, ok := str(b[5:])
+	if !ok || name != statvfs {
+		return nil, false
+	}
+	at, _, ok := str(rest)
+	if !ok {
+		return nil, false
+	}
+	free, total, ok := p.space(p.home, at)
+	if !ok {
+		// The server says it can't, as it would.
+		return nil, false
+	}
+	// A block of one byte: the counts are the bytes.
+	out := []byte{fxpExtendedReply}
+	out = binary.BigEndian.AppendUint32(out, id)
+	for _, v := range []uint64{1, 1, total, free, free, 0, 0, 0, 0, 0, 255} {
+		out = binary.BigEndian.AppendUint64(out, v)
+	}
+	return packet(out), true
 }
 
 // note notes what a request is about.

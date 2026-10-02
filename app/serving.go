@@ -666,9 +666,10 @@ func (a *app) serveFiles(client context.Context, host string, ch io.ReadWriteClo
 		}
 		var conn io.ReadWriteCloser = keptOpen{ch}
 		if winattrs.Lookup != nil {
-			// Windows: how OneDrive keeps each file goes with it.
+			// Windows: how OneDrive keeps each file goes with it, and how
+			// much room each drive has, which the SFTP server can't say.
 			home, _ := os.UserHomeDir()
-			conn = winattrs.Proxy(conn, home, winattrs.Lookup)
+			conn = winattrs.Proxy(conn, home, winattrs.Lookup, winattrs.Space)
 		}
 		srv, err := sftp.NewServer(conn, opts...)
 		if err != nil {

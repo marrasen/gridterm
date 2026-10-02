@@ -46,7 +46,10 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 		return 0x20, true
 	}
 	here, there := net.Pipe()
-	server, err := sftp.NewServer(winattrs.Proxy(there, dir, lookup))
+	server, err := sftp.NewServer(winattrs.Proxy(there, dir, lookup, func(_, p string) (uint64, uint64, bool) {
+		// A volume of a terabyte, 300 GB of it free.
+		return 300 << 30, 1 << 40, true
+	}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,6 +98,10 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 	mu.Unlock()
 	if !follows {
 		t.Fatal("a stat that follows links looked up the link")
+	}
+	// The volume's room comes from the proxy, which answers for it.
+	if free, total, err := f.Space(slashed); err != nil || free != 300<<30 || total != 1<<40 {
+		t.Fatalf("the room is %d free of %d, %v", free, total, err)
 	}
 	// What is read is read as it is.
 	r, err := f.Open(slashed + "/here.txt")

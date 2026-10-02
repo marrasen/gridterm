@@ -244,8 +244,9 @@ func TestCancellingOneJobLeavesTheOthers(t *testing.T) {
 	write(t, from.real, "two.txt", "two")
 
 	q := New(1)
+	held := newSlow(from.fs)
 	first := q.Start(t.Context(), Op{
-		Kind: Copy, From: newSlow(from.fs), At: from.at, Names: []string{"one.txt"},
+		Kind: Copy, From: held, At: from.at, Names: []string{"one.txt"},
 		To: to.fs, Into: to.at,
 	}, Options{})
 	second := q.Start(t.Context(), Op{
@@ -254,6 +255,13 @@ func TestCancellingOneJobLeavesTheOthers(t *testing.T) {
 	}, Options{})
 
 	first.Cancel()
+	// A read already waiting is not one a cancel can take back: let it
+	// go, and the job hears it was cancelled at its next turn, or ends
+	// as the file did.
+	close(held.held)
+	if err := ends(t, first); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatalf("the cancelled job ended with %v", err)
+	}
 	if err := ends(t, second); err != nil {
 		t.Fatalf("the second job: %v", err)
 	}

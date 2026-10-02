@@ -67,16 +67,20 @@ as kakel starts.
 ## Start
 
 ```
-kakel                          # your login shell
+kakel                          # into the tray; started again, a window with your login shell
 kakel -ssh user@host           # a shell on another machine
 kakel -e 'vim /etc/hosts'      # one command
 kakel -font-size 18            # 8 to 96 pixels
 kakel -font-family 'Cascadia Mono'
 kakel -list-fonts              # the monospace families installed
-kakel -tray                    # into the tray, with no window
+kakel -tray                    # into the tray, and only there, as with the computer
 kakel -launcher                # the launcher, from a key the desktop binds
 kakel -quit                    # ends the kakel running
 ```
+
+Started with nothing to do, kakel goes to the tray and takes the
+launcher's key: a window opens from the tray icon, the launcher, or
+kakel started again. Where there is no tray, a window opens at once.
 
 With `-ssh` the window opens first and connects in a pane, so it asks
 about an unknown host key in a dialog and keeps the account of how the

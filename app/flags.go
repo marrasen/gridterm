@@ -248,8 +248,18 @@ func (a *app) openFirst() error {
 func (o Options) OneOfMany() bool { return o.shot == "" && os.Getenv("KAKEL_ALONE") != "1" }
 
 // StartsInTray reports whether this kakel starts in the tray, with its
-// first window never shown.
-func (o Options) StartsInTray() bool { return o.tray }
+// first window never shown: as it does with the computer, and when it
+// is started with nothing to do, as from its shortcut. A window opens
+// from the tray, the launcher's key, or kakel started again. Where
+// there is no tray to start in, a window shows after all.
+func (o Options) StartsInTray() bool { return o.tray || o.bare() }
+
+// bare reports whether this kakel was started with nothing to do: no
+// command, no server, no launcher, no screenshots.
+func (o Options) bare() bool {
+	return o.command == "" && o.ssh == "" && !o.launcher && o.shot == "" &&
+		!o.quit && !o.install && !o.uninstall && !o.asMCP && !o.listFonts && !o.mcpSkill
+}
 
 // Trays reports whether this kakel shows itself in the tray: one of
 // many does, and one driving itself for screenshots does not.

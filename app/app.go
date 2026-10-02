@@ -821,14 +821,16 @@ func (a *app) run(ctx context.Context) error {
 	a.startUpdates()
 	a.startPings()
 	switch {
-	case a.opts.tray:
-		// Started with the computer: into the tray, the first window,
-		// opened hidden, let go unseen. With no tray to start in, a
-		// window of its own, seen.
+	case a.opts.StartsInTray():
+		// Started with the computer, or with nothing to do: into the
+		// tray, the first window, opened hidden, let go unseen. With no
+		// tray to start in, a window of its own, seen.
 		a.showTray()
 		first := a.cur
 		if !a.inTray() {
 			a.newWindow(func() { a.openFirstOrSay() })
+		} else if !a.opts.tray {
+			a.sayInTray()
 		}
 		a.letWindowGo(first)
 	case a.opts.launcher:

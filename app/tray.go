@@ -3,7 +3,9 @@ package app
 import (
 	"errors"
 	"image"
+	"log"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/marrasen/kakel/appicon"
@@ -330,6 +332,36 @@ func (a *app) handover(h single.Handover) {
 		return
 	}
 	a.newWindow(func() { a.openFirstFor(o, h.Dir) })
+}
+
+// sayInTray tells the user, the first time kakel starts in the tray by
+// hand, where it went: with no window, a start would look like nothing.
+func (a *app) sayInTray() {
+	if a.settings == nil || a.settings.TrayHinted() {
+		return
+	}
+	a.toast("kakel is in the tray", chordName(a.launcherKey())+" opens the launcher. Its icon in the tray opens a window.")
+	if err := a.settings.PutTrayHinted(); err != nil {
+		log.Printf("keeping that the tray was shown: %v", err)
+	}
+}
+
+// chordName is a key as written in the settings, ctrl+alt+k, as a person
+// reads it: Ctrl+Alt+K, and Win for super on Windows.
+func chordName(k string) string {
+	parts := strings.Split(k, "+")
+	for i, p := range parts {
+		switch {
+		case p == "super" && runtime.GOOS == "windows":
+			p = "Win"
+		case len(p) == 1:
+			p = strings.ToUpper(p)
+		case p != "":
+			p = strings.ToUpper(p[:1]) + p[1:]
+		}
+		parts[i] = p
+	}
+	return strings.Join(parts, "+")
 }
 
 // openFirstFor opens the first pane of a window as o asks, a local

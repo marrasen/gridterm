@@ -108,6 +108,9 @@ type stored struct {
 	// favourites, which happens once.
 	Favourites      []Favourite `json:"favourites,omitempty"`
 	FavouritesMoved bool        `json:"favouritesMoved,omitempty"`
+	// TrayHinted says kakel has told the user, once, that it started in
+	// the tray with no window.
+	TrayHinted bool `json:"trayHinted,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -1046,6 +1049,30 @@ func (s *Settings) MoveFolders(from []Favourite) error {
 		add(f)
 	}
 	s.have.Favourites, s.have.FavouritesMoved, s.have.LocalFolders = favs, true, nil
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// TrayHinted reports whether the user was told kakel starts in the tray.
+func (s *Settings) TrayHinted() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.TrayHinted
+}
+
+// PutTrayHinted keeps that the user was told kakel starts in the tray,
+// and saves.
+func (s *Settings) PutTrayHinted() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.TrayHinted = true
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

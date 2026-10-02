@@ -245,7 +245,9 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 	// A compact title bar names the question, closes it, and moves the
 	// window out of the way of what the user needs to read.
 	bar := widget.NewTitleBar(q.Title)
-	bar.Compact = true
+	// A title to move it by, and nothing to minimize, maximize or close
+	// it by: Cancel and Escape do.
+	bar.Compact, bar.NoMinimize, bar.NoMaximize, bar.NoClose = true, true, true, true
 	size.H += widget.TitleBarCompactHeight.Get(theme.NewLive(th.Theme))
 	// Over the window the user last worked in, kakel's or a file
 	// manager's, or else kakel's window in front.

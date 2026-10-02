@@ -55,6 +55,8 @@ func (p *Prompt) Update(q app.Ask, u *gunim.UI) {
 	}
 	p.id = q.ID
 	p.dialog = askDialog(q, p)
+	// The window's title bar is its title.
+	p.dialog.NoTitleBar = true
 	scrollBody(p.dialog)
 	// The dialog takes the keyboard as it arrives, to its first field.
 	u.Insert(p, p.dialog)
@@ -169,13 +171,9 @@ func PromptSize(q app.Ask, th theme.Theme) geom.Size {
 		}
 		body += h
 	}
-	// The title, after the icon.
-	room := float32(0)
-	if q.Icon != "" || q.Danger {
-		room = widget.IconSize.Get(l) + widget.IconGap.Get(l)
-	}
-	title := face.Layout(q.Title, text.Style{Size: widget.DialogTitleSize.Get(l), MaxLines: 2}, inner-room).Size.H
-	h := pad + title + pad + body + pad + widget.ButtonHeight.Get(l) + pad
+	// The window's title bar names the question, so the dialog shows no
+	// title of its own.
+	h := pad + body + pad + widget.ButtonHeight.Get(l) + pad
 	// A few pixels over, as a field's text is measured by the face the
 	// theme gives it, which may stand a little taller.
 	h = min(h+8, promptMost)

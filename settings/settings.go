@@ -112,6 +112,9 @@ type stored struct {
 	// favourites, which happens once.
 	Favourites      []Favourite `json:"favourites,omitempty"`
 	FavouritesMoved bool        `json:"favouritesMoved,omitempty"`
+	// FavouritesSeeded says the favourites a new user starts with were
+	// added, once, so the ones removed stay removed.
+	FavouritesSeeded bool `json:"favouritesSeeded,omitempty"`
 	// TrayHinted says kakel has told the user, once, that it started in
 	// the tray with no window.
 	TrayHinted bool `json:"trayHinted,omitempty"`
@@ -1004,6 +1007,10 @@ type Favourite struct {
 	Machine string `json:"machine,omitempty"`
 	Path    string `json:"path"`
 	Name    string `json:"name,omitempty"`
+	// Color and Icon are the favourite's colour and icon, by the names
+	// the file manager gives them; empty for a plain folder.
+	Color string `json:"color,omitempty"`
+	Icon  string `json:"icon,omitempty"`
 }
 
 // Favourites are the folders saved on any machine, and whether the
@@ -1023,6 +1030,33 @@ func (s *Settings) PutFavourites(favs []Favourite) error {
 	}
 	before := s.have
 	s.have.Favourites = slices.Clone(favs)
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// SeedFavourites adds defaults to the favourites, once, after those
+// there are, leaving out a folder a favourite already names, and saves.
+// Once seeded, it does nothing, so a default removed stays removed.
+func (s *Settings) SeedFavourites(defaults []Favourite) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	if s.have.FavouritesSeeded {
+		return nil
+	}
+	before := s.have
+	favs := slices.Clone(s.have.Favourites)
+	for _, f := range defaults {
+		if !slices.ContainsFunc(favs, func(o Favourite) bool { return o.Machine == f.Machine && o.Path == f.Path }) {
+			favs = append(favs, f)
+		}
+	}
+	s.have.Favourites, s.have.FavouritesSeeded = favs, true
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

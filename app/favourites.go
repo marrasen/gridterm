@@ -110,6 +110,24 @@ func pinnedBefore(path string) []settings.Favourite {
 	return out
 }
 
+// seedFavourites adds the favourites a new user starts with, this
+// computer's Desktop, Documents, Downloads and the like, once: those it
+// once listed among its places. Removed, they stay removed.
+func (a *app) seedFavourites() {
+	if a.settings == nil || a.settings.Err() != nil {
+		return
+	}
+	var defaults []settings.Favourite
+	for _, f := range filemanager.DefaultFavourites() {
+		defaults = append(defaults, settings.Favourite{Path: f.Path, Name: f.Name, Color: f.Color, Icon: f.Icon})
+	}
+	if err := a.settings.SeedFavourites(defaults); err != nil {
+		a.failed("Couldn't add the default favourites", err.Error())
+		return
+	}
+	a.showFavourites()
+}
+
 // favouritesOn are the paths of machine's favourites.
 func (a *app) favouritesOn(machine machines.ID) []string {
 	var out []string
@@ -170,7 +188,7 @@ func (s *fmFavourites) Load() ([]filemanager.Favourite, error) {
 	kept, _ := s.a.settings.Favourites()
 	out := make([]filemanager.Favourite, len(kept))
 	for i, f := range kept {
-		out[i] = filemanager.Favourite{FS: fsOf(machines.ID(f.Machine)), Path: f.Path, Name: f.Name}
+		out[i] = filemanager.Favourite{FS: fsOf(machines.ID(f.Machine)), Path: f.Path, Name: f.Name, Color: f.Color, Icon: f.Icon}
 	}
 	return out, nil
 }
@@ -180,7 +198,7 @@ func (s *fmFavourites) Load() ([]filemanager.Favourite, error) {
 func (s *fmFavourites) Save(favs []filemanager.Favourite) error {
 	out := make([]settings.Favourite, len(favs))
 	for i, f := range favs {
-		out[i] = settings.Favourite{Machine: string(machineOfFS(f.FS)), Path: f.Path, Name: f.Name}
+		out[i] = settings.Favourite{Machine: string(machineOfFS(f.FS)), Path: f.Path, Name: f.Name, Color: f.Color, Icon: f.Icon}
 	}
 	if err := s.a.settings.PutFavourites(out); err != nil {
 		return err

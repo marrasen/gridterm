@@ -828,6 +828,7 @@ func (a *app) run(ctx context.Context) error {
 	a.loadBook()
 	a.showFavourites()
 	a.moveFolders()
+	a.seedFavourites()
 	if a.themeTrouble != nil {
 		a.failed("Couldn't read all the themes", a.themeTrouble.Error())
 	}

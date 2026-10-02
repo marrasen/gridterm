@@ -1059,3 +1059,32 @@ func TestASettingFromANewerKakelIsKept(t *testing.T) {
 		t.Fatalf("saved twice:\n%s", raw)
 	}
 }
+
+// The default favourites go in once, after those there are, leaving out
+// a folder already there; removed, they stay removed.
+func TestDefaultFavouritesGoInOnce(t *testing.T) {
+	s, err := Load(at(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutFavourites([]Favourite{{Path: "/mine"}, {Path: "/home/me/Desktop"}}); err != nil {
+		t.Fatal(err)
+	}
+	defaults := []Favourite{{Path: "/home/me/Desktop", Icon: "monitor", Color: "teal"}, {Path: "/home/me/Downloads", Icon: "download", Color: "green"}}
+	if err := s.SeedFavourites(defaults); err != nil {
+		t.Fatal(err)
+	}
+	favs, _ := s.Favourites()
+	if len(favs) != 3 || favs[0].Path != "/mine" || favs[2].Path != "/home/me/Downloads" || favs[2].Icon != "download" {
+		t.Fatalf("seeded, the favourites are %+v", favs)
+	}
+	if err := s.PutFavourites(favs[:1]); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SeedFavourites(defaults); err != nil {
+		t.Fatal(err)
+	}
+	if favs, _ := s.Favourites(); len(favs) != 1 {
+		t.Fatalf("seeded again, the removed came back: %+v", favs)
+	}
+}

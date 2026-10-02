@@ -31,6 +31,8 @@ import (
 	"github.com/marrasen/gunim/driver"
 	"github.com/marrasen/gunim/filemanager"
 	"github.com/marrasen/gunim/geom"
+	"github.com/marrasen/gunim/theme"
+	"github.com/marrasen/gunim/widget"
 
 	"github.com/marrasen/kakel/appicon"
 	"github.com/marrasen/kakel/settings"
@@ -240,10 +242,15 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 		}
 	}
 	size := view.PromptSize(q, th.Theme)
+	// A compact title bar names the question, closes it, and moves the
+	// window out of the way of what the user needs to read.
+	bar := widget.NewTitleBar(q.Title)
+	bar.Compact = true
+	size.H += widget.TitleBarCompactHeight.Get(theme.NewLive(th.Theme))
 	// Over the window the user last worked in, kakel's or a file
 	// manager's, or else kakel's window in front.
 	var at *driver.Placement
-	if r, ok := ws.app.FocusedBounds(); ok {
+	if r, ok := ws.app.FocusedBounds(); ok && onAMonitor(ws.app.Monitors(), r) {
 		at = &driver.Placement{Bounds: r}
 	} else if near != nil {
 		if p, ok := near.Placement(); ok {
@@ -251,7 +258,7 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 		}
 	}
 	w, err := ws.app.NewWindow(gunim.WindowOptions{
-		Title: q.Title, Size: size, Icons: appicon.Images(), Pinned: true, TitleBar: view.NoTitleBar(),
+		Title: q.Title, Size: size, Icons: appicon.Images(), Pinned: true, TitleBar: bar,
 		Place: view.PromptPlace(ws.app.Monitors(), at, size),
 	})
 	if err != nil {
@@ -296,4 +303,16 @@ func logStats(ctx context.Context, w *gunim.Window) {
 		log.Printf("frames %d, updates %d, merged %d", s.Frames-last.Frames, s.Commands-last.Commands, s.Coalesced-last.Coalesced)
 		last = s
 	}
+}
+
+// onAMonitor reports whether the middle of r is on one of monitors: a
+// minimized window is far off them all, as Windows puts it.
+func onAMonitor(monitors []driver.Monitor, r geom.Rect) bool {
+	mid := r.Center()
+	for _, m := range monitors {
+		if m.Bounds.Contains(mid) {
+			return true
+		}
+	}
+	return false
 }

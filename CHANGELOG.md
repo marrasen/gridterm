@@ -11,12 +11,12 @@ change how something behaves.
 
 ### Changed
 
-**A password or passphrase is asked for in a window of its own.** The
-window opens over the others, centred over the window you last worked
-in, with the keyboard in the field, so one asked for from a file
-manager window is typed there and then. Its title bar moves it aside. Enter answers, and Escape or closing the window
-cancels. Questions with a choice to make stay dialogs in kakel's
-window.
+**Every question is asked in a window of its own.** A password, a
+passphrase, a choice, or word that a server waits on opens in a small
+window over the others, centred over the window you last worked in,
+with the keyboard in it. One asked from a file manager window, or
+with kakel in the tray, opens no kakel window. Its title bar moves it
+aside. Enter answers, and Escape or Cancel cancels.
 
 **The Servers pane shows each machine as a card.** A card has a badge
 in the machine's own colour, its name, who and where it is, and its

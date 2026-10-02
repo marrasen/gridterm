@@ -90,6 +90,14 @@ func TestAPromptFitsItsQuestion(t *testing.T) {
 		{ID: 3, Title: "me@a-server-with-a-rather-long-name.example.com asks", Icon: "log-in",
 			Text:    "Welcome. This machine is watched, and what you do on it is written down. Answer the two questions to go on.",
 			Prompts: []string{"Code:", "PIN:"}, Secret: []bool{false, true}, Yes: "Answer"},
+		// Questions without anything to type, which open in a window of
+		// their own too.
+		{ID: 4, Title: "Already connecting to srv", Choose: []string{"Wait", "Retry"}, No: "Cancel", FirstIsSafe: true},
+		{ID: 5, Title: "Trust this server?", Icon: "shield-alert", Careful: true, Yes: "Trust and Connect",
+			Text: "127.0.0.1:22 is new to this computer. Its ecdsa-sha2-nistp256 key has the fingerprint SHA256:EK8TjnqSsZYiqGcdwNNwuOhQph9HQde/bZNUUR6LE+s. Connect only if that matches the one its owner gave you."},
+		{ID: 6, Title: "Exit kakel?", Danger: true, Yes: "Exit", Text: "Still open: 2 copies running, 3 panes and a tunnel."},
+		{ID: 7, Title: "Waiting for server", Yes: "Close", No: "Cancel", Actions: []string{"Open Link", "Copy"},
+			Text: "rdp@marras-skylake:\n\n# Tailscale SSH requires an additional check.\n# To authenticate, visit: https://login.tailscale.com/a/l135a30b43b7720\n\nContinues by itself when you are done."},
 	} {
 		for _, th := range all {
 			p, _, ui := promptStage(t, q, th)

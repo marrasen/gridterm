@@ -143,20 +143,20 @@ func TestADroppedQuestionClosesItsWindow(t *testing.T) {
 	}
 }
 
-// A question to choose an answer to stays a dialog in the window in
-// front.
-func TestAChoiceStaysADialog(t *testing.T) {
+// A question to choose an answer to opens in a window of its own too,
+// as every question does, and no kakel window asks it.
+func TestAChoiceOpensAWindowToo(t *testing.T) {
 	a, opened := promptApp(t)
 	got := askAway(t, a, t.Context(), Ask{Title: "Already connecting to srv", Choose: []string{"Wait", "Retry"}, No: "Cancel"})
 	a.showPrompt()
-	if len(*opened) != 0 || a.prompt.id != 0 {
-		t.Fatalf("a window opened for %+v", *opened)
+	waitFor(t, a, "the window", func() bool { return a.prompt.c != nil })
+	if len(*opened) != 1 || a.prompt.id == 0 {
+		t.Fatalf("windows opened for %+v", *opened)
 	}
-	asks := a.stateFor(a.cur, a.st).Asks
-	if len(asks) != 1 {
-		t.Fatalf("the window in front asks %+v", asks)
+	if asks := a.stateFor(a.cur, a.st).Asks; len(asks) != 0 {
+		t.Fatalf("the window in front asks too: %+v", asks)
 	}
-	a.handle(AskAnswered{ID: asks[0].ID, Yes: true, Answers: []string{"Wait"}})
+	a.handle(AskAnswered{ID: a.prompt.id, Yes: true, Answers: []string{"Wait"}})
 	if g := answerOf(t, a, got); g.err != nil {
 		t.Fatal(g.err)
 	}

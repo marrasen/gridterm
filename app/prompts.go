@@ -7,16 +7,15 @@ import (
 	"github.com/marrasen/gunim"
 )
 
-// A question that wants something typed, a password or a passphrase,
-// opens in a small window of its own, over the others, where the user
-// is working, instead of as a dialog in one of kakel's windows: such a
-// question often comes while the user works in a file manager window,
-// and a dialog in a window behind it would take the keyboard there.
+// Every question kakel asks opens in a small window of its own, over the
+// others, where the user is working: a password, a passphrase, a choice,
+// or word that a server waits on. One way to ask, wherever the user is:
+// in a kakel window, a file manager window, or with kakel in the tray,
+// and no kakel window opens to ask in.
 //
-// One is open at a time, for the oldest such question; the next opens
-// once it is answered. Questions to choose an answer to stay dialogs in
-// the window in front. Where no window can open, the question is a
-// dialog after all.
+// One is open at a time, for the oldest question; the next opens once
+// it is answered. Where no window can open, the question is a dialog in
+// the kakel window in front after all.
 
 // PromptOpener opens a window of its own for q, with its view mounted,
 // in the theme named, centred over near, the kakel window in front, or
@@ -32,12 +31,11 @@ type promptState struct {
 	opening bool
 }
 
-// pose adds q to the questions asked: in a window of its own when it
-// wants something typed and such a window can open, and otherwise in
-// the window in front.
+// pose adds q to the questions asked: in a window of its own where one
+// can open, and otherwise in the window in front.
 func (a *app) pose(q Ask) {
 	q.win = a.frontID()
-	q.alone = len(q.Prompts) > 0 && a.openPrompt != nil
+	q.alone = a.openPrompt != nil
 	a.st.Asks = append(a.st.Asks, q)
 }
 

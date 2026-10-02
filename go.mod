@@ -13,7 +13,7 @@ require (
 	// call. And SOS, PM and APC strings stop growing at a megabyte, which
 	// upstream's own test expected.
 	github.com/marrasen/go-vte v1.0.11-gt.2
-	github.com/marrasen/gunim v0.0.0-20261002152150-dc1012a96eb0
+	github.com/marrasen/gunim v0.0.0-20261002161936-0b5b33d0c29a
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0

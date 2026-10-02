@@ -3542,7 +3542,7 @@ func (w *Window) failed(title, why string, u *gunim.UI) {
 // st.Pings that went up: a failure, work finished, or a bell out of
 // sight. While another program has the keyboard, everything is out of
 // sight: a bell in any pane, and a long command finishing in the pane in
-// front. A
+// front. A bell in sight lights the window's edges softly instead. A
 // faint one goes out again and again while a connection is being made.
 func (w *Window) echoFor(st app.State, u *gunim.UI) {
 	// Each window counts its own: a pane's from the window it is in.
@@ -3554,8 +3554,13 @@ func (w *Window) echoFor(st app.State, u *gunim.UI) {
 	if st.Pings.Dones > was.Dones || st.Pings.FrontDones > was.FrontDones && w.away {
 		w.echo.Ping(u, widget.EchoDone)
 	}
-	if st.Pings.Calls > was.Calls || st.Bells > w.bells && w.away {
+	switch {
+	case st.Pings.Calls > was.Calls || st.Bells > w.bells && w.away:
 		w.echo.Ping(u, widget.EchoCall)
+	case st.Bells > w.bells:
+		// A bell in the pane in front, in the window with the keyboard:
+		// with no sound, a soft glow says it rang.
+		w.echo.Glow(u, widget.EchoCall)
 	}
 	w.echo.Wait(u, widget.EchoWait, len(st.Dialing) > 0)
 }

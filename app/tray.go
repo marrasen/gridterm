@@ -208,9 +208,10 @@ func (a *app) trayMenu(gen int) ([]gunim.TrayItem, map[int]func()) {
 }
 
 // leaveTray takes the icon out of the tray, as kakel ends, and lets the
-// launcher's key and window go.
+// launcher's key and window go, and the window of a question.
 func (a *app) leaveTray() {
 	a.closeLauncher()
+	a.closePrompt()
 	if a.launch.release != nil {
 		a.launch.release()
 		a.launch.release = nil
@@ -276,7 +277,7 @@ func (a *app) rehome() {
 	}
 	asks := false
 	for _, q := range a.st.Asks {
-		if w := a.winByID(q.win); w == nil || w.gone {
+		if w := a.winByID(q.win); (w == nil || w.gone) && !q.alone {
 			asks = true
 		}
 	}

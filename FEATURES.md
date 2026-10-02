@@ -254,10 +254,15 @@ The whole list. The [README](README.md) has the short version.
   configuration directory. It holds no secret and never will. A list
   that cannot be read is reported and is never written over, because a
   file nobody could parse is still somebody's list of servers.
-- **Secrets are asked for in the window.** A key passphrase, an account
-  password and a one-time code all get a dialog. A passphrase that does
-  not open the key is asked for again, with no limit, and the dialog
-  says the last one did not work; Cancel stops the asking. An unlocked
+- **Secrets are asked for where you work.** A key passphrase, an account
+  password, the secrets' passphrase and a one-time code each open in a
+  small window of their own, over the other windows and with the
+  keyboard in the field, so one asked for from a file manager window is
+  typed right there. Enter answers, and Escape or closing
+  the window cancels. Several wait their turn, one window at a time. A
+  passphrase that does not open the key is asked for again, with no
+  limit, and the window says the last one did not work; Cancel stops
+  the asking. An unlocked
   key is kept in memory until the window closes or Lock SSH Keys is
   chosen, and never written anywhere, so the second connection to a
   machine asks nothing.

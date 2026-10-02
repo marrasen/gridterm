@@ -706,6 +706,10 @@ type app struct {
 	fmNames      atomic.Pointer[map[string]string]
 	hotKeys      HotKeys
 	launch       launchState
+	// openPrompt opens a window of its own for a question that wants
+	// something typed, and prompt is that window as it is.
+	openPrompt PromptOpener
+	prompt     promptState
 	// found are the shells on this machine, once scanned says they have
 	// been looked for; shellGoneSaid says the kept shell was found gone,
 	// which is said once a run.
@@ -867,8 +871,9 @@ func (a *app) run(ctx context.Context) error {
 				a.windowClosed(in.w)
 				// The last gone, unless kept in the tray or another is on
 				// its way, as the first, hidden, gives way to one shown.
-				// A file manager window open keeps kakel too.
-				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 {
+				// A file manager window open keeps kakel too, and so does
+				// a question in a window of its own.
+				if len(a.wins) == 0 && !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 && !a.prompted() {
 					a.closeAll()
 					a.leaveTray()
 					return a.c.Err()
@@ -905,7 +910,8 @@ func (a *app) run(ctx context.Context) error {
 		a.rehome()
 		a.leaveIfEmpty()
 		a.leaveEmpty()
-		if (a.gone || !a.inTray() && a.opening == 0 && len(a.fileWins) == 0) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
+		a.showPrompt()
+		if (a.gone || !a.inTray() && a.opening == 0 && len(a.fileWins) == 0 && !a.prompted()) && len(a.liveWins()) == 0 && len(a.wins) == 0 {
 			// Leaving with no window to wait for, as from the tray.
 			a.closeAll()
 			a.leaveTray()
@@ -2138,6 +2144,9 @@ func (a *app) pickTheme(name string) bool {
 		for _, w := range a.wins {
 			_ = w.c.SetTheme(name)
 		}
+		if c := a.prompt.c; c != nil {
+			_ = c.SetTheme(name)
+		}
 		return true
 	}
 	return false
@@ -2181,6 +2190,9 @@ type Config struct {
 	HotKeys      HotKeys
 	// Files opens the file manager's windows; unset, files open in panes.
 	Files FileWindows
+	// OpenPrompt opens a window of its own for a question that wants
+	// something typed; unset, it is asked in a dialog.
+	OpenPrompt PromptOpener
 }
 
 // Start runs the program side until its last window closes.
@@ -2196,6 +2208,7 @@ func Start(ctx context.Context, cfg Config) error {
 	a.handovers = cfg.Handovers
 	a.openLaunch = cfg.OpenLauncher
 	a.files = cfg.Files
+	a.openPrompt = cfg.OpenPrompt
 	a.hotKeys = cfg.HotKeys
 	defer closeToaster()
 	return errors.Join(a.run(ctx), a.shotErr)

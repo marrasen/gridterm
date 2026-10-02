@@ -694,18 +694,22 @@ func (w *Window) Paint(p *paint.Painter, f gunim.Frame, box geom.Size, kids guni
 // openDialog shows d over the window, with the keyboard, until it
 // closes.
 func (w *Window) openDialog(d *widget.Dialog, u *gunim.UI) {
-	if f, ok := d.Body.(*widget.Form); ok {
-		// A form taller than the window scrolls in the room the dialog
-		// can spare, rather than running off both ends of the screen
-		// with the buttons.
-		d.Body = &scrollingForm{Scroll: widget.NewScroll(f), form: f}
-	}
+	scrollBody(d)
 	// The dialog takes the keyboard itself as it arrives, to its first
 	// field, and holds it until it closes.
 	u.Insert(w, d)
 	w.dialog = d
 	// The pane takes the keyboard back once the dialog has closed.
 	w.focused = ""
+}
+
+// scrollBody puts d's form in a scroll: a form taller than the window
+// scrolls in the room the dialog can spare, rather than running off
+// both ends of the screen with the buttons.
+func scrollBody(d *widget.Dialog) {
+	if f, ok := d.Body.(*widget.Form); ok {
+		d.Body = &scrollingForm{Scroll: widget.NewScroll(f), form: f}
+	}
 }
 
 // scrollingForm is a dialog's form in a scroll, which hands the dialog
@@ -983,6 +987,24 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 		return
 	}
 	q := asks[0]
+	d := askDialog(q, w)
+	w.ask, w.askID = d, q.ID
+	w.openDialog(d, u)
+	// A question can come while another window is in front, as when a
+	// file manager window connects. One to type an answer to, asked here
+	// only where it could not have a window of its own, brings the
+	// window forward with the keyboard, as it is what the user waits
+	// on; any other is said in the taskbar.
+	if len(q.Prompts) > 0 {
+		u.ToFront()
+	} else {
+		u.RequestAttention()
+	}
+}
+
+// askDialog is the dialog that asks q, its buttons' intents sent from
+// the node from: in a kakel window, or in a window of its own.
+func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 	form := widget.NewForm()
 	if q.Text != "" {
 		note := widget.NewLabel(q.Text)
@@ -1051,7 +1073,7 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 			d.AddAction(act, func(u *gunim.UI) { u.SetClipboard(copied) })
 			continue
 		}
-		d.AddAction(act, func(u *gunim.UI) { u.Send(w, app.AskAction{ID: q.ID, Action: act}) })
+		d.AddAction(act, func(u *gunim.UI) { u.Send(from, app.AskAction{ID: q.ID, Action: act}) })
 	}
 	d.Body = form
 	id := q.ID
@@ -1098,17 +1120,7 @@ func (w *Window) showAsk(asks []app.Ask, u *gunim.UI) {
 	if q.Plain {
 		d.SetButtons(q.Yes, "")
 	}
-	w.ask, w.askID = d, id
-	w.openDialog(d, u)
-	// A question can come while another window is in front, as when a
-	// file manager window connects. One to type an answer to brings the
-	// window forward with the keyboard, as it is what the user waits
-	// on; any other is said in the taskbar.
-	if len(q.Prompts) > 0 {
-		u.ToFront()
-	} else {
-		u.RequestAttention()
-	}
+	return d
 }
 
 // servers fills the Servers menu and the palette: the window's own

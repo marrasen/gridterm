@@ -11,6 +11,13 @@ change how something behaves.
 
 ### Changed
 
+**A password or passphrase is asked for in a window of its own.** The
+window opens over the others, centred over kakel's window, with the
+keyboard in the field, so one asked for from a file manager window is
+typed there and then. Enter answers, and Escape or closing the window
+cancels. Questions with a choice to make stay dialogs in kakel's
+window.
+
 **The Servers pane shows each machine as a card.** A card has a badge
 in the machine's own colour, its name, who and where it is, and its
 route. A pill says how its connection is doing: for a connected server,

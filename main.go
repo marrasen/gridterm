@@ -119,7 +119,7 @@ func run() error {
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
 			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen}, Handovers: handovers,
-			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey,
+			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt,
 			// The file manager's windows, gunim's own, outside kakel's
 			// tabs; they end with the program.
 			Files: filemanager.NewHub(ctx, a),
@@ -219,6 +219,46 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 		func(l *view.Launcher, st app.LaunchState, u *gunim.UI) { l.Update(st, u) })
 	c := w.Client()
 	if err := c.Mount(gunim.Root, "launcher", "launcher", app.LaunchState{}, app.LauncherTopic); err != nil {
+		c.Close()
+		return gunim.Client{}, err
+	}
+	return c, nil
+}
+
+// openPrompt opens a window of its own for the question q, sized to it
+// in the theme name, over the other windows, centred over near or else
+// on the main display, with the question's view mounted. Its title is
+// the question's, for the taskbar and Alt+Tab to name it.
+func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gunim.Client, error) {
+	ws.mu.Lock()
+	all := ws.all
+	ws.mu.Unlock()
+	var th look.Themed
+	for _, t := range all {
+		if t.Name == name {
+			th = t
+		}
+	}
+	size := view.PromptSize(q, th.Theme)
+	var at *driver.Placement
+	if near != nil {
+		if p, ok := near.Placement(); ok {
+			at = &p
+		}
+	}
+	w, err := ws.app.NewWindow(gunim.WindowOptions{
+		Title: q.Title, Size: size, Icons: appicon.Images(), Pinned: true, TitleBar: view.NoTitleBar(),
+		Place: view.PromptPlace(ws.app.Monitors(), at, size),
+	})
+	if err != nil {
+		return gunim.Client{}, fmt.Errorf("kakel: %w", err)
+	}
+	look.Register(w, all)
+	gunim.RegisterView(w, "prompt", func(app.Ask) *view.Prompt { return view.NewPrompt() },
+		func(p *view.Prompt, q app.Ask, u *gunim.UI) { p.Update(q, u) })
+	c := w.Client()
+	_ = c.SetTheme(name)
+	if err := c.Mount(gunim.Root, "prompt", "prompt", q); err != nil {
 		c.Close()
 		return gunim.Client{}, err
 	}

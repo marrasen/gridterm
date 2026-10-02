@@ -23,8 +23,9 @@ import (
 // what it asks through the window.
 
 // Ask is a question a connection is waiting on the user for, shown as
-// a dialog: a title and text in the window's own words, fields to fill
-// in, and the words on the button that says yes.
+// a dialog, or in a window of its own when it wants something typed
+// (see prompts.go): a title and text in the window's own words, fields
+// to fill in, and the words on the button that says yes.
 type Ask struct {
 	ID      uint64
 	Title   string
@@ -67,8 +68,10 @@ type Ask struct {
 	// failure, what went wrong with the last answer.
 	Facts   []AskFact
 	Problem string
-	// win is the window it is asked in.
-	win int
+	// win is the window it is asked in, and alone says it is asked in a
+	// window of its own instead.
+	win   int
+	alone bool
 	// Icon is the Lucide name of the icon before the title, one of
 	// askIcons, or empty for none; a Danger question shows a warning.
 	Icon string
@@ -316,8 +319,7 @@ func (a *app) ask(ctx context.Context, q Ask) (AskAnswered, error) {
 	reply := make(chan AskAnswered, 1)
 	a.events <- func() {
 		a.replies[q.ID] = reply
-		q.win = a.frontID()
-		a.st.Asks = append(a.st.Asks, q)
+		a.pose(q)
 	}
 	select {
 	case ans := <-reply:

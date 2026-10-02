@@ -372,7 +372,8 @@ func (a *app) leaveEmpty() {
 }
 
 // stateFor is st, the state of every window, as w shows it: its own
-// panes, its own pane in front, and the questions and notices for it.
+// panes, its own pane in front, and the questions and notices for it,
+// less a question asked in a window of its own.
 func (a *app) stateFor(w *ownWin, st State) State {
 	st.Window, st.Behind = w.id, w != a.cur
 	st.Pings, st.Bells = w.pings, w.bells
@@ -395,7 +396,7 @@ func (a *app) stateFor(w *ownWin, st State) State {
 		}
 		st.Groups[p.ID] = byGroup[g]
 	}
-	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id })
+	st.Asks = slices.DeleteFunc(slices.Clone(st.Asks), func(q Ask) bool { return q.win != w.id || q.alone })
 	st.Notices = slices.DeleteFunc(slices.Clone(st.Notices), func(n Notice) bool { return n.win != w.id })
 	return st
 }

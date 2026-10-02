@@ -392,7 +392,15 @@ func (d drive) Name() string { return d.name }
 // Stat does not.
 func (s *SFTP) Follow(path string) (fs.FileInfo, error) {
 	path = Spelled(s, path)
-	info, err := s.client.Stat(path)
+	stat := s.client.Stat
+	if path == "/" {
+		// The top is no link, and a Windows machine's SFTP server, Go's,
+		// answers a stat that follows links there with an error: its
+		// list of drives, which it makes up at /, is known only to the
+		// stat that doesn't.
+		stat = s.client.Lstat
+	}
+	info, err := stat(path)
 	if err != nil {
 		return nil, wrap(s, "read", path, err)
 	}

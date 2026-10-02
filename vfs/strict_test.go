@@ -274,3 +274,41 @@ func TestTheRootsOfThisMachine(t *testing.T) {
 		}
 	}
 }
+
+// noFollowAtTop answers a stat that follows links at / with a failure,
+// as Go's SFTP server on Windows does there, and every other stat.
+type noFollowAtTop struct{ sftp.FileLister }
+
+func (n noFollowAtTop) Filelist(r *sftp.Request) (sftp.ListerAt, error) {
+	if r.Method == "Stat" && r.Filepath == "/" {
+		return nil, errors.New(`CreateFile \\.\: The filename, directory name, or volume label syntax is incorrect.`)
+	}
+	return n.FileLister.Filelist(r)
+}
+
+// Lstat answers the stat that doesn't follow links, everywhere, which
+// the request server would otherwise turn into the other.
+func (n noFollowAtTop) Lstat(r *sftp.Request) (sftp.ListerAt, error) {
+	r.Method = "Stat"
+	return n.FileLister.Filelist(r)
+}
+
+// The top of a machine reads, followed, even where the server answers
+// only the stat that doesn't follow links there.
+func TestTheTopReadsWhereFollowingFailsThere(t *testing.T) {
+	here, there := net.Pipe()
+	handlers := sftp.InMemHandler()
+	handlers.FileList = noFollowAtTop{handlers.FileList}
+	server := sftp.NewRequestServer(there, handlers)
+	go func() { _ = server.Serve() }()
+	t.Cleanup(func() { _ = server.Close() })
+	client, err := sftp.NewClientPipe(here, here)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := NewSFTP("win", client, client, client.Close)
+	t.Cleanup(func() { _ = f.Close() })
+	if info, err := f.Follow("/"); err != nil || !info.IsDir() {
+		t.Fatalf("the top read %v, %v", info, err)
+	}
+}

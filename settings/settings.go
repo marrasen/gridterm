@@ -44,6 +44,10 @@ var rename = os.Rename
 type stored struct {
 	Version int `json:"version"`
 
+	// rest are the settings a newer kakel wrote that this one doesn't
+	// know, kept to be written back as they came.
+	rest []jsoncheck.Member
+
 	// ServePort is a pointer because a field left out is a choice nobody
 	// has made, which is not the same as port 0, meaning whichever port
 	// is free.
@@ -1290,18 +1294,32 @@ func read(path string) (stored, error) {
 		return stored{}, fmt.Errorf("settings: %s has no version number", path)
 	}
 
+	// One set of settings, and nothing after it.
+	whole := json.NewDecoder(bytes.NewReader(raw))
+	var one json.RawMessage
+	if err := whole.Decode(&one); err != nil {
+		return stored{}, fmt.Errorf("settings: %s is not readable: %w", path, err)
+	}
+	if _, err := whole.Token(); !errors.Is(err, io.EOF) {
+		return stored{}, fmt.Errorf("settings: there is more in %s than one set of settings", path)
+	}
+
+	// Nothing is dropped on the way through. A setting this build does
+	// not know about, written by a newer kakel sharing the file, as a
+	// roaming profile does between machines, is kept as it is and
+	// written back with the rest. Within a setting, what isn't known
+	// turns the file away, as it can't be kept apart.
 	var file stored
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	// Nothing is dropped on the way through. A field this build does not
-	// know about belongs to somebody, and writing the file back without
-	// it would delete it.
+	known, rest, err := jsoncheck.SplitUnknown(one, &file)
+	if err != nil {
+		return stored{}, fmt.Errorf("settings: %s is not readable: %w", path, err)
+	}
+	dec := json.NewDecoder(bytes.NewReader(known))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&file); err != nil {
 		return stored{}, fmt.Errorf("settings: %s is not readable: %w", path, err)
 	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return stored{}, fmt.Errorf("settings: there is more in %s than one set of settings", path)
-	}
+	file.rest = rest
 	if err := check(file); err != nil {
 		return stored{}, fmt.Errorf("settings: %s: %w", path, err)
 	}
@@ -1398,6 +1416,10 @@ func (s *Settings) saveLocked() error {
 	s.have.Version = fileVersion
 	raw, err := json.MarshalIndent(s.have, "", "  ")
 	if err != nil {
+		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
+	}
+	// The settings a newer kakel wrote, and this one doesn't know.
+	if raw, err = jsoncheck.AppendUnknown(raw, s.have.rest); err != nil {
 		return fmt.Errorf("settings: write the settings %s: %w", s.path, err)
 	}
 	raw = append(raw, '\n')

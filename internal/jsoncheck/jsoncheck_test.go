@@ -1,6 +1,7 @@
 package jsoncheck
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -57,6 +58,33 @@ func TestSomethingThatIsNotJSONIsLeftAlone(t *testing.T) {
 	for _, body := range []string{"{", "", "not json", `{"a":}`} {
 		if err := NoRepeatedKeys([]byte(body)); err != nil {
 			t.Errorf("%q gave %v, want it left to the decoder", body, err)
+		}
+	}
+}
+
+// Members a struct has no field for are kept apart, in order, and
+// written back after the struct's own, also into an empty object.
+func TestUnknownMembersGoBack(t *testing.T) {
+	var v struct {
+		Known int    `json:"known"`
+		Other string `json:",omitempty"`
+		Skip  int    `json:"-"`
+	}
+	known, rest, err := SplitUnknown([]byte(`{"known": 1, "new": [1, {"a": 2}], "other": "x", "skip": 3}`), &v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(known) != `{"known":1,"other":"x"}` || len(rest) != 2 || rest[0].Key != "new" || rest[1].Key != "skip" {
+		t.Fatalf("known %s, rest %+v", known, rest)
+	}
+	for _, out := range []string{"{\n  \"known\": 1\n}", "{}"} {
+		got, err := AppendUnknown([]byte(out), rest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var back map[string]any
+		if err := json.Unmarshal(got, &back); err != nil || back["skip"] != float64(3) || len(back["new"].([]any)) != 2 {
+			t.Fatalf("written back into %q: %s, %v", out, got, err)
 		}
 	}
 }

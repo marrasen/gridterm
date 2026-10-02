@@ -2,6 +2,7 @@ package settings
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -112,7 +113,7 @@ func TestUnreadableSettingsAreNotWrittenOver(t *testing.T) {
 		{"not JSON at all", "{"},
 		{"no version", `{"servePort": 2300}`},
 		{"a newer version", `{"version": 99, "servePort": 2300}`},
-		{"a field this build does not know", `{"version": 1, "whatIsThis": 14}`},
+		{"a field this build does not know, within a setting", `{"version": 1, "favourites": [{"path": "/x", "whatIsThis": 14}]}`},
 		{"a port that is not one", `{"version": 1, "servePort": 70000}`},
 		{"a reach that means nothing", `{"version": 1, "serveReach": "everywhere"}`},
 		{"an agent host with no name", `{"version": 1, "agentHost": ""}`},
@@ -1012,5 +1013,49 @@ func TestTheSameCopyTwiceIsRefused(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("the same copy twice loaded")
+	}
+}
+
+// A setting a newer kakel wrote, which this one doesn't know, as one
+// machine's newer kakel does to a roaming profile another shares, is
+// kept: the settings load, save, and write it back as it was.
+func TestASettingFromANewerKakelIsKept(t *testing.T) {
+	path := at(t)
+	body := `{"version": 1, "servePort": 2300, "whatIsThis": {"a": [1, 2]}, "andThis": "x"}`
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutServe(2400, ReachHere); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var back map[string]any
+	if err := json.Unmarshal(raw, &back); err != nil {
+		t.Fatalf("written, the file doesn't read: %v\n%s", err, raw)
+	}
+	if back["andThis"] != "x" || back["servePort"] != float64(2400) {
+		t.Fatalf("written back:\n%s", raw)
+	}
+	if w, ok := back["whatIsThis"].(map[string]any); !ok || len(w["a"].([]any)) != 2 {
+		t.Fatalf("the unknown setting came back as %v", back["whatIsThis"])
+	}
+	// And read again, it is still kept.
+	s, err = Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PutServe(2500, ReachHere); err != nil {
+		t.Fatal(err)
+	}
+	raw, _ = os.ReadFile(path)
+	if !strings.Contains(string(raw), `"andThis": "x"`) {
+		t.Fatalf("saved twice:\n%s", raw)
 	}
 }

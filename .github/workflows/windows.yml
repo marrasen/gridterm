@@ -1,0 +1,29 @@
+# The suite on Windows, on demand.
+#
+# Checks runs on Linux alone, and the release runs the suite on Windows
+# too, which is late to learn of a difference there: the tag is pushed.
+# This runs it on Windows when asked, before a release or after a
+# change that may behave otherwise there:
+#
+#   gh workflow run windows.yml --ref main
+name: Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on windows-latest
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Test
+        run: go test ./...

@@ -1,6 +1,7 @@
 package view
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -208,6 +209,15 @@ func TestTheHandShowsOverALinkWithCtrl(t *testing.T) {
 	t.Cleanup(func() { _ = sh.Get("p1").T.Close() })
 	publish(app.State{Panes: []app.Pane{{ID: "p1", Title: "Terminal 1"}}, Stage: &app.Box{Pane: "p1"}, Focus: "p1"})
 	tm := win.terms["p1"]
+	// The link is printed on a goroutine of its own: waited for, not
+	// given a number of frames, which a slow machine may not print in.
+	for i := 0; !strings.Contains(sh.Get("p1").T.AllText(), "https://example.com/a"); i++ {
+		if i > 500 {
+			t.Fatal("the link was never printed")
+		}
+		frames(1)
+		time.Sleep(5 * time.Millisecond)
+	}
 	frames(30)
 	box, _ := lastUI.Bounds(tm.cells)
 	cell := tm.cells.CellSize()

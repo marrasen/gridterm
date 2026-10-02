@@ -541,7 +541,9 @@ func TestAPingTimesTheRoundTrip(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	rtt, err := c.Ping(t.Context())
-	if err != nil || rtt <= 0 {
+	// Windows' clock moves in steps, and a ping on this machine may come
+	// back within one: no time at all, but never less.
+	if err != nil || rtt < 0 {
 		t.Fatalf("the ping took %v, %v", rtt, err)
 	}
 }

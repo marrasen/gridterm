@@ -32,6 +32,8 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 	var mu sync.Mutex
 	followed := map[string]bool{}
 	lookup := func(_, p string, follow bool) (uint32, bool) {
+		// As the server names it, /C:/x on Windows, as the test does.
+		p = winattrs.Resolve("", p)
 		mu.Lock()
 		followed[p] = follow
 		mu.Unlock()
@@ -89,7 +91,7 @@ func TestTheCloudAttributesComeWithTheReplies(t *testing.T) {
 		t.Fatalf("a stat that follows links carries %v, %v", info, err)
 	}
 	mu.Lock()
-	follows := followed[slashed+"/online.txt"]
+	follows := followed[winattrs.Resolve("", slashed+"/online.txt")]
 	mu.Unlock()
 	if !follows {
 		t.Fatal("a stat that follows links looked up the link")

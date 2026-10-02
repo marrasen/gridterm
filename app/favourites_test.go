@@ -101,11 +101,7 @@ func TestTheFileManagerKeepsFavouritesInTheSettings(t *testing.T) {
 	if err := store.Save(favs); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case f := <-a.events:
-		f()
-	case <-t.Context().Done():
-	}
+	waitFor(t, a, "kakel's windows told", func() bool { return len(a.st.Favourites) == 2 })
 	if want := []Favourite{{Machine: machines.ID(web), Path: "/srv", Name: "Site"}, {Path: "/home/me"}}; !slices.Equal(a.st.Favourites, want) {
 		t.Fatalf("kakel's favourites are %+v", a.st.Favourites)
 	}

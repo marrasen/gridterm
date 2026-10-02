@@ -253,12 +253,8 @@ func TestAServersFilesOpenInAWindow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// The home is read by itself, and the places told.
-	select {
-	case f := <-a.events:
-		f()
-	case <-time.After(5 * time.Second):
-		t.Fatal("the server's home was never read")
-	}
+	waitFor(t, a, "the server's home", func() bool { return fm.homeDir() != "" })
+	a.notePlaces()
 	place := func() filemanager.Place {
 		places, _ := files.opened[0].Places()
 		for _, p := range places {

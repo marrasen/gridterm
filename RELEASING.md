@@ -9,7 +9,9 @@ Releases are driven by a tag. Everything else is done by CI.
    release notes on GitHub are taken from that section by the workflow,
    and a tag whose version has no section fails the build rather than
    publishing an empty release.
-2. **Commit it**, on `main`.
+2. **Commit it**, on `main`, and run the suite on Windows first, as
+   Checks runs it on Linux alone:
+   `gh workflow run windows.yml --ref main`, and wait for it to pass.
 3. **Tag and push:**
 
    ```

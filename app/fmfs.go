@@ -125,8 +125,78 @@ type (
 func (m *fmFS) ID() string { return m.id }
 
 // Paths implements [filemanager.FS]: a server's paths are written with
-// slashes, whatever the server runs.
-func (m *fmFS) Paths() filemanager.PathStyle { return filemanager.SlashPaths }
+// slashes, whatever the server runs, and a Windows machine's are shown
+// as Windows writes them. A Windows machine is told by its home folder,
+// which SFTP writes as /C:/Users/….
+func (m *fmFS) Paths() filemanager.PathStyle {
+	home := m.homeDir()
+	if home == "" {
+		home, _ = m.Home()
+	}
+	if onADrive(home) {
+		return filemanager.DrivePaths
+	}
+	return filemanager.SlashPaths
+}
+
+// onADrive reports whether p, an SFTP path, is on a Windows drive:
+// /C:, or under it.
+func onADrive(p string) bool {
+	return len(p) >= 3 && p[0] == '/' && p[2] == ':' && (len(p) == 3 || p[3] == '/') &&
+		(p[1] >= 'A' && p[1] <= 'Z' || p[1] >= 'a' && p[1] <= 'z')
+}
+
+// SameFile implements [filemanager.SameFiler] for a Windows machine,
+// whose names ignore case: two names alike but for case, of the same
+// size, time and kind, are one item, as a rename that changes only the
+// case is. SFTP says nothing that tells items apart for sure, so on any
+// other machine two names are two items.
+func (m *fmFS) SameFile(a, b fs.FileInfo) bool {
+	return m.Paths() == filemanager.DrivePaths && strings.EqualFold(a.Name(), b.Name()) &&
+		a.Size() == b.Size() && a.ModTime().Equal(b.ModTime()) && a.Mode() == b.Mode()
+}
+
+// TrueCase implements [filemanager.TrueCaser]: each name of p as the
+// machine spells it, read from the folder it is in, for a path typed
+// in another case on a machine whose names ignore case. A name not
+// found stays as typed, and so does the rest after it.
+func (m *fmFS) TrueCase(p string) (string, error) {
+	f, err := m.files()
+	if err != nil {
+		return "", err
+	}
+	names := strings.Split(strings.Trim(p, "/"), "/")
+	at := "/"
+	for i, name := range names {
+		if name == "" {
+			continue
+		}
+		if i == 0 && onADrive("/"+name) {
+			// A drive is written as Windows writes it, in capitals.
+			at = "/" + strings.ToUpper(name)
+			continue
+		}
+		entries, err := f.ReadDir(at)
+		if err != nil {
+			return "", err
+		}
+		found := ""
+		for _, e := range entries {
+			if e.Name == name {
+				found = name
+				break
+			}
+			if found == "" && strings.EqualFold(e.Name, name) {
+				found = e.Name
+			}
+		}
+		if found == "" {
+			return path.Join(append([]string{at}, names[i:]...)...), nil
+		}
+		at = path.Join(at, found)
+	}
+	return at, nil
+}
 
 // Home implements [filemanager.FS].
 func (m *fmFS) Home() (string, error) {

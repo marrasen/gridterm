@@ -522,3 +522,26 @@ func TestFilesOnASavedWindowConnectToIt(t *testing.T) {
 		t.Fatalf("panes opened: %+v", b.st.Panes)
 	}
 }
+
+// A path typed in another case takes each name as the machine spells it;
+// one not there stays as typed, and so does the rest after it.
+func TestATypedPathTakesTheMachinesCase(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the SFTP server's paths are this machine's, which on Windows are not slash paths")
+	}
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "Workspace", "Kakel"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	m := newFMFS(serverFS+"s1", sftpHere(t))
+	var _ filemanager.TrueCaser = m
+	if got, err := m.TrueCase(dir + "/workspace/kakel"); err != nil || got != dir+"/Workspace/Kakel" {
+		t.Fatalf("true-cased, the path is %q, %v", got, err)
+	}
+	if got, err := m.TrueCase(dir + "/workspace/nothing/here"); err != nil || got != dir+"/Workspace/nothing/here" {
+		t.Fatalf("with a name not there, the path is %q, %v", got, err)
+	}
+	if !onADrive("/c:/Users") || !onADrive("/C:") || onADrive("/home/me") || onADrive("/c:x") {
+		t.Fatal("drives are told wrong")
+	}
+}

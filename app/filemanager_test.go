@@ -5,7 +5,6 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/marrasen/kakel/machines"
 	"github.com/marrasen/kakel/remote"
 
 	"github.com/marrasen/gunim/filemanager"
@@ -36,7 +35,6 @@ func TestFilesOpenWhereLastChosen(t *testing.T) {
 	files := &fakeFiles{}
 	a.files = files
 	a.st.Saved = []remote.Host{{ID: "s1", Name: "web", Address: "web.example"}}
-	a.st.Connected = []machines.ID{"s1"}
 
 	panes := len(a.st.Panes)
 	a.handle(OpenFilesOn{})
@@ -53,7 +51,7 @@ func TestFilesOpenWhereLastChosen(t *testing.T) {
 	}
 	places, _ := files.opened[0].Places()
 	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.Group == "Servers" })
-	if i < 0 || places[i].Name != "web" || places[i].Note != "Connected" || places[i].FS != serverFS+"s1" {
+	if i < 0 || places[i].Name != "web" || places[i].Note != "Not connected" || places[i].FS != serverFS+"s1" {
 		t.Fatalf("the places are %+v", places)
 	}
 	a.handle(FilesInPane{})

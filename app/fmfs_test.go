@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -435,5 +436,20 @@ func TestAnAnswerForAllInAFileManagerWindow(t *testing.T) {
 	c, err := ask.Overwrite(t.Context(), jobs.Conflict{To: to, Path: filepath.Join(dir, "v1.2"), Have: folder, Want: folder})
 	if err != nil || c.What != jobs.Rename || c.Name != "v1.2 (2)" {
 		t.Fatalf("a folder kept beside, for all, is %+v, %v", c, err)
+	}
+}
+
+// A server connected to says so among the file manager's places, as the
+// machines are, not as the windows were last told.
+func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
+	a, answering := dialApp(t)
+	a.files = &fakeFiles{}
+	a.handle(OpenOn{Machine: "srv"})
+	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
+	a.notePlaces()
+	places := *a.serverPlaces.Load()
+	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.FS == serverFS+"srv" })
+	if i < 0 || places[i].Note != "Connected" {
+		t.Fatalf("the places are %+v", places)
 	}
 }

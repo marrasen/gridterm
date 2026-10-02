@@ -196,6 +196,9 @@ func (a *app) fileManagerPlaces() ([]filemanager.Place, error) {
 // saved, renamed, connected or disconnected.
 func (a *app) notePlaces() {
 	var places []filemanager.Place
+	// As the machines are now: State's lists are filled in only on the
+	// copy the windows are sent.
+	dialing, connected := a.machines.Dialing(), a.machines.Connected()
 	for _, h := range a.st.Saved {
 		if h.Window {
 			continue
@@ -203,9 +206,9 @@ func (a *app) notePlaces() {
 		m := machines.ID(h.ID)
 		note := "Not connected"
 		switch {
-		case slices.Contains(a.st.Dialing, m):
+		case slices.Contains(dialing, m):
 			note = "Connecting…"
-		case slices.Contains(a.st.Connected, m):
+		case slices.Contains(connected, m):
 			note = "Connected"
 		}
 		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Servers", Note: note, FS: serverFS + h.ID}

@@ -278,7 +278,9 @@ func (w *Window) aboutDialog(u *gunim.UI) {
 		Add("", widget.NewLabel("A GPU-drawn terminal emulator, on gunim.")).
 		Add("Version", widget.NewLabel(build.Version()))
 	d.SetButtons("Close", "")
-	d.AddAction("Check for Updates", func(u *gunim.UI) { u.Send(w, app.CheckUpdates{}) })
+	// The check says how it went on its own: About makes way for it, as
+	// a dialog over it would wait until About closed.
+	d.AddAction("Check for Updates", func(u *gunim.UI) { d.Close(u); u.Send(w, app.CheckUpdates{}) })
 	d.Accept, d.Dismiss = app.DialogClosed{}, app.DialogClosed{}
 	w.openDialog(d, u)
 }

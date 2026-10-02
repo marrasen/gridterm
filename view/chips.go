@@ -96,7 +96,9 @@ func (b *chipBar) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children
 		if b.chips[i-1].off != nil {
 			w += chipCross
 		}
-		box := geom.Rc(x, (h-s.H)/2-3, w, min(s.H+6, h))
+		// The pill and its words share one middle: the bar's.
+		bh := min(s.H+8, h)
+		box := geom.Rc(x, (h-bh)/2, w, bh)
 		k.Place(geom.Pt(x+chipPad, (h-s.H)/2))
 		b.boxes = append(b.boxes, box)
 		x += box.Size().W + chipGap
@@ -115,12 +117,16 @@ func (b *chipBar) Paint(p *paint.Painter, f gunim.Frame, _ geom.Size, kids gunim
 			break
 		}
 		{
-			fill := b.chips[i].colour
+			// A pill in the chip's colour, as a server card's state is: a
+			// faint tint of it and a thin ring of it, rather than a dark
+			// patch.
+			c := b.chips[i].colour
 			if b.chips[i].accent {
-				fill = widget.Accent.Get(f.Theme)
+				c = widget.Accent.Get(f.Theme)
 			}
-			fill.A = 0x30
-			p.RRect(b.boxes[i], b.boxes[i].Size().H/2, paint.Solid(fill))
+			fill, ring := c, c
+			fill.A, ring.A = 0x22, 0x66
+			p.RRectStroke(b.boxes[i], b.boxes[i].Size().H/2, paint.Solid(fill), paint.Stroke{Width: 1, Color: ring})
 		}
 		k.Paint(p)
 		if b.chips[i].off != nil {

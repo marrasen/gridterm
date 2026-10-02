@@ -449,7 +449,38 @@ func TestAServerConnectedSaysSoAmongThePlaces(t *testing.T) {
 	a.notePlaces()
 	places := *a.serverPlaces.Load()
 	i := slices.IndexFunc(places, func(p filemanager.Place) bool { return p.FS == serverFS+"srv" })
-	if i < 0 || places[i].Note != "Connected" {
+	if i < 0 || places[i].Note != "Connected" || !places[i].Lit {
 		t.Fatalf("the places are %+v", places)
+	}
+	// Its menu offers to disconnect, which asks first: a shell is open
+	// on it.
+	if items := placeMenu(places[i]); len(items) != 1 || items[0].ID != "disconnect" {
+		t.Fatalf("its menu offers %+v", items)
+	}
+	if err := a.disconnectAsking("srv"); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.st.Asks) != 1 || a.st.Asks[0].Title != "Disconnect srv?" {
+		t.Fatalf("disconnecting with a shell open asked %+v", a.st.Asks)
+	}
+	a.handle(AskAnswered{ID: a.st.Asks[0].ID})
+	if !slices.Contains(a.machines.Connected(), "srv") {
+		t.Fatal("answered no, the connection closed anyway")
+	}
+	// With nothing on it, it closes at once.
+	for _, p := range slices.Clone(a.st.Panes) {
+		a.remove(p.ID)
+	}
+	if err := a.disconnectAsking("srv"); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, a, "the connection to close", func() bool { return !slices.Contains(a.machines.Connected(), "srv") })
+	if len(a.st.Asks) != 0 {
+		t.Fatalf("disconnecting with nothing open asked %+v", a.st.Asks)
+	}
+	a.notePlaces()
+	places = *a.serverPlaces.Load()
+	if items := placeMenu(places[i]); places[i].Lit || len(items) != 1 || items[0].ID != "connect" {
+		t.Fatalf("disconnected, the place is %+v, its menu %+v", places[i], items)
 	}
 }

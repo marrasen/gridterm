@@ -104,6 +104,7 @@ func (a *app) openFileWindow(fsys filemanager.FS, path string) error {
 		FS: fsys, Dir: path, Name: ProgramName, PrefsPath: fileManagerPrefs(),
 		Places: a.fileManagerPlaces, Visit: a.visitPlace, Favourites: a.favStore(),
 		Transfer: a.transferFiles, FSName: a.fsName,
+		PlaceMenu: placeMenu, PlaceCommand: a.placeCommand,
 	})
 	if err != nil {
 		return err
@@ -211,7 +212,8 @@ func (a *app) notePlaces() {
 		case slices.Contains(connected, m):
 			note = "Connected"
 		}
-		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Servers", Note: note, FS: serverFS + h.ID}
+		p := filemanager.Place{Name: h.Name, Kind: "drive", Group: "Servers", Note: note, FS: serverFS + h.ID,
+			Lit: slices.Contains(connected, m)}
 		if fm := a.fmFiles[m]; fm != nil {
 			if fm.live() {
 				p.Path = fm.homeDir()
@@ -481,6 +483,97 @@ func nameBeside(f vfs.FS, path string, dir bool) string {
 			return try
 		}
 	}
+}
+
+// placeMenu is kakel's part of a server place's context menu in the
+// file manager: Disconnect while it is connected, Connect while not.
+func placeMenu(p filemanager.Place) []filemanager.PlaceItem {
+	if !strings.HasPrefix(p.FS, serverFS) || p.Kind == "favourite" {
+		return nil
+	}
+	if p.Lit {
+		return []filemanager.PlaceItem{{Label: "Disconnect", ID: "disconnect"}}
+	}
+	return []filemanager.PlaceItem{{Label: "Connect", ID: "connect"}}
+}
+
+// placeCommand does what kakel's item id of place p asks, from file
+// manager window w. It runs on a goroutine of its own.
+func (a *app) placeCommand(w *filemanager.Window, p filemanager.Place, id string) {
+	m := machineOfFS(p.FS)
+	a.events <- func() {
+		var err error
+		switch id {
+		case "disconnect":
+			err = a.disconnectAsking(m)
+		case "connect":
+			err = a.dialAgainHow(m, true, func(err error) {
+				if err != nil {
+					w.Notify("Couldn't connect to "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
+				}
+			})
+		}
+		if err != nil {
+			w.Notify("Couldn't "+id+" "+a.machines.Name(m), words.UpperFirst(err.Error())+".", "warning")
+		}
+	}
+}
+
+// disconnectAsking closes the connection to m: at once when nothing is
+// on it, and after asking when closing it ends terminals, tunnels or
+// copies.
+func (a *app) disconnectAsking(m machines.ID) error {
+	on := a.onMachine(m)
+	if len(on) == 0 {
+		return a.disconnect(m)
+	}
+	called := a.machines.Name(m)
+	a.askThen(a.ctx, Ask{
+		Title: "Disconnect " + called + "?", Text: "Still open on it: " + listOf(on) + ".",
+		Yes: "Disconnect", Danger: true,
+	}, func(ans AskAnswered) {
+		if !ans.Yes {
+			return
+		}
+		if err := a.disconnect(m); err != nil {
+			a.failed("Couldn't disconnect "+called, err.Error())
+		}
+	})
+	return nil
+}
+
+// onMachine is what closing the connection to m would end: copies
+// running to or from it, its panes, and its tunnels.
+func (a *app) onMachine(m machines.ID) []string {
+	var out []string
+	copies := 0
+	for _, r := range a.running {
+		if !r.job.Progress().Done && (r.from.Of(m) || r.to.Of(m)) {
+			copies++
+		}
+	}
+	if copies > 0 {
+		out = append(out, words.ManyOf(copies, "copy running", "copies running"))
+	}
+	panes := 0
+	for _, p := range a.st.Panes {
+		if !isToolKind(p.Kind) && a.filesKey(p.ID).Of(m) {
+			panes++
+		}
+	}
+	if panes > 0 {
+		out = append(out, words.ManyOf(panes, "pane", "panes"))
+	}
+	tunnels := 0
+	for _, t := range a.st.Tunnels {
+		if t.Live && t.Machine.Of(m) {
+			tunnels++
+		}
+	}
+	if tunnels > 0 {
+		out = append(out, words.ManyOf(tunnels, "tunnel", "tunnels"))
+	}
+	return out
 }
 
 // closeFileManager closes every file manager window, as kakel ends.

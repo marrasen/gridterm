@@ -5,7 +5,14 @@ go 1.27.1
 require (
 	github.com/atotto/clipboard v0.1.4
 	github.com/aymanbagabas/go-pty v0.2.3
-	github.com/danielgatis/go-vte v1.0.11
+	// marrasen/go-vte is upstream danielgatis/go-vte v1.0.11 with two
+	// changes. The parser hands a performer its own params and
+	// intermediates, reused from one sequence to the next, where it
+	// allocated them for every sequence: a screen of true colour half
+	// blocks sends two sequences a cell. vt reads them only during the
+	// call. And SOS, PM and APC strings stop growing at a megabyte, which
+	// upstream's own test expected.
+	github.com/marrasen/go-vte v1.0.11-gt.2
 	github.com/marrasen/gunim v0.0.0-20261002152150-dc1012a96eb0
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
@@ -28,11 +35,3 @@ require (
 	golang.org/x/mobile v0.0.0-20250606033058-a2a15c67f36f // indirect
 	golang.org/x/text v0.42.0 // indirect
 )
-
-// marrasen/go-vte is upstream v1.0.11 with two changes. The parser hands
-// a performer its own params and intermediates, reused from one sequence
-// to the next, where it allocated them for every sequence: a screen of
-// true colour half blocks sends two sequences a cell. vt reads them only
-// during the call. And SOS, PM and APC strings stop growing at a
-// megabyte, which upstream's own test expected.
-replace github.com/danielgatis/go-vte => github.com/marrasen/go-vte v1.0.11-gt.1

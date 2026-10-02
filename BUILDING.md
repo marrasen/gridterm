@@ -150,11 +150,10 @@ on.
 
 ## The go-vte fork
 
-`go.mod` replaces go-vte, the parser the terminal emulator reads a
-program's output with, with
+kakel reads a program's output with go-vte's parser, as the fork
 [marrasen/go-vte](https://github.com/marrasen/go-vte) at
-`v1.0.11-gt.1`. That is upstream v1.0.11 with two changes, and the note
-beside the replace line says what they are:
+`v1.0.11-gt.2`, on its `gt` branch. That is upstream v1.0.11 with two
+changes, and the note beside its line in `go.mod` says what they are:
 
 - The parser hands the emulator its own buffers for each control
   sequence, where it made new ones every time. A screen of true colour
@@ -165,3 +164,7 @@ beside the replace line says what they are:
 Both are worth offering upstream. The text for the two pull requests is
 in that fork's
 [UPSTREAM.md](https://github.com/marrasen/go-vte/blob/gt/UPSTREAM.md).
+
+The fork has its own module path, `github.com/marrasen/go-vte`, rather
+than a `replace` line in kakel's `go.mod`: `go install pkg@version`
+refuses a module with one.

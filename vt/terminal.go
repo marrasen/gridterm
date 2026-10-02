@@ -14,7 +14,7 @@ import (
 	"strconv"
 	"strings"
 
-	vte "github.com/danielgatis/go-vte"
+	vte "github.com/marrasen/go-vte"
 
 	"github.com/marrasen/kakel/grid"
 )

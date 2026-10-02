@@ -1115,6 +1115,16 @@ func askDialog(q app.Ask, from gunim.Node) *widget.Dialog {
 		d.OnAccept = func() gunim.Intent { return answer("") }
 	}
 	d.Dismiss = app.AskAnswered{ID: id}
+	if also != nil {
+		// No says whether the box was ticked too, for a box that goes
+		// with either answer, such as Don't ask again.
+		also.OnFlip(func(on bool, _ *gunim.UI) {
+			d.Dismiss = app.AskAnswered{ID: id}
+			if on {
+				d.Dismiss = app.AskAnswered{ID: id, Answers: []string{"yes"}}
+			}
+		})
+	}
 	d.Danger, d.Careful = q.Danger, q.Careful
 	d.Icon = askIcons[q.Icon]
 	if q.Plain {

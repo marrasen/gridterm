@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/marrasen/kakel/appicon"
 	"github.com/marrasen/kakel/machines"
@@ -35,6 +36,8 @@ type (
 type Tray struct {
 	Set      func(gunim.Tray) error
 	StayOpen func(bool)
+	// Notify shows a message from the icon, and may be nil.
+	Notify func(title, body string) error
 }
 
 // trayState is the tray icon as shown: what each line of its menu does,
@@ -92,6 +95,23 @@ func (a *app) showTray() {
 		}
 	}
 	err := a.traySet.Set(gunim.Tray{Icon: trayIcons(), Tooltip: ProgramName, Items: items, OnPick: pick, OnClick: click})
+	if err != nil && a.tray.on && !errors.Is(err, gunim.ErrNoTray) {
+		// An icon up already that the taskbar wouldn't update, as Windows
+		// refuses now and then while Explorer is busy, is still up: kept,
+		// with its menu as it was, and the new one tried again shortly.
+		// Taken as lost, it opened a window nobody asked for.
+		log.Printf("updating the tray icon: %v", err)
+		gen := a.tray.gen
+		time.AfterFunc(2*time.Second, func() {
+			a.events <- func() {
+				if a.tray.on && a.tray.gen == gen && !a.gone {
+					a.tray.was = ""
+					a.showTray()
+				}
+			}
+		})
+		return
+	}
 	if err != nil {
 		// Said once, and not tried again until the menu changes: a
 		// tray that refused refuses again, and a window flooded with

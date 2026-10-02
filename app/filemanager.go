@@ -90,11 +90,18 @@ func (a *app) openFileManager(m machines.ID, path string) error {
 	if m == machines.Local {
 		return a.openFileWindow(filemanager.LocalFS(), path)
 	}
-	return a.withFiles(m, func(f vfs.FS) {
-		if err := a.openFileWindow(a.fmFor(m, f), path); err != nil {
+	// Connected to quietly, as the files open in a window of their own:
+	// no pane of the connection's log, and no kakel window to hold one.
+	failed := func(err error) {
+		if err != nil {
 			a.failed("Couldn't open the files on "+a.machines.Name(m), err.Error())
 		}
-	})
+	}
+	return a.withFilesHow(m, func(f vfs.FS) {
+		if err := a.openFileWindow(a.fmFor(m, f), path); err != nil {
+			failed(err)
+		}
+	}, failed, true)
 }
 
 // openFileWindow opens a file manager window on fsys, at path or at home.

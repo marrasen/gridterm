@@ -115,6 +115,10 @@ type stored struct {
 	// TrayHinted says kakel has told the user, once, that it started in
 	// the tray with no window.
 	TrayHinted bool `json:"trayHinted,omitempty"`
+	// ServeAtStart is what kakel does at start about serving its window
+	// again, when it was served as it last closed: ask, as when empty,
+	// ServeAlways or ServeNever.
+	ServeAtStart string `json:"serveAtStart,omitempty"`
 
 	// ShellSetup turns on teaching a shell on this machine to say where
 	// it is and where each command starts. A field left out is on: it
@@ -1053,6 +1057,38 @@ func (s *Settings) MoveFolders(from []Favourite) error {
 		add(f)
 	}
 	s.have.Favourites, s.have.FavouritesMoved, s.have.LocalFolders = favs, true, nil
+	if err := s.saveLocked(); err != nil {
+		s.have = before
+		return err
+	}
+	return nil
+}
+
+// What kakel does at start about serving its window again.
+const (
+	ServeAsk    = ""
+	ServeAlways = "always"
+	ServeNever  = "never"
+)
+
+// ServeAtStart is what kakel does at start about serving its window
+// again: ServeAsk, ServeAlways or ServeNever.
+func (s *Settings) ServeAtStart() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.have.ServeAtStart
+}
+
+// PutServeAtStart keeps what kakel does at start about serving its
+// window again, and saves.
+func (s *Settings) PutServeAtStart(what string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.rereadLocked(); err != nil {
+		return fmt.Errorf("%w: %w", ErrUnsaveable, err)
+	}
+	before := s.have
+	s.have.ServeAtStart = what
 	if err := s.saveLocked(); err != nil {
 		s.have = before
 		return err

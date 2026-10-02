@@ -120,7 +120,7 @@ func run() error {
 		return app.Start(ctx, app.Config{
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
 			Themes: all, ThemeTrouble: trouble, RegisterThemes: ws.registerThemes,
-			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen}, Handovers: handovers,
+			Tray: app.Tray{Set: a.SetTray, StayOpen: a.StayOpen, Notify: a.TrayNotify}, Handovers: handovers,
 			OpenLauncher: ws.openLauncher, HotKeys: a.RegisterHotKey, OpenPrompt: ws.openPrompt,
 			// The file manager's windows, gunim's own, outside kakel's
 			// tabs; they end with the program.

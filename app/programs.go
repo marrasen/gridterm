@@ -114,6 +114,13 @@ func (a *app) toast(title, body string) {
 		return
 	}
 	a.lastToast = now
+	// From kakel's own icon in the tray, where it has one: a pop-up of
+	// its own adds a second icon there, with nothing behind it.
+	if a.inTray() && a.traySet.Notify != nil {
+		if err := a.traySet.Notify(title, body); err == nil {
+			return
+		}
+	}
 	toasted.Store(true)
 	if err := toaster().Show(title, body); err != nil {
 		log.Printf("showing a pop-up: %v", err)

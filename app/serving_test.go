@@ -25,6 +25,7 @@ import (
 
 	"github.com/marrasen/kakel/remote"
 	"github.com/marrasen/kakel/serve"
+	"github.com/marrasen/kakel/settings"
 	"github.com/marrasen/kakel/vfs"
 )
 
@@ -361,19 +362,48 @@ func TestOneServedWindowIsDisconnectedFromItsRow(t *testing.T) {
 	}
 }
 
-func TestServeAgainCanBeToldNotToAsk(t *testing.T) {
+// Serving again at start can be told not to ask: Don't ask again keeps
+// the answer given, Not Now as never and Serve as always.
+func TestServeAgainRemembersTheChoice(t *testing.T) {
 	a := fontApp(t)
+	dir := t.TempDir()
+	a.serving.hostKey, a.serving.allowed = filepath.Join(dir, "host_key"), filepath.Join(dir, "authorized_keys")
+	a.st.Serving.Port = 0
 	if err := a.settings.PutServeOn(true); err != nil {
 		t.Fatal(err)
 	}
-	go a.offerToServeAgain()
-	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
-	q := a.st.Asks[0]
-	if !slices.Contains(q.Choose, "Don't Ask Again") {
-		t.Fatalf("asked %+v", q)
+	ask := func() Ask {
+		go a.offerToServeAgain()
+		waitFor(t, a, "the question", func() bool { return len(a.st.Asks) == 1 })
+		q := a.st.Asks[0]
+		if q.Yes != "Serve" || q.No != "Not Now" || q.Also != "Don't ask again" {
+			t.Fatalf("asked %+v", q)
+		}
+		return q
 	}
-	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"Don't Ask Again"}})
-	waitFor(t, a, "the setting", func() bool { return !a.settings.ServeOn() })
+	q := ask()
+	a.handle(AskAnswered{ID: q.ID, Answers: []string{"yes"}})
+	waitFor(t, a, "never kept", func() bool { return a.settings.ServeAtStart() == settings.ServeNever })
+
+	q = ask()
+	a.handle(AskAnswered{ID: q.ID, Yes: true, Answers: []string{"yes"}})
+	waitFor(t, a, "always kept", func() bool { return a.settings.ServeAtStart() == settings.ServeAlways })
+	// Served, or tried to be: this test has no keys to serve to.
+	waitFor(t, a, "the window served", func() bool {
+		return a.serving.server != nil || slices.ContainsFunc(a.st.Notices, func(n Notice) bool { return n.Title == "Couldn't serve the window" })
+	})
+	_ = a.stopServing()
+
+	// Unticked, nothing is kept.
+	if err := a.settings.PutServeAtStart(settings.ServeAsk); err != nil {
+		t.Fatal(err)
+	}
+	q = ask()
+	a.handle(AskAnswered{ID: q.ID})
+	waitFor(t, a, "the question to go", func() bool { return len(a.st.Asks) == 0 })
+	if got := a.settings.ServeAtStart(); got != settings.ServeAsk {
+		t.Fatalf("unticked, %q was kept", got)
+	}
 }
 
 // Starting a terminal on a served window again starts it again there,

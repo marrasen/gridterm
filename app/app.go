@@ -813,7 +813,17 @@ func (a *app) run(ctx context.Context) error {
 		a.failed("Couldn't read the shortcuts file", err.Error())
 	}
 	if a.settings != nil && a.settings.ServeOn() {
-		go a.offerToServeAgain()
+		// Served as it last closed: again as the user said to, or asked.
+		switch a.settings.ServeAtStart() {
+		case settings.ServeAlways:
+			s := a.st.Serving
+			if err := a.startServing(StartServing{Port: strconv.Itoa(s.Port), Anywhere: s.Anywhere}); err != nil {
+				a.failed("Couldn't serve the window", err.Error())
+			}
+		case settings.ServeNever:
+		default:
+			go a.offerToServeAgain()
+		}
 	}
 	a.loadBook()
 	a.showFavourites()

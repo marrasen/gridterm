@@ -815,20 +815,25 @@ func (a *app) offerToServeAgain() {
 		port = "on whichever port was free"
 	}
 	ans, err := a.ask(a.ctx, Ask{Title: "Serve this window again?", Text: "It was served when it last closed: " + port + ", listening on " + where + ".",
-		Choose: []string{"Serve", "Don't Ask Again"}, No: "Not Now"})
-	if err != nil || !ans.Yes {
+		Yes: "Serve", No: "Not Now", Also: "Don't ask again"})
+	if err != nil && !errors.Is(err, errDeclined) {
 		return
 	}
-	if len(ans.Answers) > 0 && ans.Answers[len(ans.Answers)-1] == "Don't Ask Again" {
-		// The window stops being served as it opens, until the user
-		// serves it again.
+	// Don't ask again keeps the answer given, either one.
+	if n := len(ans.Answers); n > 0 && ans.Answers[n-1] == "yes" {
+		keep := settings.ServeNever
+		if ans.Yes {
+			keep = settings.ServeAlways
+		}
 		a.events <- func() {
 			if a.settings != nil {
-				if err := a.settings.PutServeOn(false); err != nil {
+				if err := a.settings.PutServeAtStart(keep); err != nil {
 					a.failed("Couldn't keep that for next time", err.Error())
 				}
 			}
 		}
+	}
+	if !ans.Yes {
 		return
 	}
 	in := StartServing{Port: strconv.Itoa(s.Port), Anywhere: s.Anywhere}

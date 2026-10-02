@@ -36,8 +36,8 @@ type Ask struct {
 	// Choose offers answers as buttons, the first the one Enter gives,
 	// answered after the fields by the button's words; Yes names the
 	// button when there is no Choose. Also is a box to tick, answered
-	// after that by "yes" when ticked. No names the button that says
-	// no, Cancel when empty.
+	// after that by "yes" when ticked, and with no by "yes" alone. No
+	// names the button that says no, Cancel when empty.
 	Choose []string
 	// FirstIsSafe says the first of Choose is the safe answer, such as
 	// Leave It beside Replace: Tab reaches it before the others, so Tab

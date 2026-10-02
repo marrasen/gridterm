@@ -131,14 +131,21 @@ func TestPaneTitlesComeAndGo(t *testing.T) {
 	}
 }
 
-func TestABellAsksForAttention(t *testing.T) {
+func TestABellAsksForAttentionOnlyWithoutTheKeyboard(t *testing.T) {
 	_, _, publish := windowStage(t)
 	st := twoPanes("p2", nil)
 	st.Bells = 1
 	st.Panes[0].Rang = true
 	publish(st)
+	// With the keyboard, Windows would only flicker the window's frame.
+	if got := lastWindow.Offscreen().Attention(); got != 0 {
+		t.Fatalf("a bell in the window with the keyboard asked for attention %d times", got)
+	}
+	lastWindow.Input(gi.WindowFocusLost{})
+	st.Bells = 2
+	publish(st)
 	if got := lastWindow.Offscreen().Attention(); got != 1 {
-		t.Fatalf("after a bell, attention was asked for %d times", got)
+		t.Fatalf("a bell in a window without the keyboard asked for attention %d times", got)
 	}
 }
 

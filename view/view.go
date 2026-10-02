@@ -1984,9 +1984,12 @@ func (w *Window) Update(st app.State, u *gunim.UI) {
 	}
 	w.echoFor(st, u)
 	if st.Bells > w.bells {
-		// The window the bell rang in, in front or not.
+		// The window the bell rang in asks for attention where it lacks
+		// the keyboard. With it, Windows would only flicker its frame.
 		w.bells = st.Bells
-		u.RequestAttention()
+		if w.away {
+			u.RequestAttention()
+		}
 	}
 	if st.PaneTitles != w.titles {
 		w.titles = st.PaneTitles

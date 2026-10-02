@@ -226,8 +226,8 @@ func (ws *ownWindows) openLauncher() (gunim.Client, error) {
 }
 
 // openPrompt opens a window of its own for the question q, sized to it
-// in the theme name, over the other windows, centred over near or else
-// on the main display, with the question's view mounted. Its title is
+// in the theme name, over the other windows, centred over the window the
+// user last worked in, or near, or else on the main display, with the question's view mounted. Its title is
 // the question's, for the taskbar and Alt+Tab to name it.
 func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gunim.Client, error) {
 	ws.mu.Lock()
@@ -240,8 +240,12 @@ func (ws *ownWindows) openPrompt(q app.Ask, name string, near *gunim.Window) (gu
 		}
 	}
 	size := view.PromptSize(q, th.Theme)
+	// Over the window the user last worked in, kakel's or a file
+	// manager's, or else kakel's window in front.
 	var at *driver.Placement
-	if near != nil {
+	if r, ok := ws.app.FocusedBounds(); ok {
+		at = &driver.Placement{Bounds: r}
+	} else if near != nil {
 		if p, ok := near.Placement(); ok {
 			at = &p
 		}

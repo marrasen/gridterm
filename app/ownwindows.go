@@ -272,8 +272,9 @@ func (a *app) openWindowThen(at geom.Point, size geom.Size, then func(w *ownWin)
 	}()
 }
 
-// closeWindow closes w, after asking while it holds panes. The last
-// window asks as Exit does.
+// closeWindow closes w, after asking while it holds more than one
+// pane: one is what the user sees closing. The last window asks as Exit
+// does.
 func (a *app) closeWindow(w *ownWin) {
 	if len(a.liveWins()) <= 1 && !a.inTray() {
 		a.askToQuit()
@@ -281,7 +282,7 @@ func (a *app) closeWindow(w *ownWin) {
 	}
 	// The tool panes have nothing to lose, and are not asked about.
 	panes := slices.DeleteFunc(a.panesIn(w), func(p Pane) bool { return isToolKind(p.Kind) })
-	if len(panes) == 0 {
+	if len(panes) <= 1 {
 		for _, p := range a.panesIn(w) {
 			a.remove(p.ID)
 		}

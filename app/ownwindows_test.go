@@ -143,6 +143,7 @@ func TestAWindowLeftEmptyGoes(t *testing.T) {
 // Closing a window with panes asks first, there, and closes them.
 func TestClosingAWindowAsksAndClosesItsPanes(t *testing.T) {
 	a, one, two := twoWindowApp(t)
+	a.addPane(Pane{ID: "p4", Title: "four", Kind: KindFiles}, nil, Placement{})
 	a.handle(CloseWindow{})
 	if len(a.st.Asks) != 1 || a.st.Asks[0].win != two.id {
 		t.Fatalf("closing asked %+v", a.st.Asks)
@@ -157,7 +158,7 @@ func TestClosingAWindowAsksAndClosesItsPanes(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("the answer went unheard")
 	}
-	if a.has("p3") || !two.gone || a.cur != one || !a.has("p1") {
+	if a.has("p3") || a.has("p4") || !two.gone || a.cur != one || !a.has("p1") {
 		t.Fatalf("closed, p3 open %v, the window gone %v, in front %d", a.has("p3"), two.gone, a.cur.id)
 	}
 }
@@ -202,5 +203,23 @@ func TestClosingAPaneBehindRefocusesItsWindow(t *testing.T) {
 	a.remove("p2")
 	if one.focus != "p1" || a.st.Focus != "p3" {
 		t.Fatalf("the window behind has %q in front, and the one in front %q", one.focus, a.st.Focus)
+	}
+}
+
+// A window with one pane closes without a question: that pane is what
+// the user sees closing. One with more asks.
+func TestAWindowWithOnePaneClosesWithoutAsking(t *testing.T) {
+	a, one, two := twoWindowApp(t)
+	a.closeWindow(two)
+	if len(a.st.Asks) != 0 || !two.gone || len(a.panesIn(two)) != 0 {
+		t.Fatalf("closing a window of one pane asked %+v, and it went %v", a.st.Asks, two.gone)
+	}
+	// Another window, so this one is not the last, which asks as Exit.
+	a.addWindow(gunimtest.New(t, geom.Sz(400, 300), nil).Client(), nil)
+	a.front(one)
+	a.closeWindow(one)
+	waitFor(t, a, "the question", func() bool { return len(a.st.Asks) > 0 })
+	if q := a.st.Asks[len(a.st.Asks)-1]; q.Title != "Close this window?" || one.gone {
+		t.Fatalf("closing a window of two panes asked %q, and it went %v", q.Title, one.gone)
 	}
 }

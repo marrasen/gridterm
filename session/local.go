@@ -11,8 +11,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aymanbagabas/go-pty"
-
 	"github.com/marrasen/kakel/internal/build"
 )
 
@@ -39,11 +37,13 @@ type LocalConfig struct {
 }
 
 // local is a shell attached to a pseudo-terminal. On Unix that is a
-// classic PTY; on Windows it is a ConPTY, which go-pty puts behind the
-// same interface.
+// classic PTY, through go-pty; on Windows it is a ConPTY, through
+// internal/conpty.
 type local struct {
-	pty pty.Pty
-	cmd *pty.Cmd
+	pty terminal
+	// proc is the shell, and wait waits for it to end.
+	proc *os.Process
+	wait func() error
 
 	// closeOnce guards Close: closing the pty twice is not safe, and the
 	// UI can reach Close by more than one path (window closed, shell
@@ -89,23 +89,16 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 		argv = sh
 	}
 
-	p, err := pty.New()
+	// Sized before the shell starts. A shell that reads the window size
+	// at startup — which is most of them — would otherwise get the
+	// default 80x24 and lay out its prompt for the wrong width.
+	p, err := openTerminal(cfg.Cols, cfg.Rows)
 	if err != nil {
-		return nil, fmt.Errorf("open pty: %w", err)
-	}
-
-	// Size the pty before starting the shell. A shell that reads the
-	// window size at startup — which is most of them — would otherwise
-	// get the default 80x24 and lay out its prompt for the wrong width.
-	if cfg.Cols > 0 && cfg.Rows > 0 {
-		if err := p.Resize(cfg.Cols, cfg.Rows); err != nil {
-			_ = p.Close()
-			return nil, fmt.Errorf("size pty: %w", err)
-		}
+		return nil, err
 	}
 
 	// A bare name is looked for on PATH first, as exec.Command does. On
-	// Windows go-pty joins it to Dir instead, so cmd.exe started in a
+	// Windows go-pty joined it to Dir instead, so cmd.exe started in a
 	// folder became that folder's cmd.exe, which isn't there.
 	name := argv[0]
 	if !strings.ContainsAny(name, `/\`) {
@@ -113,36 +106,34 @@ func StartLocal(cfg LocalConfig) (Session, error) {
 			name = found
 		}
 	}
-	c := p.Command(name, argv[1:]...)
-	c.Args[0] = argv[0]
-	c.Dir = cfg.Dir
-	c.Env = append(os.Environ(), cfg.Env...)
+	env := append(os.Environ(), cfg.Env...)
 	if !hasEnv(cfg.Env, "TERM") {
-		c.Env = append(c.Env, "TERM=xterm-256color")
+		env = append(env, "TERM=xterm-256color")
 	}
 	// TERM names a kind of terminal and every terminal borrows the same
 	// few names, so this is the only way a program can tell which one it
 	// is talking to.
 	if !hasEnv(cfg.Env, "TERM_PROGRAM") {
-		c.Env = append(c.Env, "TERM_PROGRAM="+build.Name)
+		env = append(env, "TERM_PROGRAM="+build.Name)
 	}
 	if !hasEnv(cfg.Env, "TERM_PROGRAM_VERSION") {
-		c.Env = append(c.Env, "TERM_PROGRAM_VERSION="+build.Version())
+		env = append(env, "TERM_PROGRAM_VERSION="+build.Version())
 	}
 
-	if err := c.Start(); err != nil {
+	proc, wait, err := startIn(p, name, argv, cfg.Dir, env)
+	if err != nil {
 		_ = p.Close()
 		return nil, fmt.Errorf("start %s: %w", argv[0], err)
 	}
 
-	job, err := holdShell(c.Process.Pid)
+	job, err := holdShell(proc.Pid)
 	if err != nil {
-		_ = c.Process.Kill()
+		_ = proc.Kill()
 		_ = p.Close()
 		return nil, err
 	}
 
-	l := &local{pty: p, cmd: c, job: job, done: make(chan struct{})}
+	l := &local{pty: p, proc: proc, wait: wait, job: job, done: make(chan struct{})}
 
 	// Hand the slave back to the child alone. With this process no
 	// longer holding it, the master drains and then reports the child's
@@ -216,7 +207,7 @@ func (l *local) Resize(cols, rows int) error {
 }
 
 func (l *local) Wait() error {
-	l.waitOnce.Do(func() { l.waitErr = l.cmd.Wait() })
+	l.waitOnce.Do(func() { l.waitErr = l.wait() })
 	return l.waitErr
 }
 
@@ -260,9 +251,7 @@ func (l *local) Close() error {
 		select {
 		case <-l.done:
 		case <-time.After(hangupGrace):
-			if p := l.cmd.Process; p != nil {
-				_ = p.Kill()
-			}
+			_ = l.proc.Kill()
 		}
 	})
 	return l.closeErr

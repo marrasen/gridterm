@@ -206,6 +206,9 @@ type Terminal struct {
 	// zero size from never having been laid out.
 	size     ui.Size
 	haveSize bool
+	// cells is how many cells the screen has, for the reader, which
+	// holds a synchronized update to a frame of that many.
+	cells atomic.Int64
 
 	// box is the room the layout gave this terminal, which is the same
 	// as size unless somebody watching has been given the size. Then
@@ -722,6 +725,7 @@ func (t *Terminal) resize(size ui.Size) {
 func (t *Terminal) setSize(size ui.Size) {
 	cols, rows := max(size.Cols, 1), max(size.Rows, 1)
 	t.size, t.haveSize = size, true
+	t.cells.Store(int64(cols) * int64(rows))
 
 	t.mu.Lock()
 	t.g.Resize(cols, rows)
@@ -1767,7 +1771,7 @@ func (t *Terminal) readLoop(r *run) {
 		for _, f := range told {
 			f()
 		}
-	}}
+	}, cells: func() int { return int(t.cells.Load()) }}
 	var lastRead time.Time
 	for {
 		n, err := r.sess.Read(buf)

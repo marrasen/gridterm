@@ -255,28 +255,51 @@ reads what the program writes, keeps a console buffer, and writes that
 out again. So it answers some sequences itself and passes on the ones it
 has no opinion about.
 
-Measured on 2026-09-20 on this machine, twice: once from PowerShell and
-once with raw bytes through `cmd /c type`, which agreed.
+There are two ConPTYs. Windows has one, in its console host. kakel
+carries Microsoft's newer one, OpenConsole (`internal/conpty`, the one
+Windows Terminal runs), and local panes run through it; Windows' own is
+what is left if OpenConsole cannot be put in place or loaded, which the
+log says. It is put in `%LOCALAPPDATA%\kakel\conpty\<version>`, the
+user's cache rather than kakel's own folder, which a portable copy
+keeps beside itself, and `kakel -uninstall` takes it away.
 
-| Passed on | Kept by ConPTY |
-|---|---|
-| XTVERSION (`CSI > q`) | DA1 (`CSI c`) |
-| OSC 4, the palette question | OSC 11, the background question |
-| OSC 7, where the shell is | APC, which is the kitty protocol |
-| OSC 9, a message | DCS, which is sixel |
-| OSC 133, the prompt marks | |
-| OSC 1337 and OSC 1338, the images | |
+Windows' own, measured on 2026-09-20 on this machine, twice: once from
+PowerShell and once with raw bytes through `cmd /c type`, which agreed.
+OpenConsole 1.25, measured on 2026-10-03 with raw bytes through `cmd /c
+type`, which gave Windows' own the same column as before.
+
+| Passed on by both | Kept by Windows' own | Kept by both |
+|---|---|---|
+| XTVERSION (`CSI > q`) | DA1 (`CSI c`) | DCS, which is sixel |
+| OSC 4, the palette question | OSC 11, the background question | |
+| OSC 7, where the shell is | APC, which is the kitty protocol | |
+| OSC 9, a message | | |
+| OSC 133, the prompt marks | | |
+| OSC 1337 and OSC 1338, the images | | |
+| Synchronized output (`CSI ? 2026 h`, `l`) | | |
+
+**Synchronized output is passed on by both, but only OpenConsole keeps
+it in its place.** Windows' own repaints its buffer on a timer, apart
+from the program's writes, and writes the marks as it reads them. So the
+marks fall anywhere among the repaints: on a 638 by 93 pane the end of a
+frame came before the last of its cells, and at full speed the marks
+of one frame's end and the next one's start came together, between
+repaints that each held parts of two frames. A frame of `termflix wave`
+reached kakel torn across, at about the same height each time, and no
+hold of kakel's could mend it: the repaint itself was torn. OpenConsole
+passes the program's output through as it comes, so each frame arrives
+whole between its marks (`TestFramesComeThroughWhole`).
 
 What follows from it:
 
 - **Everything kakel reads today is passed on.** The images and
   the prompt marks are in the left column, which is why they work.
 
-- **DA1 is answered by ConPTY from its own model.** It asks this
-  window once as it starts and keeps the answer. So adding a
+- **DA1 is answered by Windows' own ConPTY from its own model.** It
+  asks this window once as it starts and keeps the answer. So adding a
   capability to kakel's own DA1 reply changes what conhost thinks
-  and not what a program is told. Sixel is discovered through DA1, so
-  that is the second thing blocking it.
+  and not what a program is told. OpenConsole passes DA1 on, but keeps
+  DCS, so sixel is still blocked.
 
 - **XTVERSION reaches kakel.** That settles the open question: the
   CSI sequences ConPTY has no opinion about are passed on.

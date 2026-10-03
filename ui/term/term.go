@@ -7,9 +7,12 @@
 package term
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"os"
 	"slices"
 	"strings"
 	"sync"
@@ -900,6 +903,9 @@ func (t *Terminal) Elsewhere() bool { return t.elsewhere }
 func (t *Terminal) draw(v grid.View, whole bool) {
 	if t.pending.Load() && t.mu.TryLock() {
 		t.pending.Store(false)
+		if readsDebug {
+			log.Printf("kakel reads: the window copies the screen")
+		}
 		t.term.Render(t.g)
 		t.drawnTop = t.term.Screen().ViewTop()
 		t.mu.Unlock()
@@ -1759,8 +1765,12 @@ func (t *Terminal) readLoop(r *run) {
 			f()
 		}
 	}}
+	var lastRead time.Time
 	for {
 		n, err := r.sess.Read(buf)
+		if readsDebug && n > 0 {
+			logRead(buf[:n], &lastRead)
+		}
 		if n > 0 {
 			wrote, began := updates.feed(buf[:n])
 			if began != 0 {
@@ -1785,6 +1795,33 @@ func (t *Terminal) readLoop(r *run) {
 			return
 		}
 	}
+}
+
+// readsDebug is set by KAKEL_DEBUG_READS=1, which logs each read of a
+// session's output, as logRead says, and each time the window copies a
+// screen: for finding where an animation's frames are cut.
+var readsDebug = os.Getenv("KAKEL_DEBUG_READS") == "1"
+
+// logRead logs one read of output: how long after the read before it,
+// how big, and the markers in it that may start or end a frame.
+func logRead(b []byte, last *time.Time) {
+	now := time.Now()
+	gap := time.Duration(0)
+	if !last.IsZero() {
+		gap = now.Sub(*last)
+	}
+	*last = now
+	var marks []string
+	for _, m := range [...]struct{ name, seq string }{
+		{"sync-begin", "\x1b[?2026h"}, {"sync-end", "\x1b[?2026l"}, {"hide-cursor", "\x1b[?25l"},
+		{"show-cursor", "\x1b[?25h"}, {"home", "\x1b[H"}, {"row1", "\x1b[1;1H"}, {"clear", "\x1b[2J"},
+	} {
+		if n := bytes.Count(b, []byte(m.seq)); n > 0 {
+			marks = append(marks, fmt.Sprintf("%s×%d", m.name, n))
+		}
+	}
+	head := b[:min(len(b), 24)]
+	log.Printf("kakel reads: +%.2f ms, %d bytes %v, starting %q", float64(gap.Microseconds())/1000, len(b), marks, head)
 }
 
 // outputArrived says the screen has taken something new to draw.

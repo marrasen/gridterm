@@ -611,6 +611,9 @@ func (a *app) startAgainFor(want serve.Attached, _ bool) error {
 			// Closed here: the other window opens one of its own.
 			return count{}, serve.ErrNotOpen
 		}
+		// An end the terminal has not yet told this window of is the
+		// one it starts again from, and counted before, not after.
+		a.countEnding(want.ID)
 		c := count{a.restarts[want.ID], a.endings[want.ID]}
 		// Never dialled for another window, whichever it asked for: a
 		// connection this window makes is for someone at it to make,

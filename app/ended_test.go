@@ -98,13 +98,16 @@ func TestAPaneStartsItsOwnShellAgain(t *testing.T) {
 // A pane on a server whose connection has gone connects again when
 // started again, and says so when the server is at another address
 // than the pane was opened at.
-func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
+// serverPane is a window with one pane, a shell on a test server, and
+// what answers whatever it asks: the host key, and the password.
+func serverPane(t *testing.T) (a *app, id string, answering func()) {
+	t.Helper()
 	testhome.New(t)
 	t.Setenv("SSH_AUTH_SOCK", "")
 	s := sshtest.New(t)
 	host, port := s.Host()
 	w := gunimtest.New(t, geom.Sz(400, 300), nil)
-	a := newApp(w.Client(), screen.NewShells())
+	a = newApp(w.Client(), screen.NewShells())
 	a.ctx = t.Context()
 	t.Cleanup(func() {
 		for len(a.st.Panes) > 0 {
@@ -115,8 +118,7 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 			_ = c.Close()
 		}
 	})
-	// Answers whatever is asked: the host key, and the password.
-	answering := func() {
+	answering = func() {
 		for _, q := range a.st.Asks {
 			ans := AskAnswered{ID: q.ID, Yes: true}
 			if len(q.Prompts) > 0 {
@@ -128,7 +130,34 @@ func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
 	target := "tester@" + net.JoinHostPort(host, strconv.Itoa(port))
 	a.handle(ConnectTo{Target: target})
 	waitFor(t, a, "a shell on the server", func() bool { answering(); return oneShell(a) })
-	id, name := a.st.Panes[0].ID, a.st.Panes[0].Machine
+	return a, a.st.Panes[0].ID, answering
+}
+
+// A pane whose shell on a server ended starts again over the connection
+// on a goroutine of its own. The end's second word, landing meanwhile,
+// asks nothing: asked, the question said that start had failed, and an
+// agent that asked for it was told so.
+func TestALateWordOfAnEndAsksNothingWhileThePaneStartsAgain(t *testing.T) {
+	a, id, answering := serverPane(t)
+	tm := a.terminal(id)
+	// The test server's shell ends on the line bye.
+	tm.Send([]byte("bye\n"))
+	waitFor(t, a, "the shell to end", func() bool { return a.st.Panes[0].Ended && tm.Asking() != "" })
+	// As an agent's start again does, which takes the question down.
+	tm.Ask("")
+	if err := a.startAgainOr(id, false); err != nil {
+		t.Fatal(err)
+	}
+	a.paneEnded(id)
+	if q := tm.Asking(); q != "" {
+		t.Fatalf("while the pane started again, it asked %q", q)
+	}
+	waitFor(t, a, "the pane to run again", func() bool { answering(); return !a.st.Panes[0].Ended })
+}
+
+func TestAPaneReconnectsWhenStartedAgain(t *testing.T) {
+	a, id, answering := serverPane(t)
+	name := a.st.Panes[0].Machine
 	if a.paneAt[id] == "" {
 		t.Fatal("the pane's address was not written down")
 	}
@@ -204,5 +233,36 @@ func TestACommandsQuestionSaysHowItEnded(t *testing.T) {
 	long := strings.Fields("rsync -avz --delete /home/me/projects/kakel/ backup.example:/srv/backups/kakel/")
 	if got := commandQuestion(long, 0, true, false, false); !strings.HasPrefix(got, "rsync -avz --delete /home/me/projects/k") || !strings.Contains(got, "…") {
 		t.Errorf("a long command reads %q", got)
+	}
+}
+
+// Each end of a pane's program is counted once, though the terminal
+// says it twice, and a word of it that lands after the pane was started
+// again is no end of the new run. A window asked by another to start a
+// pane again counts on these to tell whether it did: a late word, as it
+// came on a busy machine, said a start again that worked had failed.
+func TestAnEndIsCountedOncePerRun(t *testing.T) {
+	a, _ := agentApp(t)
+	if err := a.runCommand(RunCommand{Line: trueCommand()}); err != nil {
+		t.Fatal(err)
+	}
+	id := a.st.Focus
+	waitFor(t, a, "the command to end", func() bool { return a.terminal(id).Exited() && a.endings[id] > 0 })
+	// Both words of the end in, whatever order they came in.
+	a.paneEnded(id)
+	a.paneEnded(id)
+	if a.endings[id] != 1 {
+		t.Fatalf("one end was counted %d times", a.endings[id])
+	}
+	if err := a.startAgainOr(id, false); err != nil {
+		t.Fatal(err)
+	}
+	if a.terminal(id).Exited() {
+		t.Skip("the command ended again before it could be looked at")
+	}
+	// A word of the run before, landing now.
+	a.paneEnded(id)
+	if a.endings[id] != 1 {
+		t.Fatalf("a late word of the run before counted as an end: %d", a.endings[id])
 	}
 }

@@ -63,7 +63,7 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 		t.Fatalf("the command's pane is %+v here, and there the panes are %+v", p, a.st.Panes)
 	}
 
-	b.handle(RunCommand{Machine: win, Line: "echo ran-there"})
+	b.handle(RunCommand{Machine: win, Line: echoCommand("ran-there")})
 	pumpBoth(t, a, b, "the command on the window's machine", func() bool {
 		return len(b.st.Panes) == 4 && b.terminal(b.st.Panes[3].ID) != nil && strings.Contains(b.terminal(b.st.Panes[3].ID).AllText(), "ran-there")
 	})
@@ -72,13 +72,13 @@ func TestTerminalsAndCommandsOpenBeyondAWindow(t *testing.T) {
 	}
 
 	// A command that fails there says so here, with its status.
-	b.handle(RunCommand{Machine: win, Line: "false"})
+	b.handle(RunCommand{Machine: win, Line: falseCommand()})
 	pumpBoth(t, a, b, "the failed command", func() bool {
 		if len(b.st.Panes) != 5 {
 			return false
 		}
 		tm := b.terminal(b.st.Panes[4].ID)
-		return tm != nil && tm.Asking() == "false finished. Exit 1. Run it again?"
+		return tm != nil && tm.Asking() == falseCommand()+" finished. Exit 1. Run it again?"
 	})
 	b.handle(ClosePane{Pane: b.st.Panes[4].ID})
 	pumpBoth(t, a, b, "the failed command closed", func() bool { return len(b.st.Panes) == 4 })
@@ -394,10 +394,14 @@ func TestAnAgentWorksInPanesThroughAWindow(t *testing.T) {
 	if p := b.st.Panes[len(b.st.Panes)-1]; p.On != "srv" || !slices.ContainsFunc(a.st.Panes, func(q Pane) bool { return q.Machine == "srv" && q.ID != a.st.Panes[2].ID }) {
 		t.Fatalf("the new pane is %+v here, and there are %+v", p, a.st.Panes)
 	}
-	own, ok := byLabel["Terminal 2 on "+name]
-	if !ok {
+	// The window's own pane is the other one shared. Its name is the
+	// title its shell gave, once that has come: cmd.exe names itself by
+	// its path, as it starts.
+	i := slices.IndexFunc(sh.Panes, func(p agent.Pane) bool { return p.ID != far.ID && strings.HasSuffix(p.Label, " on "+name) })
+	if i < 0 {
 		t.Fatalf("the agent is told of %+v", sh.Panes)
 	}
+	own := sh.Panes[i]
 	// What a command it typed on the window's machine printed.
 	// Worked out by the shell, so only its output says out-42: a POSIX
 	// shell's arithmetic, or cmd.exe's on Windows.

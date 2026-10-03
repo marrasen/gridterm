@@ -285,14 +285,15 @@ func TestAnUnknownPathRefusesTheSkill(t *testing.T) {
 // not the command again.
 func TestAnAgentOpensAShellBesideACommand(t *testing.T) {
 	a, _ := agentApp(t)
-	if err := a.runCommand(RunCommand{Line: "sleep 30"}); err != nil {
+	line := waitCommand(30)
+	if err := a.runCommand(RunCommand{Line: line}); err != nil {
 		t.Fatal(err)
 	}
 	cmd := a.st.Panes[len(a.st.Panes)-1].ID
 	a.handle(SharePane{Pane: cmd})
 	a.handle(SetAgentMay{Pane: cmd, May: settings.AgentMay{OpenMore: true}})
 	c, sh := dial(t, a, a.st.Share.Code)
-	i := slices.IndexFunc(sh.Panes, func(p agent.Pane) bool { return strings.HasPrefix(p.Label, "sleep 30") })
+	i := slices.IndexFunc(sh.Panes, func(p agent.Pane) bool { return strings.HasPrefix(p.Label, line) })
 	if i < 0 {
 		t.Fatalf("the share holds %+v", sh.Panes)
 	}

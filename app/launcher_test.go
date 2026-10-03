@@ -20,6 +20,7 @@ import (
 // Windows and Ctrl+Alt+K elsewhere unless the settings say another, and
 // a press opens the launcher once.
 func TestTheLauncherKeyOpensTheLauncher(t *testing.T) {
+	takesKeys(t)
 	a, _, _ := twoWindowApp(t)
 	var took gunim.HotKey
 	var press func()
@@ -58,6 +59,7 @@ func TestTheLauncherKeyOpensTheLauncher(t *testing.T) {
 
 // A key another program has is said, with where to choose another.
 func TestATakenLauncherKeyIsSaid(t *testing.T) {
+	takesKeys(t)
 	a, _, _ := twoWindowApp(t)
 	a.hotKeys = func(gunim.HotKey, func()) (func(), error) { return nil, gunim.ErrHotKeyTaken }
 	a.takeLauncherKey()
@@ -75,6 +77,13 @@ func TestATakenLauncherKeyIsSaid(t *testing.T) {
 		t.Fatal("a key that is none was kept")
 	}
 }
+
+// takesKeys has the kakel under test take keys from other programs, as
+// the kakel a user starts does, whatever this process was started with.
+// A kakel told to run alone with KAKEL_ALONE=1 takes none, and passes
+// the variable on to the shells in its panes, and so to tests run from
+// one of them.
+func takesKeys(t *testing.T) { t.Setenv("KAKEL_ALONE", "") }
 
 // A pick in the launcher closes it, opens what was picked in the window
 // last worked in, and is what Enter opens there next time.
@@ -119,6 +128,7 @@ func TestTheLauncherKeyMustBeOneToTake(t *testing.T) {
 	if _, err := LauncherHotKey(" Ctrl+Alt+K "); err != nil {
 		t.Errorf("ctrl+alt+k was refused: %v", err)
 	}
+	takesKeys(t)
 	a, _, _ := twoWindowApp(t)
 	took := 0
 	a.hotKeys = func(gunim.HotKey, func()) (func(), error) { took++; return func() {}, nil }

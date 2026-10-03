@@ -164,7 +164,7 @@ func TestAHandoverOpensAWindow(t *testing.T) {
 		return gunimtest.New(t, s, nil).Client(), nil, nil
 	}
 	dir := t.TempDir()
-	a.handover(single.Handover{Args: []string{"-e", "true"}, Dir: dir})
+	a.handover(single.Handover{Args: []string{"-e", trueCommand()}, Dir: dir})
 	select {
 	case f := <-a.events:
 		f()

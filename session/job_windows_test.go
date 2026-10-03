@@ -30,12 +30,12 @@ func TestClosingAPaneLeavesDetachedWorkRunning(t *testing.T) {
 	case <-time.After(budget):
 		t.Fatal("the shell never showed a prompt")
 	}
-	was := childrenNamed(t, l.cmd.Process.Pid, ping)
+	was := childrenNamed(t, l.proc.Pid, ping)
 	// start gives ping a console of its own.
 	if _, err := s.Write([]byte(startPing + "\r\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	pid := awaitChild(t, l.cmd.Process.Pid, ping, was)
+	pid := awaitChild(t, l.proc.Pid, ping, was)
 	running := watchExit(t, pid)
 	// ping is detached once its own console is up, which a loaded
 	// machine can take a while over; closed before that, the pane's
@@ -63,7 +63,7 @@ func TestAShellThatExitsLeavesDetachedWorkRunning(t *testing.T) {
 		}
 	}()
 
-	pid := awaitChild(t, l.cmd.Process.Pid, ping, nil)
+	pid := awaitChild(t, l.proc.Pid, ping, nil)
 	running := watchExit(t, pid)
 	if err := s.Wait(); err != nil {
 		t.Fatalf("Wait: %v", err)
@@ -87,7 +87,7 @@ func TestTheShellDiesWithItsJob(t *testing.T) {
 		t.Fatal("the shell never showed a prompt")
 	}
 
-	gone := watchExit(t, l.cmd.Process.Pid)
+	gone := watchExit(t, l.proc.Pid)
 	// Taken out of the session first, so the Close that follows has no
 	// handle left to close twice.
 	h := windows.Handle(l.job)

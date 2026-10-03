@@ -37,15 +37,25 @@ import (
 // outer terminal that way.
 const syncMode = 2026
 
-// syncLimit is the longest an update is held, and syncMost the most
-// bytes it is held to. A frame of a full-screen animation at true
-// colour is under a megabyte. A held update is parsed in one write,
-// under the terminal's lock, so the cap also bounds how long that lock
-// is held.
+// syncLimit is the longest an update is held, and syncMost the fewest
+// bytes it is held to, whatever the size of the screen. A held update
+// is parsed in one write, under the terminal's lock, so the cap also
+// bounds how long that lock is held.
 const (
 	syncLimit = 150 * time.Millisecond
 	syncMost  = 1 << 20
 )
+
+// cellMost is the bytes of a frame an update is held to for each cell
+// of the screen. A frame at true colour sets both colours of each cell
+// and draws a half block, up to 41 bytes a cell: termflix's are about
+// 35. A full-screen pane on a wide monitor has 60,000 cells, a frame of
+// two megabytes, which a cap of syncMost alone cut in two every time.
+const cellMost = 64
+
+// heldMost is the most bytes an update is held to on a screen of cells
+// cells: a frame of it at true colour, and syncMost at the least.
+func heldMost(cells int) int { return max(syncMost, cells*cellMost) }
 
 // carryMost is the longest start of a sequence held back from one read
 // to the next. A marker is far shorter; a longer sequence is no marker.
@@ -57,6 +67,9 @@ const carryMost = 256
 type syncer struct {
 	mu    sync.Mutex
 	write func([]byte)
+	// cells says how many cells the screen has, which sets the most an
+	// update is held to; nil holds to syncMost.
+	cells func() int
 	// on says an update is being held, and held is what it holds.
 	on   bool
 	held []byte
@@ -135,7 +148,7 @@ func (s *syncer) feed(p []byte) (wrote bool, began uint64) {
 	rest := data[from:]
 	if s.on {
 		s.held = append(s.held, rest...)
-		if len(s.held) > syncMost {
+		if len(s.held) > s.most() {
 			s.release()
 			wrote = true
 		}
@@ -185,16 +198,24 @@ func (s *syncer) flush() bool {
 	return true
 }
 
+// most is the most bytes an update is held to on the screen as it is.
+func (s *syncer) most() int {
+	if s.cells == nil {
+		return syncMost
+	}
+	return heldMost(s.cells())
+}
+
 // release hands the update over and ends it. It runs with mu held.
 // The buffer is kept for the next update, unless this one grew it past
-// syncMost. That one is dropped, so a run keeps at most syncMost
-// between updates.
+// what an update is held to. That one is dropped, so a run keeps at
+// most a frame's worth between updates.
 func (s *syncer) release() {
 	if len(s.held) > 0 {
 		s.write(s.held)
 	}
 	s.held, s.on = s.held[:0], false
-	if cap(s.held) > syncMost {
+	if cap(s.held) > s.most() {
 		s.held = nil
 	}
 }

@@ -28,6 +28,10 @@ type fakeSession struct {
 	resizeErr error
 	writeErr  error
 	closeErr  error
+
+	// reads counts the reads begun: the terminal has dealt with what one
+	// read handed it once it begins the next.
+	reads atomic.Int32
 }
 
 func newFakeSession() *fakeSession {
@@ -35,6 +39,7 @@ func newFakeSession() *fakeSession {
 }
 
 func (f *fakeSession) Read(p []byte) (int, error) {
+	f.reads.Add(1)
 	b, ok := <-f.out
 	if !ok {
 		return 0, io.EOF

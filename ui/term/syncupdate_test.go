@@ -261,8 +261,9 @@ func TestTheRestOfAnUpdateStaysHeld(t *testing.T) {
 	}
 }
 
-// An update is held to a megabyte, a frame's size, and the memory an
-// unusually large one took is given back once it is handed over.
+// An update is held to a megabyte when the screen's size is not known,
+// and the memory an unusually large one took is given back once it is
+// handed over.
 func TestALargeUpdateIsHandedOverAndForgotten(t *testing.T) {
 	s, got := newSyncer()
 	s.feed([]byte("\x1b[?2026h"))

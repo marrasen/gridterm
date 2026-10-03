@@ -95,6 +95,13 @@ func (s *syncer) feed(p []byte) (wrote bool, began uint64) {
 			}
 			i += j
 		}
+		if s.scan.state == inCSI {
+			// A CSI's parameters, as many as there are, in one go.
+			i += s.scan.paramRun(data[i:])
+			if i == len(data) {
+				break
+			}
+		}
 		m := s.scan.step(data[i])
 		if data[i] == esc && s.scan.state == inEscape {
 			start = i
@@ -415,6 +422,28 @@ func (sc *scanner) asks(c byte) bool {
 		return true
 	}
 	return false
+}
+
+// paramRun takes the digits and semicolons at the start of p, inside a
+// CSI, as step would one by one, and returns how many it took.
+func (sc *scanner) paramRun(p []byte) int {
+	if sc.middle != 0 {
+		return 0
+	}
+	for i, c := range p {
+		switch {
+		case c >= '0' && c <= '9':
+			if sc.param < 1e6 {
+				sc.param = sc.param*10 + int(c-'0')
+			}
+		case c == ';':
+			sc.endParam()
+		default:
+			return i
+		}
+		sc.params++
+	}
+	return len(p)
 }
 
 // endParam finishes the parameter being read.

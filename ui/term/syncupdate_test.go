@@ -2,7 +2,10 @@ package term
 
 import (
 	"bytes"
+	"fmt"
 	"math/rand/v2"
+	"slices"
+	"strings"
 	"testing"
 )
 
@@ -272,5 +275,96 @@ func TestALargeUpdateIsHandedOverAndForgotten(t *testing.T) {
 	}
 	if c := cap(s.held); c > 1<<20 {
 		t.Fatalf("the syncer keeps %d bytes after the update went over", c)
+	}
+}
+
+// How fast the scan for updates goes through a frame of a true colour
+// animation, held whole as one update.
+func BenchmarkSyncerHalfBlockFrame(b *testing.B) {
+	var f strings.Builder
+	f.WriteString("\x1b[?2026h\x1b[H")
+	for y := range 75 {
+		for x := range 250 {
+			fmt.Fprintf(&f, "\x1b[38;2;%d;90;160m\x1b[48;2;40;%d;160m▀", (x+y)%256, (x*y)%256)
+		}
+		f.WriteString("\r\n")
+	}
+	f.WriteString("\x1b[?2026l")
+	out := []byte(f.String())
+	s := &syncer{write: func([]byte) {}}
+	b.SetBytes(int64(len(out)))
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for at := 0; at < len(out); at += readChunk {
+			s.feed(out[at:min(at+readChunk, len(out))])
+		}
+	}
+}
+
+// However a stream is cut into reads, the scan finds the same updates
+// and questions, and ends in the same place, as a byte at a time.
+func TestTheScanIsTheSameHoweverTheReadsAreCut(t *testing.T) {
+	parts := []string{"\x1b[?2026h", "\x1b[?2026l", "\x1b[?25;2026h", "\x1b[2026h", "\x1b[?12;2026l",
+		"\x1b[38;2;1;2;3m", "\x1b[6n", "\x1b[>c", "\x1b[?2026$p", "\x1b[1;2 q", "\x1b]11;?\x07", "x", "▀", "\x1b", "[", "?", "20", "26", "h"}
+	run := func(in []byte, cuts []int) (scanner, bool, uint64, string) {
+		var wrote strings.Builder
+		s := &syncer{write: func(b []byte) { wrote.Write(b) }}
+		from := 0
+		for _, to := range append(cuts, len(in)) {
+			s.feed(in[from:to])
+			from = to
+		}
+		return s.scan, s.on, s.update, wrote.String() + "|" + string(s.held) + "|" + string(s.carry)
+	}
+	r := rand.New(rand.NewPCG(3, 4))
+	for range 3000 {
+		var in []byte
+		for range r.IntN(12) {
+			in = append(in, parts[r.IntN(len(parts))]...)
+		}
+		var cuts, each []int
+		for k := 1; k < len(in); k++ {
+			each = append(each, k)
+			if r.IntN(3) == 0 {
+				cuts = append(cuts, k)
+			}
+		}
+		ws, won, wu, wout := run(in, each)
+		gs, gon, gu, gout := run(in, cuts)
+		if gs != ws || gon != won || gu != wu || gout != wout {
+			t.Fatalf("%q cut at %v: scan %+v on %v update %d %q;\nbyte by byte %+v on %v update %d %q", in, cuts, gs, gon, gu, gout, ws, won, wu, wout)
+		}
+	}
+}
+
+// Taking a CSI's parameters in a run leaves the scanner where taking
+// them a byte at a time does, and finds the same markers.
+func TestAParamRunIsTheSameAsSteps(t *testing.T) {
+	r := rand.New(rand.NewPCG(5, 6))
+	alphabet := []byte("\x1b[?>$;0123456789 :hlnpcqm")
+	for range 5000 {
+		in := []byte("\x1b[")
+		for range r.IntN(16) {
+			in = append(in, alphabet[r.IntN(len(alphabet))])
+		}
+		var slow, fast scanner
+		var slowMarks, fastMarks []mark
+		for _, c := range in {
+			slowMarks = append(slowMarks, slow.step(c))
+		}
+		for i := 0; i < len(in); i++ {
+			if fast.state == inCSI {
+				i += fast.paramRun(in[i:])
+				if i == len(in) {
+					break
+				}
+			}
+			fastMarks = append(fastMarks, fast.step(in[i]))
+		}
+		slowMarks = slices.DeleteFunc(slowMarks, func(m mark) bool { return m == markNone })
+		fastMarks = slices.DeleteFunc(fastMarks, func(m mark) bool { return m == markNone })
+		if fast != slow || !slices.Equal(fastMarks, slowMarks) {
+			t.Fatalf("%q: in a run %+v %v; a byte at a time %+v %v", in, fast, fastMarks, slow, slowMarks)
+		}
 	}
 }

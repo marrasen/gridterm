@@ -129,6 +129,8 @@ type Terminal struct {
 
 	// lastRune is the most recent printable character, which REP repeats.
 	lastRune rune
+	// widths are the widths of the characters printed lately.
+	widths widthCache
 
 	// long reads the sequences carrying an image, which are longer
 	// than the parser will hold.
@@ -167,7 +169,7 @@ func (t *Terminal) Command() Command { return t.cmd }
 // Write feeds bytes to the emulator. It never returns an error: a
 // terminal has no way to reject what a program sends it.
 func (t *Terminal) Write(p []byte) (int, error) {
-	t.long.feed(p, t.parser.Advance, t.longOSCDone)
+	t.long.feed(p, t.parser.AdvanceBytes, t.longOSCDone)
 	return len(p), nil
 }
 
@@ -177,12 +179,33 @@ func (t *Terminal) Resize(cols, rows int) { t.scr.Resize(cols, rows) }
 // Render copies the visible screen into g.
 func (t *Terminal) Render(g *grid.Grid) { t.scr.Render(g) }
 
+// widthCache holds the widths of the characters printed lately, by the
+// low bits of each. Outside ASCII, working one out is a search through
+// Unicode's tables, and an animation prints the same few characters
+// over and over.
+type widthCache [256]struct {
+	r rune
+	w int8
+}
+
+// width is how many cells r takes, as grid.RuneWidth says.
+func (t *Terminal) width(r rune) int {
+	if r >= 0x20 && r < 0x7f {
+		return 1
+	}
+	e := &t.widths[r&0xff]
+	if e.r != r {
+		e.r, e.w = r, int8(grid.RuneWidth(r))
+	}
+	return int(e.w)
+}
+
 // ---------------------------------------------------------------- //
 // vte.Performer
 // ---------------------------------------------------------------- //
 
 func (t *Terminal) Print(r rune) {
-	w := grid.RuneWidth(r)
+	w := t.width(r)
 	// REP repeats the last printable character. A combining mark is not
 	// one: repeating it would stack marks on a cell rather than repeat
 	// anything visible.

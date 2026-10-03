@@ -30,6 +30,8 @@ type longOSC struct {
 	// esc says an escape turned up inside the payload, which ends it
 	// when a backslash follows.
 	esc bool
+	// one holds a single byte handed on by itself.
+	one [1]byte
 }
 
 // longOSCMarkers are the sequences read here rather than by the
@@ -53,18 +55,44 @@ const (
 	markerYes
 )
 
-// feed puts one write through, handing every byte that is not part of
-// an image sequence to pass and each finished image sequence to
+// feed puts one write through, handing every run of bytes that is not
+// part of an image sequence to pass and each finished image sequence to
 // take.
-func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
-	for _, b := range p {
+func (s *longOSC) feed(p []byte, pass func([]byte), take func(num, body []byte)) {
+	one := func(b byte) {
+		s.one[0] = b
+		pass(s.one[:])
+	}
+	for i := 0; i < len(p); {
+		if s.num == nil && len(s.lead) == 0 {
+			// Nearly every byte: nothing held back, and only ESC ] can
+			// begin a marker. Everything before one goes through at once.
+			j := runBefore(p, i)
+			if j > i {
+				pass(p[i:j])
+			}
+			if i = j; i < len(p) {
+				s.match(p[i], one)
+				i++
+			}
+			continue
+		}
+		if s.num != nil && !s.esc {
+			// The payload, up to a byte that may end it.
+			j := i
+			for j < len(p) && p[j] != 0x07 && p[j] != 0x1b && p[j] != 0x18 && p[j] != 0x1a {
+				j++
+			}
+			s.add(p[i:j])
+			if i = j; i == len(p) {
+				break
+			}
+		}
+		b := p[i]
+		i++
 		switch {
-		case s.num == nil && len(s.lead) == 0 && b != 0x1b:
-			// Nearly every byte: nothing held back, and only an escape
-			// begins a marker.
-			pass(b)
 		case s.num == nil:
-			s.match(b, pass)
+			s.match(b, one)
 		case s.esc:
 			s.esc = false
 			if b == '\\' {
@@ -73,8 +101,8 @@ func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 				// The sequence was abandoned. What was read is not a
 				// image, and the escape starts something else.
 				s.drop()
-				pass(0x1b)
-				s.match(b, pass)
+				one(0x1b)
+				s.match(b, one)
 			}
 		case b == 0x07:
 			s.finish(take)
@@ -84,8 +112,27 @@ func (s *longOSC) feed(p []byte, pass func(byte), take func(num, body []byte)) {
 			s.drop()
 		case b == 0x1b:
 			s.esc = true
+		}
+	}
+}
+
+// runBefore returns where, from i on, the first escape that may begin a
+// marker is in p, or len(p) where none does. An escape followed by
+// anything but ']' begins none. One at the very end may.
+func runBefore(p []byte, i int) int {
+	for {
+		k := bytes.IndexByte(p[i:], 0x1b)
+		if k < 0 {
+			return len(p)
+		}
+		j := i + k
+		switch {
+		case j+1 == len(p), p[j+1] == ']':
+			return j
+		case p[j+1] == 0x1b:
+			i = j + 1
 		default:
-			s.add(b)
+			i = j + 2
 		}
 	}
 }
@@ -136,15 +183,18 @@ func matchMarker(lead []byte) int {
 	return out
 }
 
-// add keeps one byte of the payload, up to the largest image
+// add keeps a run of the payload, up to the largest image
 // allowed. Past that the bytes are read and dropped, because a payload
 // nobody can use still has to be read to find where it ends.
-func (s *longOSC) add(b byte) {
-	if len(s.body) >= mostLongOSC {
-		s.over = true
+func (s *longOSC) add(run []byte) {
+	if len(run) == 0 {
 		return
 	}
-	s.body = append(s.body, b)
+	if room := mostLongOSC - len(s.body); len(run) > room {
+		s.over = true
+		run = run[:max(room, 0)]
+	}
+	s.body = append(s.body, run...)
 }
 
 // finish hands over a payload that has reached its end.

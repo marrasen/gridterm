@@ -152,7 +152,7 @@ on.
 
 kakel reads a program's output with go-vte's parser, as the fork
 [marrasen/go-vte](https://github.com/marrasen/go-vte) at
-`v1.0.11-gt.2`, on its `gt` branch. That is upstream v1.0.11 with two
+`v1.0.11-gt.3`, on its `gt` branch. That is upstream v1.0.11 with three
 changes, and the note beside its line in `go.mod` says what they are:
 
 - The parser hands the emulator its own buffers for each control
@@ -160,8 +160,12 @@ changes, and the note beside its line in `go.mod` says what they are:
   half blocks sends two sequences a cell, and parsing one frame at 250
   by 75 went from 21 ms and 112,504 allocations to 11.3 ms and none.
 - SOS, PM and APC strings stop growing at a megabyte.
+- `AdvanceBytes` parses a whole write, taking printable text, whole
+  UTF-8 characters and the digits of CSI parameters without the state
+  table. With kakel's own filters passing runs rather than bytes, that
+  frame went from 11.6 ms to 4.8 ms.
 
-Both are worth offering upstream. The text for the two pull requests is
+The first two are worth offering upstream. The text for those two pull requests is
 in that fork's
 [UPSTREAM.md](https://github.com/marrasen/go-vte/blob/gt/UPSTREAM.md).
 

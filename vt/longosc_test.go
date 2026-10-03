@@ -1,6 +1,9 @@
 package vt
 
 import (
+	"bytes"
+	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -113,5 +116,45 @@ func TestEverythingElseStillReachesTheParser(t *testing.T) {
 	}
 	if got := rowText(renderOf(t, term), 0); got != "plain" {
 		t.Errorf("row 0 reads %q, want the text", got)
+	}
+}
+
+// However a stream is cut into writes, the filter hands on the same
+// bytes and the same images as it does a byte at a time.
+func TestLongOSCIsTheSameHoweverTheWritesAreCut(t *testing.T) {
+	run := func(in []byte, cuts []int) (passed []byte, took []string) {
+		var s longOSC
+		pass := func(b []byte) { passed = append(passed, b...) }
+		take := func(num, body []byte) { took = append(took, string(num)+"="+string(body)) }
+		from := 0
+		for _, to := range append(cuts, len(in)) {
+			s.feed(in[from:to], pass, take)
+			from = to
+		}
+		return passed, took
+	}
+	rng := rand.New(rand.NewSource(1))
+	parts := []string{"\x1b]1337;File=:aGk=\x07", "\x1b]52;c;aGk=\x1b\\", "\x1b]1338;x\x1b[", "\x1b]0;t\x07",
+		"\x1b[31m", "\x1b\x1b]52;c;", "text ", "\x1b", "]", "\x07", "\x18", "\x1b\\", "▀"}
+	for i := 0; i < 3000; i++ {
+		var b []byte
+		for range rng.Intn(10) {
+			b = append(b, parts[rng.Intn(len(parts))]...)
+		}
+		var cuts []int
+		for k := 0; k <= len(b); k++ {
+			if rng.Intn(4) == 0 {
+				cuts = append(cuts, k)
+			}
+		}
+		var each []int
+		for k := 1; k < len(b); k++ {
+			each = append(each, k)
+		}
+		wantP, wantT := run(b, each)
+		gotP, gotT := run(b, cuts)
+		if !bytes.Equal(gotP, wantP) || !slices.Equal(gotT, wantT) {
+			t.Fatalf("%q cut at %v: passed %q took %q; byte by byte %q %q", b, cuts, gotP, gotT, wantP, wantT)
+		}
 	}
 }

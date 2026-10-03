@@ -10,10 +10,11 @@ require (
 	// intermediates, reused from one sequence to the next, where it
 	// allocated them for every sequence: a screen of true colour half
 	// blocks sends two sequences a cell. vt reads them only during the
-	// call. And SOS, PM and APC strings stop growing at a megabyte, which
-	// upstream's own test expected.
-	github.com/marrasen/go-vte v1.0.11-gt.2
-	github.com/marrasen/gunim v0.0.0-20261002163829-fadfc2cb0592
+	// call. SOS, PM and APC strings stop growing at a megabyte, which
+	// upstream's own test expected. And AdvanceBytes parses a whole write,
+	// taking text and CSI parameters without the state table.
+	github.com/marrasen/go-vte v1.0.11-gt.3
+	github.com/marrasen/gunim v0.0.0-20261003090826-f437a27dad49
 	github.com/pkg/sftp v1.13.11
 	github.com/rivo/uniseg v0.4.7
 	golang.design/x/clipboard v0.9.0

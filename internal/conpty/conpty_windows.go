@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"unsafe"
@@ -19,9 +20,10 @@ type host struct {
 	name                  string
 	create, resize, close *windows.LazyProc
 	// ready makes sure the files of a host kakel carries are where it
-	// was loaded from, putting back any that are not; nil for Windows'
-	// own.
+	// was loaded from, putting back any that are not, and exe is where
+	// its OpenConsole.exe is; nil and empty for Windows' own.
 	ready func() error
+	exe   string
 }
 
 // system is the ConPTY Windows has.
@@ -65,8 +67,9 @@ type Console struct {
 //
 // conpty.dll starts OpenConsole.exe from beside itself, and starts
 // Windows' own console host, without a word, when it is not there. A
-// file there can go while kakel runs, as with a cleaner of temporary
-// files, so it is put back before each console. Windows' own ConPTY is
+// file there can go or change while kakel runs, as a cleaner of caches
+// or another program can make it, so each is compared with what kakel
+// carries, and put back, before each console. Windows' own ConPTY is
 // used if that, or OpenConsole, fails.
 func New(cols, rows int) (*Console, error) { return newFrom(chosen(), cols, rows) }
 
@@ -112,8 +115,8 @@ func newWith(h *host, cols, rows int) (*Console, error) {
 		_, _ = in.Close(), out.Close()
 		return nil, fmt.Errorf("make a pseudoconsole with %s: %w", h.name, windows.Errno(r&0xffff))
 	}
-	if h.ready != nil {
-		holdHost(hpc)
+	if h.exe != "" {
+		holdHost(h, hpc)
 	}
 	return &Console{host: h, in: in, out: out, hpc: hpc}, nil
 }
@@ -137,19 +140,57 @@ var hosts = sync.OnceValues(func() (windows.Handle, error) {
 	return job, nil
 })
 
-// holdHost puts the OpenConsole behind hpc in hosts. conpty.dll's HPCON
-// points at the console's signal pipe, a reference to it, and its host
-// process, in that order: what ConptyPackPseudoConsole packs. A console
-// it cannot hold still works, and is only said in the log.
-func holdHost(hpc windows.Handle) {
+// holdHost puts the OpenConsole behind hpc, of h, in hosts. conpty.dll's
+// HPCON points at the console's signal pipe, a reference to it, and its
+// host process, in that order: what ConptyPackPseudoConsole packs. That
+// layout is conpty.dll's own, not promised, so the handle is held only
+// if it is the OpenConsole.exe kakel placed; a conpty.dll laid out
+// otherwise must not have kakel kill some other process as it ends. A
+// console it cannot hold still works, and that is said once in the log.
+func holdHost(h *host, hpc windows.Handle) {
 	job, err := hosts()
 	if err == nil {
 		handles := (*[3]windows.Handle)(*(*unsafe.Pointer)(unsafe.Pointer(&hpc)))
-		err = windows.AssignProcessToJobObject(job, handles[2])
+		err = holdProcess(job, handles[2], h.exe)
 	}
 	if err != nil {
-		log.Printf("An OpenConsole may outlive kakel: %v", err)
+		unheld.Do(func() { log.Printf("An OpenConsole may outlive kakel: %v", err) })
 	}
+}
+
+// Dir is the folder kakel puts the OpenConsole it carries in, a folder
+// for each version: %LOCALAPPDATA%\kakel\conpty. It is the user's cache,
+// not kakel's own folder, which a portable copy keeps beside itself,
+// and -uninstall takes it away.
+func Dir() (string, error) {
+	cache, err := os.UserCacheDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(cache, "kakel", "conpty"), nil
+}
+
+// unheld says once that an OpenConsole could not be held.
+var unheld sync.Once
+
+// holdProcess puts the process proc in job, if it runs the program at
+// exe, and refuses it otherwise.
+func holdProcess(job, proc windows.Handle, exe string) error {
+	buf := make([]uint16, windows.MAX_LONG_PATH)
+	n := uint32(len(buf))
+	if err := windows.QueryFullProcessImageName(proc, 0, &buf[0], &n); err != nil {
+		return fmt.Errorf("the console's host is not a process kakel can name: %w", err)
+	}
+	if got := windows.UTF16ToString(buf[:n]); !samePath(got, exe) {
+		return fmt.Errorf("the console's host is %s, not %s", got, exe)
+	}
+	return windows.AssignProcessToJobObject(job, proc)
+}
+
+// samePath reports whether a and b name the same file, as Windows
+// compares names: without regard to case.
+func samePath(a, b string) bool {
+	return strings.EqualFold(filepath.Clean(a), filepath.Clean(b))
 }
 
 // coord packs a size as a COORD, which a ConPTY takes by value.

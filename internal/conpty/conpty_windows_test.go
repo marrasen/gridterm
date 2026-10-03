@@ -7,12 +7,14 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf16"
+	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
@@ -164,6 +166,49 @@ func TestOpenConsoleIsChosen(t *testing.T) {
 	}
 	if h := chosen(); h == system {
 		t.Fatalf("consoles are made with %s", h.name)
+	}
+}
+
+// A handle to a process that is not the OpenConsole kakel placed, as a
+// conpty.dll laid out otherwise could hand over, is not put in the job
+// that kills what it holds as kakel ends.
+func TestOnlyOpenConsoleIsHeld(t *testing.T) {
+	// A job that kills nothing, should the guard fail, and a process of
+	// its own: a process in a job passes the job on to what it starts.
+	job, err := windows.CreateJobObject(nil, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = windows.CloseHandle(job) }()
+	held := func(exe string) (bool, error) {
+		ping := `C:\Windows\System32\PING.EXE`
+		cmd := exec.Command(ping, "-n", "30", "127.0.0.1")
+		if err := cmd.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = cmd.Process.Kill(); _ = cmd.Wait() }()
+		h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
+			false, uint32(cmd.Process.Pid))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = windows.CloseHandle(h) }()
+		herr := holdProcess(job, h, exe)
+		var in int32
+		isProcessInJob := windows.NewLazySystemDLL("kernel32.dll").NewProc("IsProcessInJob")
+		if r, _, err := isProcessInJob.Call(uintptr(h), uintptr(job), uintptr(unsafe.Pointer(&in))); r == 0 {
+			t.Fatal(err)
+		}
+		return in != 0, herr
+	}
+
+	if in, err := held(`C:\kakel\conpty\OpenConsole.exe`); err == nil || in {
+		t.Fatalf("a process that is not OpenConsole was held: %v, in the job %v", err, in)
+	}
+	// Named as it runs, in any case, it is held: what is refused is
+	// another program, not every one.
+	if in, err := held(`c:\windows\system32\ping.exe`); err != nil || !in {
+		t.Fatalf("the process named as it runs was refused: %v, in the job %v", err, in)
 	}
 }
 

@@ -28,11 +28,26 @@ var (
 // used if they are the ones kakel carries, so a second kakel does not
 // write over files the first has loaded.
 //
-// They go in the user's temporary folder. They are only a copy of what
-// kakel carries, and put back if they go. A loaded DLL cannot be removed
-// until the process ends, so it stays out of kakel's own folder, which
-// a portable copy keeps beside itself and a test makes and removes.
-func bundled() (*host, error) { return bundledIn(placeDir()) }
+// They go in Dir, under the version. They are only a copy of what kakel
+// carries, and put back if they go.
+func bundled() (*host, error) {
+	if placeErr != nil {
+		return nil, fmt.Errorf("find a place for OpenConsole: %w", placeErr)
+	}
+	return bundledIn(placed)
+}
+
+// placed is where OpenConsole is put, worked out as kakel starts. A
+// loaded DLL cannot be removed until the process ends, so the place
+// does not follow a home moved later: a test moves it into a folder of
+// its own, and removes that folder as it ends.
+var placed, placeErr = func() (string, error) {
+	dir, err := Dir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, bundleVersion), nil
+}()
 
 // bundledIn puts OpenConsole in dir and loads it from there.
 func bundledIn(dir string) (*host, error) {
@@ -46,6 +61,7 @@ func bundledIn(dir string) (*host, error) {
 		resize: d.NewProc("ConptyResizePseudoConsole"),
 		close:  d.NewProc("ConptyClosePseudoConsole"),
 		ready:  func() error { return placeAll(dir) },
+		exe:    filepath.Join(dir, "OpenConsole.exe"),
 	}
 	for _, p := range []*windows.LazyProc{h.create, h.resize, h.close} {
 		if err := p.Find(); err != nil {
@@ -54,9 +70,6 @@ func bundledIn(dir string) (*host, error) {
 	}
 	return h, nil
 }
-
-// placeDir is where OpenConsole is put.
-func placeDir() string { return filepath.Join(os.TempDir(), "kakel-conpty-"+bundleVersion) }
 
 // placeAll puts conpty.dll and OpenConsole.exe in dir.
 func placeAll(dir string) error {

@@ -5,6 +5,7 @@ package conpty
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 	"unsafe"
@@ -34,7 +35,7 @@ func openConsoles(t *testing.T) int {
 		}
 		buf := make([]uint16, windows.MAX_PATH)
 		size := uint32(len(buf))
-		if windows.QueryFullProcessImageName(h, 0, &buf[0], &size) == nil && windows.UTF16ToString(buf[:size]) == placeDir()+`\OpenConsole.exe` {
+		if windows.QueryFullProcessImageName(h, 0, &buf[0], &size) == nil && samePath(windows.UTF16ToString(buf[:size]), filepath.Join(placed, "OpenConsole.exe")) {
 			n++
 		}
 		_ = windows.CloseHandle(h)

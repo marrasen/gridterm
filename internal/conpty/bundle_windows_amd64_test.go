@@ -9,7 +9,7 @@ import (
 )
 
 // OpenConsole.exe gone from beside the loaded conpty.dll, as a cleaner
-// of temporary files can make it, is put back for the next console:
+// of caches can make it, is put back for the next console:
 // conpty.dll would otherwise run Windows' own console host in its place.
 func TestOpenConsoleIsPutBackWhenItWentMissing(t *testing.T) {
 	// A folder of its own, as the shared one's OpenConsole.exe may be

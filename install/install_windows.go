@@ -12,6 +12,8 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
+
+	"github.com/marrasen/kakel/internal/conpty"
 )
 
 // Paths on Windows ignore letter case, and a running program cannot be
@@ -177,9 +179,20 @@ func Autostart() bool {
 	return err == nil
 }
 
-// Uninstall takes the shortcuts, the entry and the start with the user
-// away, and the program's folder once this program, which may be the
-// one in it, has ended.
+// removeConPTY takes away the OpenConsole kakel put in the user's cache
+// to run its panes through. The kakel running has ended by now, and the
+// OpenConsoles it started with it, so nothing has them loaded. Another
+// kakel still running, as a portable copy, keeps them in use, and they
+// stay for it.
+func removeConPTY() {
+	if dir, err := conpty.Dir(); err == nil {
+		_ = os.RemoveAll(dir)
+	}
+}
+
+// Uninstall takes the shortcuts, the entry, the start with the user and
+// the OpenConsole in the user's cache away, and the program's folder
+// once this program, which may be the one in it, has ended.
 func Uninstall() error {
 	exe, err := Exe()
 	if err != nil {
@@ -195,6 +208,7 @@ func Uninstall() error {
 	if err := registry.DeleteKey(registry.CURRENT_USER, uninstallKey); err != nil && err != registry.ErrNotExist {
 		return err
 	}
+	removeConPTY()
 	// A program running cannot be taken away, nor the folder it runs
 	// from: PowerShell does it once this program has ended. It takes
 	// kakel's own files, and the folder only when that leaves it empty,

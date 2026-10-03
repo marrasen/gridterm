@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"runtime"
+	"strconv"
 
 	"github.com/marrasen/kakel/screen"
 )
@@ -103,6 +104,35 @@ func echoCommand(word string) string {
 		return "cmd /c echo " + word
 	}
 	return "echo " + word
+}
+
+// The commands below are ones a plain machine has. sleep, true and
+// false are no programs on Windows: a machine with Git for Windows on
+// PATH has them, as a GitHub runner does, and one without has not.
+
+// waitCommand is a command line that runs for about seconds and exits.
+func waitCommand(seconds int) string {
+	if runtime.GOOS == "windows" {
+		// ping waits a second between its tries.
+		return "ping -n " + strconv.Itoa(seconds+1) + " 127.0.0.1"
+	}
+	return "sleep " + strconv.Itoa(seconds)
+}
+
+// trueCommand is a command line that exits at once with 0, and
+// falseCommand one that exits at once with 1.
+func trueCommand() string {
+	if runtime.GOOS == "windows" {
+		return "cmd /c exit 0"
+	}
+	return "true"
+}
+
+func falseCommand() string {
+	if runtime.GOOS == "windows" {
+		return "cmd /c exit 1"
+	}
+	return "false"
 }
 
 // saysFolder is what the local shell prints to say it is in dir. A

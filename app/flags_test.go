@@ -44,11 +44,12 @@ func TestDashEOpensTheCommandInsteadOfAShell(t *testing.T) {
 	for len(a.st.Panes) > 0 {
 		a.remove(a.st.Panes[0].ID)
 	}
-	a.opts.command = "echo from-dash-e"
+	line := echoCommand("from-dash-e")
+	a.opts.command = line
 	if err := a.openFirst(); err != nil {
 		t.Fatal(err)
 	}
-	if len(a.st.Panes) != 1 || !a.st.Panes[0].Command || a.st.Panes[0].Title != "echo from-dash-e" {
+	if len(a.st.Panes) != 1 || !a.st.Panes[0].Command || a.st.Panes[0].Title != line {
 		t.Fatalf("the first pane is %+v", a.st.Panes)
 	}
 }

@@ -678,6 +678,12 @@ type app struct {
 	// for a window that asked for one to hear how it went.
 	restarts map[string]int
 	endings  map[string]int
+	// endCounted says the end of the run a pane holds now is counted in
+	// endings; see countEnding.
+	endCounted map[string]bool
+	// restarting holds the panes whose program is being started again
+	// on another goroutine, until it has started or failed to.
+	restarting map[string]bool
 	// reads are what each reader pane reads, to read it again, and
 	// following the readers with a follow loop running.
 	reads     map[string]readSpec
@@ -790,6 +796,8 @@ func newApp(c gunim.Client, sh *screen.Shells) *app {
 		following:    map[string]bool{},
 		restarts:     map[string]int{},
 		endings:      map[string]int{},
+		endCounted:   map[string]bool{},
+		restarting:   map[string]bool{},
 		far:          pathsFar{known: map[string]farPath{}, asking: map[string]bool{}},
 		wake:         make(chan struct{}, 1),
 		events:       make(chan func(), 64),

@@ -31,7 +31,7 @@ import (
 // The terminal says so twice, once as the program's output ends and
 // again once its exit status is in.
 func (a *app) paneEnded(id string) {
-	a.endings[id]++
+	a.countEnding(id)
 	t := a.terminal(id)
 	switch {
 	case t == nil:
@@ -39,6 +39,12 @@ func (a *app) paneEnded(id string) {
 		return
 	case !t.Exited():
 		// A notice from before the pane was started again.
+		return
+	case a.restarting[id]:
+		// The second word of the end, landing while the pane starts
+		// again on another goroutine. Asked now, the question would
+		// say a start that is on its way had failed; one that fails
+		// asks it again.
 		return
 	}
 	a.setPane(id, func(p *Pane) { p.Ended = true })
@@ -147,6 +153,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 		}
 		// Where it ran, and what, for a window that has to open it anew.
 		key, cmd := a.farHostOf(id), a.commands[id]
+		a.restarting[id] = true
 		go func() {
 			var sess session.Session
 			var err error
@@ -200,7 +207,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 					a.failed("Couldn't start it again", err.Error())
 					// The question goes back up, to be answered again.
 					if a.terminal(id) == t {
-						a.paneEnded(id)
+						a.askAgain(id)
 					}
 				}
 			}
@@ -216,17 +223,23 @@ func (a *app) startAgainOr(id string, dial bool) error {
 	if !ok {
 		// The connection has gone: dial it again, and
 		// start the pane once it is back.
-		return a.dialAgain(machine, func(err error) {
+		a.restarting[id] = true
+		err := a.dialAgain(machine, func(err error) {
 			if err == nil {
 				err = a.startAgain(id)
 			}
 			if err != nil {
 				// The question goes back up, to be answered again.
-				a.paneEnded(id)
+				a.askAgain(id)
 			}
 		})
+		if err != nil {
+			delete(a.restarting, id)
+		}
+		return err
 	}
 	a.sayIfMoved(id, t, machine)
+	a.restarting[id] = true
 	go func() {
 		sess, err := conn.Shell(a.ctx, a.shellConfig(machine, size.Cols, size.Rows))
 		a.events <- func() {
@@ -240,7 +253,7 @@ func (a *app) startAgainOr(id string, dial bool) error {
 				a.failed("Couldn't start it again", err.Error())
 				// The question goes back up, to be answered again.
 				if a.terminal(id) == t {
-					a.paneEnded(id)
+					a.askAgain(id)
 				}
 			}
 		}
@@ -261,6 +274,26 @@ func (a *app) sayIfMoved(id string, t *uiterm.Terminal, machine machines.ID) {
 	a.paneAt[id] = now
 }
 
+// countEnding counts the end of the run pane id holds, once, if it has
+// ended. The terminal says each end twice, and a window asked to start
+// a pane again can hear of its end, from the window that asked, before
+// it has itself. Counted at each end once, and by the run that ended, a
+// late word of the run before is no new end: one counted after a start
+// again said the new run had failed, when it had not.
+func (a *app) countEnding(id string) {
+	if t := a.terminal(id); t != nil && t.Exited() && !a.endCounted[id] {
+		a.endings[id]++
+		a.endCounted[id] = true
+	}
+}
+
+// askAgain puts a pane's question back up once starting it again has
+// failed.
+func (a *app) askAgain(id string) {
+	delete(a.restarting, id)
+	a.paneEnded(id)
+}
+
 // restarted puts a new session in a pane.
 func (a *app) restarted(id string, t *uiterm.Terminal, sess session.Session) error {
 	if sh := a.shells.Get(id); sh != nil {
@@ -272,6 +305,8 @@ func (a *app) restarted(id string, t *uiterm.Terminal, sess session.Session) err
 	}
 	a.setPane(id, func(p *Pane) { p.Ended = false })
 	a.restarts[id]++
+	delete(a.endCounted, id)
+	delete(a.restarting, id)
 	delete(a.notRun, id)
 	return nil
 }

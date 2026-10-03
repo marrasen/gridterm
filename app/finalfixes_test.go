@@ -24,7 +24,7 @@ func TestServesTriesAreNotCountedAgainFromNothing(t *testing.T) {
 // it did, however soon the command is over.
 func TestStartAgainForAnotherWindowAnswersOnceItRan(t *testing.T) {
 	a, _ := agentApp(t)
-	if err := a.runCommand(RunCommand{Line: "true"}); err != nil {
+	if err := a.runCommand(RunCommand{Line: trueCommand()}); err != nil {
 		t.Fatal(err)
 	}
 	id := a.st.Focus

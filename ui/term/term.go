@@ -1727,6 +1727,9 @@ func (t *Terminal) writeLoop(r *run) {
 		case <-r.stop:
 			return
 		case b := <-t.out:
+			if readsDebug {
+				log.Printf("kakel writes: %d bytes %q", len(b), b[:min(len(b), 64)])
+			}
 			if _, err := r.sess.Write(b); err != nil {
 				t.fail(fmt.Errorf("write session: %w", err))
 				t.finish(r)
@@ -1798,8 +1801,9 @@ func (t *Terminal) readLoop(r *run) {
 }
 
 // readsDebug is set by KAKEL_DEBUG_READS=1, which logs each read of a
-// session's output, as logRead says, and each time the window copies a
-// screen: for finding where an animation's frames are cut.
+// session's output, as logRead says, each time the window copies a
+// screen, and each write of input to the session: for finding where an
+// animation's frames are cut, and what a key sent.
 var readsDebug = os.Getenv("KAKEL_DEBUG_READS") == "1"
 
 // logRead logs one read of output: how long after the read before it,

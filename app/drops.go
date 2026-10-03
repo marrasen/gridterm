@@ -96,7 +96,7 @@ func (a *app) copyDropped(machine machines.ID, paths []string, dir string) error
 				continue
 			}
 			op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{filepath.Base(path)}, To: to, Into: into}
-			started = append(started, a.followOn(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, into), "", machine))
+			started = append(started, a.followDrop(op, "Copying "+filepath.Base(path)+" to "+vfs.Base(to, into), machine))
 		}
 		if len(already) > 0 {
 			a.tell(arrived(already, dir, a.machines.Name(machine)), "Already there.")
@@ -105,6 +105,27 @@ func (a *app) copyDropped(machine machines.ID, paths []string, dir string) error
 			a.sayWhenArrived(started, paths, dir, machine)
 		}
 	})
+}
+
+// typedOn is a path on a machine reached over SFTP, as a program there
+// takes it typed: SFTP writes a Windows machine's C:\Users\me as
+// /C:/Users/me, which cmd.exe and PowerShell there do not read. Any
+// other path is typed as it is.
+func typedOn(p string) string {
+	if !onADrive(p) {
+		return p
+	}
+	return strings.ReplaceAll(strings.TrimPrefix(p, "/"), "/", `\`)
+}
+
+// followDrop starts a copy of a dropped file to machine and follows it,
+// quietly: its card shows how it goes, and the drop says how it went in
+// its own way, with one notice for the files dropped into a shell's
+// folder, or the path typed into the pane. A job's own notice as it
+// ended made a second notice for one drop, or one where the typed path
+// said it already.
+func (a *app) followDrop(op jobs.Op, title string, machine machines.ID) *jobs.Job {
+	return a.followAsking(op, title, "", machine, overwriteAsker{a}, true)
 }
 
 // sameDir reports whether two paths name one folder on this machine.
@@ -172,8 +193,8 @@ func (a *app) uploadDropped(id string, machine machines.ID, paths []string) erro
 				for _, path := range paths {
 					name := filepath.Base(path)
 					op := jobs.Op{Kind: jobs.Copy, From: a.fsFor(""), At: filepath.Dir(path), Names: []string{name}, To: to, Into: dir}
-					j := a.followOn(op, "Copying "+name+" to "+a.machines.Name(machine), "", machine)
-					at := strings.TrimSuffix(dir, string(to.Sep())) + string(to.Sep()) + name
+					j := a.followDrop(op, "Copying "+name+" to "+a.machines.Name(machine), machine)
+					at := typedOn(strings.TrimSuffix(dir, string(to.Sep())) + string(to.Sep()) + name)
 					go func() {
 						<-j.Done()
 						a.events <- func() {

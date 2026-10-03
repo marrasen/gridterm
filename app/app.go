@@ -11,6 +11,7 @@ import (
 	"log"
 	"maps"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -180,9 +181,6 @@ type State struct {
 	// Notices are the latest notices, oldest first, for the window to
 	// show each once.
 	Notices []Notice
-	// Output counts the times shells wrote, so the window copies their
-	// screens once a frame however often they write.
-	Output uint64
 }
 
 // Pings counts the echoes the window sends out past its edges, one
@@ -726,9 +724,36 @@ type app struct {
 	ticking        bool
 	quiet          bool
 	// wake hears that a shell wrote, and events carries changes from
-	// the shells' goroutines to this one.
-	wake   chan struct{}
-	events chan func()
+	// the shells' goroutines to this one. wrote holds the panes whose
+	// shells wrote since the windows were last told, under wroteMu.
+	wake    chan struct{}
+	events  chan func()
+	wroteMu sync.Mutex
+	wrote   map[string]bool
+}
+
+// OutputArrived tells a window that shells of its panes wrote: it draws
+// again, and each terminal copies its screen as it does, however often
+// they write. It goes as a patch, rather than as the window's state,
+// which costs every window a whole update.
+type OutputArrived struct{}
+
+// tellOutput tells each window whose panes' shells wrote since it last
+// heard.
+func (a *app) tellOutput() {
+	a.wroteMu.Lock()
+	panes := a.wrote
+	a.wrote = nil
+	a.wroteMu.Unlock()
+	told := map[*ownWin]bool{}
+	for id := range panes {
+		w := a.ownerOf(id)
+		if w == nil || w.gone || told[w] {
+			continue
+		}
+		told[w] = true
+		_ = w.c.Patch(WindowTopic, OutputArrived{})
+	}
 }
 
 func newApp(c gunim.Client, sh *screen.Shells) *app {
@@ -915,7 +940,10 @@ func (a *app) run(ctx context.Context) error {
 				a.handover(h)
 			}
 		case <-a.wake:
-			a.st.Output++
+			// Only the windows drawing those panes need to hear, and
+			// none of the rest of what follows an event.
+			a.tellOutput()
+			continue
 		case f := <-a.events:
 			f()
 		}
@@ -1639,6 +1667,12 @@ func (a *app) hooks(id string) screen.Hooks {
 		// never disagree.
 		Program: called,
 		Output: func() {
+			a.wroteMu.Lock()
+			if a.wrote == nil {
+				a.wrote = map[string]bool{}
+			}
+			a.wrote[id] = true
+			a.wroteMu.Unlock()
 			select {
 			case a.wake <- struct{}{}:
 			default:

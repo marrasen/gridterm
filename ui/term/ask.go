@@ -107,21 +107,22 @@ func drawn(at []int, i int) bool {
 }
 
 // paintAsk draws the question and its choices over the last row of a
-// view, after the screen has been copied into it.
-func (t *Terminal) paintAsk(v grid.View) {
+// view, after the screen has been copied into it, and reports whether
+// it drew.
+func (t *Terminal) paintAsk(v grid.View) bool {
 	q := t.ask
 	if q == nil {
-		return
+		return false
 	}
 	cols, rows := v.Size()
 	if cols <= 0 || rows <= 0 {
-		return
+		return false
 	}
 	at := ui.ButtonColsIn(q.labels(), cols, askPad)
 	if !anyDrawn(at) {
 		// Not even one answer fits. A row with no answer on it would only
 		// cover the last line the program printed.
-		return
+		return false
 	}
 	bg := askBG(t.pal)
 	row := v.Sub(0, rows-1, cols, 1)
@@ -154,6 +155,7 @@ func (t *Terminal) paintAsk(v grid.View) {
 		}
 		ui.DrawButton(row, x, 0, q.choices[i].Label, fg, cbg)
 	}
+	return true
 }
 
 // anyDrawn reports whether there is room for a single choice.

@@ -115,7 +115,7 @@ func run() error {
 			return err
 		}
 		if opts.ShowStats() {
-			go logStats(ctx, w)
+			go ws.logStats(ctx)
 		}
 		return app.Start(ctx, app.Config{
 			Client: c, Window: w, Shells: sh, OpenWindow: ws.openFrom, Options: opts,
@@ -167,6 +167,7 @@ func (ws *ownWindows) open(o gunim.WindowOptions) (*gunim.Window, gunim.Client, 
 	keys := view.Shortcuts()
 	gunim.RegisterView(w, "window", func(app.State) *view.Window { return view.NewWindow(ws.sh, keys, all) },
 		func(win *view.Window, st app.State, u *gunim.UI) { win.Update(st, u) })
+	gunim.RegisterPatch(w, "window", func(win *view.Window, _ app.OutputArrived, u *gunim.UI) { win.OutputArrived(u) })
 	if err := c.Mount(gunim.Root, "window", "window", app.State{}, app.WindowTopic); err != nil {
 		return nil, gunim.Client{}, err
 	}
@@ -289,21 +290,31 @@ func (ws *ownWindows) registerThemes(all []look.Themed) {
 	}
 }
 
-// logStats prints, each second, how many frames the window drew and
-// how many screen updates arrived and were merged into them.
-func logStats(ctx context.Context, w *gunim.Window) {
+// logStats prints, each second, how many frames each window drew and
+// how many screen updates arrived and were merged into them: every
+// window kakel opened, numbered in the order it opened, that drew
+// anything in that second.
+func (ws *ownWindows) logStats(ctx context.Context) {
 	t := time.NewTicker(time.Second)
 	defer t.Stop()
-	var last gunim.Stats
+	last := map[*gunim.Window]gunim.Stats{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
 		}
-		s := w.Stats()
-		log.Printf("frames %d, updates %d, merged %d", s.Frames-last.Frames, s.Commands-last.Commands, s.Coalesced-last.Coalesced)
-		last = s
+		ws.mu.Lock()
+		list := slices.Clone(ws.win)
+		ws.mu.Unlock()
+		for i, w := range list {
+			s, was := w.Stats(), last[w]
+			last[w] = s
+			if s == was {
+				continue
+			}
+			log.Printf("window %d: frames %d, updates %d, merged %d", i+1, s.Frames-was.Frames, s.Commands-was.Commands, s.Coalesced-was.Coalesced)
+		}
 	}
 }
 

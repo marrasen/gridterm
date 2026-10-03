@@ -52,6 +52,12 @@ var (
 
 // Window is the view the program's state drives.
 type Window struct {
+	// wrote is set, to the window's UI, once shells of its panes wrote,
+	// until its terminals copy their screens as it next lays out.
+	// retrying is set while a copy that found a screen still being
+	// written waits to try again.
+	wrote    *gunim.UI
+	retrying bool
 	anim.Group
 	top *widget.Flex
 	bar *widget.Menubar
@@ -661,6 +667,15 @@ func (w *Window) run(id string, u *gunim.UI) bool {
 	return false
 }
 
+// OutputArrived takes word that shells of the window's panes wrote:
+// the window draws again, and each terminal copies its screen as it
+// lays out, once a frame however often the word comes. It is the part
+// of Update that output needs, at a fraction of its cost.
+func (w *Window) OutputArrived(u *gunim.UI) {
+	w.wrote = u
+	u.Invalidate()
+}
+
 // Children implements [gunim.Composite].
 func (w *Window) Children() []gunim.Node { return []gunim.Node{w.top, w.toasts} }
 
@@ -668,6 +683,25 @@ func (w *Window) Children() []gunim.Node { return []gunim.Node{w.top, w.toasts} 
 // window.
 func (w *Window) Layout(c gunim.Constraints, _ gunim.Frame, kids gunim.Children) geom.Size {
 	w.size = c.Max
+	if u := w.wrote; u != nil {
+		w.wrote = nil
+		late := false
+		for _, t := range w.terms {
+			t.sync()
+			t.lookAgain(u)
+			late = late || t.sh.T.Dirty()
+		}
+		if late && !w.retrying {
+			// A screen was still being written, and shows as it was.
+			// Its writer says when it is done; a key press or a theme,
+			// which say nothing, are caught a moment later.
+			w.retrying = true
+			u.After(4*time.Millisecond, func(u *gunim.UI) {
+				w.retrying = false
+				w.OutputArrived(u)
+			})
+		}
+	}
 	for k := range kids.All {
 		if k.Node() == w.toasts {
 			// The toasts sit in the bottom right corner.

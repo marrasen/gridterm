@@ -260,6 +260,11 @@ type Terminal struct {
 	// and hoverRow with hoverFrom and hoverTo are the stretch of the
 	// screen it runs across, so it can be underlined. All of it is the
 	// drawing goroutine's.
+	// drawn is what the last draw into the screen's own view drew from,
+	// and over the rows it wrote over the screen with, which the next
+	// draw copies again.
+	drawn              drawKey
+	over               []int
 	hoverLink          string
 	hoverRow           int
 	hoverFrom, hoverTo int
@@ -755,10 +760,10 @@ func (t *Terminal) Draw(v grid.View) {
 	if n := t.capRows(); n > 0 {
 		cols, rows := v.Size()
 		t.paintCaption(v.Sub(0, 0, cols, n))
-		t.draw(v.Sub(0, n, cols, rows-n))
+		t.draw(v.Sub(0, n, cols, rows-n), true)
 		return
 	}
-	t.draw(v)
+	t.draw(v, true)
 }
 
 // Caption is the line above the screen naming the pane, and empty for a
@@ -874,7 +879,7 @@ func (t *Terminal) paintLinkTarget(v grid.View) int {
 
 // DrawScreen paints the whole screen onto a view of its own, for a host
 // drawing this terminal somewhere other than where the layout put it.
-func (t *Terminal) DrawScreen(v grid.View) { t.draw(v) }
+func (t *Terminal) DrawScreen(v grid.View) { t.draw(v, false) }
 
 // SetElsewhere says the host paints this terminal's screen itself, so
 // the room the layout gave it is left blank.
@@ -884,10 +889,17 @@ func (t *Terminal) SetElsewhere(on bool) { t.elsewhere = on }
 // the layout.
 func (t *Terminal) Elsewhere() bool { return t.elsewhere }
 
-// draw copies the emulator's cells into a view, bounded by its size.
-func (t *Terminal) draw(v grid.View) {
-	if t.pending.Swap(false) {
-		t.mu.Lock()
+// draw copies the emulator's cells into a view, bounded by its size:
+// all of them when whole is set, and otherwise only the rows that
+// changed since the last draw into the same view.
+//
+// While the program's output is being parsed, the screen stays as it
+// was drawn last, rather than the window waiting for the parse: the
+// reader says the screen has something new once it is done, which
+// draws it again. Dirty still reports the screen waiting.
+func (t *Terminal) draw(v grid.View, whole bool) {
+	if t.pending.Load() && t.mu.TryLock() {
+		t.pending.Store(false)
 		t.term.Render(t.g)
 		t.drawnTop = t.term.Screen().ViewTop()
 		t.mu.Unlock()
@@ -901,8 +913,17 @@ func (t *Terminal) draw(v grid.View) {
 	// than carried over. Both live on the grid that holds them, and the
 	// grid being drawn into belongs to the layout, which knows nothing
 	// about either.
+	//
+	// Only the rows the emulator wrote since the last draw are copied,
+	// and the rows written over last time, unless the view or the link
+	// under the pointer changed, which can change any row.
 	cols, rows := v.Size()
+	key := drawKey{cols: cols, rows: rows, link: t.hoverLink, row: t.hoverRow, from: t.hoverFrom, to: t.hoverTo}
+	all := whole || key != t.drawn
 	for y := range rows {
+		if !all && !t.g.RowDirty(y) && !slices.Contains(t.over, y) {
+			continue
+		}
 		for x := range cols {
 			c := t.g.At(x, y)
 			c.FG, c.BG = t.g.FGOf(x, y), t.g.BGOf(x, y)
@@ -916,7 +937,21 @@ func (t *Terminal) draw(v grid.View) {
 			v.Set(x, y, c)
 		}
 	}
+	// A whole draw is into some other view, and leaves what the screen's
+	// own has yet to copy for it.
+	var over *[]int
+	if !whole {
+		t.mu.Lock()
+		t.g.ClearDirty()
+		t.mu.Unlock()
+		t.drawn = key
+		t.over = t.over[:0]
+		over = &t.over
+	}
 	named := t.paintLinkTarget(v)
+	if named >= 0 && over != nil {
+		*over = append(*over, named)
+	}
 	// Only the focused terminal touches the cursor. A grid has one and no
 	// idea who owns it, so an unfocused widget writing even a hidden
 	// cursor would take it from whoever has it. Clearing it once a frame
@@ -935,7 +970,17 @@ func (t *Terminal) draw(v grid.View) {
 	}
 	// Last, over the screen: the question is the window talking, not a
 	// line the program printed.
-	t.paintAsk(v)
+	if t.paintAsk(v) && over != nil {
+		*over = append(*over, rows-1)
+	}
+}
+
+// drawKey is what a draw into the screen's own view drew from besides
+// the screen's rows: a change to it changes any row.
+type drawKey struct {
+	cols, rows    int
+	link          string
+	row, from, to int
 }
 
 // CursorHideGrace is how long a cursor stays on screen after the

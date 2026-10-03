@@ -1759,7 +1759,6 @@ func (t *Terminal) readLoop(r *run) {
 			f()
 		}
 	}}
-	burst := &burst{arrived: t.outputArrived}
 	for {
 		n, err := r.sess.Read(buf)
 		if n > 0 {
@@ -1772,11 +1771,10 @@ func (t *Terminal) readLoop(r *run) {
 				})
 			}
 			if wrote {
-				burst.wrote(n == len(buf))
+				t.outputArrived()
 			}
 		}
 		if err != nil {
-			burst.end()
 			if updates.flush() {
 				t.outputArrived()
 			}
@@ -1786,71 +1784,6 @@ func (t *Terminal) readLoop(r *run) {
 			t.finish(r)
 			return
 		}
-	}
-}
-
-// burstMost is the longest the screen waits to show output that keeps
-// coming in full reads: a refresh at 60 Hz.
-const burstMost = 16 * time.Millisecond
-
-// burst holds back the news of output while it keeps coming in full
-// reads, which says the program is in the middle of writing more, as a
-// whole frame of an animation that does not mark its frames: shown
-// part way, the top of the screen would show the new frame and the
-// bottom the old, torn across. It tells arrived as soon as a read comes
-// back short, as typing's echo always does, or once burstMost has passed
-// since the first held write, so a flood that never pauses still shows.
-type burst struct {
-	arrived func()
-	mu      sync.Mutex
-	// held says writes are waiting to be told, and seq numbers the
-	// holds, so a timer from one that ended does nothing.
-	held bool
-	seq  uint64
-}
-
-// wrote takes a write to the screen, from a read that filled the
-// buffer when full is set.
-func (b *burst) wrote(full bool) {
-	b.mu.Lock()
-	if !full {
-		b.held = false
-		b.seq++
-		b.mu.Unlock()
-		b.arrived()
-		return
-	}
-	if b.held {
-		b.mu.Unlock()
-		return
-	}
-	b.held = true
-	b.seq++
-	seq := b.seq
-	b.mu.Unlock()
-	time.AfterFunc(burstMost, func() {
-		b.mu.Lock()
-		due := b.held && b.seq == seq
-		if due {
-			b.held = false
-			b.seq++
-		}
-		b.mu.Unlock()
-		if due {
-			b.arrived()
-		}
-	})
-}
-
-// end tells what is held, as the session ends.
-func (b *burst) end() {
-	b.mu.Lock()
-	due := b.held
-	b.held = false
-	b.seq++
-	b.mu.Unlock()
-	if due {
-		b.arrived()
 	}
 }
 
